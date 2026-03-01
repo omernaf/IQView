@@ -59,8 +59,7 @@ class SpectrogramWindow(QMainWindow):
         self.info_layout = QHBoxLayout()
         self.info_layout.setContentsMargins(10, 5, 10, 5)
         help_label = QLabel(
-            "<b>Interactive Controls:</b> Left Click/Drag - Place & Move Time Marker | "
-            "'B' - Toggle Frequency Bandwidth Selector"
+            "<b>Interactive Controls:</b> Left Click/Drag - Place & Move Time Marker"
         )
         self.info_layout.addWidget(help_label)
         self.layout.addLayout(self.info_layout)
@@ -92,15 +91,6 @@ class SpectrogramWindow(QMainWindow):
         
         self.simplify_histogram_menu()
         
-        self.region = pg.LinearRegionItem(orientation='horizontal')
-        self.region.setZValue(10)
-        self.region.hide()
-        self.plot_item.addItem(self.region)
-        self.region.sigRegionChanged.connect(self.update_region_text)
-        
-        self.region_text = pg.TextItem(text="", color='w', fill=(0, 0, 0, 150))
-        self.region_text.hide()
-        self.plot_item.addItem(self.region_text)
 
     def simplify_histogram_menu(self):
         # Disable the viewbox menu entirely to make the side panel purely static and simple
@@ -147,38 +137,6 @@ class SpectrogramWindow(QMainWindow):
         if self.active_drag_marker and self.plot_item.sceneBoundingRect().contains(scene_pos):
             mouse_pos = self.plot_item.vb.mapSceneToView(scene_pos)
             self.active_drag_marker.setPos(mouse_pos.x())
-
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_B:
-            self.toggle_bandwidth_region()
-        else:
-            super().keyPressEvent(event)
-
-    def toggle_bandwidth_region(self):
-        if self.region.isVisible():
-            self.region.hide()
-            self.region_text.hide()
-        else:
-            view_range = self.plot_item.viewRange()[1]
-            v_center = (view_range[0] + view_range[1]) / 2
-            v_span = (view_range[1] - view_range[0]) * 0.1
-            self.region.setRegion([v_center - v_span/2, v_center + v_span/2])
-            self.region.show()
-            self.region_text.show()
-            self.update_region_text()
-
-    def update_region_text(self):
-        minY, maxY = self.region.getRegion()
-        bw = maxY - minY
-        center = (maxY + minY) / 2
-        
-        bw_str = f"{bw/1e6:.2f} MHz" if bw >= 1e6 else f"{bw/1e3:.2f} kHz"
-        center_str = f"{center/1e6:.3f} MHz" if abs(center) >= 1e6 else f"{center/1e3:.3f} kHz"
-        
-        self.region_text.setText(f"BW: {bw_str}\nFc: {center_str}")
-        
-        view_x_min = self.plot_item.viewRange()[0][0]
-        self.region_text.setPos(view_x_min, center)
 
     @pyqtSlot(int, int)
     def update_progress(self, current, total):
