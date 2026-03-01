@@ -89,18 +89,27 @@ class SpectrogramWindow(QMainWindow):
         colormap = pg.colormap.get('plasma')
         self.hist.gradient.setColorMap(colormap)
         
-        self.simplify_histogram_menu()
-        
-
-    def simplify_histogram_menu(self):
-        # Disable the viewbox menu entirely to make the side panel purely static and simple
+        # Disable the default viewbox menu so right-clicking purely opens the Colormap picker
         self.hist.vb.setMenuEnabled(False)
-        grad = self.hist.gradient
-        if hasattr(grad, 'menu') and grad.menu is not None:
-            grad.menu.clear()
-        import pyqtgraph.widgets.ColorMapMenu
-        grad.menu = pyqtgraph.widgets.ColorMapMenu.ColorMapMenu()
-        grad.menu.sigColorMapTriggered.connect(grad.setColorMap)
+        
+        # Override the Gradient editor menu to show native pyqtgraph top-level gradients with icons
+        def custom_gradient_menu(ev):
+            if ev.button() != Qt.MouseButton.RightButton:
+                return
+                
+            from pyqtgraph.widgets.ColorMapMenu import ColorMapMenu
+            from pyqtgraph.graphicsItems.GradientPresets import Gradients
+            
+            # Feed the legacy preset gradients into the native ColorMapMenu generator
+            presets = [(name, 'preset-gradient') for name in Gradients.keys()]
+            menu = ColorMapMenu(userList=presets, showColorMapSubMenus=False, showGradientSubMenu=False)
+            menu.sigColorMapTriggered.connect(self.hist.gradient.setColorMap)
+            
+            menu.exec(ev.screenPos().toPoint())
+            ev.accept()
+            
+        self.hist.gradient.mouseClickEvent = custom_gradient_menu
+        
 
     def start_processing(self):
         self.worker = FileReaderThread(self.file_path, self.data_type, self.fft_size)
@@ -127,7 +136,7 @@ class SpectrogramWindow(QMainWindow):
                 movable=False, # We handle movement via CustomViewBox
                 pen=pg.mkPen('r', width=2)
             )
-            self.plot_item.addItem(marker)
+            self.plot_item.addItem(marker, ignoreBounds=True)
             self.markers.append(marker)
             
             if drag_mode:
@@ -146,13 +155,14 @@ class SpectrogramWindow(QMainWindow):
     @pyqtSlot(np.ndarray)
     def display_spectrogram(self, full_spectrogram):
         self.progress_bar.hide()
-        min_v = np.min(full_spectrogram)
-        max_v = np.max(full_spectrogram)
+        min_v = float(np.min(full_spectrogram))
+        max_v = float(np.max(full_spectrogram))
         
         self.img.setImage(full_spectrogram, autoLevels=False, levels=[min_v, max_v], autoDownsample=True)
         
         # Lock histogram view entirely so it stays simple and static
         self.hist.vb.setMouseEnabled(x=False, y=False)
+        self.hist.vb.disableAutoRange()
         self.hist.vb.setLimits(yMin=min_v, yMax=max_v)
         self.hist.setLevels(min_v, max_v)
         self.hist.region.setBounds([min_v, max_v])
