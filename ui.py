@@ -147,9 +147,6 @@ class SpectrogramWindow(QMainWindow):
     def start_processing(self):
         self.worker = FileReaderThread(self.file_path, self.data_type, self.fft_size)
         
-        self.time_duration = (self.worker.num_rows * self.fft_size) / self.rate
-        self.img.setRect(QRectF(0, self.fc - self.rate/2, self.time_duration, self.rate))
-        
         self.worker.progress.connect(self.update_progress)
         self.worker.finished_processing.connect(self.display_spectrogram)
         self.worker.start()
@@ -191,7 +188,14 @@ class SpectrogramWindow(QMainWindow):
         min_v = float(np.min(full_spectrogram))
         max_v = float(np.max(full_spectrogram))
         
+        num_time_steps = full_spectrogram.shape[1]
+        self.time_duration = (num_time_steps * self.fft_size) / self.rate
+        
         self.img.setImage(full_spectrogram, autoLevels=False, levels=[min_v, max_v], autoDownsample=True)
+        self.img.setRect(QRectF(0, self.fc - self.rate/2, self.time_duration, self.rate))
+        
+        # Fit the view to the image data
+        self.plot_item.autoRange()
         
         # Lock histogram view entirely so it stays simple and static
         self.hist.vb.setMouseEnabled(x=False, y=False)
