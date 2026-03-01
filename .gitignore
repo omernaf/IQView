@@ -1,2 +1,4 @@
 *.32fc
-./venv
+venv/*
+__pycache__/*
+*.pyc
