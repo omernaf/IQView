@@ -1,7 +1,8 @@
 import pyqtgraph as pg
 import numpy as np
-from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QLabel, QHBoxLayout, QProgressBar
+from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QLabel, QHBoxLayout, QProgressBar, QLineEdit, QGridLayout, QFrame
 from PyQt6.QtCore import pyqtSlot, Qt, QRectF
+from PyQt6.QtGui import QFont, QAction
 from utils import FileReaderThread
 
 class CustomViewBox(pg.ViewBox):
@@ -46,6 +47,7 @@ class SpectrogramWindow(QMainWindow):
         
         self.active_drag_marker = None
         self.markers = []
+        self.time_duration = 1.0 # Default until data loads
         
         self.setup_ui()
         self.start_processing()
@@ -58,14 +60,115 @@ class SpectrogramWindow(QMainWindow):
         
         self.info_layout = QHBoxLayout()
         self.info_layout.setContentsMargins(10, 5, 10, 5)
-        help_label = QLabel(
-            "<b>Interactive Controls:</b> Left Click/Drag - Place & Move Time Marker"
-        )
+        
+        help_label = QLabel("<b>Interactive Controls:</b> Left Click/Drag - Place & Move Time Marker")
         self.info_layout.addWidget(help_label)
         self.layout.addLayout(self.info_layout)
         
         self.progress_bar = QProgressBar()
         self.layout.addWidget(self.progress_bar)
+
+        # Premium Marker Table Panel (Now Full Width below Progress Bar)
+        self.marker_frame = QFrame()
+        self.marker_frame.setStyleSheet("""
+            QFrame { 
+                background-color: #1e1e1e; 
+                border: 1px solid #444; 
+                border-radius: 6px; 
+                padding: 4px; 
+            }
+            QLabel { 
+                color: #DDD; 
+            }
+            QLineEdit {
+                background-color: #111;
+                color: #FFF;
+                border: 1px solid #555;
+                padding: 2px;
+                border-radius: 2px;
+            }
+        """)
+        self.marker_grid = QGridLayout(self.marker_frame)
+        self.marker_grid.setSpacing(8)
+        
+        # Table Headers (Columns)
+        self.marker_grid.addWidget(QLabel(""), 0, 0)
+        header_font = QFont("Inter", 9, QFont.Weight.Bold)
+        mono_font = QFont("Courier New", 10)
+        
+        col_headers = ["Marker 1", "Marker 2", "Delta (Δ)", "Center"]
+        for col, text in enumerate(col_headers):
+            h = QLabel(text)
+            h.setFont(header_font)
+            h.setStyleSheet("color: #AAA;")
+            h.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.marker_grid.addWidget(h, 0, col + 1)
+
+        # Row Labels
+        r1_label = QLabel("Time (sec)")
+        r2_label = QLabel("Samples")
+        r1_label.setFont(header_font)
+        r2_label.setFont(header_font)
+        self.marker_grid.addWidget(r1_label, 1, 0)
+        self.marker_grid.addWidget(r2_label, 2, 0)
+
+        # Edit Widgets
+        self.marker_widgets = []
+        for i in range(2):
+            sec_edit = QLineEdit()
+            sec_edit.setFixedWidth(150)
+            sec_edit.setFont(mono_font)
+            sec_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            sec_edit.setObjectName(f"m{i}_sec")
+            
+            sam_edit = QLineEdit()
+            sam_edit.setFixedWidth(150)
+            sam_edit.setFont(mono_font)
+            sam_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            sam_edit.setObjectName(f"m{i}_sam")
+            
+            sec_edit.returnPressed.connect(self.marker_edit_finished)
+            sam_edit.returnPressed.connect(self.marker_edit_finished)
+            
+            self.marker_grid.addWidget(sec_edit, 1, i + 1)
+            self.marker_grid.addWidget(sam_edit, 2, i + 1)
+            self.marker_widgets.append({'sec': sec_edit, 'sam': sam_edit})
+
+        # Delta Edits
+        self.delta_sec = QLineEdit()
+        self.delta_sec.setFixedWidth(150)
+        self.delta_sec.setFont(mono_font)
+        self.delta_sec.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.delta_sec.setObjectName("delta_sec")
+        self.delta_sec.returnPressed.connect(self.marker_edit_finished)
+        self.marker_grid.addWidget(self.delta_sec, 1, 3)
+
+        self.delta_sam = QLineEdit()
+        self.delta_sam.setFixedWidth(150)
+        self.delta_sam.setFont(mono_font)
+        self.delta_sam.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.delta_sam.setObjectName("delta_sam")
+        self.delta_sam.returnPressed.connect(self.marker_edit_finished)
+        self.marker_grid.addWidget(self.delta_sam, 2, 3)
+
+        # Center Edits
+        self.center_sec = QLineEdit()
+        self.center_sec.setFixedWidth(150)
+        self.center_sec.setFont(mono_font)
+        self.center_sec.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.center_sec.setObjectName("center_sec")
+        self.center_sec.returnPressed.connect(self.marker_edit_finished)
+        self.marker_grid.addWidget(self.center_sec, 1, 4)
+
+        self.center_sam = QLineEdit()
+        self.center_sam.setFixedWidth(150)
+        self.center_sam.setFont(mono_font)
+        self.center_sam.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.center_sam.setObjectName("center_sam")
+        self.center_sam.returnPressed.connect(self.marker_edit_finished)
+        self.marker_grid.addWidget(self.center_sam, 2, 4)
+
+        self.layout.addWidget(self.marker_frame)
         
         self.graphics_layout = pg.GraphicsLayoutWidget()
         self.layout.addWidget(self.graphics_layout)
@@ -153,7 +256,9 @@ class SpectrogramWindow(QMainWindow):
 
     def place_marker(self, scene_pos, drag_mode=False):
         if self.plot_item.sceneBoundingRect().contains(scene_pos):
-            mouse_pos = self.plot_item.vb.mapSceneToView(scene_pos)
+            mouse_v = self.plot_item.vb.mapSceneToView(scene_pos)
+            # Clamp to signal bounds
+            pos_x = float(np.clip(mouse_v.x(), 0, self.time_duration))
             
             # Remove old markers if we reach 2
             if len(self.markers) >= 2:
@@ -161,7 +266,7 @@ class SpectrogramWindow(QMainWindow):
                 self.plot_item.removeItem(old_marker)
                 
             marker = pg.InfiniteLine(
-                pos=mouse_pos.x(), 
+                pos=pos_x, 
                 angle=90, 
                 movable=False, # We handle movement via CustomViewBox
                 pen=pg.mkPen('r', width=2)
@@ -171,11 +276,105 @@ class SpectrogramWindow(QMainWindow):
             
             if drag_mode:
                 self.active_drag_marker = marker
+            
+            self.update_marker_info()
 
     def update_drag(self, scene_pos):
         if self.active_drag_marker and self.plot_item.sceneBoundingRect().contains(scene_pos):
-            mouse_pos = self.plot_item.vb.mapSceneToView(scene_pos)
-            self.active_drag_marker.setPos(mouse_pos.x())
+            mouse_v = self.plot_item.vb.mapSceneToView(scene_pos)
+            pos_x = float(np.clip(mouse_v.x(), 0, self.time_duration))
+            self.active_drag_marker.setPos(pos_x)
+            self.update_marker_info()
+
+    def update_marker_info(self):
+        sorted_markers = sorted(self.markers, key=lambda m: m.getXPos())
+        
+        # Reset all fields
+        for widgets in self.marker_widgets:
+            widgets['sec'].clear()
+            widgets['sam'].clear()
+        self.delta_sec.clear()
+        self.delta_sam.clear()
+        self.center_sec.clear()
+        self.center_sam.clear()
+
+        if not sorted_markers:
+            return
+
+        for i, marker in enumerate(sorted_markers):
+            t = marker.getXPos()
+            samples = int(t * self.rate)
+            
+            self.marker_widgets[i]['sec'].blockSignals(True)
+            self.marker_widgets[i]['sam'].blockSignals(True)
+            self.marker_widgets[i]['sec'].setText(f"{t:.6f}")
+            self.marker_widgets[i]['sam'].setText(f"{samples}")
+            self.marker_widgets[i]['sec'].blockSignals(False)
+            self.marker_widgets[i]['sam'].blockSignals(False)
+
+        if len(sorted_markers) == 2:
+            t1 = sorted_markers[0].getXPos()
+            t2 = sorted_markers[1].getXPos()
+            dt = abs(t2 - t1)
+            ds = int(dt * self.rate)
+            ct = (t1 + t2) / 2
+            cs = int(ct * self.rate)
+            
+            self.delta_sec.blockSignals(True)
+            self.delta_sam.blockSignals(True)
+            self.center_sec.blockSignals(True)
+            self.center_sam.blockSignals(True)
+            
+            self.delta_sec.setText(f"{dt:.6f}")
+            self.delta_sam.setText(f"{ds}")
+            self.center_sec.setText(f"{ct:.6f}")
+            self.center_sam.setText(f"{cs}")
+            
+            self.delta_sec.blockSignals(False)
+            self.delta_sam.blockSignals(False)
+            self.center_sec.blockSignals(False)
+            self.center_sam.blockSignals(False)
+
+    def marker_edit_finished(self):
+        sender = self.sender()
+        name = sender.objectName()
+        
+        try:
+            val = float(sender.text())
+            sorted_markers = sorted(self.markers, key=lambda m: m.getXPos())
+
+            if name.startswith('m') and len(sorted_markers) > int(name[1]):
+                idx = int(name[1])
+                unit = name[3:]
+                new_t = val / self.rate if unit == 'sam' else val
+                new_t = np.clip(new_t, 0, self.time_duration)
+                sorted_markers[idx].setPos(new_t)
+            
+            elif len(sorted_markers) == 2:
+                t1, t2 = sorted_markers[0].getXPos(), sorted_markers[1].getXPos()
+                dt = abs(t2 - t1)
+                ct = (t1 + t2) / 2
+                
+                if 'delta' in name:
+                    new_dt = val / self.rate if 'sam' in name else val
+                    # Clamp delta to total duration
+                    new_dt = np.clip(new_dt, 0, self.time_duration)
+                    # Recalculate based on current center
+                    m1_new = ct - new_dt/2
+                    m2_new = ct + new_dt/2
+                    # Final clamping to ensure logic doesn't push markers out
+                    sorted_markers[0].setPos(np.clip(m1_new, 0, self.time_duration))
+                    sorted_markers[1].setPos(np.clip(m2_new, 0, self.time_duration))
+                elif 'center' in name:
+                    new_ct = val / self.rate if 'sam' in name else val
+                    new_ct = np.clip(new_ct, 0, self.time_duration)
+                    # Shift markers keeping same distance
+                    sorted_markers[0].setPos(np.clip(new_ct - dt/2, 0, self.time_duration))
+                    sorted_markers[1].setPos(np.clip(new_ct + dt/2, 0, self.time_duration))
+            
+            self.update_marker_info()
+        except ValueError:
+            self.update_marker_info()
 
     @pyqtSlot(int, int)
     def update_progress(self, current, total):
