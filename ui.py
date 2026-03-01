@@ -1,6 +1,6 @@
 import pyqtgraph as pg
 import numpy as np
-from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QLabel, QHBoxLayout, QProgressBar, QLineEdit, QGridLayout, QFrame
+from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QLabel, QHBoxLayout, QProgressBar, QLineEdit, QGridLayout, QFrame, QCheckBox
 from PyQt6.QtCore import pyqtSlot, Qt, QRectF
 from PyQt6.QtGui import QFont, QAction
 from utils import FileReaderThread
@@ -168,6 +168,22 @@ class SpectrogramWindow(QMainWindow):
         self.center_sam.returnPressed.connect(self.marker_edit_finished)
         self.marker_grid.addWidget(self.center_sam, 2, 4)
 
+        # Lock Row
+        lock_label = QLabel("Lock State")
+        lock_label.setFont(header_font)
+        self.marker_grid.addWidget(lock_label, 3, 0)
+        
+        self.lock_delta_cb = QCheckBox("Lock Delta (Δ)")
+        self.lock_center_cb = QCheckBox("Lock Center")
+        self.lock_delta_cb.setStyleSheet("color: #DDD;")
+        self.lock_center_cb.setStyleSheet("color: #DDD;")
+        
+        self.lock_delta_cb.toggled.connect(lambda checked: self.handle_lock_change('delta', checked))
+        self.lock_center_cb.toggled.connect(lambda checked: self.handle_lock_change('center', checked))
+        
+        self.marker_grid.addWidget(self.lock_delta_cb, 3, 3)
+        self.marker_grid.addWidget(self.lock_center_cb, 3, 4)
+
         self.layout.addWidget(self.marker_frame)
         
         self.graphics_layout = pg.GraphicsLayoutWidget()
@@ -257,34 +273,98 @@ class SpectrogramWindow(QMainWindow):
     def place_marker(self, scene_pos, drag_mode=False):
         if self.plot_item.sceneBoundingRect().contains(scene_pos):
             mouse_v = self.plot_item.vb.mapSceneToView(scene_pos)
-            # Clamp to signal bounds
             pos_x = float(np.clip(mouse_v.x(), 0, self.time_duration))
             
-            # Remove old markers if we reach 2
-            if len(self.markers) >= 2:
-                old_marker = self.markers.pop(0)
-                self.plot_item.removeItem(old_marker)
+            # If we have 2 markers and a lock is active, move the nearest one instead of adding/replacing
+            if len(self.markers) == 2 and (self.lock_delta_cb.isChecked() or self.lock_center_cb.isChecked()):
+                m0_dist = abs(self.markers[0].getXPos() - pos_x)
+                m1_dist = abs(self.markers[1].getXPos() - pos_x)
                 
-            marker = pg.InfiniteLine(
-                pos=pos_x, 
-                angle=90, 
-                movable=False, # We handle movement via CustomViewBox
-                pen=pg.mkPen('r', width=2)
-            )
-            self.plot_item.addItem(marker, ignoreBounds=True)
-            self.markers.append(marker)
-            
-            if drag_mode:
-                self.active_drag_marker = marker
+                target = self.markers[0] if m0_dist < m1_dist else self.markers[1]
+                other = self.markers[1] if m0_dist < m1_dist else self.markers[0]
+                
+                old_x = target.getXPos()
+                shift = pos_x - old_x
+                
+                if self.lock_delta_cb.isChecked():
+                    other_new_x = other.getXPos() + shift
+                    if 0 <= other_new_x <= self.time_duration:
+                        target.setPos(pos_x)
+                        other.setPos(other_new_x)
+                elif self.lock_center_cb.isChecked():
+                    t1, t2 = self.markers[0].getXPos(), self.markers[1].getXPos()
+                    ct = (t1 + t2) / 2
+                    other_new_x = 2 * ct - pos_x
+                    if 0 <= other_new_x <= self.time_duration:
+                        target.setPos(pos_x)
+                        other.setPos(other_new_x)
+                
+                if drag_mode:
+                    self.active_drag_marker = target
+            else:
+                # Standard behavior: Add new or replace oldest
+                if len(self.markers) >= 2:
+                    old_marker = self.markers.pop(0)
+                    self.plot_item.removeItem(old_marker)
+                    
+                marker = pg.InfiniteLine(
+                    pos=pos_x, 
+                    angle=90, 
+                    movable=False,
+                    pen=pg.mkPen('r', width=2)
+                )
+                self.plot_item.addItem(marker, ignoreBounds=True)
+                self.markers.append(marker)
+                
+                if drag_mode:
+                    self.active_drag_marker = marker
             
             self.update_marker_info()
 
     def update_drag(self, scene_pos):
         if self.active_drag_marker and self.plot_item.sceneBoundingRect().contains(scene_pos):
             mouse_v = self.plot_item.vb.mapSceneToView(scene_pos)
-            pos_x = float(np.clip(mouse_v.x(), 0, self.time_duration))
-            self.active_drag_marker.setPos(pos_x)
+            new_x = float(np.clip(mouse_v.x(), 0, self.time_duration))
+            
+            # If locking is active, move the other marker relative to this one
+            if len(self.markers) == 2:
+                other_marker = self.markers[0] if self.markers[1] == self.active_drag_marker else self.markers[1]
+                old_x = self.active_drag_marker.getXPos()
+                shift = new_x - old_x
+                
+                if self.lock_delta_cb.isChecked():
+                    other_new_x = other_marker.getXPos() + shift
+                    # If other marker hits bounds, cap the movement of both
+                    if 0 <= other_new_x <= self.time_duration:
+                        self.active_drag_marker.setPos(new_x)
+                        other_marker.setPos(other_new_x)
+                elif self.lock_center_cb.isChecked():
+                    # Keep existing center
+                    t1, t2 = self.markers[0].getXPos(), self.markers[1].getXPos()
+                    ct = (t1 + t2) / 2
+                    other_new_x = 2 * ct - new_x
+                    if 0 <= other_new_x <= self.time_duration:
+                        self.active_drag_marker.setPos(new_x)
+                        other_marker.setPos(other_new_x)
+                else:
+                    self.active_drag_marker.setPos(new_x)
+            else:
+                self.active_drag_marker.setPos(new_x)
+                
             self.update_marker_info()
+
+    def handle_lock_change(self, lock_type, checked):
+        if not checked:
+            return
+            
+        if lock_type == 'delta':
+            self.lock_center_cb.blockSignals(True)
+            self.lock_center_cb.setChecked(False)
+            self.lock_center_cb.blockSignals(False)
+        else:
+            self.lock_delta_cb.blockSignals(True)
+            self.lock_delta_cb.setChecked(False)
+            self.lock_delta_cb.blockSignals(False)
 
     def update_marker_info(self):
         sorted_markers = sorted(self.markers, key=lambda m: m.getXPos())
@@ -348,7 +428,28 @@ class SpectrogramWindow(QMainWindow):
                 unit = name[3:]
                 new_t = val / self.rate if unit == 'sam' else val
                 new_t = np.clip(new_t, 0, self.time_duration)
-                sorted_markers[idx].setPos(new_t)
+                
+                if len(sorted_markers) == 2:
+                    other_idx = 1 - idx
+                    old_t = sorted_markers[idx].getXPos()
+                    shift = new_t - old_t
+                    
+                    if self.lock_delta_cb.isChecked():
+                        other_new_t = sorted_markers[other_idx].getXPos() + shift
+                        if 0 <= other_new_t <= self.time_duration:
+                            sorted_markers[idx].setPos(new_t)
+                            sorted_markers[other_idx].setPos(other_new_t)
+                    elif self.lock_center_cb.isChecked():
+                        t1, t2 = sorted_markers[0].getXPos(), sorted_markers[1].getXPos()
+                        ct = (t1 + t2) / 2
+                        other_new_t = 2 * ct - new_t
+                        if 0 <= other_new_t <= self.time_duration:
+                            sorted_markers[idx].setPos(new_t)
+                            sorted_markers[other_idx].setPos(other_new_t)
+                    else:
+                        sorted_markers[idx].setPos(new_t)
+                else:
+                    sorted_markers[idx].setPos(new_t)
             
             elif len(sorted_markers) == 2:
                 t1, t2 = sorted_markers[0].getXPos(), sorted_markers[1].getXPos()
