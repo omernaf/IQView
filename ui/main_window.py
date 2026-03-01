@@ -6,16 +6,18 @@ from PyQt6.QtCore import pyqtSlot, Qt
 from utils import FileReaderThread
 from .marker_panel import MarkerPanel
 from .spectrogram_view import SpectrogramView
+from .side_panel import SidePanel
 
 class SpectrogramWindow(QMainWindow):
     def __init__(self, file_path, data_type, sample_rate, center_freq, fft_size):
         super().__init__()
         self.setWindowTitle("Antigravity Spectrogram Viewer")
-        self.resize(1024, 768)
+        self.resize(1280, 800)
         
         self.fc = center_freq
         self.rate = sample_rate
         self.fft_size = fft_size
+        self.overlap_percent = 50.0
         self.file_path = file_path
         self.data_type = data_type
         
@@ -29,8 +31,22 @@ class SpectrogramWindow(QMainWindow):
     def setup_ui(self):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
-        self.layout = QVBoxLayout(self.central_widget)
+        
+        # Main Horizontal Layout
+        self.main_h_layout = QHBoxLayout(self.central_widget)
+        self.main_h_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_h_layout.setSpacing(0)
+        
+        # Sidebar
+        self.sidebar = SidePanel(self.rate, self.fc, self.fft_size)
+        self.sidebar.parametersChanged.connect(self.on_parameters_changed)
+        self.main_h_layout.addWidget(self.sidebar)
+        
+        # Right Side Vertical Layout
+        self.right_container = QWidget()
+        self.layout = QVBoxLayout(self.right_container)
         self.layout.setContentsMargins(0, 0, 0, 0)
+        self.main_h_layout.addWidget(self.right_container)
         
         self.info_layout = QHBoxLayout()
         self.info_layout.setContentsMargins(10, 5, 10, 5)
@@ -48,10 +64,48 @@ class SpectrogramWindow(QMainWindow):
         self.layout.addWidget(self.spectrogram_view)
 
     def start_processing(self):
-        self.worker = FileReaderThread(self.file_path, self.data_type, self.fft_size)
+        if hasattr(self, 'worker') and self.worker.isRunning():
+            self.worker.stop()
+            
+        self.progress_bar.setValue(0)
+        self.progress_bar.show()
+        
+        self.worker = FileReaderThread(self.file_path, self.data_type, self.fft_size, self.overlap_percent)
         self.worker.progress.connect(self.update_progress)
         self.worker.finished_processing.connect(self.display_spectrogram)
         self.worker.start()
+
+    def on_parameters_changed(self, params):
+        # Check if we need a full re-processing (DSP params changed)
+        needs_reprocess = (self.fft_size != params['fft_size'] or 
+                           self.overlap_percent != params['overlap_percent'])
+        
+        old_rate = self.rate
+        self.rate = params['fs']
+        self.fc = params['fc']
+        self.fft_size = params['fft_size']
+        self.overlap_percent = params['overlap_percent']
+        
+        if needs_reprocess:
+            self.start_processing()
+        else:
+            # Soft update: refresh labels and markers
+            if hasattr(self, 'full_spectrogram_cache'):
+                # Re-calculate duration based on new rate
+                num_time_steps = self.full_spectrogram_cache.shape[1]
+                step_size = self.fft_size * (1.0 - self.overlap_percent/100.0)
+                self.time_duration = (num_time_steps * step_size) / self.rate
+                
+                # Update markers to preserve sample position
+                for marker in self.markers:
+                    samples = marker.getXPos() * old_rate
+                    new_t = samples / self.rate
+                    marker.setPos(new_t)
+
+                self.spectrogram_view.update_spectrogram(
+                    self.full_spectrogram_cache, self.fc, self.rate, self.time_duration
+                )
+            self.update_marker_info()
 
     def place_marker(self, scene_pos, drag_mode=False):
         if self.spectrogram_view.plot_item.sceneBoundingRect().contains(scene_pos):
@@ -231,8 +285,13 @@ class SpectrogramWindow(QMainWindow):
     @pyqtSlot(np.ndarray)
     def display_spectrogram(self, full_spectrogram):
         self.progress_bar.hide()
+        self.full_spectrogram_cache = full_spectrogram
         num_time_steps = full_spectrogram.shape[1]
-        self.time_duration = (num_time_steps * self.fft_size) / self.rate
+        
+        # Calculate duration correctly based on step_size
+        step_size = self.fft_size * (1.0 - self.overlap_percent / 100.0)
+        self.time_duration = (num_time_steps * step_size) / self.rate
+        
         self.spectrogram_view.update_spectrogram(full_spectrogram, self.fc, self.rate, self.time_duration)
 
     def closeEvent(self, event):

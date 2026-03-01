@@ -6,11 +6,12 @@ from dsp import preprocess_chunk, postprocess_fft
 class FileReaderThread(QThread):
     """
     Worker thread that reads the entire IQ file, processes it via DSP module, and emits the static spectrogram.
+    Now supports overlapping windows.
     """
     progress = pyqtSignal(int, int)
     finished_processing = pyqtSignal(np.ndarray)
     
-    def __init__(self, filename, dtype, fft_size):
+    def __init__(self, filename, dtype, fft_size, overlap_percent=0.0):
         super().__init__()
         self.filename = filename
         self.dtype = dtype
@@ -18,25 +19,48 @@ class FileReaderThread(QThread):
         self.running = True
         self.window = np.hanning(fft_size).astype(np.float32)
         
-        file_size = os.path.getsize(self.filename)
-        item_size = np.dtype(self.dtype).itemsize
-        num_items = file_size // item_size
-        complex_samples = num_items // 2
-        self.num_rows = complex_samples // self.fft_size
+        # Calculate step size
+        self.step_size = int(fft_size * (1.0 - overlap_percent / 100.0))
+        self.step_size = max(1, self.step_size)
         
-        # Pre-allocate large buffer for the entire spectrogram
+        item_size = np.dtype(self.dtype).itemsize
+        file_size = os.path.getsize(self.filename)
+        num_items = file_size // item_size
+        self.complex_samples = num_items // 2
+        
+        # Calculate how many rows we will have
+        # (N - overlap) / step
+        if self.complex_samples > self.fft_size:
+            self.num_rows = (self.complex_samples - self.fft_size) // self.step_size + 1
+        else:
+            self.num_rows = 0
+            
+        # Limit rows for mega-files to avoid memory crash
+        max_rows = 100000 
+        if self.num_rows > max_rows:
+            self.num_rows = max_rows
+        
+        # Pre-allocate spectrogram
         self.spectrogram = np.zeros((self.num_rows, self.fft_size), dtype=np.float32)
         
     def run(self):
-        block_len = self.fft_size * 2
-        chunk_bytes = block_len * np.dtype(self.dtype).itemsize
+        if self.num_rows == 0:
+            self.finished_processing.emit(np.zeros((self.fft_size, 1), dtype=np.float32))
+            return
+
+        item_size = np.dtype(self.dtype).itemsize
+        chunk_read_size = self.fft_size * 2 # 2 because I/Q
         
         try:
             with open(self.filename, 'rb') as f:
                 row_idx = 0
                 while self.running and row_idx < self.num_rows:
-                    data_bytes = f.read(chunk_bytes)
-                    if not data_bytes or len(data_bytes) < chunk_bytes:
+                    # Current position for this row
+                    pos = row_idx * self.step_size * 2 * item_size
+                    f.seek(pos)
+                    
+                    data_bytes = f.read(chunk_read_size * item_size)
+                    if not data_bytes or len(data_bytes) < chunk_read_size * item_size:
                         break
                         
                     data_array = np.frombuffer(data_bytes, dtype=self.dtype)
@@ -47,13 +71,12 @@ class FileReaderThread(QThread):
                     self.spectrogram[row_idx, :] = db_array
                     row_idx += 1
                     
-                    # Periodically yield to UI and emit progress calculation
-                    if row_idx % 100 == 0:
+                    if row_idx % 200 == 0:
                         self.progress.emit(row_idx, self.num_rows)
+                        # Minimal sleep to keep UI responsive
                         QThread.msleep(1)
                 
                 if self.running:
-                    # Emit transposed spectrogram so Time is X and Freq is Y
                     self.finished_processing.emit(self.spectrogram[:row_idx, :].T)
                     
         except Exception as e:
