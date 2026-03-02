@@ -9,37 +9,46 @@ class FileReaderThread(QThread):
     Now supports overlapping windows.
     """
     progress = pyqtSignal(int, int)
-    finished_processing = pyqtSignal(np.ndarray)
+    finished_processing = pyqtSignal(np.ndarray, float)
     
-    def __init__(self, filename, dtype, fft_size, overlap_percent=0.0):
+    def __init__(self, filename, dtype, fft_size, overlap_percent, sample_rate):
         super().__init__()
         self.filename = filename
         self.dtype = dtype
         self.fft_size = fft_size
+        self.sample_rate = sample_rate
         self.running = True
         self.window = np.hanning(fft_size).astype(np.float32)
         
-        # Calculate step size
-        self.step_size = int(fft_size * (1.0 - overlap_percent / 100.0))
-        self.step_size = max(1, self.step_size)
+        # Calculate step size based on requested overlap
+        req_step_size = int(fft_size * (1.0 - overlap_percent / 100.0))
+        req_step_size = max(1, req_step_size)
         
         item_size = np.dtype(self.dtype).itemsize
         file_size = os.path.getsize(self.filename)
         num_items = file_size // item_size
         self.complex_samples = num_items // 2
         
-        # Calculate how many rows we will have
-        # (N - overlap) / step
+        # We want to cover the whole file. 
+        # Calculate how many rows would be needed with requested step_size
         if self.complex_samples > self.fft_size:
-            self.num_rows = (self.complex_samples - self.fft_size) // self.step_size + 1
+            requested_rows = (self.complex_samples - self.fft_size) // req_step_size + 1
         else:
-            self.num_rows = 0
+            requested_rows = 0
             
-        # Limit rows for mega-files to avoid memory crash
-        max_rows = 100000 
-        if self.num_rows > max_rows:
-            self.num_rows = max_rows
+        # Memory/Performance Cap: Limit to ~20,000 rows for the "Static" view
+        # If requested_rows exceeds this, we must increase step_size to cover the whole file
+        max_rows_limit = 20000 
         
+        if requested_rows > max_rows_limit and requested_rows > 0:
+            self.num_rows = max_rows_limit
+            # New step size to cover full file: (samples - fft_size) / (num_rows - 1)
+            self.step_size = int(np.ceil((self.complex_samples - self.fft_size) / (self.num_rows - 1)))
+            self.step_size = max(req_step_size, self.step_size)
+        else:
+            self.num_rows = requested_rows
+            self.step_size = req_step_size
+            
         # Pre-allocate spectrogram
         self.spectrogram = np.zeros((self.num_rows, self.fft_size), dtype=np.float32)
         
@@ -129,6 +138,12 @@ class FileReaderThread(QThread):
                     
                 total_time = time.time() - start_time
                 if self.running:
+                    actual_rows = row_idx
+                    total_duration = 0.0
+                    if actual_rows > 0:
+                        total_samples_processed = (actual_rows - 1) * self.step_size + self.fft_size
+                        total_duration = total_samples_processed / self.sample_rate
+                    
                     io_time = seek_time + read_time
                     other_time = total_time - (io_time + dsp_time + overhead_time)
                     print(f"\n" + "-"*30)
@@ -141,7 +156,7 @@ class FileReaderThread(QThread):
                     print(f" - UI/Overhead:   {overhead_time:.3f}s ({(overhead_time/total_time)*100:.1f}%)")
                     print(f" - Other/Python:  {other_time:.3f}s ({(other_time/total_time)*100:.1f}%)")
                     print("-"*30 + "\n")
-                    self.finished_processing.emit(self.spectrogram[:row_idx, :].T)
+                    self.finished_processing.emit(self.spectrogram[:actual_rows, :].T, total_duration)
                     
         except Exception as e:
             print(f"Error reading file {self.filename}: {e}")

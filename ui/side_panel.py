@@ -108,8 +108,10 @@ class SidePanel(QFrame):
         rbw = self.fs / self.fft_size
         self.rbw_edit.setText(f"{rbw:.2f}")
         
-        # dt = (FFT * (1 - overlap/100)) / Fs
-        dt = (self.fft_size * (1 - self.overlap_percent / 100.0)) / self.fs
+        # dt = step_size / Fs
+        step_size = int(self.fft_size * (1.0 - self.overlap_percent / 100.0))
+        step_size = max(1, step_size)
+        dt = step_size / self.fs
         self.dt_display.setText(f"{dt:.6f}")
 
     def on_rbw_edited(self):
