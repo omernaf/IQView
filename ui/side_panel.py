@@ -111,13 +111,24 @@ class SidePanel(QFrame):
     def update_derived_values(self):
         # RBW = Fs / FFT
         rbw = self.fs / self.fft_size
-        self.rbw_display.setText(f"{rbw:.2f}")
+        if rbw >= 1e6:
+            self.rbw_display.setText(f"{rbw/1e6:.2f} MHz")
+        elif rbw >= 1e3:
+            self.rbw_display.setText(f"{rbw/1e3:.2f} kHz")
+        else:
+            self.rbw_display.setText(f"{rbw:.2f} Hz")
         
         # dt = step_size / Fs
         step_size = int(self.fft_size * (1.0 - self.overlap_percent / 100.0))
         step_size = max(1, step_size)
         dt = step_size / self.fs
-        self.dt_display.setText(f"{dt:.6f}")
+        
+        if dt < 1e-3:
+            self.dt_display.setText(f"{dt*1e6:.2f} µs")
+        elif dt < 1:
+            self.dt_display.setText(f"{dt*1e3:.2f} ms")
+        else:
+            self.dt_display.setText(f"{dt:.6f} s")
 
     def on_fft_combo_changed(self):
         self.fft_size = int(self.fft_combo.currentText())

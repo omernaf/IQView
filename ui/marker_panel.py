@@ -167,8 +167,8 @@ class MarkerPanel(QFrame):
         self.row2_label = QLabel("Samples")
         self.row1_label.setObjectName("header_label")
         self.row2_label.setObjectName("header_label")
-        self.grid.addWidget(self.row1_label, 1, 0)
-        self.grid.addWidget(self.row2_label, 2, 0)
+        self.grid.addWidget(self.row1_label, 1, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.grid.addWidget(self.row2_label, 2, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         # Edit Widgets
         self.widgets = []

@@ -694,9 +694,10 @@ class SpectrogramWindow(QMainWindow):
 
     @pyqtSlot(np.ndarray, float)
     def display_spectrogram(self, full_spectrogram, duration):
-        # Hide progress bar by changing its chunk color to background
+        # Hide progress bar by making it transparent
         self.progress_bar.setValue(0)
-        self.progress_bar.setStyleSheet("QProgressBar { background-color: #1e1e1e; border: none; } QProgressBar::chunk { background-color: #1e1e1e; }")
+        self.progress_bar.setStyleSheet("QProgressBar { background-color: transparent; border: none; } QProgressBar::chunk { background-color: transparent; }")
+        
         self.full_spectrogram_cache = full_spectrogram
         self.time_duration = duration
         self.total_samples_in_cache = duration * self.rate
@@ -706,6 +707,7 @@ class SpectrogramWindow(QMainWindow):
             auto_range=self.is_first_load
         )
         self.is_first_load = False
+        self.update_marker_info()
 
     def closeEvent(self, event):
         if hasattr(self, 'worker'): self.worker.stop()
