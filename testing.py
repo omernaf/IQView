@@ -34,6 +34,11 @@ def generate_test_file(filename, sample_rate, duration):
     print(f"Created '{filename}' ({len(complex_data) * 8 / 1024 / 1024:.2f} MB).")
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--profile', action='store_true', help='Run with profiler enabled')
+    args, unknown = parser.parse_known_args()
+
     filename = "temp1.32fc"
     sample_rate = 2e6  # 2 MHz
     duration = 10.0    # 10 seconds of simulated RF recording
@@ -44,11 +49,14 @@ def main():
     cmd = [
         sys.executable, "main.py",
         "-f", filename,
-        "-t", "complex64", # Utilizing the explicit complex64 mapping we added previously
+        "-t", "complex64",
         "-r", str(sample_rate),
-        "-c", "100000000", # Example: 100 MHz target center
+        "-c", "100e6",
         "-s", "1024"
     ]
+    
+    if args.profile:
+        cmd.append("--profile")
     
     try:
         # Run the main Antigravity app natively

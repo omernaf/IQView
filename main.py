@@ -12,6 +12,7 @@ def parse_args():
     parser.add_argument('-r', '--rate', type=float, default=1e6, help='Sample rate in Hz')
     parser.add_argument('-c', '--fc', type=float, default=0.0, help='Center frequency in Hz')
     parser.add_argument('-s', '--fft', type=int, default=1024, help='FFT bin size')
+    parser.add_argument('--profile', action='store_true', help='Enable cProfile profiling')
     return parser.parse_args()
 
 def main():
@@ -40,7 +41,35 @@ def main():
     app = QApplication(sys.argv)
     window = SpectrogramWindow(args.file, dtype, args.rate, args.fc, args.fft)
     window.show()
-    sys.exit(app.exec())
+    
+    if args.profile:
+        import cProfile
+        import pstats
+        import io
+        
+        print("\n" + "="*40)
+        print("PROFILING ENABLED")
+        print("="*40 + "\n")
+        
+        pr = cProfile.Profile()
+        pr.enable()
+        
+        exit_code = app.exec()
+        
+        pr.disable()
+        s = io.StringIO()
+        sortby = 'cumulative' # 'time', 'cumulative'
+        ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+        ps.print_stats(30) # Top 30 calls
+        print(s.getvalue())
+        
+        # Also save to disk for further analysis
+        pr.dump_stats("profile_results.prof")
+        print(f"Detailed profile saved to 'profile_results.prof'")
+        
+        sys.exit(exit_code)
+    else:
+        sys.exit(app.exec())
 
 if __name__ == '__main__':
     main()
