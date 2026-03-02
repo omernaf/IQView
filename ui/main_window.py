@@ -22,10 +22,11 @@ class SpectrogramWindow(QMainWindow):
         self.data_type = data_type
         self.profile_enabled = profile_enabled
         
-        self.active_drag_marker = None
         self.markers = []
         self.time_duration = 1.0 # Default until data loads
         self.zoom_mode = False
+        self.is_first_load = True
+        self.zoom_history = []
         
         self.setup_ui()
         self.start_processing()
@@ -111,7 +112,7 @@ class SpectrogramWindow(QMainWindow):
                     marker.setPos(new_t)
 
                     self.spectrogram_view.update_spectrogram(
-                        self.full_spectrogram_cache, self.fc, self.rate, self.time_duration
+                        self.full_spectrogram_cache, self.fc, self.rate, self.time_duration, auto_range=False
                     )
             self.update_marker_info()
 
@@ -124,6 +125,8 @@ class SpectrogramWindow(QMainWindow):
             self.spectrogram_view.setCursor(Qt.CursorShape.ArrowCursor)
 
     def reset_zoom(self):
+        # Save current range before resetting
+        self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
         self.spectrogram_view.plot_item.autoRange()
 
     def handle_zoom_rectangle(self, rect, zoom_type='BOTH'):
@@ -131,6 +134,9 @@ class SpectrogramWindow(QMainWindow):
         rect is QRectF in view coordinates.
         zoom_type: 'BOTH', 'X_ONLY', or 'Y_ONLY'
         """
+        # Save current range before zooming
+        self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
+        
         # Avoid zero-size or invalid zoom
         if rect.width() <= 0 and zoom_type != 'Y_ONLY': return
         if rect.height() <= 0 and zoom_type != 'X_ONLY': return
@@ -326,8 +332,23 @@ class SpectrogramWindow(QMainWindow):
         self.full_spectrogram_cache = full_spectrogram
         self.time_duration = duration
         
-        self.spectrogram_view.update_spectrogram(full_spectrogram, self.fc, self.rate, self.time_duration)
+        self.spectrogram_view.update_spectrogram(
+            full_spectrogram, self.fc, self.rate, self.time_duration, 
+            auto_range=self.is_first_load
+        )
+        self.is_first_load = False
 
     def closeEvent(self, event):
         if hasattr(self, 'worker'): self.worker.stop()
         event.accept()
+
+    def keyPressEvent(self, event):
+        if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Z:
+            self.undo_zoom()
+        else:
+            super().keyPressEvent(event)
+
+    def undo_zoom(self):
+        if self.zoom_history:
+            prev_rect = self.zoom_history.pop()
+            self.spectrogram_view.plot_item.setRange(rect=prev_rect, padding=0)

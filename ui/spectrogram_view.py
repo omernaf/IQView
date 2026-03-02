@@ -72,14 +72,15 @@ class SpectrogramView(pg.GraphicsLayoutWidget):
         menu.exec(ev.screenPos().toPoint())
         ev.accept()
         
-    def update_spectrogram(self, full_spectrogram, fc, rate, time_duration):
+    def update_spectrogram(self, full_spectrogram, fc, rate, time_duration, auto_range=True):
         min_v = float(np.min(full_spectrogram))
         max_v = float(np.max(full_spectrogram))
         
         self.img.setImage(full_spectrogram, autoLevels=False, levels=[min_v, max_v], autoDownsample=True)
         self.img.setRect(QRectF(0, fc - rate/2, time_duration, rate))
         
-        self.plot_item.autoRange()
+        if auto_range:
+            self.plot_item.autoRange()
         
         self.hist.vb.setMouseEnabled(x=False, y=False)
         self.hist.vb.disableAutoRange()
