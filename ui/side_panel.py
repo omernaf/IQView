@@ -11,7 +11,8 @@ class SidePanel(QFrame):
         self.fs = fs
         self.fc = fc
         self.fft_size = fft_size
-        self.overlap_percent = 50.0 # Default
+        self.window_type = "Hanning"
+        self.overlap_percent = 99.0 # Default
         
         self.setup_ui()
         self.update_derived_values()
@@ -70,11 +71,11 @@ class SidePanel(QFrame):
         self.fc_edit.returnPressed.connect(self.on_edit_finished)
         self.layout.addWidget(self.fc_edit)
 
-        # RBW
-        self.layout.addWidget(QLabel("RBW (Hz) - Resolution BW"))
-        self.rbw_edit = QLineEdit()
-        self.rbw_edit.returnPressed.connect(self.on_rbw_edited)
-        self.layout.addWidget(self.rbw_edit)
+        # Overlap
+        self.layout.addWidget(QLabel("Overlap (%)"))
+        self.overlap_edit = QLineEdit(str(self.overlap_percent))
+        self.overlap_edit.returnPressed.connect(self.on_overlap_edited)
+        self.layout.addWidget(self.overlap_edit)
 
         # FFT Size (ComboBox)
         self.layout.addWidget(QLabel("FFT Size (bins)"))
@@ -90,11 +91,13 @@ class SidePanel(QFrame):
         self.fft_combo.currentIndexChanged.connect(self.on_fft_combo_changed)
         self.layout.addWidget(self.fft_combo)
 
-        # Overlap
-        self.layout.addWidget(QLabel("Overlap (%)"))
-        self.overlap_edit = QLineEdit(str(self.overlap_percent))
-        self.overlap_edit.returnPressed.connect(self.on_overlap_edited)
-        self.layout.addWidget(self.overlap_edit)
+        # Window Type
+        self.window_type_combo = QComboBox()
+        self.window_type_combo.addItems(["Hanning", "Hamming", "Blackman", "Bartlett", "Rectangular"])
+        self.window_type_combo.setCurrentText(self.window_type)
+        self.window_type_combo.currentIndexChanged.connect(self.on_window_type_changed)
+        self.layout.addWidget(QLabel("Window Type"))
+        self.layout.addWidget(self.window_type_combo)
 
         # Time Resolution (dt)
         self.layout.addWidget(QLabel("Time Resolution (dt) [s]"))
@@ -103,10 +106,17 @@ class SidePanel(QFrame):
         self.dt_display.setStyleSheet("color: #888; background-color: #0c0c0c;")
         self.layout.addWidget(self.dt_display)
 
+        # RBW (Resolution BW) - Read Only
+        self.layout.addWidget(QLabel("RBW (Hz) - Resolution BW"))
+        self.rbw_display = QLineEdit()
+        self.rbw_display.setReadOnly(True)
+        self.rbw_display.setStyleSheet("color: #888; background-color: #0c0c0c;")
+        self.layout.addWidget(self.rbw_display)
+
     def update_derived_values(self):
         # RBW = Fs / FFT
         rbw = self.fs / self.fft_size
-        self.rbw_edit.setText(f"{rbw:.2f}")
+        self.rbw_display.setText(f"{rbw:.2f}")
         
         # dt = step_size / Fs
         step_size = int(self.fft_size * (1.0 - self.overlap_percent / 100.0))
@@ -114,31 +124,14 @@ class SidePanel(QFrame):
         dt = step_size / self.fs
         self.dt_display.setText(f"{dt:.6f}")
 
-    def on_rbw_edited(self):
-        try:
-            target_rbw = float(self.rbw_edit.text())
-            if target_rbw <= 0: return
-            
-            # Find nearest power of 2 fft size
-            raw_fft = self.fs / target_rbw
-            self.fft_size = int(2**round(np.log2(raw_fft)))
-            self.fft_size = max(32, min(self.fft_size, 65536))
-            
-            # Update combo index
-            idx = self.fft_combo.findText(str(self.fft_size))
-            if idx >= 0:
-                self.fft_combo.blockSignals(True)
-                self.fft_combo.setCurrentIndex(idx)
-                self.fft_combo.blockSignals(False)
-            
-            self.on_edit_finished()
-        except ValueError:
-            self.update_derived_values()
-
     def on_fft_combo_changed(self):
         self.fft_size = int(self.fft_combo.currentText())
         self.on_edit_finished()
 
+    def on_window_type_changed(self):
+        self.window_type = self.window_type_combo.currentText()
+        self.on_edit_finished()
+        
     def on_overlap_edited(self):
         try:
             self.overlap_percent = np.clip(float(self.overlap_edit.text()), 0, 99.9)
@@ -159,6 +152,7 @@ class SidePanel(QFrame):
                 'fs': self.fs,
                 'fc': self.fc,
                 'fft_size': self.fft_size,
+                'window_type': self.window_type,
                 'overlap_percent': self.overlap_percent
             }
             self.parametersChanged.emit(params)
