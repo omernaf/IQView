@@ -77,36 +77,40 @@ class MarkerPanel(QFrame):
         self.mode_btn_layout.setSpacing(6)
         self.main_layout.addLayout(self.mode_btn_layout, 0)
 
-        # Buttons mapping
-        btns_config = [
-            ('time', "║", "Time Markers (Double-click to clear)", 0, 0),
-            ('freq', "〓", "Frequency Markers (Double-click to clear)", 1, 0),
-            ('zoom', "🔍", "Zoom Mode (Rubberband)", 0, 1),
-            ('move', "✥", "Free Move Mode (Pan)", 1, 1),
-            ('home', "🏠", "Reset Zoom (Home)", 0, 2)
-        ]
+        # 1. Time (Top-Left)
+        self.btn_marker_time = DoubleClickButton("〓")
+        self.btn_marker_time.setObjectName("mode_btn")
+        self.btn_marker_time.setToolTip("Time Markers (Double-click to clear)")
+        self.btn_marker_time.setCheckable(True)
+        self.mode_btn_layout.addWidget(self.btn_marker_time, 0, 0)
+        
+        # 2. Freq (Bottom-Left)
+        self.btn_marker_freq = DoubleClickButton("║")
+        self.btn_marker_freq.setObjectName("mode_btn")
+        self.btn_marker_freq.setToolTip("Frequency Markers (Double-click to clear)")
+        self.btn_marker_freq.setCheckable(True)
+        self.mode_btn_layout.addWidget(self.btn_marker_freq, 1, 0)
+        
+        # 3. Zoom
+        self.btn_zoom = QPushButton("🔍")
+        self.btn_zoom.setObjectName("mode_btn")
+        self.btn_zoom.setToolTip("Zoom Mode (Rubberband)")
+        self.btn_zoom.setCheckable(True)
+        self.mode_btn_layout.addWidget(self.btn_zoom, 0, 1)
+        
+        # 4. Move
+        self.btn_move = QPushButton("✥")
+        self.btn_move.setObjectName("mode_btn")
+        self.btn_move.setToolTip("Free Move Mode (Pan)")
+        self.btn_move.setCheckable(True)
+        self.mode_btn_layout.addWidget(self.btn_move, 1, 1)
+        
+        # 5. Home
+        self.btn_home = QPushButton("🏠")
+        self.btn_home.setObjectName("mode_btn")
+        self.btn_home.setToolTip("Reset Zoom (Home)")
+        self.mode_btn_layout.addWidget(self.btn_home, 0, 2)
 
-        self.btn_marker_time = None
-        self.btn_marker_freq = None
-        self.btn_zoom = None
-        self.btn_move = None
-        self.btn_home = None
-
-        for name, icon, tip, r, c in btns_config:
-            if name in ['time', 'freq']:
-                btn = DoubleClickButton(icon)
-            else:
-                btn = QPushButton(icon)
-            
-            btn.setObjectName("mode_btn")
-            btn.setToolTip(tip)
-            if name != 'home':
-                btn.setCheckable(True)
-            
-            self.mode_btn_layout.addWidget(btn, r, c)
-            setattr(self, f"btn_{'marker_' if name in ['time', 'freq'] else ''}{name}", btn)
-
-        self.btn_marker_time.setChecked(True)
         self.btn_home.clicked.connect(self.resetZoomRequested.emit)
         
         # Mutual Exclusion Group
@@ -198,6 +202,10 @@ class MarkerPanel(QFrame):
         # Connect locks to parent
         self.btn_lock_delta.toggled.connect(self.on_lock_delta_toggled)
         self.btn_lock_center.toggled.connect(self.on_lock_center_toggled)
+        
+        # Explicit Default Force
+        self.btn_marker_time.setChecked(True)
+        self.interactionModeChanged.emit('TIME')
 
     def on_lock_delta_toggled(self, checked):
         self.lock_states[self.current_mode]['delta'] = checked
@@ -216,11 +224,27 @@ class MarkerPanel(QFrame):
         self.parent_window.handle_lock_change('center', checked)
 
     def update_headers(self, mode):
+        # Force exclusion sync
+        self.btn_marker_time.blockSignals(True)
+        self.btn_marker_freq.blockSignals(True)
+        self.btn_zoom.blockSignals(True)
+        self.btn_move.blockSignals(True)
+        
+        self.btn_marker_time.setChecked(mode == 'TIME')
+        self.btn_marker_freq.setChecked(mode == 'FREQ')
+        self.btn_zoom.setChecked(mode == 'ZOOM')
+        self.btn_move.setChecked(mode == 'MOVE')
+        
+        self.btn_marker_time.blockSignals(False)
+        self.btn_marker_freq.blockSignals(False)
+        self.btn_zoom.blockSignals(False)
+        self.btn_move.blockSignals(False)
+
         self.current_mode = mode
         if mode == 'FREQ':
             self.row1_label.setText("Freq (Hz)")
             self.row2_label.setText("Bin")
-        else:
+        elif mode == 'TIME':
             self.row1_label.setText("Time (sec)")
             self.row2_label.setText("Samples")
             

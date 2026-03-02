@@ -13,13 +13,14 @@ class SpectrogramView(QWidget):
         self.parent_window = parent_window
         
         self.layout = QGridLayout(self)
-        self.layout.setContentsMargins(0, 0, 10, 0) # Added right padding to avoid clipping at the edge
+        self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(0)
         self.setStyleSheet("background-color: #121212;")
         
         # Internal Graphics Layout for Plot
         self.glw_plot = pg.GraphicsLayoutWidget()
         self.glw_plot.setBackground('#121212')
+        self.glw_plot.setContentsMargins(0, 0, 0, 0)
         self.layout.addWidget(self.glw_plot, 0, 1)
         
         # Scrollbars
@@ -36,7 +37,7 @@ class SpectrogramView(QWidget):
             QScrollBar::handle:horizontal {
                 background: #3d3d3d;
                 min-width: 40px;
-                border_radius: 4px;
+                border-radius: 4px;
                 margin: 0px;
             }
             QScrollBar::handle:horizontal:hover {
@@ -52,7 +53,7 @@ class SpectrogramView(QWidget):
             QScrollBar::handle:vertical {
                 background: #3d3d3d;
                 min-height: 40px;
-                border_radius: 4px;
+                border-radius: 4px;
                 margin: 0px;
             }
             QScrollBar::handle:vertical:hover {
@@ -126,16 +127,19 @@ class SpectrogramView(QWidget):
         from .widgets import CustomViewBox
         self.view_box = CustomViewBox(ui_controller=parent_window)
         self.plot_item = self.glw_plot.addPlot(viewBox=self.view_box)
+        self.plot_item.setContentsMargins(0, 0, 0, 0)
+        self.plot_item.getViewBox().setDefaultPadding(0)
         
         # Modern Plot Styling
-        self.plot_item.showGrid(x=True, y=True, alpha=0.1)
-        self.plot_item.setLabel('bottom', "Time", units='s')
-        self.plot_item.setLabel('left', "Frequency", units='Hz')
+        self.plot_item.showGrid(x=False, y=False)
+        self.plot_item.setLabel('bottom', "Frequency", units='Hz')
+        self.plot_item.setLabel('left', "Time", units='s')
         
         self.plot_item.setMouseEnabled(x=False, y=False)
         self.plot_item.hideButtons()
         
         self.img = pg.ImageItem()
+        self.img.setZValue(-100) # Ensure image is always behind markers and grid
         self.plot_item.addItem(self.img)
         
         # Initialize Colormap
@@ -279,7 +283,7 @@ class SpectrogramView(QWidget):
             self.level_region.setRegion([min_v, max_v])
         
         self.img.setImage(full_spectrogram, autoLevels=False, levels=levels, autoDownsample=True)
-        self.img.setRect(QRectF(0, fc - rate/2, time_duration, rate))
+        self.img.setRect(QRectF(fc - rate/2, 0, rate, time_duration))
         
         self.full_t_range = (0, time_duration)
         self.full_f_range = (fc - rate/2, fc + rate/2)
@@ -287,11 +291,10 @@ class SpectrogramView(QWidget):
         if auto_range:
             self.plot_item.autoRange()
 
-        # Update Envelopes
-        # full_spectrogram shape: (Time, Freq)
-        # We want statistics across Time (axis 0)
-        min_env = np.min(full_spectrogram, axis=0)
-        max_env = np.max(full_spectrogram, axis=0)
+        # full_spectrogram shape: (Freq, Time)
+        # We want statistics across Time (axis 1)
+        min_env = np.min(full_spectrogram, axis=1)
+        max_env = np.max(full_spectrogram, axis=1)
         
         freqs = np.linspace(fc - rate/2, fc + rate/2, len(min_env))
         

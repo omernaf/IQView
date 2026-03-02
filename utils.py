@@ -183,7 +183,7 @@ class FileReaderThread(QThread):
                         print(f" - Other/Python:  {other_time:.3f}s ({(other_time/total_time)*100:.1f}%)")
                         print("-"*30 + "\n")
                     
-                    self.finished_processing.emit(self.spectrogram[:actual_rows, :], total_duration)
+                    self.finished_processing.emit(self.spectrogram[:actual_rows, :].T, total_duration)
                     
         except Exception as e:
             print(f"Error reading file {self.filename}: {e}")

@@ -1,7 +1,7 @@
 import pyqtgraph as pg
 import numpy as np
 from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QLabel, QHBoxLayout, QProgressBar
-from PyQt6.QtCore import pyqtSlot, Qt
+from PyQt6.QtCore import pyqtSlot, Qt, QTimer
 
 from utils import FileReaderThread
 from .marker_panel import MarkerPanel
@@ -159,6 +159,12 @@ class SpectrogramWindow(QMainWindow):
         
         self.spectrogram_view = SpectrogramView(self)
         self.v_layout.addWidget(self.spectrogram_view)
+        
+        # 1. Immediate internal sync
+        self.set_interaction_mode('TIME')
+        
+        # 2. Delayed UI sync (Wait for event loop to start and QButtonGroup to stabilize)
+        QTimer.singleShot(250, lambda: self.set_interaction_mode('TIME'))
 
     def start_processing(self):
         if hasattr(self, 'worker') and self.worker.isRunning():
@@ -221,7 +227,7 @@ class SpectrogramWindow(QMainWindow):
 
                 # 4. Update time markers to preserve sample position
                 for marker in self.markers_time:
-                    samples = marker.getXPos() * old_rate
+                    samples = marker.getYPos() * old_rate # Time is Y coordinate
                     new_t = samples / self.rate
                     marker.setPos(new_t)
 
@@ -280,15 +286,15 @@ class SpectrogramWindow(QMainWindow):
             # Save current range before zooming
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             
-            get_pos = lambda m: m.getYPos() if is_freq else m.getXPos()
+            get_pos = lambda m: m.getXPos() if is_freq else m.getYPos()
             v1 = get_pos(active_markers[0])
             v2 = get_pos(active_markers[1])
             v_min, v_max = min(v1, v2), max(v1, v2)
             
             if is_freq:
-                self.spectrogram_view.plot_item.setYRange(v_min, v_max, padding=0)
-            else:
                 self.spectrogram_view.plot_item.setXRange(v_min, v_max, padding=0)
+            else:
+                self.spectrogram_view.plot_item.setYRange(v_min, v_max, padding=0)
 
     def toggle_grid(self, axis, enabled):
         if axis == 'TIME':
@@ -329,13 +335,13 @@ class SpectrogramWindow(QMainWindow):
         if len(active_markers) != 2:
             return
 
-        get_pos = lambda m: m.getYPos() if is_freq else m.getXPos()
+        get_pos = lambda m: m.getXPos() if is_freq else m.getYPos()
         p1 = get_pos(active_markers[0])
         p2 = get_pos(active_markers[1])
         delta = abs(p2 - p1)
         if delta <= 0: return
 
-        angle = 0 if is_freq else 90
+        angle = 90 if is_freq else 0 # Swapped angle logic
         f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
         v_min = f_min if is_freq else 0
         v_max = f_max if is_freq else self.time_duration
@@ -367,15 +373,14 @@ class SpectrogramWindow(QMainWindow):
             # Determine active markers and bounds based on mode
             if self.interaction_mode == 'TIME':
                 active_markers = self.markers_time
-                val = float(np.clip(mouse_v.x(), 0, self.time_duration))
+                val = float(np.clip(mouse_v.y(), 0, self.time_duration))
                 max_bound = self.time_duration
-                angle = 90
+                angle = 0 # Horizontal line for constant Time (Y)
             elif self.interaction_mode == 'FREQ':
                 active_markers = self.markers_freq
                 f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
-                val = float(np.clip(mouse_v.y(), f_min, f_max))
-                # For freq, constraints are min/max frequency
-                angle = 0 # Horizontal
+                val = float(np.clip(mouse_v.x(), f_min, f_max))
+                angle = 90 # Vertical line for constant Frequency (X)
             else:
                 return # Should not happen in place_marker
 
@@ -395,11 +400,11 @@ class SpectrogramWindow(QMainWindow):
                 # Check bounds for BOTH markers
                 if self.interaction_mode == 'TIME':
                     new_target_p = val
-                    new_other_p = other.getXPos() + shift
+                    new_other_p = other.getYPos() + shift # Time is Y
                     in_bounds = (0 <= new_target_p <= self.time_duration and 0 <= new_other_p <= self.time_duration)
                 else:
                     new_target_p = val
-                    new_other_p = other.getYPos() + shift
+                    new_other_p = other.getXPos() + shift # Freq is X
                     in_bounds = (f_min <= new_target_p <= f_max and f_min <= new_other_p <= f_max)
 
                 if self.marker_panel.btn_lock_delta.isChecked():
@@ -493,13 +498,13 @@ class SpectrogramWindow(QMainWindow):
             active_markers = self.markers_time if is_time else self.markers_freq
             
             if is_time:
-                new_v = float(np.clip(mouse_v.x(), 0, self.time_duration))
-                get_pos = lambda m: m.getXPos()
+                new_v = float(np.clip(mouse_v.y(), 0, self.time_duration))
+                get_pos = lambda m: m.getYPos() # Time is Y
                 f_min, f_max = 0, self.time_duration
             else:
                 f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
-                new_v = float(np.clip(mouse_v.y(), f_min, f_max))
-                get_pos = lambda m: m.getYPos()
+                new_v = float(np.clip(mouse_v.x(), f_min, f_max))
+                get_pos = lambda m: m.getXPos() # Freq is X
 
             if len(active_markers) == 2:
                 other_marker = active_markers[0] if active_markers[1] == self.active_drag_marker else active_markers[1]
@@ -549,7 +554,7 @@ class SpectrogramWindow(QMainWindow):
         # Choose active markers based on mode
         is_freq = (self.interaction_mode == 'FREQ')
         active_markers = self.markers_freq if is_freq else self.markers_time
-        get_pos = lambda m: m.getYPos() if is_freq else m.getXPos()
+        get_pos = lambda m: m.getXPos() if is_freq else m.getYPos()
         
         sorted_markers = sorted(active_markers, key=get_pos)
         for widgets in self.marker_panel.widgets:
@@ -619,7 +624,7 @@ class SpectrogramWindow(QMainWindow):
         name = sender.objectName()
         is_freq = (self.interaction_mode == 'FREQ')
         active_markers = self.markers_freq if is_freq else self.markers_time
-        get_pos = lambda m: m.getYPos() if is_freq else m.getXPos()
+        get_pos = lambda m: m.getXPos() if is_freq else m.getYPos()
         
         try:
             val = float(sender.text())
