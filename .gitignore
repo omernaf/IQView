@@ -2,3 +2,7 @@
 venv/*
 __pycache__/*
 *.pyc
+# Profiler artifacts
+profiler/*.txt
+profiler/*.prof
+profile_results.prof

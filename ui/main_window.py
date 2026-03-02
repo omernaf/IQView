@@ -9,7 +9,7 @@ from .spectrogram_view import SpectrogramView
 from .side_panel import SidePanel
 
 class SpectrogramWindow(QMainWindow):
-    def __init__(self, file_path, data_type, sample_rate, center_freq, fft_size):
+    def __init__(self, file_path, data_type, sample_rate, center_freq, fft_size, profile_enabled=False):
         super().__init__()
         self.setWindowTitle("Antigravity Spectrogram Viewer")
         self.resize(1280, 800)
@@ -20,6 +20,7 @@ class SpectrogramWindow(QMainWindow):
         self.overlap_percent = 50.0
         self.file_path = file_path
         self.data_type = data_type
+        self.profile_enabled = profile_enabled
         
         self.active_drag_marker = None
         self.markers = []
@@ -70,7 +71,7 @@ class SpectrogramWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.progress_bar.show()
         
-        self.worker = FileReaderThread(self.file_path, self.data_type, self.fft_size, self.overlap_percent)
+        self.worker = FileReaderThread(self.file_path, self.data_type, self.fft_size, self.overlap_percent, self.rate, self.profile_enabled)
         self.worker.progress.connect(self.update_progress)
         self.worker.finished_processing.connect(self.display_spectrogram)
         self.worker.start()
@@ -92,9 +93,13 @@ class SpectrogramWindow(QMainWindow):
             # Soft update: refresh labels and markers
             if hasattr(self, 'full_spectrogram_cache'):
                 # Re-calculate duration based on new rate
+                # We use the same precise logic: (samples) / rate
                 num_time_steps = self.full_spectrogram_cache.shape[1]
-                step_size = self.fft_size * (1.0 - self.overlap_percent/100.0)
-                self.time_duration = (num_time_steps * step_size) / self.rate
+                step_size = int(self.fft_size * (1.0 - self.overlap_percent / 100.0))
+                step_size = max(1, step_size)
+                
+                total_samples = (num_time_steps - 1) * step_size + self.fft_size
+                self.time_duration = total_samples / self.rate
                 
                 # Update markers to preserve sample position
                 for marker in self.markers:
@@ -282,15 +287,11 @@ class SpectrogramWindow(QMainWindow):
         self.progress_bar.setMaximum(total)
         self.progress_bar.setValue(current)
 
-    @pyqtSlot(np.ndarray)
-    def display_spectrogram(self, full_spectrogram):
+    @pyqtSlot(np.ndarray, float)
+    def display_spectrogram(self, full_spectrogram, duration):
         self.progress_bar.hide()
         self.full_spectrogram_cache = full_spectrogram
-        num_time_steps = full_spectrogram.shape[1]
-        
-        # Calculate duration correctly based on step_size
-        step_size = self.fft_size * (1.0 - self.overlap_percent / 100.0)
-        self.time_duration = (num_time_steps * step_size) / self.rate
+        self.time_duration = duration
         
         self.spectrogram_view.update_spectrogram(full_spectrogram, self.fc, self.rate, self.time_duration)
 
