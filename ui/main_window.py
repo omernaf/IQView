@@ -81,6 +81,7 @@ class SpectrogramWindow(QMainWindow):
         self.marker_panel = MarkerPanel(self)
         self.marker_panel.interactionModeChanged.connect(self.set_interaction_mode)
         self.marker_panel.resetZoomRequested.connect(self.reset_zoom)
+        self.marker_panel.markerClearRequested.connect(self.handle_marker_clear)
         self.layout.addWidget(self.marker_panel)
         
         self.spectrogram_view = SpectrogramView(self)
@@ -305,7 +306,7 @@ class SpectrogramWindow(QMainWindow):
             else:
                 return # Should not happen in place_marker
 
-            if len(active_markers) == 2 and (self.marker_panel.lock_delta_cb.isChecked() or self.marker_panel.lock_center_cb.isChecked()):
+            if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
                 m0_pos = active_markers[0].getXPos() if angle == 90 else active_markers[0].getYPos()
                 m1_pos = active_markers[1].getXPos() if angle == 90 else active_markers[1].getYPos()
                 
@@ -328,11 +329,11 @@ class SpectrogramWindow(QMainWindow):
                     new_other_p = other.getYPos() + shift
                     in_bounds = (f_min <= new_target_p <= f_max and f_min <= new_other_p <= f_max)
 
-                if self.marker_panel.lock_delta_cb.isChecked():
+                if self.marker_panel.btn_lock_delta.isChecked():
                     if in_bounds:
                         target.setPos(new_target_p)
                         other.setPos(new_other_p)
-                elif self.marker_panel.lock_center_cb.isChecked():
+                elif self.marker_panel.btn_lock_center.isChecked():
                     # Handle lock center specifically if needed, but for now simple shift logic suffices for placement
                     pass
                 
@@ -432,12 +433,12 @@ class SpectrogramWindow(QMainWindow):
                 old_v = get_pos(self.active_drag_marker)
                 shift = new_v - old_v
                 
-                if self.marker_panel.lock_delta_cb.isChecked():
+                if self.marker_panel.btn_lock_delta.isChecked():
                     other_new = get_pos(other_marker) + shift
                     if f_min <= other_new <= f_max:
                         self.active_drag_marker.setPos(new_v)
                         other_marker.setPos(other_new)
-                elif self.marker_panel.lock_center_cb.isChecked():
+                elif self.marker_panel.btn_lock_center.isChecked():
                     p1, p2 = get_pos(active_markers[0]), get_pos(active_markers[1])
                     ct = (p1 + p2) / 2
                     other_new = 2 * ct - new_v
@@ -454,13 +455,22 @@ class SpectrogramWindow(QMainWindow):
     def handle_lock_change(self, lock_type, checked):
         if not checked: return
         if lock_type == 'delta':
-            self.marker_panel.lock_center_cb.blockSignals(True)
-            self.marker_panel.lock_center_cb.setChecked(False)
-            self.marker_panel.lock_center_cb.blockSignals(False)
+            self.marker_panel.btn_lock_center.blockSignals(True)
+            self.marker_panel.btn_lock_center.setChecked(False)
+            self.marker_panel.btn_lock_center.setText("Center 🔓")
+            self.marker_panel.btn_lock_center.blockSignals(False)
         else:
-            self.marker_panel.lock_delta_cb.blockSignals(True)
-            self.marker_panel.lock_delta_cb.setChecked(False)
-            self.marker_panel.lock_delta_cb.blockSignals(False)
+            self.marker_panel.btn_lock_delta.blockSignals(True)
+            self.marker_panel.btn_lock_delta.setChecked(False)
+            self.marker_panel.btn_lock_delta.setText("Delta (Δ) 🔓")
+            self.marker_panel.btn_lock_delta.blockSignals(False)
+
+    def handle_marker_clear(self, mode):
+        markers = self.markers_time if mode == 'TIME' else self.markers_freq
+        for marker in markers:
+            self.spectrogram_view.plot_item.removeItem(marker)
+        markers.clear()
+        self.update_marker_info()
 
     def update_marker_info(self):
         # Choose active markers based on mode
