@@ -175,6 +175,17 @@ class SpectrogramWindow(QMainWindow):
             # Zoom both
             self.spectrogram_view.plot_item.setRange(rect, padding=0)
 
+    def fit_to_markers(self):
+        if len(self.markers) == 2:
+            # Save current range before zooming
+            self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
+            
+            t1 = self.markers[0].getXPos()
+            t2 = self.markers[1].getXPos()
+            t_min, t_max = min(t1, t2), max(t1, t2)
+            
+            self.spectrogram_view.plot_item.setXRange(t_min, t_max, padding=0)
+
     def place_marker(self, scene_pos, drag_mode=False):
         if self.spectrogram_view.plot_item.sceneBoundingRect().contains(scene_pos):
             mouse_v = self.spectrogram_view.plot_item.vb.mapSceneToView(scene_pos)

@@ -7,6 +7,7 @@ class CustomViewBox(pg.ViewBox):
         super().__init__(*args, **kwds)
         self.ui_controller = ui_controller
         self.zoom_rect = None
+        self.setMenuEnabled(False) # Disable default pg menu
 
     def mouseDragEvent(self, ev):
         if not hasattr(ev, 'isStart'):
@@ -90,5 +91,29 @@ class CustomViewBox(pg.ViewBox):
             if not self.ui_controller.zoom_mode:
                 self.ui_controller.place_marker(ev.scenePos(), drag_mode=False)
             ev.accept()
+        elif ev.button() == Qt.MouseButton.RightButton:
+            self.raise_custom_menu(ev)
+            ev.accept()
         else:
             super().mouseClickEvent(ev)
+
+    def raise_custom_menu(self, ev):
+        menu = QtWidgets.QMenu()
+        
+        view_all_act = menu.addAction("View All")
+        view_all_act.triggered.connect(self.ui_controller.reset_zoom)
+        
+        fit_act = menu.addAction("Fit to Screen")
+        fit_act.setEnabled(len(self.ui_controller.markers) == 2)
+        fit_act.triggered.connect(self.ui_controller.fit_to_markers)
+        
+        menu.addSeparator()
+        
+        export_act = menu.addAction("Export...")
+        def open_export():
+            from pyqtgraph.exporters import ExportDialog
+            self.export_dialog = ExportDialog(self.scene())
+            self.export_dialog.show()
+        export_act.triggered.connect(open_export)
+        
+        menu.exec(ev.screenPos().toPoint())
