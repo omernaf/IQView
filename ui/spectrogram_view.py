@@ -132,8 +132,8 @@ class SpectrogramView(QWidget):
         
         # Modern Plot Styling
         self.plot_item.showGrid(x=False, y=False)
-        self.plot_item.setLabel('bottom', "Frequency", units='Hz')
-        self.plot_item.setLabel('left', "Time", units='s')
+        self.plot_item.setLabel('bottom', "Time", units='s')
+        self.plot_item.setLabel('left', "Frequency", units='Hz')
         
         self.plot_item.setMouseEnabled(x=False, y=False)
         self.plot_item.hideButtons()
@@ -283,7 +283,7 @@ class SpectrogramView(QWidget):
             self.level_region.setRegion([min_v, max_v])
         
         self.img.setImage(full_spectrogram, autoLevels=False, levels=levels, autoDownsample=True)
-        self.img.setRect(QRectF(fc - rate/2, 0, rate, time_duration))
+        self.img.setRect(QRectF(0, fc - rate/2, time_duration, rate))
         
         self.full_t_range = (0, time_duration)
         self.full_f_range = (fc - rate/2, fc + rate/2)

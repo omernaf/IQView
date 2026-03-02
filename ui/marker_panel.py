@@ -78,14 +78,14 @@ class MarkerPanel(QFrame):
         self.main_layout.addLayout(self.mode_btn_layout, 0)
 
         # 1. Time (Top-Left)
-        self.btn_marker_time = DoubleClickButton("〓")
+        self.btn_marker_time = DoubleClickButton("║")
         self.btn_marker_time.setObjectName("mode_btn")
         self.btn_marker_time.setToolTip("Time Markers (Double-click to clear)")
         self.btn_marker_time.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_time, 0, 0)
         
         # 2. Freq (Bottom-Left)
-        self.btn_marker_freq = DoubleClickButton("║")
+        self.btn_marker_freq = DoubleClickButton("〓")
         self.btn_marker_freq.setObjectName("mode_btn")
         self.btn_marker_freq.setToolTip("Frequency Markers (Double-click to clear)")
         self.btn_marker_freq.setCheckable(True)
