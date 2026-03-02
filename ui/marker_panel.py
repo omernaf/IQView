@@ -1,8 +1,11 @@
-from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QLineEdit, QCheckBox
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QLineEdit, QCheckBox, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 
 class MarkerPanel(QFrame):
+    zoomModeToggled = pyqtSignal(bool)
+    resetZoomRequested = pyqtSignal()
+
     def __init__(self, parent_window):
         super().__init__()
         self.parent_window = parent_window
@@ -26,9 +29,37 @@ class MarkerPanel(QFrame):
                 padding: 2px;
                 border-radius: 2px;
             }
+            QPushButton {
+                background-color: #333;
+                color: #EEE;
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 5px;
+                font-size: 14px;
+                min-width: 40px;
+                min-height: 40px;
+            }
+            QPushButton:hover {
+                background-color: #444;
+            }
+            QPushButton:pressed {
+                background-color: #222;
+            }
+            QPushButton:checked {
+                background-color: #0066cc;
+                border-color: #0088ff;
+            }
         """)
-        self.grid = QGridLayout(self)
+        
+        # Main layout is horizontal to accommodate buttons on the right
+        self.main_layout = QGridLayout(self)
+        self.main_layout.setContentsMargins(5, 5, 5, 5)
+        self.main_layout.setSpacing(10)
+
+        # Grid for marker data
+        self.grid = QGridLayout()
         self.grid.setSpacing(8)
+        self.main_layout.addLayout(self.grid, 0, 0)
         
         header_font = QFont("Inter", 9, QFont.Weight.Bold)
         mono_font = QFont("Courier New", 10)
@@ -122,3 +153,29 @@ class MarkerPanel(QFrame):
         
         self.grid.addWidget(self.lock_delta_cb, 3, 3)
         self.grid.addWidget(self.lock_center_cb, 3, 4)
+
+        # --- Zoom Buttons (Right Side) ---
+        self.button_layout = QGridLayout()
+        self.button_layout.setSpacing(5)
+        self.main_layout.addLayout(self.button_layout, 0, 5)
+
+        self.btn_home = QPushButton("🏠")
+        self.btn_home.setToolTip("Reset Zoom (Home)")
+        self.btn_home.clicked.connect(self.resetZoomRequested.emit)
+        self.button_layout.addWidget(self.btn_home, 0, 0)
+
+        self.btn_zoom = QPushButton("🔍")
+        self.btn_zoom.setToolTip("Zoom Mode (Rubberband)")
+        self.btn_zoom.setCheckable(True)
+        self.btn_zoom.toggled.connect(self.zoomModeToggled.emit)
+        self.button_layout.addWidget(self.btn_zoom, 0, 1)
+
+        self.btn_p1 = QPushButton("⋯")
+        self.btn_p1.setToolTip("Placeholder 1")
+        self.btn_p1.setEnabled(False)
+        self.button_layout.addWidget(self.btn_p1, 1, 0)
+
+        self.btn_p2 = QPushButton("⋯")
+        self.btn_p2.setToolTip("Placeholder 2")
+        self.btn_p2.setEnabled(False)
+        self.button_layout.addWidget(self.btn_p2, 1, 1)

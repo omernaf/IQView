@@ -25,6 +25,7 @@ class SpectrogramWindow(QMainWindow):
         self.active_drag_marker = None
         self.markers = []
         self.time_duration = 1.0 # Default until data loads
+        self.zoom_mode = False
         
         self.setup_ui()
         self.start_processing()
@@ -59,6 +60,8 @@ class SpectrogramWindow(QMainWindow):
         self.layout.addWidget(self.progress_bar)
 
         self.marker_panel = MarkerPanel(self)
+        self.marker_panel.zoomModeToggled.connect(self.toggle_zoom_mode)
+        self.marker_panel.resetZoomRequested.connect(self.reset_zoom)
         self.layout.addWidget(self.marker_panel)
         
         self.spectrogram_view = SpectrogramView(self)
@@ -107,10 +110,40 @@ class SpectrogramWindow(QMainWindow):
                     new_t = samples / self.rate
                     marker.setPos(new_t)
 
-                self.spectrogram_view.update_spectrogram(
-                    self.full_spectrogram_cache, self.fc, self.rate, self.time_duration
-                )
+                    self.spectrogram_view.update_spectrogram(
+                        self.full_spectrogram_cache, self.fc, self.rate, self.time_duration
+                    )
             self.update_marker_info()
+
+    def toggle_zoom_mode(self, enabled):
+        self.zoom_mode = enabled
+        if enabled:
+            # Change cursor to crosshair for precision
+            self.spectrogram_view.setCursor(Qt.CursorShape.CrossCursor)
+        else:
+            self.spectrogram_view.setCursor(Qt.CursorShape.ArrowCursor)
+
+    def reset_zoom(self):
+        self.spectrogram_view.plot_item.autoRange()
+
+    def handle_zoom_rectangle(self, rect, zoom_type='BOTH'):
+        """
+        rect is QRectF in view coordinates.
+        zoom_type: 'BOTH', 'X_ONLY', or 'Y_ONLY'
+        """
+        # Avoid zero-size or invalid zoom
+        if rect.width() <= 0 and zoom_type != 'Y_ONLY': return
+        if rect.height() <= 0 and zoom_type != 'X_ONLY': return
+            
+        if zoom_type == 'Y_ONLY':
+            # Zoom only Y (Frequency)
+            self.spectrogram_view.plot_item.setYRange(rect.top(), rect.bottom(), padding=0)
+        elif zoom_type == 'X_ONLY':
+            # Zoom only X (Time)
+            self.spectrogram_view.plot_item.setXRange(rect.left(), rect.right(), padding=0)
+        else:
+            # Zoom both
+            self.spectrogram_view.plot_item.setRange(rect, padding=0)
 
     def place_marker(self, scene_pos, drag_mode=False):
         if self.spectrogram_view.plot_item.sceneBoundingRect().contains(scene_pos):
