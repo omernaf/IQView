@@ -39,7 +39,7 @@ def main():
     parser.add_argument('--profile', action='store_true', help='Run with profiler enabled')
     args, unknown = parser.parse_known_args()
 
-    filename = "temp.32fc"
+    filename = "samples/temp.32fc"
     sample_rate = 2e6  # 2 MHz
     duration = 10.0    # 10 seconds of simulated RF recording
     
