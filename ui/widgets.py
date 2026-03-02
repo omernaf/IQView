@@ -111,6 +111,36 @@ class CustomViewBox(pg.ViewBox):
         
         menu.addSeparator()
         
+        # Time Grid Submenu
+        grid_time_menu = menu.addMenu("Time Grid")
+        grid_time_menu.setEnabled(len(self.ui_controller.markers_time) == 2)
+        
+        grid_time_enable_act = grid_time_menu.addAction("Enabled")
+        grid_time_enable_act.setCheckable(True)
+        grid_time_enable_act.setChecked(self.ui_controller.grid_time_enabled)
+        grid_time_enable_act.triggered.connect(lambda checked: self.ui_controller.toggle_grid('TIME', checked))
+        
+        grid_time_track_act = grid_time_menu.addAction("Tracking")
+        grid_time_track_act.setCheckable(True)
+        grid_time_track_act.setChecked(self.ui_controller.grid_time_tracking)
+        grid_time_track_act.triggered.connect(lambda checked: self.ui_controller.toggle_tracking('TIME', checked))
+        
+        # Freq Grid Submenu
+        grid_freq_menu = menu.addMenu("Frequency Grid")
+        grid_freq_menu.setEnabled(len(self.ui_controller.markers_freq) == 2)
+        
+        grid_freq_enable_act = grid_freq_menu.addAction("Enabled")
+        grid_freq_enable_act.setCheckable(True)
+        grid_freq_enable_act.setChecked(self.ui_controller.grid_freq_enabled)
+        grid_freq_enable_act.triggered.connect(lambda checked: self.ui_controller.toggle_grid('FREQ', checked))
+        
+        grid_freq_track_act = grid_freq_menu.addAction("Tracking")
+        grid_freq_track_act.setCheckable(True)
+        grid_freq_track_act.setChecked(self.ui_controller.grid_freq_tracking)
+        grid_freq_track_act.triggered.connect(lambda checked: self.ui_controller.toggle_tracking('FREQ', checked))
+        
+        menu.addSeparator()
+        
         export_act = menu.addAction("Export...")
         def open_export():
             try:

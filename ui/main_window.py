@@ -31,6 +31,13 @@ class SpectrogramWindow(QMainWindow):
         self.is_first_load = True
         self.zoom_history = []
         
+        self.grid_time_enabled = False
+        self.grid_freq_enabled = False
+        self.grid_lines_time = []
+        self.grid_lines_freq = []
+        self.grid_time_tracking = True
+        self.grid_freq_tracking = True
+        
         self.setup_ui()
         self.start_processing()
 
@@ -201,6 +208,76 @@ class SpectrogramWindow(QMainWindow):
             else:
                 self.spectrogram_view.plot_item.setXRange(v_min, v_max, padding=0)
 
+    def toggle_grid(self, axis, enabled):
+        if axis == 'TIME':
+            self.grid_time_enabled = enabled
+        else:
+            self.grid_freq_enabled = enabled
+        self.update_grid(axis, force=True)
+
+    def toggle_tracking(self, axis, enabled):
+        if axis == 'TIME':
+            self.grid_time_tracking = enabled
+        else:
+            self.grid_freq_tracking = enabled
+        self.update_grid(axis, force=True)
+
+    def update_grid(self, axis, force=False):
+        is_freq = (axis == 'FREQ')
+        enabled = self.grid_freq_enabled if is_freq else self.grid_time_enabled
+        tracking = self.grid_freq_tracking if is_freq else self.grid_time_tracking
+        active_markers = self.markers_freq if is_freq else self.markers_time
+        grid_lines = self.grid_lines_freq if is_freq else self.grid_lines_time
+        
+        if not enabled:
+            # Clear existing if disabled
+            for line in grid_lines:
+                self.spectrogram_view.plot_item.removeItem(line)
+            grid_lines.clear()
+            return
+
+        if not tracking and not force:
+            return
+
+        # Clear existing before regeneration
+        for line in grid_lines:
+            self.spectrogram_view.plot_item.removeItem(line)
+        grid_lines.clear()
+
+        if len(active_markers) != 2:
+            return
+
+        get_pos = lambda m: m.getYPos() if is_freq else m.getXPos()
+        p1 = get_pos(active_markers[0])
+        p2 = get_pos(active_markers[1])
+        delta = abs(p2 - p1)
+        if delta <= 0: return
+
+        angle = 0 if is_freq else 90
+        f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
+        v_min = f_min if is_freq else 0
+        v_max = f_max if is_freq else self.time_duration
+        
+        pen = pg.mkPen(color=(200, 200, 255, 180), width=2, style=Qt.PenStyle.SolidLine)
+
+        # Draw forward (including start p1)
+        curr = p1
+        while curr <= v_max + 1e-9:
+            line = pg.InfiniteLine(pos=curr, angle=angle, pen=pen, movable=False)
+            line.setZValue(5)
+            self.spectrogram_view.plot_item.addItem(line, ignoreBounds=True)
+            grid_lines.append(line)
+            curr += delta
+
+        # Draw backward
+        curr = p1 - delta
+        while curr >= v_min - 1e-9:
+            line = pg.InfiniteLine(pos=curr, angle=angle, pen=pen, movable=False)
+            line.setZValue(5)
+            self.spectrogram_view.plot_item.addItem(line, ignoreBounds=True)
+            grid_lines.append(line)
+            curr -= delta
+
     def place_marker(self, scene_pos, drag_mode=False):
         if self.spectrogram_view.plot_item.sceneBoundingRect().contains(scene_pos):
             mouse_v = self.spectrogram_view.plot_item.vb.mapSceneToView(scene_pos)
@@ -262,6 +339,7 @@ class SpectrogramWindow(QMainWindow):
                     pos=val, angle=angle, movable=False,
                     pen=pg.mkPen('r', width=2)
                 )
+                marker.setZValue(10)
                 self.spectrogram_view.plot_item.addItem(marker, ignoreBounds=True)
                 active_markers.append(marker)
                 
@@ -386,6 +464,10 @@ class SpectrogramWindow(QMainWindow):
             self.marker_panel.delta_sam.blockSignals(False)
             self.marker_panel.center_sec.blockSignals(False)
             self.marker_panel.center_sam.blockSignals(False)
+        
+        # Refresh Grids
+        self.update_grid('TIME')
+        self.update_grid('FREQ')
 
     def marker_edit_finished(self):
         sender = self.sender()
