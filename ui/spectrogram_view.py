@@ -177,19 +177,18 @@ class SpectrogramView(QWidget):
         if self._block_signals: return
         self._block_signals = True
         
-        vr = self.view_box.viewRect()
+        xr, yr = self.view_box.viewRange()
         
-        # Time axis (X)
         t_total = self.full_t_range[1] - self.full_t_range[0]
         if t_total > 0:
-            visible_ratio_x = vr.width() / t_total
+            visible_ratio_x = (xr[1] - xr[0]) / t_total
             if visible_ratio_x < 0.999:
                 self.x_scroll.show()
                 page_step = int(visible_ratio_x * 1000)
                 self.x_scroll.setRange(0, 1000 - page_step)
                 self.x_scroll.setPageStep(page_step)
                 # Position
-                pos = (vr.left() - self.full_t_range[0]) / t_total * 1000
+                pos = (xr[0] - self.full_t_range[0]) / t_total * 1000
                 self.x_scroll.setValue(int(pos))
             else:
                 self.x_scroll.hide()
@@ -197,20 +196,16 @@ class SpectrogramView(QWidget):
         # Freq axis (Y)
         f_total = self.full_f_range[1] - self.full_f_range[0]
         if f_total > 0:
-            visible_ratio_y = vr.height() / f_total
+            visible_ratio_y = (yr[1] - yr[0]) / f_total
             if visible_ratio_y < 0.999:
                 self.y_scroll.show()
                 page_step = int(visible_ratio_y * 1000)
                 self.y_scroll.setRange(0, 1000 - page_step)
                 self.y_scroll.setPageStep(page_step)
-                # Position (Inverted because Y axis 0 is bottom in view but top in scrollbar usually, 
-                # but pyqtgraph Y is bottom->top. Let's map it: value 0 is bottom.)
-                pos = (vr.bottom() - self.full_f_range[0]) / f_total * 1000
-                # QScrollBar 0 is typically top, but we want 0 to be bottom? 
-                # Actually, standard scrollbar: 0 is start of range. 
-                # For Y axis, start is f_min. So value 0 = f_min.
-                # But visual scrollbar 0 is TOP. Let's flip it for intuitive use.
-                inv_pos = 1000 - page_step - int(pos)
+                
+                # Value 0 is TOP (f_max), Max is BOTTOM (f_min)
+                pos_from_bottom = (yr[0] - self.full_f_range[0]) / f_total * 1000
+                inv_pos = 1000 - page_step - int(pos_from_bottom)
                 self.y_scroll.setValue(inv_pos)
             else:
                 self.y_scroll.hide()
@@ -226,7 +221,9 @@ class SpectrogramView(QWidget):
         
         t_total = self.full_t_range[1] - self.full_t_range[0]
         f_total = self.full_f_range[1] - self.full_f_range[0]
-        vr = self.view_box.viewRect()
+        xr, yr = self.view_box.viewRange()
+        width = xr[1] - xr[0]
+        height = yr[1] - yr[0]
         
         new_left = self.full_t_range[0] + (val_x / 1000.0) * t_total
         
@@ -235,9 +232,9 @@ class SpectrogramView(QWidget):
         new_bottom = self.full_f_range[0] + (inv_val_y / 1000.0) * f_total
         
         if self.x_scroll.isVisible():
-            self.plot_item.setXRange(new_left, new_left + vr.width(), padding=0)
+            self.plot_item.setXRange(new_left, new_left + width, padding=0)
         if self.y_scroll.isVisible():
-            self.plot_item.setYRange(new_bottom, new_bottom + vr.height(), padding=0)
+            self.plot_item.setYRange(new_bottom, new_bottom + height, padding=0)
             
         self._block_signals = False
         

@@ -15,7 +15,7 @@ class CustomViewBox(pg.ViewBox):
             return
             
         if ev.button() == Qt.MouseButton.LeftButton:
-            if self.ui_controller.zoom_mode:
+            if self.ui_controller.interaction_mode == 'ZOOM':
                 # --- Rubberband Zoom Logic ---
                 if ev.isStart():
                     if self.zoom_rect: self.removeItem(self.zoom_rect)
@@ -73,6 +73,14 @@ class CustomViewBox(pg.ViewBox):
                         
                         self.zoom_rect.setPath(path)
                         self.zoom_rect.setPen(pen)
+                ev.accept()
+            elif self.ui_controller.interaction_mode == 'MOVE':
+                if ev.isStart():
+                    self.ui_controller.handle_move_drag(ev.buttonDownScenePos(), is_start=True)
+                elif ev.isFinish():
+                    self.ui_controller.handle_move_drag(ev.scenePos(), is_finish=True)
+                else:
+                    self.ui_controller.handle_move_drag(ev.scenePos())
                 ev.accept()
             else:
                 # --- Marker Logic ---

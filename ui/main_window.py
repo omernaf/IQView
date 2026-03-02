@@ -38,6 +38,8 @@ class SpectrogramWindow(QMainWindow):
         self.grid_time_tracking = True
         self.grid_freq_tracking = True
         
+        self.last_move_scene_pos = None
+        
         self.setup_ui()
         self.start_processing()
 
@@ -55,19 +57,25 @@ class SpectrogramWindow(QMainWindow):
         self.sidebar.parametersChanged.connect(self.on_parameters_changed)
         self.main_h_layout.addWidget(self.sidebar)
         
-        # Right Side Vertical Layout
         self.right_container = QWidget()
         self.layout = QVBoxLayout(self.right_container)
         self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(0)
         self.main_h_layout.addWidget(self.right_container)
         
-        self.info_layout = QHBoxLayout()
-        self.info_layout.setContentsMargins(10, 5, 10, 5)
-        help_label = QLabel("<b>Interactive Controls:</b> Left Click/Drag - Place & Move Time Marker")
-        self.info_layout.addWidget(help_label)
-        self.layout.addLayout(self.info_layout)
-        
+        # Progress bar in a fixed-height container to prevent squishing
         self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(4)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #1e1e1e;
+                border: none;
+            }
+            QProgressBar::chunk {
+                background-color: #0066cc;
+            }
+        """)
         self.layout.addWidget(self.progress_bar)
 
         self.marker_panel = MarkerPanel(self)
@@ -83,7 +91,7 @@ class SpectrogramWindow(QMainWindow):
             self.worker.stop()
             
         self.progress_bar.setValue(0)
-        self.progress_bar.show()
+        self.progress_bar.setStyleSheet("QProgressBar { background-color: #1e1e1e; border: none; } QProgressBar::chunk { background-color: #0066cc; }")
         
         self.worker = FileReaderThread(self.file_path, self.data_type, self.fft_size, self.overlap_percent, self.rate, self.profile_enabled, self.window_type)
         self.worker.progress.connect(self.update_progress)
@@ -348,6 +356,60 @@ class SpectrogramWindow(QMainWindow):
             
             self.update_marker_info()
 
+    def handle_move_drag(self, scene_pos, is_start=False, is_finish=False):
+        if is_start:
+            self.last_move_scene_pos = scene_pos
+            return
+            
+        if is_finish:
+            self.last_move_scene_pos = None
+            return
+
+        if self.last_move_scene_pos is None:
+            return
+
+        # Check if zoomed in
+        xr_curr, yr_curr = self.spectrogram_view.view_box.viewRange()
+        t_total = self.time_duration
+        f_total = self.rate
+        visible_ratio_x = (xr_curr[1] - xr_curr[0]) / t_total
+        visible_ratio_y = (yr_curr[1] - yr_curr[0]) / f_total
+        
+        # Do nothing if zoomed out completely
+        if visible_ratio_x > 0.999 and visible_ratio_y > 0.999:
+            return
+
+        # Map drag to view coordinates
+        p1 = self.spectrogram_view.view_box.mapSceneToView(self.last_move_scene_pos)
+        p2 = self.spectrogram_view.view_box.mapSceneToView(scene_pos)
+        dt = p2.x() - p1.x()
+        df = p2.y() - p1.y()
+        
+        # Translate the view range
+        new_xr = [xr_curr[0] - dt, xr_curr[1] - dt]
+        new_yr = [yr_curr[0] - df, yr_curr[1] - df]
+        
+        # Constraints: preserve width/height while clamping to full data range
+        if new_xr[0] < 0:
+            diff = 0 - new_xr[0]
+            new_xr = [0, new_xr[1] + diff]
+        elif new_xr[1] > t_total:
+            diff = new_xr[1] - t_total
+            new_xr = [new_xr[0] - diff, t_total]
+            
+        f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
+        if new_yr[0] < f_min:
+            diff = f_min - new_yr[0]
+            new_yr = [f_min, new_yr[1] + diff]
+        elif new_yr[1] > f_max:
+            diff = new_yr[1] - f_max
+            new_yr = [new_yr[0] - diff, f_max]
+        
+        self.spectrogram_view.plot_item.setXRange(*new_xr, padding=0)
+        self.spectrogram_view.plot_item.setYRange(*new_yr, padding=0)
+        
+        self.last_move_scene_pos = scene_pos
+
     def update_drag(self, scene_pos):
         if self.active_drag_marker and self.spectrogram_view.plot_item.sceneBoundingRect().contains(scene_pos):
             mouse_v = self.spectrogram_view.plot_item.vb.mapSceneToView(scene_pos)
@@ -549,7 +611,9 @@ class SpectrogramWindow(QMainWindow):
 
     @pyqtSlot(np.ndarray, float)
     def display_spectrogram(self, full_spectrogram, duration):
-        self.progress_bar.hide()
+        # Hide progress bar by changing its chunk color to background
+        self.progress_bar.setValue(0)
+        self.progress_bar.setStyleSheet("QProgressBar { background-color: #1e1e1e; border: none; } QProgressBar::chunk { background-color: #1e1e1e; }")
         self.full_spectrogram_cache = full_spectrogram
         self.time_duration = duration
         self.total_samples_in_cache = duration * self.rate

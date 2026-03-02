@@ -16,7 +16,8 @@ class MarkerPanel(QFrame):
             QFrame { 
                 background-color: #1e1e1e; 
                 border: 1px solid #444; 
-                border-radius: 6px; 
+                border-bottom: none;
+                border-radius: 0px; 
                 padding: 4px; 
             }
             QLabel { 
@@ -80,11 +81,17 @@ class MarkerPanel(QFrame):
         self.btn_zoom.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_zoom, 1, 0)
         
+        # Move Button
+        self.btn_move = QPushButton("✥")
+        self.btn_move.setToolTip("Free Move Mode (Pan)")
+        self.btn_move.setCheckable(True)
+        self.mode_btn_layout.addWidget(self.btn_move, 1, 1)
+        
         # Home Button
         self.btn_home = QPushButton("🏠")
         self.btn_home.setToolTip("Reset Zoom (Home)")
         self.btn_home.clicked.connect(self.resetZoomRequested.emit)
-        self.mode_btn_layout.addWidget(self.btn_home, 1, 1)
+        self.mode_btn_layout.addWidget(self.btn_home, 0, 2)
 
         # Mutual Exclusion Group
         from PyQt6.QtWidgets import QButtonGroup
@@ -92,11 +99,13 @@ class MarkerPanel(QFrame):
         self.mode_group.addButton(self.btn_marker_time)
         self.mode_group.addButton(self.btn_marker_freq)
         self.mode_group.addButton(self.btn_zoom)
+        self.mode_group.addButton(self.btn_move)
         self.mode_group.setExclusive(True)
         
         self.btn_marker_time.clicked.connect(lambda: self.interactionModeChanged.emit('TIME'))
         self.btn_marker_freq.clicked.connect(lambda: self.interactionModeChanged.emit('FREQ'))
         self.btn_zoom.clicked.connect(lambda: self.interactionModeChanged.emit('ZOOM'))
+        self.btn_move.clicked.connect(lambda: self.interactionModeChanged.emit('MOVE'))
 
         # Grid for marker data
         self.grid = QGridLayout()
