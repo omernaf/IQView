@@ -15,10 +15,11 @@ class SpectrogramView(QWidget):
         self.layout = QGridLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(0)
-        self.setStyleSheet("background-color: #1e1e1e;")
+        self.setStyleSheet("background-color: #121212;")
         
         # Internal Graphics Layout for Plot
         self.glw_plot = pg.GraphicsLayoutWidget()
+        self.glw_plot.setBackground('#121212')
         self.layout.addWidget(self.glw_plot, 0, 1)
         
         # Scrollbars
@@ -27,49 +28,42 @@ class SpectrogramView(QWidget):
         
         scrollbar_style = """
             QScrollBar:horizontal {
-                background: #1e1e1e;
-                height: 12px;
+                background: #121212;
+                height: 8px;
                 margin: 0px;
                 border: none;
             }
             QScrollBar::handle:horizontal {
-                background: #444;
-                min-width: 20px;
+                background: #3d3d3d;
+                min-width: 40px;
                 border-radius: 4px;
-                margin: 2px;
+                margin: 0px;
             }
             QScrollBar::handle:horizontal:hover {
-                background: #555;
-            }
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-                width: 0px;
-                height: 0px;
-            }
-            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
-                background: #1e1e1e;
+                background: #00aaff;
             }
             
             QScrollBar:vertical {
-                background: #1e1e1e;
-                width: 12px;
+                background: #121212;
+                width: 8px;
                 margin: 0px;
                 border: none;
             }
             QScrollBar::handle:vertical {
-                background: #444;
-                min-height: 20px;
+                background: #3d3d3d;
+                min-height: 40px;
                 border-radius: 4px;
-                margin: 2px;
+                margin: 0px;
             }
             QScrollBar::handle:vertical:hover {
-                background: #555;
+                background: #00aaff;
             }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                width: 0px;
-                height: 0px;
+            
+            QScrollBar::add-line, QScrollBar::sub-line {
+                width: 0px; height: 0px;
             }
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-                background: #1e1e1e;
+            QScrollBar::add-page, QScrollBar::sub-page {
+                background: none;
             }
         """
         self.x_scroll.setStyleSheet(scrollbar_style)
@@ -79,18 +73,10 @@ class SpectrogramView(QWidget):
         self.layout.addWidget(self.y_scroll, 0, 0) # Left side
         self.layout.addWidget(self.x_scroll, 1, 1) # Under the plot
         
-        # Corner widgets to override platform defaults
-        corner1 = QWidget()
-        corner1.setStyleSheet("background-color: #1e1e1e;")
-        self.layout.addWidget(corner1, 1, 0)
-        
-        corner2 = QWidget()
-        corner2.setStyleSheet("background-color: #1e1e1e;")
-        self.layout.addWidget(corner2, 1, 2)
-        
         # Internal Graphics Layout for Histogram
         self.glw_hist = pg.GraphicsLayoutWidget()
-        self.glw_hist.setFixedWidth(120)
+        self.glw_hist.setBackground('#121212')
+        self.glw_hist.setFixedWidth(100)
         self.layout.addWidget(self.glw_hist, 0, 2)
         
         # Stretch factors
@@ -105,7 +91,10 @@ class SpectrogramView(QWidget):
         # Plot Item with Custom ViewBox
         from .widgets import CustomViewBox
         self.view_box = CustomViewBox(ui_controller=parent_window)
-        self.plot_item = self.glw_plot.addPlot(viewBox=self.view_box, title="Static Full-File Spectrogram")
+        self.plot_item = self.glw_plot.addPlot(viewBox=self.view_box)
+        
+        # Modern Plot Styling
+        self.plot_item.showGrid(x=True, y=True, alpha=0.1)
         self.plot_item.setLabel('bottom', "Time", units='s')
         self.plot_item.setLabel('left', "Frequency", units='Hz')
         

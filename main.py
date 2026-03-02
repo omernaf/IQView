@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import QApplication
 from ui import SpectrogramWindow
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Antigravity - High-performance Static RF Spectrogram Viewer")
+    parser = argparse.ArgumentParser(description="IQView - High-performance Static RF Spectrogram Viewer")
     parser.add_argument('-f', '--file', required=True, help='Path to the binary IQ file')
     parser.add_argument('-t', '--type', required=True, type=str, help='Data type (e.g., np.int16, np.float32, np.complex64)')
     parser.add_argument('-r', '--rate', type=float, default=1e6, help='Sample rate in Hz')
@@ -70,7 +70,7 @@ def main():
         # 2. Save human-readable summary to disk
         summary_path = os.path.join("profiler", "profile_summary.txt")
         with open(summary_path, "w") as f:
-            f.write("Antigravity Execution Profile Summary\n")
+            f.write("IQView Execution Profile Summary\n")
             f.write("="*40 + "\n\n")
             ps_file = pstats.Stats(pr, stream=f).sort_stats(sortby)
             ps_file.print_stats() # Save ALL stats to file

@@ -11,7 +11,7 @@ from .side_panel import SidePanel
 class SpectrogramWindow(QMainWindow):
     def __init__(self, file_path, data_type, sample_rate, center_freq, fft_size, profile_enabled=False):
         super().__init__()
-        self.setWindowTitle("Antigravity Spectrogram Viewer")
+        self.setWindowTitle("IQView - Spectrogram Viewer")
         self.resize(1280, 800)
         
         self.fc = center_freq
@@ -44,7 +44,80 @@ class SpectrogramWindow(QMainWindow):
         self.start_processing()
 
     def setup_ui(self):
+        # Global Stylesheet / Design Tokens
+        self.setStyleSheet("""
+            QMainWindow, QWidget#central {
+                background-color: #121212;
+                color: #e0e0e0;
+                font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            }
+            
+            QLabel {
+                color: #aaaaaa;
+            }
+            
+            QPushButton {
+                background-color: #2a2a2a;
+                color: #ffffff;
+                border: 1px solid #3d3d3d;
+                border-radius: 4px;
+                padding: 6px 12px;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #353535;
+                border-color: #555555;
+            }
+            QPushButton:pressed {
+                background-color: #1a1a1a;
+            }
+            QPushButton:checked {
+                background-color: #004488;
+                border-color: #00aaff;
+                color: #00aaff;
+            }
+            
+            QLineEdit {
+                background-color: #1a1a1a;
+                color: #ffffff;
+                border: 1px solid #3d3d3d;
+                border-radius: 4px;
+                padding: 4px 8px;
+                selection-background-color: #00aaff;
+            }
+            QLineEdit:focus {
+                border-color: #00aaff;
+            }
+            QLineEdit[readOnly="true"] {
+                color: #777777;
+                background-color: #151515;
+            }
+            
+            QComboBox {
+                background-color: #1a1a1a;
+                color: #ffffff;
+                border: 1px solid #3d3d3d;
+                border-radius: 4px;
+                padding: 4px 8px;
+            }
+            QComboBox:on {
+                border-color: #00aaff;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 20px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #1a1a1a;
+                color: #ffffff;
+                selection-background-color: #333333;
+                border: 1px solid #3d3d3d;
+                outline: none;
+            }
+        """)
+
         self.central_widget = QWidget()
+        self.central_widget.setObjectName("central")
         self.setCentralWidget(self.central_widget)
         
         # Main Horizontal Layout
@@ -57,42 +130,42 @@ class SpectrogramWindow(QMainWindow):
         self.sidebar.parametersChanged.connect(self.on_parameters_changed)
         self.main_h_layout.addWidget(self.sidebar)
         
-        self.right_container = QWidget()
-        self.layout = QVBoxLayout(self.right_container)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(0)
-        self.main_h_layout.addWidget(self.right_container)
+        self.main_v_container = QWidget()
+        self.v_layout = QVBoxLayout(self.main_v_container)
+        self.v_layout.setContentsMargins(0, 0, 0, 0)
+        self.v_layout.setSpacing(0)
+        self.main_h_layout.addWidget(self.main_v_container)
         
-        # Progress bar in a fixed-height container to prevent squishing
+        # Progress bar - Stealthy slim line
         self.progress_bar = QProgressBar()
-        self.progress_bar.setFixedHeight(4)
+        self.progress_bar.setFixedHeight(2)
         self.progress_bar.setTextVisible(False)
         self.progress_bar.setStyleSheet("""
             QProgressBar {
-                background-color: #1e1e1e;
+                background-color: transparent;
                 border: none;
             }
             QProgressBar::chunk {
-                background-color: #0066cc;
+                background-color: #00aaff;
             }
         """)
-        self.layout.addWidget(self.progress_bar)
+        self.v_layout.addWidget(self.progress_bar)
 
         self.marker_panel = MarkerPanel(self)
         self.marker_panel.interactionModeChanged.connect(self.set_interaction_mode)
         self.marker_panel.resetZoomRequested.connect(self.reset_zoom)
         self.marker_panel.markerClearRequested.connect(self.handle_marker_clear)
-        self.layout.addWidget(self.marker_panel)
+        self.v_layout.addWidget(self.marker_panel)
         
         self.spectrogram_view = SpectrogramView(self)
-        self.layout.addWidget(self.spectrogram_view)
+        self.v_layout.addWidget(self.spectrogram_view)
 
     def start_processing(self):
         if hasattr(self, 'worker') and self.worker.isRunning():
             self.worker.stop()
             
         self.progress_bar.setValue(0)
-        self.progress_bar.setStyleSheet("QProgressBar { background-color: #1e1e1e; border: none; } QProgressBar::chunk { background-color: #0066cc; }")
+        self.progress_bar.setStyleSheet("QProgressBar { background-color: transparent; border: none; } QProgressBar::chunk { background-color: #00aaff; }")
         
         self.worker = FileReaderThread(self.file_path, self.data_type, self.fft_size, self.overlap_percent, self.rate, self.profile_enabled, self.window_type)
         self.worker.progress.connect(self.update_progress)
