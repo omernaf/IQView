@@ -43,8 +43,10 @@ class FileReaderThread(QThread):
         
         if requested_rows > max_rows_limit and requested_rows > 0:
             self.num_rows = max_rows_limit
-            # New step size to cover full file: (samples - fft_size) / (num_rows - 1)
-            self.step_size = int(np.ceil((self.complex_samples - self.fft_size) / (self.num_rows - 1)))
+            # Ensure the last window (fft_size) ends exactly at or before complex_samples
+            # (num_rows - 1) * step_size + fft_size <= complex_samples
+            # step_size <= (complex_samples - fft_size) / (num_rows - 1)
+            self.step_size = (self.complex_samples - self.fft_size) // (self.num_rows - 1)
             self.step_size = max(req_step_size, self.step_size)
         else:
             self.num_rows = requested_rows
@@ -54,8 +56,8 @@ class FileReaderThread(QThread):
         self.spectrogram = np.zeros((self.num_rows, self.fft_size), dtype=np.float32)
         
     def run(self):
-        if self.num_rows == 0:
-            self.finished_processing.emit(np.zeros((self.fft_size, 1), dtype=np.float32))
+        if self.num_rows <= 0:
+            self.finished_processing.emit(np.zeros((self.fft_size, 1), dtype=np.float32), 0.0)
             return
 
         item_size = np.dtype(self.dtype).itemsize
@@ -106,6 +108,16 @@ class FileReaderThread(QThread):
                     # We use stride_tricks to avoid copying data where possible
                     from numpy.lib.stride_tricks import as_strided
                     itemsize = full_complex.itemsize
+                    
+                    # SAFETY CHECK: Ensure we don't stride past the end of full_complex
+                    # The last element accessed is (rows_to_process - 1) * step_size + (fft_size - 1)
+                    required_samples = (rows_to_process - 1) * self.step_size + self.fft_size
+                    if len(full_complex) < required_samples:
+                        # Pad with zeros if we under-read (should be rare with fixed step_size)
+                        padded = np.zeros(required_samples, dtype=full_complex.dtype)
+                        padded[:len(full_complex)] = full_complex
+                        full_complex = padded
+
                     complex_batch = as_strided(
                         full_complex,
                         shape=(rows_to_process, self.fft_size),

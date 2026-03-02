@@ -47,7 +47,7 @@ def main():
     parser.add_argument('--generate', action='store_true', default=GENERATE_ENABLED, help='Force regenerate test file')
     args, unknown = parser.parse_known_args()
 
-    filename = "samples/temp.32fc"
+    filename = "samples/temp1.32fc"
     sample_rate = 2e6  # 2 MHz
     duration = 10.0    # 10 seconds of simulated RF recording
     
