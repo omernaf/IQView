@@ -58,11 +58,14 @@ class FileReaderThread(QThread):
         seek_time = 0.0
         overhead_time = 0.0
         
+        # Batching parameters
+        batch_size = 1000
+        
         try:
             with open(self.filename, 'rb') as f:
                 row_idx = 0
                 while self.running and row_idx < self.num_rows:
-                    loop_start = time.time()
+                    rows_to_process = min(batch_size, self.num_rows - row_idx)
                     
                     # Seek Time
                     t_seek_start = time.time()
@@ -70,30 +73,58 @@ class FileReaderThread(QThread):
                     f.seek(pos)
                     seek_time += (time.time() - t_seek_start)
                     
-                    # Read Time
+                    # Read Time (Batch)
+                    # For batches, we read raw bytes for the entire chunk. 
+                    # Note: This slightly over-reads if there's overlap, but it's faster than repeated seeks.
                     t_read_start = time.time()
-                    data_bytes = f.read(chunk_read_size * item_size)
+                    total_samples_to_read = (rows_to_process - 1) * self.step_size + self.fft_size
+                    data_bytes = f.read(total_samples_to_read * 2 * item_size)
                     read_time += (time.time() - t_read_start)
                     
-                    if not data_bytes or len(data_bytes) < chunk_read_size * item_size:
-                        break
+                    if not data_bytes or len(data_bytes) < (total_samples_to_read * 2 * item_size):
+                        # Handle end of file or incomplete read
+                        if not data_bytes: break
                     
-                    # DSP Time
+                    # DSP Time (Batch)
                     t_dsp_start = time.time()
-                    data_array = np.frombuffer(data_bytes, dtype=self.dtype)
-                    complex_data = preprocess_chunk(data_array, self.window, self.fft_size)
-                    fft_result = np.fft.fft(complex_data)
-                    db_array = postprocess_fft(fft_result, self.fft_size)
-                    self.spectrogram[row_idx, :] = db_array
+                    # Convert raw bytes to complex array
+                    raw_array = np.frombuffer(data_bytes, dtype=self.dtype)
+                    # Real/Imag de-interleave
+                    full_complex = raw_array[0::2] + 1j * raw_array[1::2]
+                    
+                    # Extract windows into a 2D array for vectorized processing
+                    # We use stride_tricks to avoid copying data where possible
+                    from numpy.lib.stride_tricks import as_strided
+                    itemsize = full_complex.itemsize
+                    complex_batch = as_strided(
+                        full_complex,
+                        shape=(rows_to_process, self.fft_size),
+                        strides=(self.step_size * itemsize, itemsize),
+                        writeable=False
+                    )
+                    
+                    # Apply window (vectorized across all rows)
+                    windowed_batch = complex_batch * self.window
+                    
+                    # FFT (vectorized across all rows)
+                    fft_batch = np.fft.fft(windowed_batch, axis=1)
+                    
+                    # Post-process (vectorized)
+                    shifted_batch = np.fft.fftshift(fft_batch, axes=1)
+                    mag_batch = np.abs(shifted_batch)
+                    epsilon = np.float32(1e-10)
+                    mag_batch = np.maximum(mag_batch, epsilon)
+                    db_batch = 20.0 * np.log10(mag_batch)
+                    
+                    self.spectrogram[row_idx : row_idx + rows_to_process, :] = db_batch
                     dsp_time += (time.time() - t_dsp_start)
                     
-                    row_idx += 1
+                    row_idx += rows_to_process
                     
-                    # Overhead include progress update and sleep
+                    # Overhead
                     overhead_start = time.time()
-                    if row_idx % 200 == 0:
-                        self.progress.emit(row_idx, self.num_rows)
-                        QThread.msleep(1)
+                    self.progress.emit(row_idx, self.num_rows)
+                    QThread.msleep(1)
                     overhead_time += (time.time() - overhead_start)
                     
                 total_time = time.time() - start_time
@@ -101,7 +132,7 @@ class FileReaderThread(QThread):
                     io_time = seek_time + read_time
                     other_time = total_time - (io_time + dsp_time + overhead_time)
                     print(f"\n" + "-"*30)
-                    print(f"Processing Complete:")
+                    print(f"Processing Complete (BATCHED):")
                     print(f" - Total Time:    {total_time:.3f}s (100.0%)")
                     print(f" - DSP Time:      {dsp_time:.3f}s ({(dsp_time/total_time)*100:.1f}%)")
                     print(f" - I/O Time:      {io_time:.3f}s ({((io_time)/total_time)*100:.1f}%)")

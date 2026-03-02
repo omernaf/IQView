@@ -1,0 +1,186 @@
+﻿Profiling DSP functions (JIT disabled)...
+
+--- DSP Line Profiling Details ---
+Timer unit: 1e-07 s
+
+Total time: 0.000709 s
+File: D:\Projects\IQView\dsp.py
+Function: preprocess_chunk at line 3
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+     3                                           def preprocess_chunk(data_array, window, fft_size):
+     4                                               """
+     5                                               De-interleaves I and Q to complex numbers and applies window.
+     6                                               Vectorized version.
+     7                                               """
+     8                                               # De-interleave using slicing: [real, imag, real, imag, ...]
+     9       100       5254.0     52.5     74.1      complex_data = data_array[0::2] + 1j * data_array[1::2]
+    10                                               
+    11                                               # Apply window
+    12       100       1836.0     18.4     25.9      return complex_data * window
+
+Total time: 0.0056283 s
+File: D:\Projects\IQView\dsp.py
+Function: postprocess_fft at line 14
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+    14                                           def postprocess_fft(fft_result, fft_size):
+    15                                               """
+    16                                               Applies fftshift and computes log magnitude in dB.
+    17                                               Vectorized version.
+    18                                               """
+    19                                               # Use NumPy's vectorized fftshift and magnitude calculation
+    20       100      48779.0    487.8     86.7      shifted = np.fft.fftshift(fft_result)
+    21       100        865.0      8.7      1.5      mag = np.abs(shifted)
+    22                                               
+    23                                               # Clip to epsilon to avoid log10(0)
+    24       100        556.0      5.6      1.0      epsilon = np.float32(1e-10)
+    25       100       1200.0     12.0      2.1      mag = np.maximum(mag, epsilon)
+    26                                               
+    27                                               # Convert to dB
+    28       100       4883.0     48.8      8.7      return 20.0 * np.log10(mag)
+
+Total time: 0 s
+File: D:\Projects\IQView\profiler\profile_script.py
+Function: profile_dsp.<locals>.<lambda> at line 27
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+    27                                               lp_wrapper = lp(lambda: [dsp.preprocess_chunk(data_array, window, fft_size) for _ in range(100)])
+
+Total time: 0 s
+File: D:\Projects\IQView\profiler\profile_script.py
+Function: profile_dsp.<locals>.<lambda> at line 29
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+    29                                               lp_wrapper = lp(lambda: [dsp.postprocess_fft(data_array[:fft_size], fft_size) for _ in range(100)])
+
+Profiling Optimized FileReaderThread.run (JIT disabled, BATCHED)...
+
+------------------------------
+Processing Complete (BATCHED):
+ - Total Time:    0.139s (100.0%)
+ - DSP Time:      0.125s (89.6%)
+ - I/O Time:      0.006s (4.4%)
+   - f.seek:      0.000s
+   - f.read:      0.006s
+ - UI/Overhead:   0.008s (5.9%)
+ - Other/Python:  0.000s (0.1%)
+------------------------------
+
+
+--- Optimized FileReaderThread.run Line Profiling ---
+Timer unit: 1e-07 s
+
+Total time: 0.13913 s
+File: D:\Projects\IQView\utils.py
+Function: FileReaderThread.run at line 46
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+    46                                               def run(self):
+    47         1          8.0      8.0      0.0          if self.num_rows == 0:
+    48                                                       self.finished_processing.emit(np.zeros((self.fft_size, 1), dtype=np.float32))
+    49                                                       return
+    50                                           
+    51         1         20.0     20.0      0.0          item_size = np.dtype(self.dtype).itemsize
+    52         1          4.0      4.0      0.0          chunk_read_size = self.fft_size * 2 # 2 because I/Q
+    53                                                   
+    54         1         12.0     12.0      0.0          import time
+    55         1          7.0      7.0      0.0          start_time = time.time()
+    56         1          3.0      3.0      0.0          dsp_time = 0.0
+    57         1          2.0      2.0      0.0          read_time = 0.0
+    58         1          1.0      1.0      0.0          seek_time = 0.0
+    59         1          2.0      2.0      0.0          overhead_time = 0.0
+    60                                                   
+    61                                                   # Batching parameters
+    62         1          2.0      2.0      0.0          batch_size = 1000
+    63                                                   
+    64         1          2.0      2.0      0.0          try:
+    65         2        700.0    350.0      0.1              with open(self.filename, 'rb') as f:
+    66         1          3.0      3.0      0.0                  row_idx = 0
+    67         6         82.0     13.7      0.0                  while self.running and row_idx < self.num_rows:
+    68         5        232.0     46.4      0.0                      rows_to_process = min(batch_size, self.num_rows - row_idx)
+    69                                                               
+    70                                                               # Seek Time
+    71         5         27.0      5.4      0.0                      t_seek_start = time.time()
+    72         5         48.0      9.6      0.0                      pos = row_idx * self.step_size * 2 * item_size
+    73         5        105.0     21.0      0.0                      f.seek(pos)
+    74         5         28.0      5.6      0.0                      seek_time += (time.time() - t_seek_start)
+    75                                                               
+    76                                                               # Read Time (Batch)
+    77                                                               # For batches, we read raw bytes for the entire chunk. 
+    78                                                               # Note: This slightly over-reads if there's overlap, but it's faster than repeated seeks.
+    79         5         25.0      5.0      0.0                      t_read_start = time.time()
+    80         5         36.0      7.2      0.0                      total_samples_to_read = (rows_to_process - 1) * self.step_size + self.fft_size
+    81         5      60542.0  12108.4      4.4                      data_bytes = f.read(total_samples_to_read * 2 * item_size)
+    82         5         56.0     11.2      0.0                      read_time += (time.time() - t_read_start)
+    83                                                               
+    84         5         76.0     15.2      0.0                      if not data_bytes or len(data_bytes) < (total_samples_to_read * 2 * item_size):
+    85                                                                   # Handle end of file or incomplete read
+    86                                                                   if not data_bytes: break
+    87                                                               
+    88                                                               # DSP Time (Batch)
+    89         5         19.0      3.8      0.0                      t_dsp_start = time.time()
+    90                                                               # Convert raw bytes to complex array
+    91         5       5534.0   1106.8      0.4                      raw_array = np.frombuffer(data_bytes, dtype=self.dtype)
+    92                                                               # Real/Imag de-interleave
+    93         5     112844.0  22568.8      8.1                      full_complex = raw_array[0::2] + 1j * raw_array[1::2]
+    94                                                               
+    95                                                               # Extract windows into a 2D array for vectorized processing
+    96                                                               # We use stride_tricks to avoid copying data where possible
+    97         5        219.0     43.8      0.0                      from numpy.lib.stride_tricks import as_strided
+    98         5        120.0     24.0      0.0                      itemsize = full_complex.itemsize
+    99        10       7008.0    700.8      0.5                      complex_batch = as_strided(
+   100         5         16.0      3.2      0.0                          full_complex,
+   101         5         44.0      8.8      0.0                          shape=(rows_to_process, self.fft_size),
+   102         5         44.0      8.8      0.0                          strides=(self.step_size * itemsize, itemsize),
+   103         5          9.0      1.8      0.0                          writeable=False
+   104                                                               )
+   105                                                               
+   106                                                               # Apply window (vectorized across all rows)
+   107         5      95832.0  19166.4      6.9                      windowed_batch = complex_batch * self.window
+   108                                                               
+   109                                                               # FFT (vectorized across all rows)
+   110         5     601343.0 120268.6     43.2                      fft_batch = np.fft.fft(windowed_batch, axis=1)
+   111                                                               
+   112                                                               # Post-process (vectorized)
+   113         5      95408.0  19081.6      6.9                      shifted_batch = np.fft.fftshift(fft_batch, axes=1)
+   114         5      62573.0  12514.6      4.5                      mag_batch = np.abs(shifted_batch)
+   115         5        369.0     73.8      0.0                      epsilon = np.float32(1e-10)
+   116         5      42080.0   8416.0      3.0                      mag_batch = np.maximum(mag_batch, epsilon)
+   117         5     193157.0  38631.4     13.9                      db_batch = 20.0 * np.log10(mag_batch)
+   118                                                               
+   119         5      29543.0   5908.6      2.1                      self.spectrogram[row_idx : row_idx + rows_to_process, :] = db_batch
+   120         5        165.0     33.0      0.0                      dsp_time += (time.time() - t_dsp_start)
+   121                                                               
+   122         5         30.0      6.0      0.0                      row_idx += rows_to_process
+   123                                                               
+   124                                                               # Overhead
+   125         5         25.0      5.0      0.0                      overhead_start = time.time()
+   126         5       1229.0    245.8      0.1                      self.progress.emit(row_idx, self.num_rows)
+   127         5      80840.0  16168.0      5.8                      QThread.msleep(1)
+   128         5        124.0     24.8      0.0                      overhead_time += (time.time() - overhead_start)
+   129                                                               
+   130         1         14.0     14.0      0.0                  total_time = time.time() - start_time
+   131         1          5.0      5.0      0.0                  if self.running:
+   132         1          6.0      6.0      0.0                      io_time = seek_time + read_time
+   133         1          7.0      7.0      0.0                      other_time = total_time - (io_time + dsp_time + overhead_time)
+   134         1        177.0    177.0      0.0                      print(f"\n" + "-"*30)
+   135         1         23.0     23.0      0.0                      print(f"Processing Complete (BATCHED):")
+   136         1         59.0     59.0      0.0                      print(f" - Total Time:    {total_time:.3f}s (100.0%)")
+   137         1         36.0     36.0      0.0                      print(f" - DSP Time:      {dsp_time:.3f}s ({(dsp_time/total_time)*100:.1f}%)")
+   138         1         24.0     24.0      0.0                      print(f" - I/O Time:      {io_time:.3f}s ({((io_time)/total_time)*100:.1f}%)")
+   139         1         45.0     45.0      0.0                      print(f"   - f.seek:      {seek_time:.3f}s")
+   140         1         17.0     17.0      0.0                      print(f"   - f.read:      {read_time:.3f}s")
+   141         1         20.0     20.0      0.0                      print(f" - UI/Overhead:   {overhead_time:.3f}s ({(overhead_time/total_time)*100:.1f}%)")
+   142         1         21.0     21.0      0.0                      print(f" - Other/Python:  {other_time:.3f}s ({(other_time/total_time)*100:.1f}%)")
+   143         1         18.0     18.0      0.0                      print("-"*30 + "\n")
+   144         1        227.0    227.0      0.0                      self.finished_processing.emit(self.spectrogram[:row_idx, :].T)
+   145                                                               
+   146                                                   except Exception as e:
+   147                                                       print(f"Error reading file {self.filename}: {e}")
+

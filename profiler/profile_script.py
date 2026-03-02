@@ -33,7 +33,7 @@ def profile_dsp():
     lp.print_stats()
 
 def profile_file_reader():
-    print("Profiling FileReaderThread.run (JIT disabled)...")
+    print("Profiling Optimized FileReaderThread.run (JIT disabled, BATCHED)...")
     filename = "temp1.32fc"
     if not os.path.exists(filename):
         filename = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "temp1.32fc")
@@ -43,7 +43,7 @@ def profile_file_reader():
         return
         
     reader = utils.FileReaderThread(filename, np.float32, 1024, 50.0)
-    reader.num_rows = 100 
+    reader.num_rows = 5000 # More rows for batching
     
     lp = LineProfiler()
     lp.add_function(reader.run)
@@ -51,7 +51,7 @@ def profile_file_reader():
     lp_wrapper = lp(reader.run)
     lp_wrapper()
     
-    print("\n--- FileReaderThread.run Line Profiling ---")
+    print("\n--- Optimized FileReaderThread.run Line Profiling ---")
     lp.print_stats()
 
 if __name__ == "__main__":
