@@ -11,12 +11,13 @@ class FileReaderThread(QThread):
     progress = pyqtSignal(int, int)
     finished_processing = pyqtSignal(np.ndarray, float)
     
-    def __init__(self, filename, dtype, fft_size, overlap_percent, sample_rate):
+    def __init__(self, filename, dtype, fft_size, overlap_percent, sample_rate, profile_enabled=False):
         super().__init__()
         self.filename = filename
         self.dtype = dtype
         self.fft_size = fft_size
         self.sample_rate = sample_rate
+        self.profile_enabled = profile_enabled
         self.running = True
         self.window = np.hanning(fft_size).astype(np.float32)
         
@@ -146,16 +147,19 @@ class FileReaderThread(QThread):
                     
                     io_time = seek_time + read_time
                     other_time = total_time - (io_time + dsp_time + overhead_time)
-                    print(f"\n" + "-"*30)
-                    print(f"Processing Complete (BATCHED):")
-                    print(f" - Total Time:    {total_time:.3f}s (100.0%)")
-                    print(f" - DSP Time:      {dsp_time:.3f}s ({(dsp_time/total_time)*100:.1f}%)")
-                    print(f" - I/O Time:      {io_time:.3f}s ({((io_time)/total_time)*100:.1f}%)")
-                    print(f"   - f.seek:      {seek_time:.3f}s")
-                    print(f"   - f.read:      {read_time:.3f}s")
-                    print(f" - UI/Overhead:   {overhead_time:.3f}s ({(overhead_time/total_time)*100:.1f}%)")
-                    print(f" - Other/Python:  {other_time:.3f}s ({(other_time/total_time)*100:.1f}%)")
-                    print("-"*30 + "\n")
+                    
+                    if self.profile_enabled:
+                        print(f"\n" + "-"*30)
+                        print(f"Processing Complete (BATCHED):")
+                        print(f" - Total Time:    {total_time:.3f}s (100.0%)")
+                        print(f" - DSP Time:      {dsp_time:.3f}s ({(dsp_time/total_time)*100:.1f}%)")
+                        print(f" - I/O Time:      {io_time:.3f}s ({((io_time)/total_time)*100:.1f}%)")
+                        print(f"   - f.seek:      {seek_time:.3f}s")
+                        print(f"   - f.read:      {read_time:.3f}s")
+                        print(f" - UI/Overhead:   {overhead_time:.3f}s ({(overhead_time/total_time)*100:.1f}%)")
+                        print(f" - Other/Python:  {other_time:.3f}s ({(other_time/total_time)*100:.1f}%)")
+                        print("-"*30 + "\n")
+                    
                     self.finished_processing.emit(self.spectrogram[:actual_rows, :].T, total_duration)
                     
         except Exception as e:

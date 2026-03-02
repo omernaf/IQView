@@ -9,7 +9,7 @@ from .spectrogram_view import SpectrogramView
 from .side_panel import SidePanel
 
 class SpectrogramWindow(QMainWindow):
-    def __init__(self, file_path, data_type, sample_rate, center_freq, fft_size):
+    def __init__(self, file_path, data_type, sample_rate, center_freq, fft_size, profile_enabled=False):
         super().__init__()
         self.setWindowTitle("Antigravity Spectrogram Viewer")
         self.resize(1280, 800)
@@ -20,6 +20,7 @@ class SpectrogramWindow(QMainWindow):
         self.overlap_percent = 50.0
         self.file_path = file_path
         self.data_type = data_type
+        self.profile_enabled = profile_enabled
         
         self.active_drag_marker = None
         self.markers = []
@@ -70,7 +71,7 @@ class SpectrogramWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.progress_bar.show()
         
-        self.worker = FileReaderThread(self.file_path, self.data_type, self.fft_size, self.overlap_percent, self.rate)
+        self.worker = FileReaderThread(self.file_path, self.data_type, self.fft_size, self.overlap_percent, self.rate, self.profile_enabled)
         self.worker.progress.connect(self.update_progress)
         self.worker.finished_processing.connect(self.display_spectrogram)
         self.worker.start()

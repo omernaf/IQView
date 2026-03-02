@@ -39,7 +39,7 @@ def main():
     pg.setConfigOptions(useOpenGL=True, enableExperimental=True, imageAxisOrder='row-major')
     
     app = QApplication(sys.argv)
-    window = SpectrogramWindow(args.file, dtype, args.rate, args.fc, args.fft)
+    window = SpectrogramWindow(args.file, dtype, args.rate, args.fc, args.fft, args.profile)
     window.show()
     
     if args.profile:
