@@ -1,20 +1,111 @@
+from PyQt6.QtCore import Qt, QRectF, pyqtSignal
+from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import QWidget, QGridLayout, QScrollBar, QSizePolicy
+from pyqtgraph.widgets.ColorMapMenu import ColorMapMenu
+from pyqtgraph.graphicsItems.GradientPresets import Gradients
 import pyqtgraph as pg
 import numpy as np
 import copy
-from PyQt6.QtCore import Qt, QRectF
-from PyQt6.QtGui import QAction
-from pyqtgraph.widgets.ColorMapMenu import ColorMapMenu
-from pyqtgraph.graphicsItems.GradientPresets import Gradients
 
-class SpectrogramView(pg.GraphicsLayoutWidget):
+class SpectrogramView(QWidget):
     def __init__(self, parent_window):
         super().__init__()
         self.parent_window = parent_window
         
+        self.layout = QGridLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(0)
+        self.setStyleSheet("background-color: #1e1e1e;")
+        
+        # Internal Graphics Layout for Plot
+        self.glw_plot = pg.GraphicsLayoutWidget()
+        self.layout.addWidget(self.glw_plot, 0, 1)
+        
+        # Scrollbars
+        self.x_scroll = QScrollBar(Qt.Orientation.Horizontal)
+        self.y_scroll = QScrollBar(Qt.Orientation.Vertical)
+        
+        scrollbar_style = """
+            QScrollBar:horizontal {
+                background: #1e1e1e;
+                height: 12px;
+                margin: 0px;
+                border: none;
+            }
+            QScrollBar::handle:horizontal {
+                background: #444;
+                min-width: 20px;
+                border-radius: 4px;
+                margin: 2px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: #555;
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                width: 0px;
+                height: 0px;
+            }
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+                background: #1e1e1e;
+            }
+            
+            QScrollBar:vertical {
+                background: #1e1e1e;
+                width: 12px;
+                margin: 0px;
+                border: none;
+            }
+            QScrollBar::handle:vertical {
+                background: #444;
+                min-height: 20px;
+                border-radius: 4px;
+                margin: 2px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #555;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                width: 0px;
+                height: 0px;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: #1e1e1e;
+            }
+        """
+        self.x_scroll.setStyleSheet(scrollbar_style)
+        self.y_scroll.setStyleSheet(scrollbar_style)
+        
+        # Add scrollbars to grid
+        self.layout.addWidget(self.y_scroll, 0, 0) # Left side
+        self.layout.addWidget(self.x_scroll, 1, 1) # Under the plot
+        
+        # Corner widgets to override platform defaults
+        corner1 = QWidget()
+        corner1.setStyleSheet("background-color: #1e1e1e;")
+        self.layout.addWidget(corner1, 1, 0)
+        
+        corner2 = QWidget()
+        corner2.setStyleSheet("background-color: #1e1e1e;")
+        self.layout.addWidget(corner2, 1, 2)
+        
+        # Internal Graphics Layout for Histogram
+        self.glw_hist = pg.GraphicsLayoutWidget()
+        self.glw_hist.setFixedWidth(120)
+        self.layout.addWidget(self.glw_hist, 0, 2)
+        
+        # Stretch factors
+        self.layout.setColumnStretch(0, 0)
+        self.layout.setColumnStretch(1, 1) # Plot takes remaining space
+        self.layout.setColumnStretch(2, 0)
+        
+        # Initially hide or disable scrollbars if not zoomed
+        self.x_scroll.hide()
+        self.y_scroll.hide()
+
         # Plot Item with Custom ViewBox
         from .widgets import CustomViewBox
         self.view_box = CustomViewBox(ui_controller=parent_window)
-        self.plot_item = self.addPlot(viewBox=self.view_box, title="Static Full-File Spectrogram")
+        self.plot_item = self.glw_plot.addPlot(viewBox=self.view_box, title="Static Full-File Spectrogram")
         self.plot_item.setLabel('bottom', "Time", units='s')
         self.plot_item.setLabel('left', "Frequency", units='Hz')
         
@@ -26,7 +117,7 @@ class SpectrogramView(pg.GraphicsLayoutWidget):
         
         self.hist = pg.HistogramLUTItem()
         self.hist.setImageItem(self.img)
-        self.addItem(self.hist)
+        self.glw_hist.addItem(self.hist)
 
         colormap = pg.colormap.get('turbo')
         self.hist.gradient.setColorMap(colormap)
@@ -35,6 +126,16 @@ class SpectrogramView(pg.GraphicsLayoutWidget):
         
         self.hist.vb.setMenuEnabled(False)
         self.hist.gradient.mouseClickEvent = self.custom_gradient_menu
+
+        # Synchronization State
+        self._block_signals = False
+        self.full_t_range = (0, 1)
+        self.full_f_range = (0, 1)
+
+        # Connect signals
+        self.view_box.sigRangeChanged.connect(self.update_scrollbars)
+        self.x_scroll.valueChanged.connect(self.scroll_view)
+        self.y_scroll.valueChanged.connect(self.scroll_view)
 
     def custom_gradient_menu(self, ev):
         if ev.button() != Qt.MouseButton.RightButton:
@@ -71,6 +172,74 @@ class SpectrogramView(pg.GraphicsLayoutWidget):
         
         menu.exec(ev.screenPos().toPoint())
         ev.accept()
+
+    def update_scrollbars(self):
+        if self._block_signals: return
+        self._block_signals = True
+        
+        vr = self.view_box.viewRect()
+        
+        # Time axis (X)
+        t_total = self.full_t_range[1] - self.full_t_range[0]
+        if t_total > 0:
+            visible_ratio_x = vr.width() / t_total
+            if visible_ratio_x < 0.999:
+                self.x_scroll.show()
+                page_step = int(visible_ratio_x * 1000)
+                self.x_scroll.setRange(0, 1000 - page_step)
+                self.x_scroll.setPageStep(page_step)
+                # Position
+                pos = (vr.left() - self.full_t_range[0]) / t_total * 1000
+                self.x_scroll.setValue(int(pos))
+            else:
+                self.x_scroll.hide()
+        
+        # Freq axis (Y)
+        f_total = self.full_f_range[1] - self.full_f_range[0]
+        if f_total > 0:
+            visible_ratio_y = vr.height() / f_total
+            if visible_ratio_y < 0.999:
+                self.y_scroll.show()
+                page_step = int(visible_ratio_y * 1000)
+                self.y_scroll.setRange(0, 1000 - page_step)
+                self.y_scroll.setPageStep(page_step)
+                # Position (Inverted because Y axis 0 is bottom in view but top in scrollbar usually, 
+                # but pyqtgraph Y is bottom->top. Let's map it: value 0 is bottom.)
+                pos = (vr.bottom() - self.full_f_range[0]) / f_total * 1000
+                # QScrollBar 0 is typically top, but we want 0 to be bottom? 
+                # Actually, standard scrollbar: 0 is start of range. 
+                # For Y axis, start is f_min. So value 0 = f_min.
+                # But visual scrollbar 0 is TOP. Let's flip it for intuitive use.
+                inv_pos = 1000 - page_step - int(pos)
+                self.y_scroll.setValue(inv_pos)
+            else:
+                self.y_scroll.hide()
+                
+        self._block_signals = False
+
+    def scroll_view(self):
+        if self._block_signals: return
+        self._block_signals = True
+        
+        val_x = self.x_scroll.value()
+        val_y = self.y_scroll.value() # 0 is top
+        
+        t_total = self.full_t_range[1] - self.full_t_range[0]
+        f_total = self.full_f_range[1] - self.full_f_range[0]
+        vr = self.view_box.viewRect()
+        
+        new_left = self.full_t_range[0] + (val_x / 1000.0) * t_total
+        
+        # Flip Y back: top of scrollbar is f_max - vr.height()
+        inv_val_y = 1000 - self.y_scroll.pageStep() - val_y
+        new_bottom = self.full_f_range[0] + (inv_val_y / 1000.0) * f_total
+        
+        if self.x_scroll.isVisible():
+            self.plot_item.setXRange(new_left, new_left + vr.width(), padding=0)
+        if self.y_scroll.isVisible():
+            self.plot_item.setYRange(new_bottom, new_bottom + vr.height(), padding=0)
+            
+        self._block_signals = False
         
     def update_spectrogram(self, full_spectrogram, fc, rate, time_duration, auto_range=True):
         min_v = float(np.min(full_spectrogram))
@@ -84,6 +253,9 @@ class SpectrogramView(pg.GraphicsLayoutWidget):
         
         self.img.setImage(full_spectrogram, autoLevels=False, levels=levels, autoDownsample=True)
         self.img.setRect(QRectF(0, fc - rate/2, time_duration, rate))
+        
+        self.full_t_range = (0, time_duration)
+        self.full_f_range = (fc - rate/2, fc + rate/2)
         
         if auto_range:
             self.plot_item.autoRange()
