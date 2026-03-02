@@ -13,7 +13,7 @@ class SpectrogramView(QWidget):
         self.parent_window = parent_window
         
         self.layout = QGridLayout(self)
-        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setContentsMargins(0, 0, 10, 0) # Added right padding to avoid clipping at the edge
         self.layout.setSpacing(0)
         self.setStyleSheet("background-color: #121212;")
         
@@ -36,7 +36,7 @@ class SpectrogramView(QWidget):
             QScrollBar::handle:horizontal {
                 background: #3d3d3d;
                 min-width: 40px;
-                border-radius: 4px;
+                border_radius: 4px;
                 margin: 0px;
             }
             QScrollBar::handle:horizontal:hover {
@@ -52,7 +52,7 @@ class SpectrogramView(QWidget):
             QScrollBar::handle:vertical {
                 background: #3d3d3d;
                 min-height: 40px;
-                border-radius: 4px;
+                border_radius: 4px;
                 margin: 0px;
             }
             QScrollBar::handle:vertical:hover {
@@ -76,13 +76,13 @@ class SpectrogramView(QWidget):
         # Internal Graphics Layout for Histogram
         self.glw_hist = pg.GraphicsLayoutWidget()
         self.glw_hist.setBackground('#121212')
-        self.glw_hist.setFixedWidth(100)
+        self.glw_hist.setFixedWidth(150) # Increased to 150 for extra buffer for colormap handles
         self.layout.addWidget(self.glw_hist, 0, 2)
         
         # Stretch factors
         self.layout.setColumnStretch(0, 0)
         self.layout.setColumnStretch(1, 1) # Plot takes remaining space
-        self.layout.setColumnStretch(2, 0)
+        self.layout.setColumnStretch(2, 0) # Fixed width for histogram
         
         # Initially hide or disable scrollbars if not zoomed
         self.x_scroll.hide()
@@ -108,9 +108,8 @@ class SpectrogramView(QWidget):
         self.hist.setImageItem(self.img)
         self.glw_hist.addItem(self.hist)
 
-        colormap = pg.colormap.get('turbo')
-        self.hist.gradient.setColorMap(colormap)
-        self._current_cmap = colormap
+        self.hist.gradient.loadPreset('turbo')
+        self._current_cmap = self.hist.gradient.colorMap()
         self._cmap_reversed = False
         
         self.hist.vb.setMenuEnabled(False)
