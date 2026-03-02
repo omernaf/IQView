@@ -76,19 +76,20 @@ class CustomViewBox(pg.ViewBox):
                 ev.accept()
             else:
                 # --- Marker Logic ---
-                if ev.isStart():
-                    self.ui_controller.place_marker(ev.buttonDownScenePos(), drag_mode=True)
-                elif ev.isFinish():
-                    self.ui_controller.active_drag_marker = None
-                else:
-                    self.ui_controller.update_drag(ev.scenePos())
+                if self.ui_controller.interaction_mode in ['TIME', 'FREQ']:
+                    if ev.isStart():
+                        self.ui_controller.place_marker(ev.buttonDownScenePos(), drag_mode=True)
+                    elif ev.isFinish():
+                        self.ui_controller.active_drag_marker = None
+                    else:
+                        self.ui_controller.update_drag(ev.scenePos())
                 ev.accept()
         else:
             super().mouseDragEvent(ev)
 
     def mouseClickEvent(self, ev):
         if ev.button() == Qt.MouseButton.LeftButton:
-            if not self.ui_controller.zoom_mode:
+            if self.ui_controller.interaction_mode in ['TIME', 'FREQ']:
                 self.ui_controller.place_marker(ev.scenePos(), drag_mode=False)
             ev.accept()
         elif ev.button() == Qt.MouseButton.RightButton:
@@ -104,14 +105,19 @@ class CustomViewBox(pg.ViewBox):
         view_all_act.triggered.connect(self.ui_controller.reset_zoom)
         
         fit_act = menu.addAction("Fit to Screen")
-        fit_act.setEnabled(len(self.ui_controller.markers) == 2)
+        active_markers = self.ui_controller.markers_freq if self.ui_controller.interaction_mode == 'FREQ' else self.ui_controller.markers_time
+        fit_act.setEnabled(len(active_markers) == 2)
         fit_act.triggered.connect(self.ui_controller.fit_to_markers)
         
         menu.addSeparator()
         
         export_act = menu.addAction("Export...")
         def open_export():
-            from pyqtgraph.exporters import ExportDialog
+            try:
+                from pyqtgraph.exportDialog import ExportDialog
+            except ImportError:
+                # Fallback for different pyqtgraph versions
+                from pyqtgraph.exporters.exportDialog import ExportDialog
             self.export_dialog = ExportDialog(self.scene())
             self.export_dialog.show()
         export_act.triggered.connect(open_export)

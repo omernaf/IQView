@@ -3,7 +3,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 
 class MarkerPanel(QFrame):
-    zoomModeToggled = pyqtSignal(bool)
+    interactionModeChanged = pyqtSignal(str) # 'TIME', 'FREQ', 'ZOOM'
     resetZoomRequested = pyqtSignal()
 
     def __init__(self, parent_window):
@@ -51,15 +51,57 @@ class MarkerPanel(QFrame):
             }
         """)
         
-        # Main layout is horizontal to accommodate buttons on the right
+        # Main layout is horizontal to accommodate buttons on both sides
         self.main_layout = QGridLayout(self)
         self.main_layout.setContentsMargins(5, 5, 5, 5)
         self.main_layout.setSpacing(10)
 
+        # --- Interaction Mode Buttons (Left Side) ---
+        self.mode_btn_layout = QGridLayout()
+        self.mode_btn_layout.setSpacing(5)
+        self.main_layout.addLayout(self.mode_btn_layout, 0, 0)
+
+        # Time Marker Button
+        self.btn_marker_time = QPushButton("║")
+        self.btn_marker_time.setToolTip("Time Marker Mode (Vertical Lines)")
+        self.btn_marker_time.setCheckable(True)
+        self.btn_marker_time.setChecked(True)
+        self.mode_btn_layout.addWidget(self.btn_marker_time, 0, 0)
+
+        # Freq Marker Button
+        self.btn_marker_freq = QPushButton("〓")
+        self.btn_marker_freq.setToolTip("Frequency Marker Mode (Horizontal Lines)")
+        self.btn_marker_freq.setCheckable(True)
+        self.mode_btn_layout.addWidget(self.btn_marker_freq, 0, 1)
+
+        # Zoom Button
+        self.btn_zoom = QPushButton("🔍")
+        self.btn_zoom.setToolTip("Zoom Mode (Rubberband)")
+        self.btn_zoom.setCheckable(True)
+        self.mode_btn_layout.addWidget(self.btn_zoom, 1, 0)
+        
+        # Home Button
+        self.btn_home = QPushButton("🏠")
+        self.btn_home.setToolTip("Reset Zoom (Home)")
+        self.btn_home.clicked.connect(self.resetZoomRequested.emit)
+        self.mode_btn_layout.addWidget(self.btn_home, 1, 1)
+
+        # Mutual Exclusion Group
+        from PyQt6.QtWidgets import QButtonGroup
+        self.mode_group = QButtonGroup(self)
+        self.mode_group.addButton(self.btn_marker_time)
+        self.mode_group.addButton(self.btn_marker_freq)
+        self.mode_group.addButton(self.btn_zoom)
+        self.mode_group.setExclusive(True)
+        
+        self.btn_marker_time.clicked.connect(lambda: self.interactionModeChanged.emit('TIME'))
+        self.btn_marker_freq.clicked.connect(lambda: self.interactionModeChanged.emit('FREQ'))
+        self.btn_zoom.clicked.connect(lambda: self.interactionModeChanged.emit('ZOOM'))
+
         # Grid for marker data
         self.grid = QGridLayout()
         self.grid.setSpacing(8)
-        self.main_layout.addLayout(self.grid, 0, 0)
+        self.main_layout.addLayout(self.grid, 0, 1)
         
         header_font = QFont("Inter", 9, QFont.Weight.Bold)
         mono_font = QFont("Courier New", 10)
@@ -75,12 +117,12 @@ class MarkerPanel(QFrame):
             self.grid.addWidget(h, 0, col + 1)
 
         # Row Labels
-        r1_label = QLabel("Time (sec)")
-        r2_label = QLabel("Samples")
-        r1_label.setFont(header_font)
-        r2_label.setFont(header_font)
-        self.grid.addWidget(r1_label, 1, 0)
-        self.grid.addWidget(r2_label, 2, 0)
+        self.row1_label = QLabel("Time (sec)")
+        self.row2_label = QLabel("Samples")
+        self.row1_label.setFont(header_font)
+        self.row2_label.setFont(header_font)
+        self.grid.addWidget(self.row1_label, 1, 0)
+        self.grid.addWidget(self.row2_label, 2, 0)
 
         # Edit Widgets
         self.widgets = []
@@ -148,34 +190,17 @@ class MarkerPanel(QFrame):
         self.lock_delta_cb.setStyleSheet("color: #DDD;")
         self.lock_center_cb.setStyleSheet("color: #DDD;")
         
-        self.lock_delta_cb.toggled.connect(lambda checked: self.parent_window.handle_lock_change('delta', checked))
-        self.lock_center_cb.toggled.connect(lambda checked: self.parent_window.handle_lock_change('center', checked))
-        
         self.grid.addWidget(self.lock_delta_cb, 3, 3)
         self.grid.addWidget(self.lock_center_cb, 3, 4)
+        
+        # Connect locks to parent - will move these connections to main_window for safety
+        self.lock_delta_cb.toggled.connect(lambda checked: self.parent_window.handle_lock_change('delta', checked))
+        self.lock_center_cb.toggled.connect(lambda checked: self.parent_window.handle_lock_change('center', checked))
 
-        # --- Zoom Buttons (Right Side) ---
-        self.button_layout = QGridLayout()
-        self.button_layout.setSpacing(5)
-        self.main_layout.addLayout(self.button_layout, 0, 5)
-
-        self.btn_home = QPushButton("🏠")
-        self.btn_home.setToolTip("Reset Zoom (Home)")
-        self.btn_home.clicked.connect(self.resetZoomRequested.emit)
-        self.button_layout.addWidget(self.btn_home, 0, 0)
-
-        self.btn_zoom = QPushButton("🔍")
-        self.btn_zoom.setToolTip("Zoom Mode (Rubberband)")
-        self.btn_zoom.setCheckable(True)
-        self.btn_zoom.toggled.connect(self.zoomModeToggled.emit)
-        self.button_layout.addWidget(self.btn_zoom, 0, 1)
-
-        self.btn_p1 = QPushButton("⋯")
-        self.btn_p1.setToolTip("Placeholder 1")
-        self.btn_p1.setEnabled(False)
-        self.button_layout.addWidget(self.btn_p1, 1, 0)
-
-        self.btn_p2 = QPushButton("⋯")
-        self.btn_p2.setToolTip("Placeholder 2")
-        self.btn_p2.setEnabled(False)
-        self.button_layout.addWidget(self.btn_p2, 1, 1)
+    def update_headers(self, mode):
+        if mode == 'FREQ':
+            self.row1_label.setText("Freq (Hz)")
+            self.row2_label.setText("Bin")
+        else:
+            self.row1_label.setText("Time (sec)")
+            self.row2_label.setText("Samples")

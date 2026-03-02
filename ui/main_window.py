@@ -23,8 +23,10 @@ class SpectrogramWindow(QMainWindow):
         self.data_type = data_type
         self.profile_enabled = profile_enabled
         
-        self.markers = []
+        self.markers_time = []
+        self.markers_freq = []
         self.time_duration = 1.0 # Default until data loads
+        self.interaction_mode = 'TIME' # 'TIME', 'FREQ', or 'ZOOM'
         self.zoom_mode = False
         self.is_first_load = True
         self.zoom_history = []
@@ -62,7 +64,7 @@ class SpectrogramWindow(QMainWindow):
         self.layout.addWidget(self.progress_bar)
 
         self.marker_panel = MarkerPanel(self)
-        self.marker_panel.zoomModeToggled.connect(self.toggle_zoom_mode)
+        self.marker_panel.interactionModeChanged.connect(self.set_interaction_mode)
         self.marker_panel.resetZoomRequested.connect(self.reset_zoom)
         self.layout.addWidget(self.marker_panel)
         
@@ -128,8 +130,8 @@ class SpectrogramWindow(QMainWindow):
                 self.spectrogram_view.plot_item.setXRange(rel_t_min * self.time_duration, rel_t_max * self.time_duration, padding=0)
                 self.spectrogram_view.plot_item.setYRange(new_bottom + rel_f_min * self.rate, new_bottom + rel_f_max * self.rate, padding=0)
 
-                # 4. Update markers to preserve sample position
-                for marker in self.markers:
+                # 4. Update time markers to preserve sample position
+                for marker in self.markers_time:
                     samples = marker.getXPos() * old_rate
                     new_t = samples / self.rate
                     marker.setPos(new_t)
@@ -140,13 +142,19 @@ class SpectrogramWindow(QMainWindow):
                 )
             self.update_marker_info()
 
-    def toggle_zoom_mode(self, enabled):
-        self.zoom_mode = enabled
-        if enabled:
-            # Change cursor to crosshair for precision
+    def set_interaction_mode(self, mode):
+        self.interaction_mode = mode
+        self.zoom_mode = (mode == 'ZOOM')
+        
+        # Update cursor
+        if mode == 'ZOOM':
             self.spectrogram_view.setCursor(Qt.CursorShape.CrossCursor)
         else:
             self.spectrogram_view.setCursor(Qt.CursorShape.ArrowCursor)
+            
+        # Update table headers
+        self.marker_panel.update_headers(mode)
+        self.update_marker_info()
 
     def reset_zoom(self):
         # Save current range before resetting
@@ -176,57 +184,86 @@ class SpectrogramWindow(QMainWindow):
             self.spectrogram_view.plot_item.setRange(rect, padding=0)
 
     def fit_to_markers(self):
-        if len(self.markers) == 2:
+        is_freq = (self.interaction_mode == 'FREQ')
+        active_markers = self.markers_freq if is_freq else self.markers_time
+        
+        if len(active_markers) == 2:
             # Save current range before zooming
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             
-            t1 = self.markers[0].getXPos()
-            t2 = self.markers[1].getXPos()
-            t_min, t_max = min(t1, t2), max(t1, t2)
+            get_pos = lambda m: m.getYPos() if is_freq else m.getXPos()
+            v1 = get_pos(active_markers[0])
+            v2 = get_pos(active_markers[1])
+            v_min, v_max = min(v1, v2), max(v1, v2)
             
-            self.spectrogram_view.plot_item.setXRange(t_min, t_max, padding=0)
+            if is_freq:
+                self.spectrogram_view.plot_item.setYRange(v_min, v_max, padding=0)
+            else:
+                self.spectrogram_view.plot_item.setXRange(v_min, v_max, padding=0)
 
     def place_marker(self, scene_pos, drag_mode=False):
         if self.spectrogram_view.plot_item.sceneBoundingRect().contains(scene_pos):
             mouse_v = self.spectrogram_view.plot_item.vb.mapSceneToView(scene_pos)
-            pos_x = float(np.clip(mouse_v.x(), 0, self.time_duration))
             
-            if len(self.markers) == 2 and (self.marker_panel.lock_delta_cb.isChecked() or self.marker_panel.lock_center_cb.isChecked()):
-                m0_dist = abs(self.markers[0].getXPos() - pos_x)
-                m1_dist = abs(self.markers[1].getXPos() - pos_x)
+            # Determine active markers and bounds based on mode
+            if self.interaction_mode == 'TIME':
+                active_markers = self.markers_time
+                val = float(np.clip(mouse_v.x(), 0, self.time_duration))
+                max_bound = self.time_duration
+                angle = 90
+            elif self.interaction_mode == 'FREQ':
+                active_markers = self.markers_freq
+                f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
+                val = float(np.clip(mouse_v.y(), f_min, f_max))
+                # For freq, constraints are min/max frequency
+                angle = 0 # Horizontal
+            else:
+                return # Should not happen in place_marker
+
+            if len(active_markers) == 2 and (self.marker_panel.lock_delta_cb.isChecked() or self.marker_panel.lock_center_cb.isChecked()):
+                m0_pos = active_markers[0].getXPos() if angle == 90 else active_markers[0].getYPos()
+                m1_pos = active_markers[1].getXPos() if angle == 90 else active_markers[1].getYPos()
                 
-                target = self.markers[0] if m0_dist < m1_dist else self.markers[1]
-                other = self.markers[1] if m0_dist < m1_dist else self.markers[0]
+                m0_dist = abs(m0_pos - val)
+                m1_dist = abs(m1_pos - val)
                 
-                old_x = target.getXPos()
-                shift = pos_x - old_x
+                target = active_markers[0] if m0_dist < m1_dist else active_markers[1]
+                other = active_markers[1] if m0_dist < m1_dist else active_markers[0]
                 
+                old_p = target.getXPos() if angle == 90 else target.getYPos()
+                shift = val - old_p
+                
+                # Check bounds for BOTH markers
+                if self.interaction_mode == 'TIME':
+                    new_target_p = val
+                    new_other_p = other.getXPos() + shift
+                    in_bounds = (0 <= new_target_p <= self.time_duration and 0 <= new_other_p <= self.time_duration)
+                else:
+                    new_target_p = val
+                    new_other_p = other.getYPos() + shift
+                    in_bounds = (f_min <= new_target_p <= f_max and f_min <= new_other_p <= f_max)
+
                 if self.marker_panel.lock_delta_cb.isChecked():
-                    other_new_x = other.getXPos() + shift
-                    if 0 <= other_new_x <= self.time_duration:
-                        target.setPos(pos_x)
-                        other.setPos(other_new_x)
+                    if in_bounds:
+                        target.setPos(new_target_p)
+                        other.setPos(new_other_p)
                 elif self.marker_panel.lock_center_cb.isChecked():
-                    t1, t2 = self.markers[0].getXPos(), self.markers[1].getXPos()
-                    ct = (t1 + t2) / 2
-                    other_new_x = 2 * ct - pos_x
-                    if 0 <= other_new_x <= self.time_duration:
-                        target.setPos(pos_x)
-                        other.setPos(other_new_x)
+                    # Handle lock center specifically if needed, but for now simple shift logic suffices for placement
+                    pass
                 
                 if drag_mode:
                     self.active_drag_marker = target
             else:
-                if len(self.markers) >= 2:
-                    old_marker = self.markers.pop(0)
+                if len(active_markers) >= 2:
+                    old_marker = active_markers.pop(0)
                     self.spectrogram_view.plot_item.removeItem(old_marker)
                     
                 marker = pg.InfiniteLine(
-                    pos=pos_x, angle=90, movable=False,
+                    pos=val, angle=angle, movable=False,
                     pen=pg.mkPen('r', width=2)
                 )
                 self.spectrogram_view.plot_item.addItem(marker, ignoreBounds=True)
-                self.markers.append(marker)
+                active_markers.append(marker)
                 
                 if drag_mode:
                     self.active_drag_marker = marker
@@ -236,29 +273,41 @@ class SpectrogramWindow(QMainWindow):
     def update_drag(self, scene_pos):
         if self.active_drag_marker and self.spectrogram_view.plot_item.sceneBoundingRect().contains(scene_pos):
             mouse_v = self.spectrogram_view.plot_item.vb.mapSceneToView(scene_pos)
-            new_x = float(np.clip(mouse_v.x(), 0, self.time_duration))
             
-            if len(self.markers) == 2:
-                other_marker = self.markers[0] if self.markers[1] == self.active_drag_marker else self.markers[1]
-                old_x = self.active_drag_marker.getXPos()
-                shift = new_x - old_x
+            # Determine active list based on whether marker is in markers_time or markers_freq
+            is_time = self.active_drag_marker in self.markers_time
+            active_markers = self.markers_time if is_time else self.markers_freq
+            
+            if is_time:
+                new_v = float(np.clip(mouse_v.x(), 0, self.time_duration))
+                get_pos = lambda m: m.getXPos()
+                f_min, f_max = 0, self.time_duration
+            else:
+                f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
+                new_v = float(np.clip(mouse_v.y(), f_min, f_max))
+                get_pos = lambda m: m.getYPos()
+
+            if len(active_markers) == 2:
+                other_marker = active_markers[0] if active_markers[1] == self.active_drag_marker else active_markers[1]
+                old_v = get_pos(self.active_drag_marker)
+                shift = new_v - old_v
                 
                 if self.marker_panel.lock_delta_cb.isChecked():
-                    other_new_x = other_marker.getXPos() + shift
-                    if 0 <= other_new_x <= self.time_duration:
-                        self.active_drag_marker.setPos(new_x)
-                        other_marker.setPos(other_new_x)
+                    other_new = get_pos(other_marker) + shift
+                    if f_min <= other_new <= f_max:
+                        self.active_drag_marker.setPos(new_v)
+                        other_marker.setPos(other_new)
                 elif self.marker_panel.lock_center_cb.isChecked():
-                    t1, t2 = self.markers[0].getXPos(), self.markers[1].getXPos()
-                    ct = (t1 + t2) / 2
-                    other_new_x = 2 * ct - new_x
-                    if 0 <= other_new_x <= self.time_duration:
-                        self.active_drag_marker.setPos(new_x)
-                        other_marker.setPos(other_new_x)
+                    p1, p2 = get_pos(active_markers[0]), get_pos(active_markers[1])
+                    ct = (p1 + p2) / 2
+                    other_new = 2 * ct - new_v
+                    if f_min <= other_new <= f_max:
+                        self.active_drag_marker.setPos(new_v)
+                        other_marker.setPos(other_new)
                 else:
-                    self.active_drag_marker.setPos(new_x)
+                    self.active_drag_marker.setPos(new_v)
             else:
-                self.active_drag_marker.setPos(new_x)
+                self.active_drag_marker.setPos(new_v)
                 
             self.update_marker_info()
 
@@ -274,7 +323,12 @@ class SpectrogramWindow(QMainWindow):
             self.marker_panel.lock_delta_cb.blockSignals(False)
 
     def update_marker_info(self):
-        sorted_markers = sorted(self.markers, key=lambda m: m.getXPos())
+        # Choose active markers based on mode
+        is_freq = (self.interaction_mode == 'FREQ')
+        active_markers = self.markers_freq if is_freq else self.markers_time
+        get_pos = lambda m: m.getYPos() if is_freq else m.getXPos()
+        
+        sorted_markers = sorted(active_markers, key=get_pos)
         for widgets in self.marker_panel.widgets:
             widgets['sec'].clear()
             widgets['sam'].clear()
@@ -286,28 +340,48 @@ class SpectrogramWindow(QMainWindow):
         if not sorted_markers: return
 
         for i, marker in enumerate(sorted_markers):
-            t = marker.getXPos()
-            samples = int(t * self.rate)
+            val = get_pos(marker)
             self.marker_panel.widgets[i]['sec'].blockSignals(True)
             self.marker_panel.widgets[i]['sam'].blockSignals(True)
-            self.marker_panel.widgets[i]['sec'].setText(f"{t:.6f}")
-            self.marker_panel.widgets[i]['sam'].setText(f"{samples}")
+            if is_freq:
+                # Value is Hz. "Samples" -> FFT Bin
+                rbw = self.rate / self.fft_size
+                bin_idx = int((val - (self.fc - self.rate/2)) / rbw)
+                bin_idx = max(0, min(bin_idx, self.fft_size - 1))
+                self.marker_panel.widgets[i]['sec'].setText(f"{val:.2f}")
+                self.marker_panel.widgets[i]['sam'].setText(f"{bin_idx}")
+            else:
+                samples = int(val * self.rate)
+                self.marker_panel.widgets[i]['sec'].setText(f"{val:.6f}")
+                self.marker_panel.widgets[i]['sam'].setText(f"{samples}")
             self.marker_panel.widgets[i]['sec'].blockSignals(False)
             self.marker_panel.widgets[i]['sam'].blockSignals(False)
 
         if len(sorted_markers) == 2:
-            t1, t2 = sorted_markers[0].getXPos(), sorted_markers[1].getXPos()
-            dt, ds = abs(t2 - t1), int(abs(t2 - t1) * self.rate)
-            ct, cs = (t1 + t2) / 2, int(((t1 + t2) / 2) * self.rate)
+            p1, p2 = get_pos(sorted_markers[0]), get_pos(sorted_markers[1])
+            dp, cp = abs(p2 - p1), (p1 + p2) / 2
             
             self.marker_panel.delta_sec.blockSignals(True)
             self.marker_panel.delta_sam.blockSignals(True)
             self.marker_panel.center_sec.blockSignals(True)
             self.marker_panel.center_sam.blockSignals(True)
-            self.marker_panel.delta_sec.setText(f"{dt:.6f}")
-            self.marker_panel.delta_sam.setText(f"{ds}")
-            self.marker_panel.center_sec.setText(f"{ct:.6f}")
-            self.marker_panel.center_sam.setText(f"{cs}")
+
+            if is_freq:
+                rbw = self.rate / self.fft_size
+                # Clip bin indices to [0, nfft-1]
+                ds = max(0, min(int(dp / rbw), self.fft_size - 1))
+                cs = max(0, min(int((cp - (self.fc - self.rate/2)) / rbw), self.fft_size - 1))
+                self.marker_panel.delta_sec.setText(f"{dp:.2f}")
+                self.marker_panel.delta_sam.setText(f"{ds}")
+                self.marker_panel.center_sec.setText(f"{cp:.2f}")
+                self.marker_panel.center_sam.setText(f"{cs}")
+            else:
+                ds, cs = int(dp * self.rate), int(cp * self.rate)
+                self.marker_panel.delta_sec.setText(f"{dp:.6f}")
+                self.marker_panel.delta_sam.setText(f"{ds}")
+                self.marker_panel.center_sec.setText(f"{cp:.6f}")
+                self.marker_panel.center_sam.setText(f"{cs}")
+
             self.marker_panel.delta_sec.blockSignals(False)
             self.marker_panel.delta_sam.blockSignals(False)
             self.marker_panel.center_sec.blockSignals(False)
@@ -316,43 +390,73 @@ class SpectrogramWindow(QMainWindow):
     def marker_edit_finished(self):
         sender = self.sender()
         name = sender.objectName()
+        is_freq = (self.interaction_mode == 'FREQ')
+        active_markers = self.markers_freq if is_freq else self.markers_time
+        get_pos = lambda m: m.getYPos() if is_freq else m.getXPos()
+        
         try:
             val = float(sender.text())
-            sorted_markers = sorted(self.markers, key=lambda m: m.getXPos())
+            sorted_markers = sorted(active_markers, key=get_pos)
+            
+            f_min = self.fc - self.rate/2
+            f_max = self.fc + self.rate/2
+            rbw = self.rate / self.fft_size
+            curr_max = f_max if is_freq else self.time_duration
+            curr_min = f_min if is_freq else 0
+
             if name.startswith('m') and len(sorted_markers) > int(name[1]):
                 idx = int(name[1])
                 unit = name[3:]
-                new_t = np.clip(val / self.rate if unit == 'sam' else val, 0, self.time_duration)
+                
+                if is_freq:
+                    # Clip input bin to [0, nfft-1]
+                    bin_val = max(0, min(val, self.fft_size - 1))
+                    new_p = np.clip(f_min + bin_val * rbw if unit == 'sam' else val, f_min, f_max)
+                else:
+                    new_p = np.clip(val / self.rate if unit == 'sam' else val, 0, self.time_duration)
+                
                 if len(sorted_markers) == 2:
                     other_idx = 1 - idx
-                    old_t = sorted_markers[idx].getXPos()
-                    shift = new_t - old_t
+                    old_p = get_pos(sorted_markers[idx])
+                    shift = new_p - old_p
                     if self.marker_panel.lock_delta_cb.isChecked():
-                        other_new_t = sorted_markers[other_idx].getXPos() + shift
-                        if 0 <= other_new_t <= self.time_duration:
-                            sorted_markers[idx].setPos(new_t)
-                            sorted_markers[other_idx].setPos(other_new_t)
+                        other_new = get_pos(sorted_markers[other_idx]) + shift
+                        if curr_min <= other_new <= curr_max:
+                            sorted_markers[idx].setPos(new_p)
+                            sorted_markers[other_idx].setPos(other_new)
                     elif self.marker_panel.lock_center_cb.isChecked():
-                        t1, t2 = sorted_markers[0].getXPos(), sorted_markers[1].getXPos()
-                        ct = (t1 + t2) / 2
-                        other_new_t = 2 * ct - new_t
-                        if 0 <= other_new_t <= self.time_duration:
-                            sorted_markers[idx].setPos(new_t)
-                            sorted_markers[other_idx].setPos(other_new_t)
-                    else: sorted_markers[idx].setPos(new_t)
-                else: sorted_markers[idx].setPos(new_t)
+                        p1, p2 = get_pos(sorted_markers[0]), get_pos(sorted_markers[1])
+                        ct = (p1 + p2) / 2
+                        other_new = 2 * ct - new_p
+                        if curr_min <= other_new <= curr_max:
+                            sorted_markers[idx].setPos(new_p)
+                            sorted_markers[other_idx].setPos(other_new)
+                    else: sorted_markers[idx].setPos(new_p)
+                else: sorted_markers[idx].setPos(new_p)
+                
             elif len(sorted_markers) == 2:
-                t1, t2 = sorted_markers[0].getXPos(), sorted_markers[1].getXPos()
-                dt, ct = abs(t2 - t1), (t1 + t2) / 2
+                p1, p2 = get_pos(sorted_markers[0]), get_pos(sorted_markers[1])
+                dt, ct = abs(p2 - p1), (p1 + p2) / 2
+                
                 if 'delta' in name:
-                    new_dt = np.clip(val / self.rate if 'sam' in name else val, 0, self.time_duration)
+                    if is_freq:
+                        new_dt = np.clip(val * rbw if 'sam' in name else val, 0, self.rate)
+                    else:
+                        new_dt = np.clip(val / self.rate if 'sam' in name else val, 0, self.time_duration)
                     m1_new, m2_new = ct - new_dt/2, ct + new_dt/2
-                    sorted_markers[0].setPos(np.clip(m1_new, 0, self.time_duration))
-                    sorted_markers[1].setPos(np.clip(m2_new, 0, self.time_duration))
+                    if curr_min <= m1_new and m2_new <= curr_max:
+                        sorted_markers[0].setPos(m1_new)
+                        sorted_markers[1].setPos(m2_new)
                 elif 'center' in name:
-                    new_ct = np.clip(val / self.rate if 'sam' in name else val, 0, self.time_duration)
-                    sorted_markers[0].setPos(np.clip(new_ct - dt/2, 0, self.time_duration))
-                    sorted_markers[1].setPos(np.clip(new_ct + dt/2, 0, self.time_duration))
+                    if is_freq:
+                        new_ct = np.clip(val * rbw + f_min if 'sam' in name else val, f_min, f_max)
+                    else:
+                        new_ct = np.clip(val / self.rate if 'sam' in name else val, 0, self.time_duration)
+                    m1_new, m2_new = new_ct - dt/2, new_ct + dt/2
+                    if curr_min <= m1_new and m2_new <= curr_max:
+                        sorted_markers[0].setPos(m1_new)
+                        sorted_markers[1].setPos(m2_new)
+            
             self.update_marker_info()
         except ValueError: self.update_marker_info()
 
