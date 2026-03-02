@@ -34,15 +34,16 @@ def profile_dsp():
 
 def profile_file_reader():
     print("Profiling Optimized FileReaderThread.run (JIT disabled, BATCHED)...")
-    filename = "temp1.32fc"
-    if not os.path.exists(filename):
-        filename = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "temp1.32fc")
+    # Looking for the file in the samples directory
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    filename = os.path.join(base_dir, "samples", "temp.32fc")
         
     if not os.path.exists(filename):
-        print(f"Error: {filename} not found. Please run testing.py first to generate it.")
+        print(f"Error: {filename} not found. Please run testing.py --generate first.")
         return
         
-    reader = utils.FileReaderThread(filename, np.float32, 1024, 50.0)
+    # Updated signature: filename, dtype, fft_size, overlap, sample_rate, profile_enabled
+    reader = utils.FileReaderThread(filename, np.complex64, 1024, 50.0, 2e6, True)
     reader.num_rows = 5000 # More rows for batching
     
     lp = LineProfiler()

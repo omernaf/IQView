@@ -34,16 +34,32 @@ def generate_test_file(filename, sample_rate, duration):
     print(f"Created '{filename}' ({len(complex_data) * 8 / 1024 / 1024:.2f} MB).")
 
 def main():
+    # --- CONFIGURATION (Toggle features here for easy IDE 'Run') ---
+    PROFILE_ENABLED      = False   # Set to True to always run with the summary profiler
+    LINE_PROFILE_ENABLED = False  # Set to True to run the deep line-by-line profiler
+    GENERATE_ENABLED     = False  # Set to True to force regenerate the test file
+    # -------------------------------------------------------------
+
     import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--profile', action='store_true', help='Run with profiler enabled')
+    parser = argparse.ArgumentParser(description="Antigravity Test Runner")
+    parser.add_argument('--profile', action='store_true', default=PROFILE_ENABLED, help='Enable summary profiling')
+    parser.add_argument('--line-profile', action='store_true', default=LINE_PROFILE_ENABLED, help='Run deep line-profiler')
+    parser.add_argument('--generate', action='store_true', default=GENERATE_ENABLED, help='Force regenerate test file')
     args, unknown = parser.parse_known_args()
 
     filename = "samples/temp.32fc"
     sample_rate = 2e6  # 2 MHz
     duration = 10.0    # 10 seconds of simulated RF recording
     
-    # generate_test_file(filename, sample_rate, duration)
+    if args.line_profile:
+        print("Running Deep Line-by-Line Profiler...")
+        # Note: profile_script.py expects to be run from root or within profiler/
+        subprocess.run([sys.executable, "profiler/profile_script.py"])
+        return
+
+    if args.generate or not os.path.exists(filename):
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        generate_test_file(filename, sample_rate, duration)
     
     print("Launching Antigravity Spectrogram Viewer...")
     cmd = [

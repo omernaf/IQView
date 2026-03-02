@@ -46,6 +46,10 @@ def main():
         import cProfile
         import pstats
         import io
+        import os
+        
+        # Ensure profiler directory exists
+        os.makedirs("profiler", exist_ok=True)
         
         print("\n" + "="*40)
         print("PROFILING ENABLED")
@@ -57,15 +61,26 @@ def main():
         exit_code = app.exec()
         
         pr.disable()
-        s = io.StringIO()
-        sortby = 'cumulative' # 'time', 'cumulative'
-        ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-        ps.print_stats(30) # Top 30 calls
-        print(s.getvalue())
         
-        # Also save to disk for further analysis
-        pr.dump_stats("profile_results.prof")
-        print(f"Detailed profile saved to 'profile_results.prof'")
+        # 1. Print to console (Top 30)
+        sortby = 'cumulative'
+        ps = pstats.Stats(pr).sort_stats(sortby)
+        ps.print_stats(30)
+        
+        # 2. Save human-readable summary to disk
+        summary_path = os.path.join("profiler", "profile_summary.txt")
+        with open(summary_path, "w") as f:
+            f.write("Antigravity Execution Profile Summary\n")
+            f.write("="*40 + "\n\n")
+            ps_file = pstats.Stats(pr, stream=f).sort_stats(sortby)
+            ps_file.print_stats() # Save ALL stats to file
+            
+        # 3. Save binary data to disk
+        prof_path = os.path.join("profiler", "profile_results.prof")
+        pr.dump_stats(prof_path)
+        
+        print(f"\nDetailed profile (binary) saved to: {prof_path}")
+        print(f"Human-readable summary saved to:    {summary_path}\n")
         
         sys.exit(exit_code)
     else:
