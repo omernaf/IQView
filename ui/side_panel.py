@@ -11,7 +11,8 @@ class SidePanel(QFrame):
         self.fs = fs
         self.fc = fc
         self.fft_size = fft_size
-        self.overlap_percent = 50.0 # Default
+        self.window_type = "Hanning"
+        self.overlap_percent = 99.0 # Default
         
         self.setup_ui()
         self.update_derived_values()
@@ -90,6 +91,14 @@ class SidePanel(QFrame):
         self.fft_combo.currentIndexChanged.connect(self.on_fft_combo_changed)
         self.layout.addWidget(self.fft_combo)
 
+        # Window Type
+        self.layout.addWidget(QLabel("Window Type"))
+        self.window_type_combo = QComboBox()
+        self.window_type_combo.addItems(["Hanning", "Hamming", "Blackman", "Bartlett", "Rectangular"])
+        self.window_type_combo.setCurrentText(self.window_type)
+        self.window_type_combo.currentIndexChanged.connect(self.on_window_type_changed)
+        self.layout.addWidget(self.window_type_combo)
+
         # Overlap
         self.layout.addWidget(QLabel("Overlap (%)"))
         self.overlap_edit = QLineEdit(str(self.overlap_percent))
@@ -139,6 +148,10 @@ class SidePanel(QFrame):
         self.fft_size = int(self.fft_combo.currentText())
         self.on_edit_finished()
 
+    def on_window_type_changed(self):
+        self.window_type = self.window_type_combo.currentText()
+        self.on_edit_finished()
+        
     def on_overlap_edited(self):
         try:
             self.overlap_percent = np.clip(float(self.overlap_edit.text()), 0, 99.9)
@@ -159,6 +172,7 @@ class SidePanel(QFrame):
                 'fs': self.fs,
                 'fc': self.fc,
                 'fft_size': self.fft_size,
+                'window_type': self.window_type,
                 'overlap_percent': self.overlap_percent
             }
             self.parametersChanged.emit(params)

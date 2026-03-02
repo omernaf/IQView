@@ -17,7 +17,8 @@ class SpectrogramWindow(QMainWindow):
         self.fc = center_freq
         self.rate = sample_rate
         self.fft_size = fft_size
-        self.overlap_percent = 50.0
+        self.window_type = "Hanning"
+        self.overlap_percent = 99.0
         self.file_path = file_path
         self.data_type = data_type
         self.profile_enabled = profile_enabled
@@ -75,7 +76,7 @@ class SpectrogramWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.progress_bar.show()
         
-        self.worker = FileReaderThread(self.file_path, self.data_type, self.fft_size, self.overlap_percent, self.rate, self.profile_enabled)
+        self.worker = FileReaderThread(self.file_path, self.data_type, self.fft_size, self.overlap_percent, self.rate, self.profile_enabled, self.window_type)
         self.worker.progress.connect(self.update_progress)
         self.worker.finished_processing.connect(self.display_spectrogram)
         self.worker.start()
@@ -83,12 +84,15 @@ class SpectrogramWindow(QMainWindow):
     def on_parameters_changed(self, params):
         # Check if we need a full re-processing (DSP params changed)
         needs_reprocess = (self.fft_size != params['fft_size'] or 
-                           self.overlap_percent != params['overlap_percent'])
+                           self.overlap_percent != params['overlap_percent'] or
+                           self.window_type != params['window_type'])
         
         old_rate = self.rate
+        old_fc = self.fc
         self.rate = params['fs']
         self.fc = params['fc']
         self.fft_size = params['fft_size']
+        self.window_type = params['window_type']
         self.overlap_percent = params['overlap_percent']
         
         if needs_reprocess:
@@ -96,24 +100,44 @@ class SpectrogramWindow(QMainWindow):
         else:
             # Soft update: refresh labels and markers
             if hasattr(self, 'full_spectrogram_cache'):
-                # Re-calculate duration based on new rate
-                # We use the same precise logic: (samples) / rate
-                num_time_steps = self.full_spectrogram_cache.shape[1]
-                step_size = int(self.fft_size * (1.0 - self.overlap_percent / 100.0))
-                step_size = max(1, step_size)
+                # 1. Store old duration for relative coordinate calculation
+                old_duration = self.time_duration
                 
-                total_samples = (num_time_steps - 1) * step_size + self.fft_size
-                self.time_duration = total_samples / self.rate
+                # 2. Re-calculate duration based on new rate
+                if hasattr(self, 'total_samples_in_cache'):
+                    self.time_duration = self.total_samples_in_cache / self.rate
+                else:
+                    self.time_duration = (old_duration * old_rate) / self.rate
+
+                # 3. Shift view range to keep relative zoom consistent (avoid "stretching and moving")
+                vr = self.spectrogram_view.plot_item.viewRange()
                 
-                # Update markers to preserve sample position
+                # Relative time range [0, 1]
+                rel_t_min = vr[0][0] / old_duration
+                rel_t_max = vr[0][1] / old_duration
+                
+                # Relative frequency range [0, 1]
+                old_bottom = old_fc - old_rate / 2
+                rel_f_min = (vr[1][0] - old_bottom) / old_rate
+                rel_f_max = (vr[1][1] - old_bottom) / old_rate
+                
+                # New bottom
+                new_bottom = self.fc - self.rate / 2
+                
+                # Update viewport to match relative position in new coordinate system
+                self.spectrogram_view.plot_item.setXRange(rel_t_min * self.time_duration, rel_t_max * self.time_duration, padding=0)
+                self.spectrogram_view.plot_item.setYRange(new_bottom + rel_f_min * self.rate, new_bottom + rel_f_max * self.rate, padding=0)
+
+                # 4. Update markers to preserve sample position
                 for marker in self.markers:
                     samples = marker.getXPos() * old_rate
                     new_t = samples / self.rate
                     marker.setPos(new_t)
 
-                    self.spectrogram_view.update_spectrogram(
-                        self.full_spectrogram_cache, self.fc, self.rate, self.time_duration, auto_range=False
-                    )
+                # 5. Final Spectrogram coordinate update
+                self.spectrogram_view.update_spectrogram(
+                    self.full_spectrogram_cache, self.fc, self.rate, self.time_duration, auto_range=False
+                )
             self.update_marker_info()
 
     def toggle_zoom_mode(self, enabled):
@@ -331,6 +355,7 @@ class SpectrogramWindow(QMainWindow):
         self.progress_bar.hide()
         self.full_spectrogram_cache = full_spectrogram
         self.time_duration = duration
+        self.total_samples_in_cache = duration * self.rate
         
         self.spectrogram_view.update_spectrogram(
             full_spectrogram, self.fc, self.rate, self.time_duration, 

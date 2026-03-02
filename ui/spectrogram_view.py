@@ -76,14 +76,19 @@ class SpectrogramView(pg.GraphicsLayoutWidget):
         min_v = float(np.min(full_spectrogram))
         max_v = float(np.max(full_spectrogram))
         
-        self.img.setImage(full_spectrogram, autoLevels=False, levels=[min_v, max_v], autoDownsample=True)
+        # Use existing levels if not auto-ranging to preserve contrast/brightness
+        if not auto_range:
+            levels = self.hist.getLevels()
+        else:
+            levels = [min_v, max_v]
+        
+        self.img.setImage(full_spectrogram, autoLevels=False, levels=levels, autoDownsample=True)
         self.img.setRect(QRectF(0, fc - rate/2, time_duration, rate))
         
         if auto_range:
             self.plot_item.autoRange()
+            self.hist.setLevels(min_v, max_v)
+            self.hist.region.setBounds([min_v, max_v])
         
         self.hist.vb.setMouseEnabled(x=False, y=False)
         self.hist.vb.disableAutoRange()
-        self.hist.vb.setLimits(yMin=min_v, yMax=max_v)
-        self.hist.setLevels(min_v, max_v)
-        self.hist.region.setBounds([min_v, max_v])

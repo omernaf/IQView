@@ -11,7 +11,7 @@ class FileReaderThread(QThread):
     progress = pyqtSignal(int, int)
     finished_processing = pyqtSignal(np.ndarray, float)
     
-    def __init__(self, filename, dtype, fft_size, overlap_percent, sample_rate, profile_enabled=False):
+    def __init__(self, filename, dtype, fft_size, overlap_percent, sample_rate, profile_enabled=False, window_type="Hanning"):
         super().__init__()
         self.filename = filename
         self.dtype = dtype
@@ -19,7 +19,18 @@ class FileReaderThread(QThread):
         self.sample_rate = sample_rate
         self.profile_enabled = profile_enabled
         self.running = True
-        self.window = np.hanning(fft_size).astype(np.float32)
+        
+        # Select Window Function
+        if window_type == "Hanning":
+            self.window = np.hanning(fft_size).astype(np.float32)
+        elif window_type == "Hamming":
+            self.window = np.hamming(fft_size).astype(np.float32)
+        elif window_type == "Blackman":
+            self.window = np.blackman(fft_size).astype(np.float32)
+        elif window_type == "Bartlett":
+            self.window = np.bartlett(fft_size).astype(np.float32)
+        else: # Rectangular / None
+            self.window = np.ones(fft_size, dtype=np.float32)
         
         # Calculate step size based on requested overlap
         req_step_size = int(fft_size * (1.0 - overlap_percent / 100.0))
