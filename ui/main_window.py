@@ -573,12 +573,12 @@ class SpectrogramWindow(QMainWindow):
                     other_idx = 1 - idx
                     old_p = get_pos(sorted_markers[idx])
                     shift = new_p - old_p
-                    if self.marker_panel.lock_delta_cb.isChecked():
+                    if self.marker_panel.btn_lock_delta.isChecked():
                         other_new = get_pos(sorted_markers[other_idx]) + shift
                         if curr_min <= other_new <= curr_max:
                             sorted_markers[idx].setPos(new_p)
                             sorted_markers[other_idx].setPos(other_new)
-                    elif self.marker_panel.lock_center_cb.isChecked():
+                    elif self.marker_panel.btn_lock_center.isChecked():
                         p1, p2 = get_pos(sorted_markers[0]), get_pos(sorted_markers[1])
                         ct = (p1 + p2) / 2
                         other_new = 2 * ct - new_p
