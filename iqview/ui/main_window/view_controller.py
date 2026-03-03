@@ -57,6 +57,21 @@ class ViewControllerMixin:
         else:
             self.spectrogram_view.setCursor(Qt.CursorShape.ArrowCursor)
 
+    def open_time_domain_tab(self):
+        if len(self.markers_time) < 2:
+            return
+            
+        t1 = self.markers_time[0].value()
+        t2 = self.markers_time[1].value()
+        start_t, end_t = min(t1, t2), max(t1, t2)
+        
+        samples = self.extract_iq_segment(start_t, end_t)
+        if samples is not None:
+            from ..time_domain_view import TimeDomainView
+            td_view = TimeDomainView(samples, start_t, self.rate)
+            idx = self.tabs.addTab(td_view, f"Time Domain ({start_t:.3f}s)")
+            self.tabs.setCurrentIndex(idx)
+
     def reset_zoom(self):
         self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
         self.spectrogram_view.plot_item.autoRange()

@@ -45,7 +45,39 @@ class UIComponentsMixin:
         self.marker_panel.resetZoomRequested.connect(self.reset_zoom)
         self.marker_panel.markerClearRequested.connect(self.handle_marker_clear)
         self.v_layout.addWidget(self.marker_panel)
+        
+        # --- Tabbed View (Spectrogram + Time Domain) ---
+        from PyQt6.QtWidgets import QTabWidget
+        self.tabs = QTabWidget()
+        self.tabs.setTabsClosable(True)
+        self.tabs.setMovable(False)
+        self.tabs.tabCloseRequested.connect(self.close_tab)
+        self.tabs.setStyleSheet("""
+            QTabWidget::pane { border: 1px solid #333; top: -1px; background-color: #121212; }
+            QTabBar::tab { 
+                background-color: #1a1a1a; color: #888; padding: 8px 20px; 
+                border: 1px solid #333; border-bottom: none; border-top-left-radius: 4px; border-top-right-radius: 4px;
+                margin-right: 2px; font-size: 12px; font-weight: bold;
+            }
+            QTabBar::tab:hover { background-color: #252525; color: #ccc; }
+            QTabBar::tab:selected { background-color: #121212; color: #00aaff; border-bottom: 2px solid #00aaff; }
+            QTabBar::close-button { image: none; } /* Hide close button on Spectrogram via widget-specific logic if needed, or global hide */
+        """)
+        
+        self.v_layout.addWidget(self.tabs)
+        
         self.spectrogram_view = SpectrogramView(self)
-        self.v_layout.addWidget(self.spectrogram_view)
+        self.tabs.addTab(self.spectrogram_view, "Spectrogram")
+        
+        # Hide close button on the first tab (Spectrogram)
+        from PyQt6.QtWidgets import QTabBar
+        self.tabs.tabBar().setTabButton(0, QTabBar.ButtonPosition.RightSide, None)
+
         self.set_interaction_mode('TIME')
         QTimer.singleShot(250, lambda: self.set_interaction_mode('TIME'))
+
+    def close_tab(self, index):
+        if index > 0: # Don't close Spectrogram
+            widget = self.tabs.widget(index)
+            self.tabs.removeTab(index)
+            widget.deleteLater()

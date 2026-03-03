@@ -113,6 +113,13 @@ class CustomViewBox(pg.ViewBox):
         view_all_act = menu.addAction("View All")
         view_all_act.triggered.connect(self.ui_controller.reset_zoom)
         
+        menu.addSeparator()
+        
+        td_popup_act = menu.addAction("Time Domain Popup")
+        time_markers_count = len(self.ui_controller.markers_time)
+        td_popup_act.setEnabled(time_markers_count == 2)
+        td_popup_act.triggered.connect(self.ui_controller.open_time_domain_tab)
+
         fit_act = menu.addAction("Fit to Screen")
         active_markers = self.ui_controller.markers_freq if self.ui_controller.interaction_mode == 'FREQ' else self.ui_controller.markers_time
         fit_act.setEnabled(len(active_markers) == 2)
