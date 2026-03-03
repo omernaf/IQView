@@ -210,6 +210,10 @@ class SpectrogramView(QWidget):
     def keyPressEvent(self, ev):
         if ev.key() == Qt.Key.Key_Control:
             self.setCursor(Qt.CursorShape.CrossCursor)
+        elif ev.key() == Qt.Key.Key_T:
+            self.parent_window.set_interaction_mode('TIME')
+        elif ev.key() == Qt.Key.Key_F:
+            self.parent_window.set_interaction_mode('FREQ')
         super().keyPressEvent(ev)
 
     def keyReleaseEvent(self, ev):
