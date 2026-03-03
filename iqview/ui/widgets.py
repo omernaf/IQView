@@ -90,6 +90,42 @@ class FormattedLineEdit(QtWidgets.QLineEdit):
         super().setText(self._format_text(self._raw_text))
         super().focusOutEvent(event)
 
+class KeyBindEdit(QtWidgets.QLineEdit):
+    """
+    A QLineEdit that captures a single key press (including standalone modifiers) 
+    and sets its text to that key's name.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setReadOnly(True)
+        self.setPlaceholderText("Click and press a key...")
+        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.key_name = ""
+
+    def keyPressEvent(self, event):
+        key = event.key()
+        if key == QtCore.Qt.Key.Key_Escape:
+            self.clear()
+            self.key_name = ""
+            return
+
+        # Use QKeySequence to get a friendly name for the key
+        # We use just the key (no modifiers) unless it's a combination.
+        # But here we want the user to be able to set just 'Ctrl', 'Alt', etc.
+        name = QtGui.QKeySequence(key).toString()
+        
+        # QKeySequence(Qt.Key_Control).toString() -> "Control"
+        # We might want to shorten it to "Ctrl" for UI consistency
+        if name == "Control": name = "Ctrl"
+        
+        if name:
+            self.setText(name)
+            self.key_name = name
+            self.clearFocus()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
 class CustomViewBox(pg.ViewBox):
     def __init__(self, ui_controller, *args, **kwds):
         super().__init__(*args, **kwds)

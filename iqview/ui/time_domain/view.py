@@ -132,26 +132,28 @@ class TimeDomainView(QWidget):
 
     def keyPressEvent(self, event):
         s = self.parent_window.settings_mgr
-        key_seq = QKeySequence(event.key() | int(event.modifiers())).toString()
+        key_name = QKeySequence(event.key()).toString()
+        if key_name == "Control": key_name = "Ctrl"
         
         time_seq = s.get('keybinds/time_markers', 'T')
         mag_seq = s.get('keybinds/mag_markers', 'F')
         zoom_seq = s.get('keybinds/zoom_mode', 'Ctrl')
         
-        if key_seq == time_seq:
+        if key_name == time_seq:
             self.set_interaction_mode('TIME')
-        elif key_seq == mag_seq:
+        elif key_name == mag_seq:
             self.set_interaction_mode('MAG')
-        elif key_seq == zoom_seq:
+        elif key_name == zoom_seq:
             self.set_interaction_mode('ZOOM')
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
         s = self.parent_window.settings_mgr
-        key_seq = QKeySequence(event.key() | int(event.modifiers())).toString()
+        key_name = QKeySequence(event.key()).toString()
+        if key_name == "Control": key_name = "Ctrl"
         zoom_seq = s.get('keybinds/zoom_mode', 'Ctrl')
 
-        if key_seq == zoom_seq:
+        if key_name == zoom_seq:
             self.set_interaction_mode('TIME')
         super().keyReleaseEvent(event)
 

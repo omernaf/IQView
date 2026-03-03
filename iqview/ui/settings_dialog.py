@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget,
                              QFormLayout, QDialogButtonBox, QKeySequenceEdit)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence
+from .widgets import KeyBindEdit
 
 class SettingsDialog(QDialog):
     def __init__(self, settings_manager, parent=None):
@@ -30,6 +31,8 @@ class SettingsDialog(QDialog):
                 widget.setText(str(default_val))
             elif isinstance(widget, QComboBox):
                 widget.setCurrentText(str(default_val))
+            elif isinstance(widget, KeyBindEdit):
+                widget.setText(str(default_val))
             elif isinstance(widget, QKeySequenceEdit):
                 widget.setKeySequence(QKeySequence(str(default_val)))
         
@@ -86,9 +89,14 @@ class SettingsDialog(QDialog):
         self.keyboard_tab = QWidget()
         self.keyboard_form = QFormLayout(self.keyboard_tab)
         
-        self.time_key = QKeySequenceEdit(QKeySequence(str(self.mgr.get("keybinds/time_markers"))))
-        self.mag_key = QKeySequenceEdit(QKeySequence(str(self.mgr.get("keybinds/mag_markers"))))
-        self.zoom_key = QKeySequenceEdit(QKeySequence(str(self.mgr.get("keybinds/zoom_mode"))))
+        self.time_key = KeyBindEdit()
+        self.time_key.setText(str(self.mgr.get("keybinds/time_markers")))
+        
+        self.mag_key = KeyBindEdit()
+        self.mag_key.setText(str(self.mgr.get("keybinds/mag_markers")))
+        
+        self.zoom_key = KeyBindEdit()
+        self.zoom_key.setText(str(self.mgr.get("keybinds/zoom_mode")))
         
         self._add_reset_row(self.keyboard_form, "Time Markers Key:", self.time_key, "keybinds/time_markers")
         self._add_reset_row(self.keyboard_form, "Magnitude/Freq Markers Key:", self.mag_key, "keybinds/mag_markers")
@@ -111,9 +119,9 @@ class SettingsDialog(QDialog):
             self.mgr.set("core/window_type", self.window_combo.currentText())
             self.mgr.set("ui/theme", self.theme_combo.currentText())
             
-            self.mgr.set("keybinds/time_markers", self.time_key.keySequence().toString())
-            self.mgr.set("keybinds/mag_markers", self.mag_key.keySequence().toString())
-            self.mgr.set("keybinds/zoom_mode", self.zoom_key.keySequence().toString())
+            self.mgr.set("keybinds/time_markers", self.time_key.text())
+            self.mgr.set("keybinds/mag_markers", self.mag_key.text())
+            self.mgr.set("keybinds/zoom_mode", self.zoom_key.text())
             
             self.accept()
         except ValueError as e:

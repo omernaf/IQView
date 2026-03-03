@@ -93,7 +93,8 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
 
     def keyPressEvent(self, event):
         s = self.settings_mgr
-        key_seq = QKeySequence(event.key() | int(event.modifiers())).toString()
+        key_name = QKeySequence(event.key()).toString()
+        if key_name == "Control": key_name = "Ctrl"
         
         time_seq = s.get('keybinds/time_markers', 'T')
         freq_seq = s.get('keybinds/mag_markers', 'F')
@@ -101,11 +102,11 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
 
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Z:
             self.undo_zoom()
-        elif key_seq == time_seq:
+        elif key_name == time_seq:
             self.set_interaction_mode('TIME')
-        elif key_seq == freq_seq:
+        elif key_name == freq_seq:
             self.set_interaction_mode('FREQ')
-        elif key_seq == zoom_seq:
+        elif key_name == zoom_seq:
             # Zoom mode is handled by ViewBox if we hold the key
             pass
         else:
