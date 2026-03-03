@@ -6,7 +6,7 @@ import numpy as np
 class SidePanel(QFrame):
     parametersChanged = pyqtSignal(dict)
 
-    def __init__(self, fs, fc, fft_size, window_type="Hanning", overlap_percent=99.0, parent_window=None):
+    def __init__(self, fs, fc, fft_size, window_type="Hamming", overlap_percent=99.0, parent_window=None):
         super().__init__()
         self.parent_window = parent_window
         self.fs = fs

@@ -22,7 +22,7 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         self.fc = center_freq
         self.rate = sample_rate
         self.fft_size = fft_size
-        self.window_type = self.settings_mgr.get("core/window_type", "Hanning")
+        self.window_type = self.settings_mgr.get("core/window_type", "Hamming")
         self.overlap_percent = float(self.settings_mgr.get("core/overlap", 99.0))
         self.file_path = file_path
         self.data_type = data_type
@@ -50,7 +50,7 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         self.start_processing()
 
     def apply_current_theme(self):
-        theme = self.settings_mgr.get("ui/theme", "Dark")
+        theme = self.settings_mgr.get("ui/theme", "Light")
         self.setStyleSheet(get_main_stylesheet(theme))
         
         if hasattr(self, 'marker_panel'):

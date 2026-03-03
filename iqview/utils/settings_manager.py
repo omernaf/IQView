@@ -8,9 +8,9 @@ class SettingsManager:
         "core/fc": 0.0,
         "core/fft_size": 1024,
         "core/overlap": 99.0,
-        "core/window_type": "Hanning",
+        "core/window_type": "Hamming",
         "core/type": "complex64",
-        "ui/theme": "Dark",
+        "ui/theme": "Light",
         "keybinds/time_markers": "T",
         "keybinds/mag_markers": "F",
         "keybinds/zoom_mode": "Control"
