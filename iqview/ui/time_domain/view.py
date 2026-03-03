@@ -132,22 +132,26 @@ class TimeDomainView(QWidget):
 
     def keyPressEvent(self, event):
         s = self.parent_window.settings_mgr
-        time_key = getattr(Qt.Key, f"Key_{s.get('keybinds/time_markers', 'T')}")
-        mag_key = getattr(Qt.Key, f"Key_{s.get('keybinds/mag_markers', 'F')}")
-        zoom_key = s.get('keybinds/zoom_mode', 'Control')
+        key_seq = QKeySequence(event.key() | int(event.modifiers())).toString()
         
-        if event.key() == time_key:
+        time_seq = s.get('keybinds/time_markers', 'T')
+        mag_seq = s.get('keybinds/mag_markers', 'F')
+        zoom_seq = s.get('keybinds/zoom_mode', 'Ctrl')
+        
+        if key_seq == time_seq:
             self.set_interaction_mode('TIME')
-        elif event.key() == mag_key:
+        elif key_seq == mag_seq:
             self.set_interaction_mode('MAG')
-        elif zoom_key == "Control" and event.key() == Qt.Key.Key_Control:
+        elif key_seq == zoom_seq:
             self.set_interaction_mode('ZOOM')
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
         s = self.parent_window.settings_mgr
-        zoom_key = s.get('keybinds/zoom_mode', 'Control')
-        if zoom_key == "Control" and event.key() == Qt.Key.Key_Control:
+        key_seq = QKeySequence(event.key() | int(event.modifiers())).toString()
+        zoom_seq = s.get('keybinds/zoom_mode', 'Ctrl')
+
+        if key_seq == zoom_seq:
             self.set_interaction_mode('TIME')
         super().keyReleaseEvent(event)
 

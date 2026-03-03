@@ -13,7 +13,7 @@ class SettingsManager:
         "ui/theme": "Light",
         "keybinds/time_markers": "T",
         "keybinds/mag_markers": "F",
-        "keybinds/zoom_mode": "Control"
+        "keybinds/zoom_mode": "Ctrl"
     }
 
     def __init__(self):
