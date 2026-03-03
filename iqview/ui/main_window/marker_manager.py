@@ -148,12 +148,12 @@ class MarkerManagerMixin:
                 rbw = self.rate / self.fft_size
                 bin_idx = int(round((val - (self.fc - self.rate/2)) / rbw)) + 1
                 bin_idx = max(1, min(bin_idx, self.fft_size))
-                self.marker_panel.widgets[i]['sec'].setText(f"{val:.2f}")
+                self.marker_panel.widgets[i]['sec'].setText(f"{val:.6f}")
                 self.marker_panel.widgets[i]['sam'].setText(f"{bin_idx}")
             else:
                 sample = int(round(val * self.rate)) + 1
                 sample = max(1, min(sample, getattr(self, 'total_samples_in_cache', 1e9)))
-                self.marker_panel.widgets[i]['sec'].setText(f"{val:.6f}")
+                self.marker_panel.widgets[i]['sec'].setText(f"{val:.9f}")
                 self.marker_panel.widgets[i]['sam'].setText(f"{sample}")
             self.marker_panel.widgets[i]['sec'].blockSignals(False)
             self.marker_panel.widgets[i]['sam'].blockSignals(False)
@@ -175,9 +175,9 @@ class MarkerManagerMixin:
                 cp = (p1 + p2) / 2
                 cs = int(round((cp - f_min) / rbw)) + 1
                 cs = max(1, min(cs, self.fft_size))
-                self.marker_panel.delta_sec.setText(f"{abs(p2 - p1):.2f}")
+                self.marker_panel.delta_sec.setText(f"{abs(p2 - p1):.6f}")
                 self.marker_panel.delta_sam.setText(f"{ds}")
-                self.marker_panel.center_sec.setText(f"{cp:.2f}")
+                self.marker_panel.center_sec.setText(f"{cp:.6f}")
                 self.marker_panel.center_sam.setText(f"{cs}")
             else:
                 s1 = int(round(p1 * self.rate)) + 1
@@ -188,9 +188,9 @@ class MarkerManagerMixin:
                 cp = (p1 + p2) / 2
                 cs = int(round(cp * self.rate)) + 1
                 cs = max(1, min(cs, max_s))
-                self.marker_panel.delta_sec.setText(f"{abs(p2 - p1):.6f}")
+                self.marker_panel.delta_sec.setText(f"{abs(p2 - p1):.9f}")
                 self.marker_panel.delta_sam.setText(f"{ds}")
-                self.marker_panel.center_sec.setText(f"{cp:.6f}")
+                self.marker_panel.center_sec.setText(f"{cp:.9f}")
                 self.marker_panel.center_sam.setText(f"{cs}")
 
             self.marker_panel.delta_sec.blockSignals(False)
