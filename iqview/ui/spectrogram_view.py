@@ -6,7 +6,7 @@ from pyqtgraph.graphicsItems.GradientPresets import Gradients
 import pyqtgraph as pg
 import numpy as np
 import copy
-from .themes import get_palette
+from .themes import get_palette, get_scrollbar_stylesheet
 
 class SpectrogramView(QWidget):
     def __init__(self, parent_window):
@@ -28,49 +28,9 @@ class SpectrogramView(QWidget):
         self.x_scroll = QScrollBar(Qt.Orientation.Horizontal)
         self.y_scroll = QScrollBar(Qt.Orientation.Vertical)
         
-        scrollbar_style = """
-            QScrollBar:horizontal {
-                background: #121212;
-                height: 8px;
-                margin: 0px;
-                border: none;
-            }
-            QScrollBar::handle:horizontal {
-                background: #3d3d3d;
-                min-width: 40px;
-                border-radius: 4px;
-                margin: 0px;
-            }
-            QScrollBar::handle:horizontal:hover {
-                background: #00aaff;
-            }
-            
-            QScrollBar:vertical {
-                background: #121212;
-                width: 8px;
-                margin: 0px;
-                border: none;
-            }
-            QScrollBar::handle:vertical {
-                background: #3d3d3d;
-                min-height: 40px;
-                border-radius: 4px;
-                margin: 0px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: #00aaff;
-            }
-            
-            QScrollBar::add-line, QScrollBar::sub-line {
-                width: 0px; height: 0px;
-            }
-            QScrollBar::add-page, QScrollBar::sub-page {
-                background: none;
-            }
-        """
+        scrollbar_style = get_scrollbar_stylesheet(get_palette(self.parent_window.settings_mgr.get("ui/theme", "Dark")))
         self.x_scroll.setStyleSheet(scrollbar_style)
         self.y_scroll.setStyleSheet(scrollbar_style)
-        # Scrollbar colors could also be themed if we use qss templates in themes.py
         
         # Add scrollbars to grid
         self.layout.addWidget(self.y_scroll, 0, 0) # Left side
@@ -354,3 +314,8 @@ class SpectrogramView(QWidget):
             # Update main plot axes
             self.plot_item.getAxis('left').setPen(p.text_dim)
             self.plot_item.getAxis('bottom').setPen(p.text_dim)
+            
+        # Update scrollbars
+        sb_style = get_scrollbar_stylesheet(p)
+        self.x_scroll.setStyleSheet(sb_style)
+        self.y_scroll.setStyleSheet(sb_style)

@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
 from PyQt6.QtCore import Qt, pyqtSignal
 from ..widgets import CustomViewBox
 from .marker_panel import TimeDomainMarkerPanel
-from ..themes import get_palette
+from ..themes import get_palette, get_scrollbar_stylesheet
 
 class TimeDomainView(QWidget):
     """
@@ -108,21 +108,9 @@ class TimeDomainView(QWidget):
         self.x_scroll = QScrollBar(Qt.Orientation.Horizontal)
         self.y_scroll = QScrollBar(Qt.Orientation.Vertical)
         
-        scrollbar_style = """
-            QScrollBar:horizontal { background: #121212; height: 8px; margin: 0px; border: none; }
-            QScrollBar::handle:horizontal { background: #3d3d3d; min-width: 40px; border-radius: 4px; margin: 0px; }
-            QScrollBar::handle:horizontal:hover { background: #00aaff; }
-            
-            QScrollBar:vertical { background: #121212; width: 8px; margin: 0px; border: none; }
-            QScrollBar::handle:vertical { background: #3d3d3d; min-height: 40px; border-radius: 4px; margin: 0px; }
-            QScrollBar::handle:vertical:hover { background: #00aaff; }
-            
-            QScrollBar::add-line, QScrollBar::sub-line { width: 0px; height: 0px; }
-            QScrollBar::add-page, QScrollBar::sub-page { background: none; }
-        """
+        scrollbar_style = get_scrollbar_stylesheet(get_palette(self.parent_window.settings_mgr.get("ui/theme", "Dark")))
         self.x_scroll.setStyleSheet(scrollbar_style)
         self.y_scroll.setStyleSheet(scrollbar_style)
-        # We'll update scrollbar styles too during refresh if needed
         
         self.grid_layout.addWidget(self.y_scroll, 0, 0)
         self.grid_layout.addWidget(self.x_scroll, 1, 1)
@@ -606,9 +594,18 @@ class TimeDomainView(QWidget):
                 self.plot_item.setYRange(min(v1, v2), max(v1, v2), padding=0)
 
     def refresh_theme(self):
+        theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
+        p = get_palette(theme)
+        
         self.update_toolbar_style()
         self.refresh_plot_style()
         self.marker_panel.refresh_theme()
+        
+        # Update scrollbars
+        sb_style = get_scrollbar_stylesheet(p)
+        self.x_scroll.setStyleSheet(sb_style)
+        self.y_scroll.setStyleSheet(sb_style)
+        
         # Re-plot to refresh curve and marker colors
         self._update_plot(self.current_plot_data, self.y_label_text)
 

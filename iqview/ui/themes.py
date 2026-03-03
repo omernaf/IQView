@@ -102,3 +102,45 @@ def get_main_stylesheet(theme_name):
             border-bottom: 2px solid {p.accent}; 
         }}
     """
+
+def get_scrollbar_stylesheet(p):
+    return f"""
+        QScrollBar:horizontal {{
+            background: {p.bg_main};
+            height: 10px;
+            margin: 0px;
+            border: none;
+        }}
+        QScrollBar::handle:horizontal {{
+            background: {p.border_light};
+            min-width: 40px;
+            border-radius: 5px;
+            margin: 2px;
+        }}
+        QScrollBar::handle:horizontal:hover {{
+            background: {p.accent};
+        }}
+        
+        QScrollBar:vertical {{
+            background: {p.bg_main};
+            width: 10px;
+            margin: 0px;
+            border: none;
+        }}
+        QScrollBar::handle:vertical {{
+            background: {p.border_light};
+            min-height: 40px;
+            border-radius: 5px;
+            margin: 2px;
+        }}
+        QScrollBar::handle:vertical:hover {{
+            background: {p.accent};
+        }}
+        
+        QScrollBar::add-line, QScrollBar::sub-line {{
+            width: 0px; height: 0px;
+        }}
+        QScrollBar::add-page, QScrollBar::sub-page {{
+            background: none;
+        }}
+    """
