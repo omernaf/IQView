@@ -18,6 +18,7 @@ class TimeDomainView(QWidget):
         self.start_time = start_time
         self.rate = sample_rate
         self.parent_window = parent_window
+        self.settings_mgr = parent_window.settings_mgr if parent_window else None
         self.is_spectrogram = False
         self.interaction_mode = 'TIME'
         self.zoom_mode = False
@@ -218,11 +219,13 @@ class TimeDomainView(QWidget):
         
         # 4. Restore markers
         for m in self.markers_time: 
+            m.setPen(pg.mkPen(p.marker_time, width=2, style=Qt.PenStyle.DashLine))
             self.plot_item.addItem(m)
             m.setZValue(100)
             
         active_y = self.markers_y_dict.get(y_label, [])
         for m in active_y:
+            m.setPen(pg.mkPen(p.marker_mag, width=2, style=Qt.PenStyle.DashLine))
             self.plot_item.addItem(m)
             m.setZValue(100)
         

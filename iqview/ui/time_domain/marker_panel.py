@@ -97,22 +97,16 @@ class TimeDomainMarkerPanel(QFrame):
         self.btn_lock_delta = QPushButton("Delta (Δ) 🔓")
         self.btn_lock_delta.setFont(self.header_font)
         self.btn_lock_delta.setCheckable(True)
-        self.btn_lock_delta.setStyleSheet("""
-            QPushButton { background: none; border: none; color: #888; padding: 0; text-transform: uppercase; font-size: 10px; }
-            QPushButton:hover { color: #FFF; }
-            QPushButton:checked { color: #00aaff; }
-        """)
+        self.btn_lock_delta.setCheckable(True)
+        # Style moved to refresh_theme
         self.grid.addWidget(self.btn_lock_delta, 0, 3)
 
         # Center Header (Combined with Lock)
         self.btn_lock_center = QPushButton("Center 🔓")
         self.btn_lock_center.setFont(self.header_font)
         self.btn_lock_center.setCheckable(True)
-        self.btn_lock_center.setStyleSheet("""
-            QPushButton { background: none; border: none; color: #888; padding: 0; text-transform: uppercase; font-size: 10px; }
-            QPushButton:hover { color: #FFF; }
-            QPushButton:checked { color: #00aaff; }
-        """)
+        self.btn_lock_center.setCheckable(True)
+        # Style moved to refresh_theme
         self.grid.addWidget(self.btn_lock_center, 0, 4)
 
         # Side labels (Row names)
@@ -244,3 +238,12 @@ class TimeDomainMarkerPanel(QFrame):
                 font-weight: bold;
             }}
         """)
+        
+        lock_style = f"""
+            QPushButton {{ background: none; border: none; color: {p.text_dim}; padding: 0; text-transform: uppercase; font-size: 10px; }}
+            QPushButton:hover {{ color: {p.text_header}; }}
+            QPushButton:checked {{ color: {p.accent}; }}
+        """
+        if hasattr(self, 'btn_lock_delta'):
+            self.btn_lock_delta.setStyleSheet(lock_style)
+            self.btn_lock_center.setStyleSheet(lock_style)
