@@ -33,19 +33,37 @@ class FormattedLineEdit(QLineEdit):
     def _format_text(self, text):
         if not text: return ""
         try:
+            MAX_CHARS = 16 # Safe limit for 130px box with Consolas 13px
+            
             # Handle numbers with decimals
             if '.' in text:
                 parts = text.split('.')
                 # Format integer part with spaces
                 int_part = "{:,}".format(int(parts[0])).replace(",", " ")
                 
-                # Format fractional part with spaces every 3 digits (from the left)
-                frac_part = parts[1]
-                formatted_frac = ""
-                for i in range(0, len(frac_part), 3):
-                    formatted_frac += frac_part[i:i+3] + " "
+                # Start with "int_part."
+                result = f"{int_part}."
+                if len(result) >= MAX_CHARS:
+                    return result.rstrip('.') # Fallback if even int_part is huge
                 
-                return f"{int_part}.{formatted_frac.rstrip()}"
+                # Format fractional part with spaces every 3 digits
+                frac_part = parts[1]
+                for i in range(0, len(frac_part), 3):
+                    chunk = frac_part[i:i+3]
+                    # Check if we can fit the next chunk (with a space)
+                    potential_addition = (" " if i > 0 else "") + chunk
+                    if len(result) + len(potential_addition) <= MAX_CHARS:
+                        result += potential_addition
+                    else:
+                        # Try to fit as many individual digits from this chunk as possible
+                        for digit in potential_addition:
+                            if len(result) + 1 <= MAX_CHARS:
+                                result += digit
+                            else:
+                                break
+                        break
+                
+                return result.rstrip()
             else:
                 # Format integer with spaces
                 return "{:,}".format(int(text)).replace(",", " ")
