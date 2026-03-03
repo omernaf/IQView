@@ -6,14 +6,14 @@ import numpy as np
 class SidePanel(QFrame):
     parametersChanged = pyqtSignal(dict)
 
-    def __init__(self, fs, fc, fft_size, parent_window=None):
+    def __init__(self, fs, fc, fft_size, window_type="Hanning", overlap_percent=99.0, parent_window=None):
         super().__init__()
         self.parent_window = parent_window
         self.fs = fs
         self.fc = fc
         self.fft_size = fft_size
-        self.window_type = "Hanning"
-        self.overlap_percent = 99.0 # Default
+        self.window_type = window_type
+        self.overlap_percent = overlap_percent
         
         self.setup_ui()
         self.update_derived_values()

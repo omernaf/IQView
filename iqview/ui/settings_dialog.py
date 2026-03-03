@@ -22,6 +22,10 @@ class SettingsDialog(QDialog):
         
         self.fc_edit = QLineEdit(str(self.mgr.get("core/fc")))
         
+        self.type_combo = QComboBox()
+        self.type_combo.addItems(["int8", "int16", "int32", "float32", "float64", "complex64"])
+        self.type_combo.setCurrentText(str(self.mgr.get("core/type", "complex64")))
+        
         self.fft_combo = QComboBox()
         powers = [2**i for i in range(5, 17)]
         self.fft_combo.addItems([str(p) for p in powers])
@@ -33,6 +37,7 @@ class SettingsDialog(QDialog):
         self.window_combo.setCurrentText(str(self.mgr.get("core/window_type")))
 
         self.general_form.addRow("Default Center Freq (Hz):", self.fc_edit)
+        self.general_form.addRow("Default File Type:", self.type_combo)
         self.general_form.addRow("Default FFT Size:", self.fft_combo)
         self.general_form.addRow("Default Overlap (%):", self.overlap_edit)
         self.general_form.addRow("Default Window:", self.window_combo)
@@ -75,6 +80,7 @@ class SettingsDialog(QDialog):
     def save_and_close(self):
         try:
             self.mgr.set("core/fc", float(self.fc_edit.text()))
+            self.mgr.set("core/type", self.type_combo.currentText())
             self.mgr.set("core/fft_size", int(self.fft_combo.currentText()))
             self.mgr.set("core/overlap", float(self.overlap_edit.text()))
             self.mgr.set("core/window_type", self.window_combo.currentText())

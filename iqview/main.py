@@ -18,7 +18,7 @@ def parse_args():
     sm = SettingsManager()
     parser = argparse.ArgumentParser(description="IQView - High-performance Static RF Spectrogram Viewer")
     parser.add_argument('-f', '--file', required=True, help='Path to the binary IQ file')
-    parser.add_argument('-t', '--type', default='complex64', type=str, help='Data type (default: complex64)')
+    parser.add_argument('-t', '--type', default=sm.get("core/type", "complex64"), type=str, help='Data type (default: ' + sm.get("core/type", "complex64") + ')')
     parser.add_argument('-r', '--rate', type=float, required=True, help='Sample rate in Hz')
     parser.add_argument('-c', '--fc', type=float, default=float(sm.get("core/fc", 0.0)), help='Center frequency in Hz')
     parser.add_argument('-s', '--fft', type=int, default=int(sm.get("core/fft_size", 1024)), help='FFT bin size')

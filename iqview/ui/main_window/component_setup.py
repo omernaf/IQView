@@ -45,7 +45,10 @@ class UIComponentsMixin:
         self.spec_h_layout.setSpacing(0)
         
         # Sidebar (Left)
-        self.sidebar = SidePanel(self.rate, self.fc, self.fft_size, parent_window=self)
+        self.sidebar = SidePanel(self.rate, self.fc, self.fft_size, 
+                                 window_type=self.window_type, 
+                                 overlap_percent=self.overlap_percent, 
+                                 parent_window=self)
         self.sidebar.parametersChanged.connect(self.on_parameters_changed)
         self.spec_h_layout.addWidget(self.sidebar)
         

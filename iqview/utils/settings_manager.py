@@ -19,6 +19,8 @@ class SettingsManager:
             self.settings.setValue("core/overlap", 99.0)
         if not self.settings.contains("core/window_type"):
             self.settings.setValue("core/window_type", "Hanning")
+        if not self.settings.contains("core/type"):
+            self.settings.setValue("core/type", "complex64")
         
         if not self.settings.contains("ui/theme"):
             self.settings.setValue("ui/theme", "Dark") # Default
