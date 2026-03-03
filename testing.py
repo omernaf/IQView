@@ -41,7 +41,7 @@ def main():
     # -------------------------------------------------------------
 
     import argparse
-    parser = argparse.ArgumentParser(description="Antigravity Test Runner")
+    parser = argparse.ArgumentParser(description="IQView Test Runner")
     parser.add_argument('--profile', action='store_true', default=PROFILE_ENABLED, help='Enable summary profiling')
     parser.add_argument('--line-profile', action='store_true', default=LINE_PROFILE_ENABLED, help='Run deep line-profiler')
     parser.add_argument('--generate', action='store_true', default=GENERATE_ENABLED, help='Force regenerate test file')
@@ -61,7 +61,7 @@ def main():
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         generate_test_file(filename, sample_rate, duration)
     
-    print("Launching Antigravity Spectrogram Viewer...")
+    print("Launching IQView Spectrogram Viewer...")
     cmd = [
         sys.executable, "main.py",
         "-f", filename,
@@ -75,7 +75,7 @@ def main():
         cmd.append("--profile")
     
     try:
-        # Run the main Antigravity app natively
+        # Run the main IQView app natively
         subprocess.run(cmd)
     except KeyboardInterrupt:
         print("\nTest interrupted by user.")

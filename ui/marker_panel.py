@@ -20,54 +20,50 @@ class MarkerPanel(QFrame):
         self.setup_ui()
 
     def setup_ui(self):
+        self.setFixedHeight(115)
+        self.header_font = QFont("Segoe UI", 9, QFont.Weight.Bold)
+        self.mono_font = QFont("Consolas", 10)
+        
         self.setStyleSheet("""
-            QFrame { 
-                background-color: #1e1e1e; 
-                border: 1px solid #444; 
-                border-bottom: none;
-                border-radius: 0px; 
-                padding: 4px; 
+            MarkerPanel { 
+                background-color: #252525; 
+                border-bottom: 2px solid #1a1a1a;
             }
-            QLabel { 
-                color: #DDD; 
+            QPushButton#mode_btn {
+                background-color: #333;
+                border: 1px solid #444;
+                border-radius: 4px;
+                min-width: 34px;
+                min-height: 34px;
+                font-size: 16px;
+                padding: 0;
+            }
+            QPushButton#mode_btn:hover { background-color: #444; }
+            QPushButton#mode_btn:checked { 
+                background-color: #004488; 
+                border-color: #00aaff;
+                color: #00aaff;
             }
             QLineEdit {
-                background-color: #111;
-                color: #FFF;
-                border: 1px solid #555;
-                padding: 2px;
-                border-radius: 2px;
+                background-color: #151515;
+                font-family: 'Consolas', 'Courier New';
+                font-size: 13px;
+                border: 1px solid #333;
+                border-radius: 3px;
+                padding: 2px 4px;
             }
-            QPushButton {
-                background-color: #333;
-                color: #EEE;
-                border: 1px solid #555;
-                border-radius: 4px;
-                padding: 5px;
-                font-size: 14px;
-                min-width: 40px;
-                min-height: 40px;
-            }
-            QPushButton:hover {
-                background-color: #444;
-            }
-            QPushButton:pressed {
-                background-color: #222;
-            }
-            QPushButton:checked {
-                background-color: #0066cc;
-                border-color: #0088ff;
+            QLineEdit:focus { border-color: #00aaff; }
+            QLabel#header_label {
+                color: #888;
+                font-size: 10px;
+                text-transform: uppercase;
+                font-weight: bold;
             }
         """)
         
-        # Fonts (Init early for labels)
-        self.header_font = QFont("Inter", 9, QFont.Weight.Bold)
-        self.mono_font = QFont("Courier New", 10)
-
-        # Main layout is horizontal to accommodate buttons on both sides
-        self.main_layout = QGridLayout(self)
-        self.main_layout.setContentsMargins(5, 5, 5, 5)
-        self.main_layout.setSpacing(10)
+        self.main_layout = QHBoxLayout(self)
+        self.main_layout.setContentsMargins(15, 8, 15, 8)
+        self.main_layout.setSpacing(15)
 
         # State
         self.current_mode = 'TIME'
@@ -76,48 +72,47 @@ class MarkerPanel(QFrame):
             'FREQ': {'delta': False, 'center': False}
         }
 
-        # Row Labels (Init early to avoid AttributeError)
-        self.row1_label = QLabel("Time (sec)")
-        self.row2_label = QLabel("Samples")
-        self.row1_label.setFont(self.header_font)
-        self.row2_label.setFont(self.header_font)
-
         # --- Interaction Mode Buttons (Left Side) ---
         self.mode_btn_layout = QGridLayout()
-        self.mode_btn_layout.setSpacing(5)
-        self.main_layout.addLayout(self.mode_btn_layout, 0, 0)
+        self.mode_btn_layout.setSpacing(6)
+        self.main_layout.addLayout(self.mode_btn_layout, 0)
 
-        # Time Marker Button
+        # 1. Time (Top-Left)
         self.btn_marker_time = DoubleClickButton("║")
+        self.btn_marker_time.setObjectName("mode_btn")
         self.btn_marker_time.setToolTip("Time Markers (Double-click to clear)")
         self.btn_marker_time.setCheckable(True)
-        self.btn_marker_time.setChecked(True)
         self.mode_btn_layout.addWidget(self.btn_marker_time, 0, 0)
-
-        # Frequency Marker Button
+        
+        # 2. Freq (Bottom-Left)
         self.btn_marker_freq = DoubleClickButton("〓")
+        self.btn_marker_freq.setObjectName("mode_btn")
         self.btn_marker_freq.setToolTip("Frequency Markers (Double-click to clear)")
         self.btn_marker_freq.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_freq, 1, 0)
-
-        # Zoom Button
+        
+        # 3. Zoom
         self.btn_zoom = QPushButton("🔍")
+        self.btn_zoom.setObjectName("mode_btn")
         self.btn_zoom.setToolTip("Zoom Mode (Rubberband)")
         self.btn_zoom.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_zoom, 0, 1)
         
-        # Move Button
+        # 4. Move
         self.btn_move = QPushButton("✥")
+        self.btn_move.setObjectName("mode_btn")
         self.btn_move.setToolTip("Free Move Mode (Pan)")
         self.btn_move.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_move, 1, 1)
         
-        # Home Button
+        # 5. Home
         self.btn_home = QPushButton("🏠")
+        self.btn_home.setObjectName("mode_btn")
         self.btn_home.setToolTip("Reset Zoom (Home)")
-        self.btn_home.clicked.connect(self.resetZoomRequested.emit)
         self.mode_btn_layout.addWidget(self.btn_home, 0, 2)
 
+        self.btn_home.clicked.connect(self.resetZoomRequested.emit)
+        
         # Mutual Exclusion Group
         from PyQt6.QtWidgets import QButtonGroup
         self.mode_group = QButtonGroup(self)
@@ -126,7 +121,8 @@ class MarkerPanel(QFrame):
         self.mode_group.addButton(self.btn_zoom)
         self.mode_group.addButton(self.btn_move)
         self.mode_group.setExclusive(True)
-        
+
+        # Connections
         self.btn_marker_time.clicked.connect(lambda: self.interactionModeChanged.emit('TIME'))
         self.btn_marker_freq.clicked.connect(lambda: self.interactionModeChanged.emit('FREQ'))
         self.btn_zoom.clicked.connect(lambda: self.interactionModeChanged.emit('ZOOM'))
@@ -137,38 +133,25 @@ class MarkerPanel(QFrame):
 
         # Grid for marker data
         self.grid = QGridLayout()
-        self.grid.setSpacing(8)
-        self.main_layout.addLayout(self.grid, 0, 1)
-        
-        # Table Headers (Columns)
-        self.grid.addWidget(QLabel(""), 0, 0)
-        
-        # Row Labels (Placement)
-        self.grid.addWidget(self.row1_label, 1, 0)
-        self.grid.addWidget(self.row2_label, 2, 0)
+        self.grid.setHorizontalSpacing(10)
+        self.grid.setVerticalSpacing(4)
+        self.main_layout.addLayout(self.grid, 1)
 
-        # Static Headers
-        for col, text in enumerate(["Marker 1", "Marker 2"]):
-            h = QLabel(text)
-            h.setFont(self.header_font)
-            h.setStyleSheet("color: #AAA;")
-            h.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.grid.addWidget(h, 0, col + 1)
+        # Table Headers
+        self.grid.addWidget(QLabel(""), 0, 0) # Top-left empty
+        h1 = QLabel("Marker 1"); h1.setObjectName("header_label")
+        h2 = QLabel("Marker 2"); h2.setObjectName("header_label")
+        self.grid.addWidget(h1, 0, 1, Qt.AlignmentFlag.AlignCenter)
+        self.grid.addWidget(h2, 0, 2, Qt.AlignmentFlag.AlignCenter)
 
         # Delta Header (Combined with Lock)
         self.btn_lock_delta = QPushButton("Delta (Δ) 🔓")
         self.btn_lock_delta.setFont(self.header_font)
         self.btn_lock_delta.setCheckable(True)
         self.btn_lock_delta.setStyleSheet("""
-            QPushButton { 
-                background: none; 
-                border: none; 
-                color: #AAA; 
-                padding: 0; 
-                text-align: center;
-            }
-            QPushButton:hover { color: #FFF; background-color: #333; border-radius: 4px; }
-            QPushButton:checked { color: #0088ff; }
+            QPushButton { background: none; border: none; color: #888; padding: 0; text-transform: uppercase; font-size: 10px; }
+            QPushButton:hover { color: #FFF; }
+            QPushButton:checked { color: #00aaff; }
         """)
         self.grid.addWidget(self.btn_lock_delta, 0, 3)
 
@@ -177,77 +160,52 @@ class MarkerPanel(QFrame):
         self.btn_lock_center.setFont(self.header_font)
         self.btn_lock_center.setCheckable(True)
         self.btn_lock_center.setStyleSheet("""
-            QPushButton { 
-                background: none; 
-                border: none; 
-                color: #AAA; 
-                padding: 0; 
-                text-align: center;
-            }
-            QPushButton:hover { color: #FFF; background-color: #333; border-radius: 4px; }
-            QPushButton:checked { color: #0088ff; }
+            QPushButton { background: none; border: none; color: #888; padding: 0; text-transform: uppercase; font-size: 10px; }
+            QPushButton:hover { color: #FFF; }
+            QPushButton:checked { color: #00aaff; }
         """)
         self.grid.addWidget(self.btn_lock_center, 0, 4)
+
+        # Side labels (Row names)
+        self.row1_label = QLabel("Time (sec)")
+        self.row2_label = QLabel("Samples")
+        self.row1_label.setObjectName("header_label")
+        self.row2_label.setObjectName("header_label")
+        self.grid.addWidget(self.row1_label, 1, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.grid.addWidget(self.row2_label, 2, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         # Edit Widgets
         self.widgets = []
         for i in range(2):
-            sec_edit = QLineEdit()
-            sec_edit.setFixedWidth(150)
-            sec_edit.setFont(self.mono_font)
-            sec_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            sec_edit = QLineEdit(); sec_edit.setFixedWidth(130); sec_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            sam_edit = QLineEdit(); sam_edit.setFixedWidth(130); sam_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
             sec_edit.setObjectName(f"m{i}_sec")
-            
-            sam_edit = QLineEdit()
-            sam_edit.setFixedWidth(150)
-            sam_edit.setFont(self.mono_font)
-            sam_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
             sam_edit.setObjectName(f"m{i}_sam")
-            
             sec_edit.returnPressed.connect(self.parent_window.marker_edit_finished)
             sam_edit.returnPressed.connect(self.parent_window.marker_edit_finished)
-            
             self.grid.addWidget(sec_edit, 1, i + 1)
             self.grid.addWidget(sam_edit, 2, i + 1)
             self.widgets.append({'sec': sec_edit, 'sam': sam_edit})
 
-        # Delta Edits
-        self.delta_sec = QLineEdit()
-        self.delta_sec.setFixedWidth(150)
-        self.delta_sec.setFont(self.mono_font)
-        self.delta_sec.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.delta_sec.setObjectName("delta_sec")
-        self.delta_sec.returnPressed.connect(self.parent_window.marker_edit_finished)
-        self.grid.addWidget(self.delta_sec, 1, 3)
-
-        self.delta_sam = QLineEdit()
-        self.delta_sam.setFixedWidth(150)
-        self.delta_sam.setFont(self.mono_font)
-        self.delta_sam.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.delta_sam.setObjectName("delta_sam")
-        self.delta_sam.returnPressed.connect(self.parent_window.marker_edit_finished)
-        self.grid.addWidget(self.delta_sam, 2, 3)
-
-        # Center Edits
-        self.center_sec = QLineEdit()
-        self.center_sec.setFixedWidth(150)
-        self.center_sec.setFont(self.mono_font)
-        self.center_sec.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.center_sec.setObjectName("center_sec")
-        self.center_sec.returnPressed.connect(self.parent_window.marker_edit_finished)
-        self.grid.addWidget(self.center_sec, 1, 4)
-
-        self.center_sam = QLineEdit()
-        self.center_sam.setFixedWidth(150)
-        self.center_sam.setFont(self.mono_font)
-        self.center_sam.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.center_sam.setObjectName("center_sam")
-        self.center_sam.returnPressed.connect(self.parent_window.marker_edit_finished)
-        self.grid.addWidget(self.center_sam, 2, 4)
+        # Delta/Center Edits
+        self.delta_sec = QLineEdit(); self.delta_sec.setFixedWidth(130); self.delta_sec.setObjectName("delta_sec"); self.delta_sec.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.delta_sam = QLineEdit(); self.delta_sam.setFixedWidth(130); self.delta_sam.setObjectName("delta_sam"); self.delta_sam.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.center_sec = QLineEdit(); self.center_sec.setFixedWidth(130); self.center_sec.setObjectName("center_sec"); self.center_sec.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.center_sam = QLineEdit(); self.center_sam.setFixedWidth(130); self.center_sam.setObjectName("center_sam"); self.center_sam.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        for w in [self.delta_sec, self.delta_sam, self.center_sec, self.center_sam]:
+            w.returnPressed.connect(self.parent_window.marker_edit_finished)
+            
+        self.grid.addWidget(self.delta_sec, 1, 3); self.grid.addWidget(self.delta_sam, 2, 3)
+        self.grid.addWidget(self.center_sec, 1, 4); self.grid.addWidget(self.center_sam, 2, 4)
         
         # Connect locks to parent
         self.btn_lock_delta.toggled.connect(self.on_lock_delta_toggled)
         self.btn_lock_center.toggled.connect(self.on_lock_center_toggled)
+        
+        # Explicit Default Force
+        self.btn_marker_time.setChecked(True)
+        self.interactionModeChanged.emit('TIME')
 
     def on_lock_delta_toggled(self, checked):
         self.lock_states[self.current_mode]['delta'] = checked
@@ -266,11 +224,27 @@ class MarkerPanel(QFrame):
         self.parent_window.handle_lock_change('center', checked)
 
     def update_headers(self, mode):
+        # Force exclusion sync
+        self.btn_marker_time.blockSignals(True)
+        self.btn_marker_freq.blockSignals(True)
+        self.btn_zoom.blockSignals(True)
+        self.btn_move.blockSignals(True)
+        
+        self.btn_marker_time.setChecked(mode == 'TIME')
+        self.btn_marker_freq.setChecked(mode == 'FREQ')
+        self.btn_zoom.setChecked(mode == 'ZOOM')
+        self.btn_move.setChecked(mode == 'MOVE')
+        
+        self.btn_marker_time.blockSignals(False)
+        self.btn_marker_freq.blockSignals(False)
+        self.btn_zoom.blockSignals(False)
+        self.btn_move.blockSignals(False)
+
         self.current_mode = mode
         if mode == 'FREQ':
             self.row1_label.setText("Freq (Hz)")
             self.row2_label.setText("Bin")
-        else:
+        elif mode == 'TIME':
             self.row1_label.setText("Time (sec)")
             self.row2_label.setText("Samples")
             

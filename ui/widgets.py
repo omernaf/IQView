@@ -9,7 +9,7 @@ class CustomViewBox(pg.ViewBox):
         self.zoom_rect = None
         self.setMenuEnabled(False) # Disable default pg menu
 
-    def mouseDragEvent(self, ev):
+    def mouseDragEvent(self, ev, axis=None):
         if not hasattr(ev, 'isStart'):
             super().mouseDragEvent(ev)
             return
@@ -42,7 +42,7 @@ class CustomViewBox(pg.ViewBox):
                         ndx, ndy = dx / (xr[1]-xr[0]), dy / (yr[1]-yr[0])
                         
                         path = pg.QtGui.QPainterPath()
-                        pen = pg.mkPen('#0088ff', width=2) # Consistent Blue
+                        pen = pg.mkPen('#00aaff', width=2) # Premium Blue Accent
                         if ndx < 0.15 * ndy:
                             self.zoom_type = 'Y_ONLY'
                             # Vertical line with horizontal ticks
@@ -67,8 +67,8 @@ class CustomViewBox(pg.ViewBox):
                             path.lineTo(x_max, p1.y() + tick)
                         else:
                             self.zoom_type = 'BOTH'
-                            pen = pg.mkPen('#0088ff', width=2, style=Qt.PenStyle.DashLine)
-                            self.zoom_rect.setBrush(pg.mkBrush(0, 136, 255, 50))
+                            pen = pg.mkPen('#00aaff', width=2, style=Qt.PenStyle.DashLine)
+                            self.zoom_rect.setBrush(pg.mkBrush(0, 170, 255, 40))
                             path.addRect(pg.QtCore.QRectF(p1, p2))
                         
                         self.zoom_rect.setPath(path)

@@ -1,7 +1,7 @@
 import pyqtgraph as pg
 import numpy as np
 from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QLabel, QHBoxLayout, QProgressBar
-from PyQt6.QtCore import pyqtSlot, Qt
+from PyQt6.QtCore import pyqtSlot, Qt, QTimer
 
 from utils import FileReaderThread
 from .marker_panel import MarkerPanel
@@ -11,7 +11,7 @@ from .side_panel import SidePanel
 class SpectrogramWindow(QMainWindow):
     def __init__(self, file_path, data_type, sample_rate, center_freq, fft_size, profile_enabled=False):
         super().__init__()
-        self.setWindowTitle("Antigravity Spectrogram Viewer")
+        self.setWindowTitle("IQView - Spectrogram Viewer")
         self.resize(1280, 800)
         
         self.fc = center_freq
@@ -44,7 +44,80 @@ class SpectrogramWindow(QMainWindow):
         self.start_processing()
 
     def setup_ui(self):
+        # Global Stylesheet / Design Tokens
+        self.setStyleSheet("""
+            QMainWindow, QWidget#central {
+                background-color: #121212;
+                color: #e0e0e0;
+                font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            }
+            
+            QLabel {
+                color: #aaaaaa;
+            }
+            
+            QPushButton {
+                background-color: #2a2a2a;
+                color: #ffffff;
+                border: 1px solid #3d3d3d;
+                border-radius: 4px;
+                padding: 6px 12px;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #353535;
+                border-color: #555555;
+            }
+            QPushButton:pressed {
+                background-color: #1a1a1a;
+            }
+            QPushButton:checked {
+                background-color: #004488;
+                border-color: #00aaff;
+                color: #00aaff;
+            }
+            
+            QLineEdit {
+                background-color: #1a1a1a;
+                color: #ffffff;
+                border: 1px solid #3d3d3d;
+                border-radius: 4px;
+                padding: 4px 8px;
+                selection-background-color: #00aaff;
+            }
+            QLineEdit:focus {
+                border-color: #00aaff;
+            }
+            QLineEdit[readOnly="true"] {
+                color: #777777;
+                background-color: #151515;
+            }
+            
+            QComboBox {
+                background-color: #1a1a1a;
+                color: #ffffff;
+                border: 1px solid #3d3d3d;
+                border-radius: 4px;
+                padding: 4px 8px;
+            }
+            QComboBox:on {
+                border-color: #00aaff;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 20px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #1a1a1a;
+                color: #ffffff;
+                selection-background-color: #333333;
+                border: 1px solid #3d3d3d;
+                outline: none;
+            }
+        """)
+
         self.central_widget = QWidget()
+        self.central_widget.setObjectName("central")
         self.setCentralWidget(self.central_widget)
         
         # Main Horizontal Layout
@@ -57,42 +130,48 @@ class SpectrogramWindow(QMainWindow):
         self.sidebar.parametersChanged.connect(self.on_parameters_changed)
         self.main_h_layout.addWidget(self.sidebar)
         
-        self.right_container = QWidget()
-        self.layout = QVBoxLayout(self.right_container)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(0)
-        self.main_h_layout.addWidget(self.right_container)
+        self.main_v_container = QWidget()
+        self.v_layout = QVBoxLayout(self.main_v_container)
+        self.v_layout.setContentsMargins(0, 0, 0, 0)
+        self.v_layout.setSpacing(0)
+        self.main_h_layout.addWidget(self.main_v_container)
         
-        # Progress bar in a fixed-height container to prevent squishing
+        # Progress bar - Stealthy slim line
         self.progress_bar = QProgressBar()
-        self.progress_bar.setFixedHeight(4)
+        self.progress_bar.setFixedHeight(2)
         self.progress_bar.setTextVisible(False)
         self.progress_bar.setStyleSheet("""
             QProgressBar {
-                background-color: #1e1e1e;
+                background-color: transparent;
                 border: none;
             }
             QProgressBar::chunk {
-                background-color: #0066cc;
+                background-color: #00aaff;
             }
         """)
-        self.layout.addWidget(self.progress_bar)
+        self.v_layout.addWidget(self.progress_bar)
 
         self.marker_panel = MarkerPanel(self)
         self.marker_panel.interactionModeChanged.connect(self.set_interaction_mode)
         self.marker_panel.resetZoomRequested.connect(self.reset_zoom)
         self.marker_panel.markerClearRequested.connect(self.handle_marker_clear)
-        self.layout.addWidget(self.marker_panel)
+        self.v_layout.addWidget(self.marker_panel)
         
         self.spectrogram_view = SpectrogramView(self)
-        self.layout.addWidget(self.spectrogram_view)
+        self.v_layout.addWidget(self.spectrogram_view)
+        
+        # 1. Immediate internal sync
+        self.set_interaction_mode('TIME')
+        
+        # 2. Delayed UI sync (Wait for event loop to start and QButtonGroup to stabilize)
+        QTimer.singleShot(250, lambda: self.set_interaction_mode('TIME'))
 
     def start_processing(self):
         if hasattr(self, 'worker') and self.worker.isRunning():
             self.worker.stop()
             
         self.progress_bar.setValue(0)
-        self.progress_bar.setStyleSheet("QProgressBar { background-color: #1e1e1e; border: none; } QProgressBar::chunk { background-color: #0066cc; }")
+        self.progress_bar.setStyleSheet("QProgressBar { background-color: transparent; border: none; } QProgressBar::chunk { background-color: #00aaff; }")
         
         self.worker = FileReaderThread(self.file_path, self.data_type, self.fft_size, self.overlap_percent, self.rate, self.profile_enabled, self.window_type)
         self.worker.progress.connect(self.update_progress)
@@ -115,48 +194,58 @@ class SpectrogramWindow(QMainWindow):
         
         if needs_reprocess:
             self.start_processing()
-        else:
-            # Soft update: refresh labels and markers
-            if hasattr(self, 'full_spectrogram_cache'):
-                # 1. Store old duration for relative coordinate calculation
-                old_duration = self.time_duration
-                
-                # 2. Re-calculate duration based on new rate
-                if hasattr(self, 'total_samples_in_cache'):
-                    self.time_duration = self.total_samples_in_cache / self.rate
-                else:
-                    self.time_duration = (old_duration * old_rate) / self.rate
+            
+        if hasattr(self, 'full_spectrogram_cache'):
+            # 1. Store old context for relative coordinate calculation
+            old_duration = self.time_duration
+            old_bottom = old_fc - old_rate / 2
+            
+            # 2. Re-calculate duration based on new rate
+            if hasattr(self, 'total_samples_in_cache'):
+                self.time_duration = self.total_samples_in_cache / self.rate
+            else:
+                self.time_duration = (old_duration * old_rate) / self.rate
 
-                # 3. Shift view range to keep relative zoom consistent (avoid "stretching and moving")
-                vr = self.spectrogram_view.plot_item.viewRange()
-                
-                # Relative time range [0, 1]
-                rel_t_min = vr[0][0] / old_duration
-                rel_t_max = vr[0][1] / old_duration
-                
-                # Relative frequency range [0, 1]
-                old_bottom = old_fc - old_rate / 2
-                rel_f_min = (vr[1][0] - old_bottom) / old_rate
-                rel_f_max = (vr[1][1] - old_bottom) / old_rate
-                
-                # New bottom
-                new_bottom = self.fc - self.rate / 2
-                
-                # Update viewport to match relative position in new coordinate system
-                self.spectrogram_view.plot_item.setXRange(rel_t_min * self.time_duration, rel_t_max * self.time_duration, padding=0)
-                self.spectrogram_view.plot_item.setYRange(new_bottom + rel_f_min * self.rate, new_bottom + rel_f_max * self.rate, padding=0)
+            # 3. Shift view range to keep relative zoom consistent
+            vr = self.spectrogram_view.plot_item.viewRange()
+            
+            # Relative time range [0, 1]
+            rel_t_min = vr[0][0] / old_duration
+            rel_t_max = vr[0][1] / old_duration
+            
+            # Relative frequency range [0, 1] within the span
+            rel_f_min = (vr[1][0] - old_bottom) / old_rate
+            rel_f_max = (vr[1][1] - old_bottom) / old_rate
+            
+            # New coordinate anchor
+            new_bottom = self.fc - self.rate / 2
+            
+            # Update viewport to match relative position in new coordinate system
+            self.spectrogram_view.plot_item.setXRange(rel_t_min * self.time_duration, rel_t_max * self.time_duration, padding=0)
+            self.spectrogram_view.plot_item.setYRange(new_bottom + rel_f_min * self.rate, new_bottom + rel_f_max * self.rate, padding=0)
 
-                # 4. Update time markers to preserve sample position
-                for marker in self.markers_time:
-                    samples = marker.getXPos() * old_rate
-                    new_t = samples / self.rate
-                    marker.setPos(new_t)
+            # 4. Update markers to preserve relative position
+            # Time markers: Constant X
+            for marker in self.markers_time:
+                old_t = marker.value()
+                new_t = (old_t / old_duration) * self.time_duration
+                marker.setPos(new_t)
+            
+            # Frequency markers: Constant Y
+            for marker in self.markers_freq:
+                old_f = marker.value()
+                # Maintain relative position within the captured bandwidth
+                rel_f = (old_f - old_bottom) / old_rate
+                new_f = new_bottom + rel_f * self.rate
+                marker.setPos(new_f)
 
-                # 5. Final Spectrogram coordinate update
+            # 5. Update Spectrogram coordinate system (unless reprocessing which calls display_spectrogram)
+            if not needs_reprocess:
                 self.spectrogram_view.update_spectrogram(
                     self.full_spectrogram_cache, self.fc, self.rate, self.time_duration, auto_range=False
                 )
-            self.update_marker_info()
+        
+        self.update_marker_info()
 
     def set_interaction_mode(self, mode):
         self.interaction_mode = mode
@@ -207,7 +296,7 @@ class SpectrogramWindow(QMainWindow):
             # Save current range before zooming
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             
-            get_pos = lambda m: m.getYPos() if is_freq else m.getXPos()
+            get_pos = lambda m: m.value()
             v1 = get_pos(active_markers[0])
             v2 = get_pos(active_markers[1])
             v_min, v_max = min(v1, v2), max(v1, v2)
@@ -256,13 +345,13 @@ class SpectrogramWindow(QMainWindow):
         if len(active_markers) != 2:
             return
 
-        get_pos = lambda m: m.getYPos() if is_freq else m.getXPos()
+        get_pos = lambda m: m.value()
         p1 = get_pos(active_markers[0])
         p2 = get_pos(active_markers[1])
         delta = abs(p2 - p1)
         if delta <= 0: return
 
-        angle = 0 if is_freq else 90
+        angle = 0 if is_freq else 90 # Freq is horizontal (Y), Time is vertical (X)
         f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
         v_min = f_min if is_freq else 0
         v_max = f_max if is_freq else self.time_duration
@@ -294,21 +383,28 @@ class SpectrogramWindow(QMainWindow):
             # Determine active markers and bounds based on mode
             if self.interaction_mode == 'TIME':
                 active_markers = self.markers_time
-                val = float(np.clip(mouse_v.x(), 0, self.time_duration))
-                max_bound = self.time_duration
-                angle = 90
+                curr_min, curr_max = 0.0, self.time_duration
+                # Snap to discrete sample
+                raw_val = float(np.clip(mouse_v.x(), 0.0, self.time_duration))
+                sample = int(round(raw_val * self.rate)) + 1
+                val = (sample - 1.0) / self.rate
+                angle = 90 # Vertical line for constant Time (X)
             elif self.interaction_mode == 'FREQ':
                 active_markers = self.markers_freq
                 f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
-                val = float(np.clip(mouse_v.y(), f_min, f_max))
-                # For freq, constraints are min/max frequency
-                angle = 0 # Horizontal
+                curr_min, curr_max = f_min, f_max
+                # Snap to discrete bin
+                raw_val = float(np.clip(mouse_v.y(), f_min, f_max))
+                rbw = self.rate / self.fft_size
+                bin_idx = int(round((raw_val - f_min) / rbw)) + 1
+                val = f_min + (bin_idx - 1.0) * rbw
+                angle = 0 # Horizontal line for constant Frequency (Y)
             else:
                 return # Should not happen in place_marker
 
             if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
-                m0_pos = active_markers[0].getXPos() if angle == 90 else active_markers[0].getYPos()
-                m1_pos = active_markers[1].getXPos() if angle == 90 else active_markers[1].getYPos()
+                m0_pos = active_markers[0].value()
+                m1_pos = active_markers[1].value()
                 
                 m0_dist = abs(m0_pos - val)
                 m1_dist = abs(m1_pos - val)
@@ -316,26 +412,24 @@ class SpectrogramWindow(QMainWindow):
                 target = active_markers[0] if m0_dist < m1_dist else active_markers[1]
                 other = active_markers[1] if m0_dist < m1_dist else active_markers[0]
                 
-                old_p = target.getXPos() if angle == 90 else target.getYPos()
+                old_p = target.value()
                 shift = val - old_p
                 
-                # Check bounds for BOTH markers
-                if self.interaction_mode == 'TIME':
-                    new_target_p = val
-                    new_other_p = other.getXPos() + shift
-                    in_bounds = (0 <= new_target_p <= self.time_duration and 0 <= new_other_p <= self.time_duration)
-                else:
-                    new_target_p = val
-                    new_other_p = other.getYPos() + shift
-                    in_bounds = (f_min <= new_target_p <= f_max and f_min <= new_other_p <= f_max)
-
                 if self.marker_panel.btn_lock_delta.isChecked():
+                    new_target_p = val
+                    new_other_p = other.value() + shift
+                    in_bounds = (curr_min <= new_target_p <= curr_max and curr_min <= new_other_p <= curr_max)
                     if in_bounds:
                         target.setPos(new_target_p)
                         other.setPos(new_other_p)
                 elif self.marker_panel.btn_lock_center.isChecked():
-                    # Handle lock center specifically if needed, but for now simple shift logic suffices for placement
-                    pass
+                    new_target_p = val
+                    center = (m0_pos + m1_pos) / 2
+                    new_other_p = 2 * center - new_target_p
+                    in_bounds = (curr_min <= new_target_p <= curr_max and curr_min <= new_other_p <= curr_max)
+                    if in_bounds:
+                        target.setPos(new_target_p)
+                        other.setPos(new_other_p)
                 
                 if drag_mode:
                     self.active_drag_marker = target
@@ -420,13 +514,20 @@ class SpectrogramWindow(QMainWindow):
             active_markers = self.markers_time if is_time else self.markers_freq
             
             if is_time:
-                new_v = float(np.clip(mouse_v.x(), 0, self.time_duration))
-                get_pos = lambda m: m.getXPos()
-                f_min, f_max = 0, self.time_duration
+                get_pos = lambda m: m.value()
+                f_min, f_max = 0.0, self.time_duration
+                # Snap to discrete sample
+                raw_val = float(np.clip(mouse_v.x(), 0.0, self.time_duration))
+                sample = int(round(raw_val * self.rate)) + 1
+                new_v = (sample - 1.0) / self.rate
             else:
                 f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
-                new_v = float(np.clip(mouse_v.y(), f_min, f_max))
-                get_pos = lambda m: m.getYPos()
+                get_pos = lambda m: m.value()
+                # Snap to discrete bin
+                raw_val = float(np.clip(mouse_v.y(), f_min, f_max))
+                rbw = self.rate / self.fft_size
+                bin_idx = int(round((raw_val - f_min) / rbw)) + 1
+                new_v = f_min + (bin_idx - 1.0) * rbw
 
             if len(active_markers) == 2:
                 other_marker = active_markers[0] if active_markers[1] == self.active_drag_marker else active_markers[1]
@@ -476,7 +577,7 @@ class SpectrogramWindow(QMainWindow):
         # Choose active markers based on mode
         is_freq = (self.interaction_mode == 'FREQ')
         active_markers = self.markers_freq if is_freq else self.markers_time
-        get_pos = lambda m: m.getYPos() if is_freq else m.getXPos()
+        get_pos = lambda m: m.value()
         
         sorted_markers = sorted(active_markers, key=get_pos)
         for widgets in self.marker_panel.widgets:
@@ -494,22 +595,23 @@ class SpectrogramWindow(QMainWindow):
             self.marker_panel.widgets[i]['sec'].blockSignals(True)
             self.marker_panel.widgets[i]['sam'].blockSignals(True)
             if is_freq:
-                # Value is Hz. "Samples" -> FFT Bin
+                # Value is Hz. "Samples" -> FFT Bin (1-based)
                 rbw = self.rate / self.fft_size
-                bin_idx = int((val - (self.fc - self.rate/2)) / rbw)
-                bin_idx = max(0, min(bin_idx, self.fft_size - 1))
+                bin_idx = int(round((val - (self.fc - self.rate/2)) / rbw)) + 1
+                bin_idx = max(1, min(bin_idx, self.fft_size))
                 self.marker_panel.widgets[i]['sec'].setText(f"{val:.2f}")
                 self.marker_panel.widgets[i]['sam'].setText(f"{bin_idx}")
             else:
-                samples = int(val * self.rate)
+                # Sample starts at 1 at Time=0.0. Time = (Sample - 1) / Fs -> Sample = round(Time * Fs) + 1
+                sample = int(round(val * self.rate)) + 1
+                sample = max(1, min(sample, getattr(self, 'total_samples_in_cache', 1e9)))
                 self.marker_panel.widgets[i]['sec'].setText(f"{val:.6f}")
-                self.marker_panel.widgets[i]['sam'].setText(f"{samples}")
+                self.marker_panel.widgets[i]['sam'].setText(f"{sample}")
             self.marker_panel.widgets[i]['sec'].blockSignals(False)
             self.marker_panel.widgets[i]['sam'].blockSignals(False)
 
         if len(sorted_markers) == 2:
             p1, p2 = get_pos(sorted_markers[0]), get_pos(sorted_markers[1])
-            dp, cp = abs(p2 - p1), (p1 + p2) / 2
             
             self.marker_panel.delta_sec.blockSignals(True)
             self.marker_panel.delta_sam.blockSignals(True)
@@ -517,17 +619,35 @@ class SpectrogramWindow(QMainWindow):
             self.marker_panel.center_sam.blockSignals(True)
 
             if is_freq:
+                f_min = self.fc - self.rate/2
                 rbw = self.rate / self.fft_size
-                # Clip bin indices to [0, nfft-1]
-                ds = max(0, min(int(dp / rbw), self.fft_size - 1))
-                cs = max(0, min(int((cp - (self.fc - self.rate/2)) / rbw), self.fft_size - 1))
-                self.marker_panel.delta_sec.setText(f"{dp:.2f}")
+                # Calculate discrete bins first to ensure robust delta
+                s1 = int(round((p1 - f_min) / rbw)) + 1
+                s2 = int(round((p2 - f_min) / rbw)) + 1
+                s1, s2 = np.clip([s1, s2], 1, self.fft_size)
+                ds = abs(s2 - s1) + 1
+                
+                cp = (p1 + p2) / 2
+                cs = int(round((cp - f_min) / rbw)) + 1
+                cs = max(1, min(cs, self.fft_size))
+                
+                self.marker_panel.delta_sec.setText(f"{abs(p2 - p1):.2f}")
                 self.marker_panel.delta_sam.setText(f"{ds}")
                 self.marker_panel.center_sec.setText(f"{cp:.2f}")
                 self.marker_panel.center_sam.setText(f"{cs}")
             else:
-                ds, cs = int(dp * self.rate), int(cp * self.rate)
-                self.marker_panel.delta_sec.setText(f"{dp:.6f}")
+                # Calculate discrete samples first
+                s1 = int(round(p1 * self.rate)) + 1
+                s2 = int(round(p2 * self.rate)) + 1
+                max_s = getattr(self, 'total_samples_in_cache', 1e9)
+                s1, s2 = np.clip([s1, s2], 1, max_s)
+                ds = abs(s2 - s1) + 1
+                
+                cp = (p1 + p2) / 2
+                cs = int(round(cp * self.rate)) + 1
+                cs = max(1, min(cs, max_s))
+                
+                self.marker_panel.delta_sec.setText(f"{abs(p2 - p1):.6f}")
                 self.marker_panel.delta_sam.setText(f"{ds}")
                 self.marker_panel.center_sec.setText(f"{cp:.6f}")
                 self.marker_panel.center_sam.setText(f"{cs}")
@@ -546,7 +666,7 @@ class SpectrogramWindow(QMainWindow):
         name = sender.objectName()
         is_freq = (self.interaction_mode == 'FREQ')
         active_markers = self.markers_freq if is_freq else self.markers_time
-        get_pos = lambda m: m.getYPos() if is_freq else m.getXPos()
+        get_pos = lambda m: m.value()
         
         try:
             val = float(sender.text())
@@ -563,11 +683,16 @@ class SpectrogramWindow(QMainWindow):
                 unit = name[3:]
                 
                 if is_freq:
-                    # Clip input bin to [0, nfft-1]
-                    bin_val = max(0, min(val, self.fft_size - 1))
-                    new_p = np.clip(f_min + bin_val * rbw if unit == 'sam' else val, f_min, f_max)
+                    # Clip input bin to [1, nfft]
+                    bin_val = max(1, min(val, self.fft_size))
+                    # Map 1-based bin back to Hz: f_min + (bin - 1) * rbw
+                    new_p = np.clip(f_min + (bin_val - 1) * rbw if unit == 'sam' else val, f_min, f_max)
                 else:
-                    new_p = np.clip(val / self.rate if unit == 'sam' else val, 0, self.time_duration)
+                    # Map 1-based sample back to Time: (sample - 1) / rate
+                    max_s = getattr(self, 'total_samples_in_cache', 1e9)
+                    s_val = np.clip(val if unit == 'sam' else val * self.rate + 1.0, 1, max_s)
+                    new_p = (s_val - 1.0) / self.rate
+                    new_p = np.clip(new_p, 0.0, self.time_duration)
                 
                 if len(sorted_markers) == 2:
                     other_idx = 1 - idx
@@ -590,23 +715,26 @@ class SpectrogramWindow(QMainWindow):
                 
             elif len(sorted_markers) == 2:
                 p1, p2 = get_pos(sorted_markers[0]), get_pos(sorted_markers[1])
-                dt, ct = abs(p2 - p1), (p1 + p2) / 2
+                dt_coords, ct_coords = abs(p2 - p1), (p1 + p2) / 2
                 
                 if 'delta' in name:
                     if is_freq:
-                        new_dt = np.clip(val * rbw if 'sam' in name else val, 0, self.rate)
+                        # For delta entry, inclusive "samples" subtract 1
+                        new_dt_coords = np.clip((val - 1) * rbw if 'sam' in name else val, 0, self.rate)
                     else:
-                        new_dt = np.clip(val / self.rate if 'sam' in name else val, 0, self.time_duration)
-                    m1_new, m2_new = ct - new_dt/2, ct + new_dt/2
+                        new_dt_coords = np.clip((val - 1) / self.rate if 'sam' in name else val, 0, self.time_duration)
+                    m1_new, m2_new = ct_coords - new_dt_coords/2, ct_coords + new_dt_coords/2
                     if curr_min <= m1_new and m2_new <= curr_max:
                         sorted_markers[0].setPos(m1_new)
                         sorted_markers[1].setPos(m2_new)
                 elif 'center' in name:
                     if is_freq:
-                        new_ct = np.clip(val * rbw + f_min if 'sam' in name else val, f_min, f_max)
+                        # Center point is absolute coord: f_min + (cs - 1) * rbw
+                        new_ct_coords = np.clip((val - 1) * rbw + f_min if 'sam' in name else val, f_min, f_max)
                     else:
-                        new_ct = np.clip(val / self.rate if 'sam' in name else val, 0, self.time_duration)
-                    m1_new, m2_new = new_ct - dt/2, new_ct + dt/2
+                        # Center point is absolute coord: (cs - 1) / rate
+                        new_ct_coords = np.clip((val - 1) / self.rate if 'sam' in name else val, 0.0, self.time_duration)
+                    m1_new, m2_new = new_ct_coords - dt_coords/2, new_ct_coords + dt_coords/2
                     if curr_min <= m1_new and m2_new <= curr_max:
                         sorted_markers[0].setPos(m1_new)
                         sorted_markers[1].setPos(m2_new)
@@ -621,18 +749,21 @@ class SpectrogramWindow(QMainWindow):
 
     @pyqtSlot(np.ndarray, float)
     def display_spectrogram(self, full_spectrogram, duration):
-        # Hide progress bar by changing its chunk color to background
+        # Hide progress bar by making it transparent
         self.progress_bar.setValue(0)
-        self.progress_bar.setStyleSheet("QProgressBar { background-color: #1e1e1e; border: none; } QProgressBar::chunk { background-color: #1e1e1e; }")
+        self.progress_bar.setStyleSheet("QProgressBar { background-color: transparent; border: none; } QProgressBar::chunk { background-color: transparent; }")
+        
         self.full_spectrogram_cache = full_spectrogram
         self.time_duration = duration
-        self.total_samples_in_cache = duration * self.rate
+        # Ensure we have a high-precision sample count for coordinate mapping
+        self.total_samples_in_cache = int(round(duration * self.rate))
         
         self.spectrogram_view.update_spectrogram(
             full_spectrogram, self.fc, self.rate, self.time_duration, 
             auto_range=self.is_first_load
         )
         self.is_first_load = False
+        self.update_marker_info()
 
     def closeEvent(self, event):
         if hasattr(self, 'worker'): self.worker.stop()

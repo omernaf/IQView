@@ -18,111 +18,120 @@ class SidePanel(QFrame):
         self.update_derived_values()
 
     def setup_ui(self):
-        self.setFixedWidth(250)
+        self.setFixedWidth(240)
         self.setStyleSheet("""
             QFrame { 
-                background-color: #252525; 
-                border-right: 1px solid #444;
-                padding: 10px;
+                background-color: #1a1a1a; 
+                border-right: 1px solid #2a2a2a;
+                padding: 15px;
             }
-            QLabel { 
-                color: #AAA; 
-                font-size: 10px;
-                text-transform: uppercase;
+            QLabel#section_header {
+                color: #00aaff;
+                font-size: 11px;
                 font-weight: bold;
+                margin-top: 15px;
+                margin-bottom: 5px;
+                border-bottom: 1px solid #2a2a2a;
+                padding-bottom: 3px;
+                text-transform: uppercase;
             }
-            QLineEdit, QComboBox {
-                background-color: #111;
-                color: #FFF;
-                border: 1px solid #555;
-                padding: 5px;
-                border-radius: 4px;
-                font-family: 'Courier New';
-                font-size: 13px;
-                margin-bottom: 15px;
-            }
-            QComboBox::drop-down {
-                border: none;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #111;
-                color: #FFF;
-                selection-background-color: #444;
-                border: 1px solid #555;
+            QLabel#title {
+                color: #ffffff;
+                font-size: 16px;
+                font-weight: bold;
+                margin-bottom: 10px;
             }
         """)
         
         self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(15, 15, 15, 15)
+        self.layout.setSpacing(2)
         self.layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        title = QLabel("Signal Parameters")
-        title.setStyleSheet("color: #FFF; font-size: 14px; margin-bottom: 15px;")
+        title = QLabel("IQView")
+        title.setObjectName("title")
         self.layout.addWidget(title)
 
-        # Sampling Rate
+        # --- CORE SETTINGS ---
+        core_header = QLabel("⚙️ Core Settings")
+        core_header.setObjectName("section_header")
+        self.layout.addWidget(core_header)
+
         self.layout.addWidget(QLabel("Sample Rate (Hz)"))
         self.fs_edit = QLineEdit(str(self.fs))
         self.fs_edit.returnPressed.connect(self.on_edit_finished)
         self.layout.addWidget(self.fs_edit)
 
-        # Center Freq
         self.layout.addWidget(QLabel("Center Freq (Hz)"))
         self.fc_edit = QLineEdit(str(self.fc))
         self.fc_edit.returnPressed.connect(self.on_edit_finished)
         self.layout.addWidget(self.fc_edit)
 
-        # Overlap
+        # --- DSP SETTINGS ---
+        dsp_header = QLabel("📡 DSP Settings")
+        dsp_header.setObjectName("section_header")
+        self.layout.addWidget(dsp_header)
+
+        self.layout.addWidget(QLabel("FFT Size (bins)"))
+        self.fft_combo = QComboBox()
+        powers = [2**i for i in range(5, 17)]
+        self.fft_combo.addItems([str(p) for p in powers])
+        idx = self.fft_combo.findText(str(self.fft_size))
+        if idx >= 0: self.fft_combo.setCurrentIndex(idx)
+        self.fft_combo.currentIndexChanged.connect(self.on_fft_combo_changed)
+        self.layout.addWidget(self.fft_combo)
+
         self.layout.addWidget(QLabel("Overlap (%)"))
         self.overlap_edit = QLineEdit(str(self.overlap_percent))
         self.overlap_edit.returnPressed.connect(self.on_overlap_edited)
         self.layout.addWidget(self.overlap_edit)
 
-        # FFT Size (ComboBox)
-        self.layout.addWidget(QLabel("FFT Size (bins)"))
-        self.fft_combo = QComboBox()
-        powers = [2**i for i in range(5, 17)] # 32 to 65536
-        self.fft_combo.addItems([str(p) for p in powers])
-        
-        # Select current fft_size if it exists in list
-        idx = self.fft_combo.findText(str(self.fft_size))
-        if idx >= 0:
-            self.fft_combo.setCurrentIndex(idx)
-            
-        self.fft_combo.currentIndexChanged.connect(self.on_fft_combo_changed)
-        self.layout.addWidget(self.fft_combo)
-
-        # Window Type
+        self.layout.addWidget(QLabel("Window Type"))
         self.window_type_combo = QComboBox()
         self.window_type_combo.addItems(["Hanning", "Hamming", "Blackman", "Bartlett", "Rectangular"])
         self.window_type_combo.setCurrentText(self.window_type)
         self.window_type_combo.currentIndexChanged.connect(self.on_window_type_changed)
-        self.layout.addWidget(QLabel("Window Type"))
         self.layout.addWidget(self.window_type_combo)
 
-        # Time Resolution (dt)
+        # --- DIAGNOSTICS ---
+        diag_header = QLabel("🔍 Diagnostics")
+        diag_header.setObjectName("section_header")
+        self.layout.addWidget(diag_header)
+
         self.layout.addWidget(QLabel("Time Resolution (dt) [s]"))
         self.dt_display = QLineEdit()
         self.dt_display.setReadOnly(True)
-        self.dt_display.setStyleSheet("color: #888; background-color: #0c0c0c;")
         self.layout.addWidget(self.dt_display)
 
-        # RBW (Resolution BW) - Read Only
-        self.layout.addWidget(QLabel("RBW (Hz) - Resolution BW"))
+        self.layout.addWidget(QLabel("RBW (Hz)"))
         self.rbw_display = QLineEdit()
         self.rbw_display.setReadOnly(True)
-        self.rbw_display.setStyleSheet("color: #888; background-color: #0c0c0c;")
         self.layout.addWidget(self.rbw_display)
 
     def update_derived_values(self):
         # RBW = Fs / FFT
         rbw = self.fs / self.fft_size
-        self.rbw_display.setText(f"{rbw:.2f}")
+        if rbw >= 1e6:
+            self.rbw_display.setText(f"{rbw/1e6:.2f} MHz")
+        elif rbw >= 1e3:
+            self.rbw_display.setText(f"{rbw/1e3:.2f} kHz")
+        else:
+            self.rbw_display.setText(f"{rbw:.2f} Hz")
         
         # dt = step_size / Fs
         step_size = int(self.fft_size * (1.0 - self.overlap_percent / 100.0))
         step_size = max(1, step_size)
-        dt = step_size / self.fs
-        self.dt_display.setText(f"{dt:.6f}")
+        
+        if self.fs == 0:
+            self.dt_display.setText("inf")
+        else:
+            dt = step_size / self.fs
+            if dt < 1e-3:
+                self.dt_display.setText(f"{dt*1e6:.2f} µs")
+            elif dt < 1:
+                self.dt_display.setText(f"{dt*1e3:.2f} ms")
+            else:
+                self.dt_display.setText(f"{dt:.6f} s")
 
     def on_fft_combo_changed(self):
         self.fft_size = int(self.fft_combo.currentText())

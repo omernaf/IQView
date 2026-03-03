@@ -15,10 +15,12 @@ class SpectrogramView(QWidget):
         self.layout = QGridLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(0)
-        self.setStyleSheet("background-color: #1e1e1e;")
+        self.setStyleSheet("background-color: #121212;")
         
         # Internal Graphics Layout for Plot
         self.glw_plot = pg.GraphicsLayoutWidget()
+        self.glw_plot.setBackground('#121212')
+        self.glw_plot.setContentsMargins(0, 0, 0, 0)
         self.layout.addWidget(self.glw_plot, 0, 1)
         
         # Scrollbars
@@ -27,49 +29,42 @@ class SpectrogramView(QWidget):
         
         scrollbar_style = """
             QScrollBar:horizontal {
-                background: #1e1e1e;
-                height: 12px;
+                background: #121212;
+                height: 8px;
                 margin: 0px;
                 border: none;
             }
             QScrollBar::handle:horizontal {
-                background: #444;
-                min-width: 20px;
+                background: #3d3d3d;
+                min-width: 40px;
                 border-radius: 4px;
-                margin: 2px;
+                margin: 0px;
             }
             QScrollBar::handle:horizontal:hover {
-                background: #555;
-            }
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-                width: 0px;
-                height: 0px;
-            }
-            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
-                background: #1e1e1e;
+                background: #00aaff;
             }
             
             QScrollBar:vertical {
-                background: #1e1e1e;
-                width: 12px;
+                background: #121212;
+                width: 8px;
                 margin: 0px;
                 border: none;
             }
             QScrollBar::handle:vertical {
-                background: #444;
-                min-height: 20px;
+                background: #3d3d3d;
+                min-height: 40px;
                 border-radius: 4px;
-                margin: 2px;
+                margin: 0px;
             }
             QScrollBar::handle:vertical:hover {
-                background: #555;
+                background: #00aaff;
             }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                width: 0px;
-                height: 0px;
+            
+            QScrollBar::add-line, QScrollBar::sub-line {
+                width: 0px; height: 0px;
             }
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-                background: #1e1e1e;
+            QScrollBar::add-page, QScrollBar::sub-page {
+                background: none;
             }
         """
         self.x_scroll.setStyleSheet(scrollbar_style)
@@ -79,24 +74,50 @@ class SpectrogramView(QWidget):
         self.layout.addWidget(self.y_scroll, 0, 0) # Left side
         self.layout.addWidget(self.x_scroll, 1, 1) # Under the plot
         
-        # Corner widgets to override platform defaults
-        corner1 = QWidget()
-        corner1.setStyleSheet("background-color: #1e1e1e;")
-        self.layout.addWidget(corner1, 1, 0)
-        
-        corner2 = QWidget()
-        corner2.setStyleSheet("background-color: #1e1e1e;")
-        self.layout.addWidget(corner2, 1, 2)
-        
-        # Internal Graphics Layout for Histogram
+        # Internal Graphics Layout for Histogram -> Now Spectrum Envelope
         self.glw_hist = pg.GraphicsLayoutWidget()
-        self.glw_hist.setFixedWidth(120)
+        self.glw_hist.setBackground('#121212')
+        self.glw_hist.setFixedWidth(180) # Slightly wider for the new dual-control
         self.layout.addWidget(self.glw_hist, 0, 2)
         
-        # Stretch factors
+        # 1. Spectrum Plot (Min/Max Envelope)
+        self.spectrum_plot = self.glw_hist.addPlot(row=0, col=0)
+        self.spectrum_plot.setLabel('left', '')
+        self.spectrum_plot.setLabel('bottom', '')
+        self.spectrum_plot.showGrid(x=True, y=True, alpha=0.1)
+        self.spectrum_plot.setMenuEnabled(False)
+        self.spectrum_plot.setMouseEnabled(x=False, y=False)
+        self.spectrum_plot.getAxis('left').setStyle(showValues=False)
+        self.spectrum_plot.getAxis('bottom').setStyle(showValues=False)
+        self.spectrum_plot.getAxis('left').setWidth(10) # Reduce width since numbers are gone
+        self.spectrum_plot.hideButtons()
+        
+        self.min_env_curve = pg.PlotDataItem(pen=pg.mkPen('#555', width=1)) # Noise Floor (Gray)
+        self.max_env_curve = pg.PlotDataItem(pen=pg.mkPen('#00aaff', width=1.5)) # Signal Peaks (Blue)
+        self.spectrum_plot.addItem(self.min_env_curve)
+        self.spectrum_plot.addItem(self.max_env_curve)
+        
+        # 2. Level Region (Clipping Controls) - Now horizontal mapping Signal Level to Y
+        self.level_region = pg.LinearRegionItem(orientation='horizontal', brush=pg.mkBrush(0, 170, 255, 30))
+        # Style the lines to be dashed
+        for line in self.level_region.lines:
+            line.setPen(pg.mkPen('#fff', style=Qt.PenStyle.DashLine, width=1.5))
+            line.setHoverPen(pg.mkPen('#00aaff', width=2))
+        
+        self.spectrum_plot.addItem(self.level_region)
+        
+        # 3. Gradient Editor (Vertical, aligned with Level axis)
+        self.gradient = pg.GradientEditorItem(orientation='right')
+        self.glw_hist.addItem(self.gradient, row=0, col=1)
+        
+        # Stretch factors for the GLW
+        self.glw_hist.ci.layout.setColumnStretchFactor(0, 1)
+        self.glw_hist.ci.layout.setColumnStretchFactor(1, 0)
+
+        # Stretch factors for main layout
         self.layout.setColumnStretch(0, 0)
         self.layout.setColumnStretch(1, 1) # Plot takes remaining space
-        self.layout.setColumnStretch(2, 0)
+        self.layout.setColumnStretch(2, 0) # Fixed width for histogram area
         
         # Initially hide or disable scrollbars if not zoomed
         self.x_scroll.hide()
@@ -105,7 +126,12 @@ class SpectrogramView(QWidget):
         # Plot Item with Custom ViewBox
         from .widgets import CustomViewBox
         self.view_box = CustomViewBox(ui_controller=parent_window)
-        self.plot_item = self.glw_plot.addPlot(viewBox=self.view_box, title="Static Full-File Spectrogram")
+        self.plot_item = self.glw_plot.addPlot(viewBox=self.view_box)
+        self.plot_item.setContentsMargins(0, 0, 0, 0)
+        self.plot_item.getViewBox().setDefaultPadding(0)
+        
+        # Modern Plot Styling
+        self.plot_item.showGrid(x=False, y=False)
         self.plot_item.setLabel('bottom', "Time", units='s')
         self.plot_item.setLabel('left', "Frequency", units='Hz')
         
@@ -113,19 +139,18 @@ class SpectrogramView(QWidget):
         self.plot_item.hideButtons()
         
         self.img = pg.ImageItem()
+        self.img.setZValue(-100) # Ensure image is always behind markers and grid
         self.plot_item.addItem(self.img)
         
-        self.hist = pg.HistogramLUTItem()
-        self.hist.setImageItem(self.img)
-        self.glw_hist.addItem(self.hist)
-
-        colormap = pg.colormap.get('turbo')
-        self.hist.gradient.setColorMap(colormap)
-        self._current_cmap = colormap
+        # Initialize Colormap
+        self.gradient.loadPreset('turbo')
+        self._current_cmap = self.gradient.colorMap()
         self._cmap_reversed = False
         
-        self.hist.vb.setMenuEnabled(False)
-        self.hist.gradient.mouseClickEvent = self.custom_gradient_menu
+        # Connections
+        self.level_region.sigRegionChanged.connect(self.on_levels_changed)
+        self.gradient.sigGradientChanged.connect(self.on_gradient_changed)
+        self.gradient.mouseClickEvent = self.custom_gradient_menu
 
         # Synchronization State
         self._block_signals = False
@@ -136,6 +161,14 @@ class SpectrogramView(QWidget):
         self.view_box.sigRangeChanged.connect(self.update_scrollbars)
         self.x_scroll.valueChanged.connect(self.scroll_view)
         self.y_scroll.valueChanged.connect(self.scroll_view)
+
+    def on_levels_changed(self):
+        low, high = self.level_region.getRegion()
+        self.img.setLevels([low, high])
+
+    def on_gradient_changed(self):
+        # Simply apply the current state of the gradient editor to the image
+        self.img.setColorMap(self.gradient.colorMap())
 
     def custom_gradient_menu(self, ev):
         if ev.button() != Qt.MouseButton.RightButton:
@@ -160,7 +193,7 @@ class SpectrogramView(QWidget):
             display_cmap = copy.deepcopy(cmap)
             if self._cmap_reversed:
                 display_cmap.reverse()
-            self.hist.gradient.setColorMap(display_cmap)
+            self.gradient.setColorMap(display_cmap)
             
         def toggle_reverse(checked):
             self._cmap_reversed = checked
@@ -242,11 +275,12 @@ class SpectrogramView(QWidget):
         min_v = float(np.min(full_spectrogram))
         max_v = float(np.max(full_spectrogram))
         
-        # Use existing levels if not auto-ranging to preserve contrast/brightness
+        # Current levels
         if not auto_range:
-            levels = self.hist.getLevels()
+            levels = self.img.levels
         else:
             levels = [min_v, max_v]
+            self.level_region.setRegion([min_v, max_v])
         
         self.img.setImage(full_spectrogram, autoLevels=False, levels=levels, autoDownsample=True)
         self.img.setRect(QRectF(0, fc - rate/2, time_duration, rate))
@@ -256,8 +290,21 @@ class SpectrogramView(QWidget):
         
         if auto_range:
             self.plot_item.autoRange()
-            self.hist.setLevels(min_v, max_v)
-            self.hist.region.setBounds([min_v, max_v])
+
+        # full_spectrogram shape: (Freq, Time)
+        # We want statistics across Time (axis 1)
+        min_env = np.min(full_spectrogram, axis=1)
+        max_env = np.max(full_spectrogram, axis=1)
         
-        self.hist.vb.setMouseEnabled(x=False, y=False)
-        self.hist.vb.disableAutoRange()
+        freqs = np.linspace(fc - rate/2, fc + rate/2, len(min_env))
+        
+        # Map Frequency to X and Level to Y
+        self.min_env_curve.setData(freqs, min_env)
+        self.max_env_curve.setData(freqs, max_env)
+        
+        # Explicitly sync X-axis with main plot's frequency range
+        self.spectrum_plot.setXRange(fc - rate/2, fc + rate/2, padding=0)
+        
+        if auto_range:
+            # Only auto-range the Y-axis (Signal Level)
+            self.spectrum_plot.setYRange(min_v, max_v, padding=0.1)
