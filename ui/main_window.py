@@ -227,13 +227,13 @@ class SpectrogramWindow(QMainWindow):
             # 4. Update markers to preserve relative position
             # Time markers: Constant X
             for marker in self.markers_time:
-                old_t = marker.getXPos()
+                old_t = marker.value()
                 new_t = (old_t / old_duration) * self.time_duration
                 marker.setPos(new_t)
             
             # Frequency markers: Constant Y
             for marker in self.markers_freq:
-                old_f = marker.getYPos()
+                old_f = marker.value()
                 # Maintain relative position within the captured bandwidth
                 rel_f = (old_f - old_bottom) / old_rate
                 new_f = new_bottom + rel_f * self.rate
@@ -296,7 +296,7 @@ class SpectrogramWindow(QMainWindow):
             # Save current range before zooming
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             
-            get_pos = lambda m: m.getXPos() if not is_freq else m.getYPos()
+            get_pos = lambda m: m.value()
             v1 = get_pos(active_markers[0])
             v2 = get_pos(active_markers[1])
             v_min, v_max = min(v1, v2), max(v1, v2)
@@ -345,7 +345,7 @@ class SpectrogramWindow(QMainWindow):
         if len(active_markers) != 2:
             return
 
-        get_pos = lambda m: m.getXPos() if not is_freq else m.getYPos()
+        get_pos = lambda m: m.value()
         p1 = get_pos(active_markers[0])
         p2 = get_pos(active_markers[1])
         delta = abs(p2 - p1)
@@ -395,8 +395,8 @@ class SpectrogramWindow(QMainWindow):
                 return # Should not happen in place_marker
 
             if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
-                m0_pos = active_markers[0].getXPos() if angle == 90 else active_markers[0].getYPos()
-                m1_pos = active_markers[1].getXPos() if angle == 90 else active_markers[1].getYPos()
+                m0_pos = active_markers[0].value()
+                m1_pos = active_markers[1].value()
                 
                 m0_dist = abs(m0_pos - val)
                 m1_dist = abs(m1_pos - val)
@@ -404,26 +404,27 @@ class SpectrogramWindow(QMainWindow):
                 target = active_markers[0] if m0_dist < m1_dist else active_markers[1]
                 other = active_markers[1] if m0_dist < m1_dist else active_markers[0]
                 
-                old_p = target.getXPos() if angle == 90 else target.getYPos()
+                old_p = target.value()
                 shift = val - old_p
                 
-                # Check bounds for BOTH markers
-                if self.interaction_mode == 'TIME':
-                    new_target_p = val
-                    new_other_p = other.getYPos() + shift # Time is Y
-                    in_bounds = (0 <= new_target_p <= self.time_duration and 0 <= new_other_p <= self.time_duration)
-                else:
-                    new_target_p = val
-                    new_other_p = other.getXPos() + shift # Freq is X
-                    in_bounds = (f_min <= new_target_p <= f_max and f_min <= new_other_p <= f_max)
+                curr_min = 0 if self.interaction_mode == 'TIME' else self.fc - self.rate/2
+                curr_max = self.time_duration if self.interaction_mode == 'TIME' else self.fc + self.rate/2
 
                 if self.marker_panel.btn_lock_delta.isChecked():
+                    new_target_p = val
+                    new_other_p = other.value() + shift
+                    in_bounds = (curr_min <= new_target_p <= curr_max and curr_min <= new_other_p <= curr_max)
                     if in_bounds:
                         target.setPos(new_target_p)
                         other.setPos(new_other_p)
                 elif self.marker_panel.btn_lock_center.isChecked():
-                    # Handle lock center specifically if needed, but for now simple shift logic suffices for placement
-                    pass
+                    new_target_p = val
+                    center = (m0_pos + m1_pos) / 2
+                    new_other_p = 2 * center - new_target_p
+                    in_bounds = (curr_min <= new_target_p <= curr_max and curr_min <= new_other_p <= curr_max)
+                    if in_bounds:
+                        target.setPos(new_target_p)
+                        other.setPos(new_other_p)
                 
                 if drag_mode:
                     self.active_drag_marker = target
@@ -509,12 +510,12 @@ class SpectrogramWindow(QMainWindow):
             
             if is_time:
                 new_v = float(np.clip(mouse_v.x(), 0, self.time_duration))
-                get_pos = lambda m: m.getXPos() # Time is X
+                get_pos = lambda m: m.value()
                 f_min, f_max = 0, self.time_duration
             else:
                 f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
                 new_v = float(np.clip(mouse_v.y(), f_min, f_max))
-                get_pos = lambda m: m.getYPos() # Freq is Y
+                get_pos = lambda m: m.value()
 
             if len(active_markers) == 2:
                 other_marker = active_markers[0] if active_markers[1] == self.active_drag_marker else active_markers[1]
@@ -564,7 +565,7 @@ class SpectrogramWindow(QMainWindow):
         # Choose active markers based on mode
         is_freq = (self.interaction_mode == 'FREQ')
         active_markers = self.markers_freq if is_freq else self.markers_time
-        get_pos = lambda m: m.getYPos() if is_freq else m.getXPos()
+        get_pos = lambda m: m.value()
         
         sorted_markers = sorted(active_markers, key=get_pos)
         for widgets in self.marker_panel.widgets:
@@ -634,7 +635,7 @@ class SpectrogramWindow(QMainWindow):
         name = sender.objectName()
         is_freq = (self.interaction_mode == 'FREQ')
         active_markers = self.markers_freq if is_freq else self.markers_time
-        get_pos = lambda m: m.getYPos() if is_freq else m.getXPos()
+        get_pos = lambda m: m.value()
         
         try:
             val = float(sender.text())
