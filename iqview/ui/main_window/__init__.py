@@ -6,10 +6,15 @@ from .component_setup import UIComponentsMixin
 from .marker_manager import MarkerManagerMixin
 from .view_controller import ViewControllerMixin
 from .data_handler import DataHandlerMixin
+from ...utils.settings_manager import SettingsManager
+from ..themes import get_main_stylesheet
 
 class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, ViewControllerMixin, DataHandlerMixin):
     def __init__(self, file_path, data_type, sample_rate, center_freq, fft_size, profile_enabled=False):
         super().__init__()
+        self.settings_mgr = SettingsManager()
+        self.apply_current_theme()
+        
         self.is_spectrogram = True
         self.setWindowTitle("IQView - Spectrogram Viewer")
         self.resize(1280, 800)
@@ -44,6 +49,23 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         self.setup_ui()
         self.start_processing()
 
+    def apply_current_theme(self):
+        theme = self.settings_mgr.get("ui/theme", "Dark")
+        self.setStyleSheet(get_main_stylesheet(theme))
+        
+        if hasattr(self, 'marker_panel'):
+            self.marker_panel.refresh_theme()
+        if hasattr(self, 'spectrogram_view'):
+            self.spectrogram_view.refresh_theme()
+            self.refresh_spectrogram_markers()
+        
+        # Refresh all Time Domain tabs
+        if hasattr(self, 'tabs'):
+            for i in range(1, self.tabs.count()):
+                widget = self.tabs.widget(i)
+                if hasattr(widget, 'refresh_theme'):
+                    widget.refresh_theme()
+
     def eventFilter(self, obj, event):
         """Handle middle-click and right-click on the tab bar."""
         if obj == self.tabs.tabBar() and event.type() == QEvent.Type.MouseButtonPress:
@@ -70,7 +92,19 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         event.accept()
 
     def keyPressEvent(self, event):
+        s = self.settings_mgr
+        time_key = getattr(Qt.Key, f"Key_{s.get('keybinds/time_markers', 'T')}")
+        freq_key = getattr(Qt.Key, f"Key_{s.get('keybinds/mag_markers', 'F')}")
+        zoom_key = s.get('keybinds/zoom_mode', 'Control')
+
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Z:
             self.undo_zoom()
+        elif event.key() == time_key:
+            self.set_interaction_mode('TIME')
+        elif event.key() == freq_key:
+            self.set_interaction_mode('FREQ')
+        elif zoom_key == "Control" and event.key() == Qt.Key.Key_Control:
+            # We don't set zoom mode on just press here, ViewBox handles it
+            pass
         else:
             super().keyPressEvent(event)

@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
 from PyQt6.QtCore import Qt, pyqtSignal
 from ..widgets import CustomViewBox
 from .marker_panel import TimeDomainMarkerPanel
+from ..themes import get_palette
 
 class TimeDomainView(QWidget):
     """
@@ -54,12 +55,7 @@ class TimeDomainView(QWidget):
         # --- Toolbar ---
         self.toolbar = QFrame()
         self.toolbar.setObjectName("td_toolbar")
-        self.toolbar.setStyleSheet("""
-            QFrame#td_toolbar { background-color: #1a1a1a; border-radius: 6px; border: 1px solid #333; }
-            QPushButton { background-color: #252525; padding: 5px 15px; border-radius: 3px; color: #ccc; }
-            QPushButton:hover { background-color: #333; }
-            QPushButton:checked { background-color: #004488; color: #00aaff; border: 1px solid #00aaff; }
-        """)
+        self.update_toolbar_style()
         self.toolbar_layout = QHBoxLayout(self.toolbar)
         self.toolbar_layout.setContentsMargins(10, 5, 10, 5)
         
@@ -101,12 +97,9 @@ class TimeDomainView(QWidget):
         self.view_box = CustomViewBox(self)
         self.plot_widget = pg.PlotWidget(viewBox=self.view_box)
         self.plot_item = self.plot_widget.getPlotItem()
-        self.plot_widget.setBackground('#121212')
-        self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
+        self.refresh_plot_style()
         self.plot_widget.getAxis('bottom').setLabel('Time', units='s')
         self.plot_widget.getAxis('left').setLabel('Amplitude (Real)')
-        self.plot_widget.getAxis('left').setPen('#666')
-        self.plot_widget.getAxis('bottom').setPen('#666')
         
         self.grid_layout.addWidget(self.plot_widget, 0, 1)
 
@@ -128,6 +121,7 @@ class TimeDomainView(QWidget):
         """
         self.x_scroll.setStyleSheet(scrollbar_style)
         self.y_scroll.setStyleSheet(scrollbar_style)
+        # We'll update scrollbar styles too during refresh if needed
         
         self.grid_layout.addWidget(self.y_scroll, 0, 0)
         self.grid_layout.addWidget(self.x_scroll, 1, 1)
@@ -148,16 +142,23 @@ class TimeDomainView(QWidget):
         self.y_scroll.valueChanged.connect(self.scroll_view)
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_T:
+        s = self.parent_window.settings_mgr
+        time_key = getattr(Qt.Key, f"Key_{s.get('keybinds/time_markers', 'T')}")
+        mag_key = getattr(Qt.Key, f"Key_{s.get('keybinds/mag_markers', 'F')}")
+        zoom_key = s.get('keybinds/zoom_mode', 'Control')
+        
+        if event.key() == time_key:
             self.set_interaction_mode('TIME')
-        elif event.key() == Qt.Key.Key_F or event.key() == Qt.Key.Key_M:
+        elif event.key() == mag_key:
             self.set_interaction_mode('MAG')
-        elif event.key() == Qt.Key.Key_Control:
+        elif zoom_key == "Control" and event.key() == Qt.Key.Key_Control:
             self.set_interaction_mode('ZOOM')
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
-        if event.key() == Qt.Key.Key_Control:
+        s = self.parent_window.settings_mgr
+        zoom_key = s.get('keybinds/zoom_mode', 'Control')
+        if zoom_key == "Control" and event.key() == Qt.Key.Key_Control:
             self.set_interaction_mode('TIME')
         super().keyReleaseEvent(event)
 
@@ -210,7 +211,9 @@ class TimeDomainView(QWidget):
         self.plot_item.clear()
         self.plot_item.getAxis('left').setLabel(y_label)
         
-        pen = pg.mkPen('#00aaff', width=1.5)
+        theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
+        p = get_palette(theme)
+        pen = pg.mkPen(p.accent, width=1.5)
         self.plot_item.plot(self.time_axis, data, pen=pen)
         
         # 4. Restore markers
@@ -412,12 +415,9 @@ class TimeDomainView(QWidget):
             self.update_marker_info()
             return
 
-        # 3. Add brand new
-        if len(active_markers) >= 2:
-            old = active_markers.pop(0)
-            self.plot_item.removeItem(old)
-            
-        color = '#00ff00' if is_time else '#ffaa00'
+        theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
+        p = get_palette(theme)
+        color = p.marker_time if is_time else p.marker_mag
         orient = 90 if is_time else 0
         new_m = pg.InfiniteLine(pos=val, angle=orient, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine), movable=False)
         new_m.setZValue(100)
@@ -595,3 +595,28 @@ class TimeDomainView(QWidget):
                 self.plot_item.setXRange(min(v1, v2), max(v1, v2), padding=0)
             else:
                 self.plot_item.setYRange(min(v1, v2), max(v1, v2), padding=0)
+
+    def refresh_theme(self):
+        self.update_toolbar_style()
+        self.refresh_plot_style()
+        self.marker_panel.refresh_theme()
+        # Re-plot to refresh curve and marker colors
+        self._update_plot(self.current_plot_data, self.y_label_text)
+
+    def update_toolbar_style(self):
+        theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
+        p = get_palette(theme)
+        self.toolbar.setStyleSheet(f"""
+            QFrame#td_toolbar {{ background-color: {p.bg_sidebar}; border-radius: 6px; border: 1px solid {p.border}; }}
+            QPushButton {{ background-color: {p.bg_widget}; padding: 5px 15px; border-radius: 3px; color: {p.text_main}; }}
+            QPushButton:hover {{ background-color: {p.border_light}; }}
+            QPushButton:checked {{ background-color: {p.accent_dim}; color: {p.accent}; border: 1px solid {p.accent}; }}
+        """)
+
+    def refresh_plot_style(self):
+        theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
+        p = get_palette(theme)
+        self.plot_widget.setBackground(p.plot_bg)
+        self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
+        self.plot_item.getAxis('left').setPen(p.text_dim)
+        self.plot_item.getAxis('bottom').setPen(p.text_dim)

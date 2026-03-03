@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QPushButton, QHBoxLayou
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from ..widgets import FormattedLineEdit, DoubleClickButton
+from ..themes import get_palette
 
 class TimeDomainMarkerPanel(QFrame):
     interactionModeChanged = pyqtSignal(str) # 'TIME', 'MAG', 'ZOOM', 'MOVE'
@@ -16,45 +17,7 @@ class TimeDomainMarkerPanel(QFrame):
     def setup_ui(self):
         self.setFixedHeight(95) # Reduced height for 2 rows
         self.header_font = QFont("Segoe UI", 9, QFont.Weight.Bold)
-        
-        self.setStyleSheet("""
-            TimeDomainMarkerPanel { 
-                background-color: #252525; 
-                border-radius: 6px;
-                border: 1px solid #333;
-            }
-            QPushButton#mode_btn {
-                background-color: #333;
-                border: 1px solid #444;
-                border-radius: 4px;
-                min-width: 32px;
-                min-height: 32px;
-                font-size: 16px;
-                padding: 0;
-            }
-            QPushButton#mode_btn:hover { background-color: #444; }
-            QPushButton#mode_btn:checked { 
-                background-color: #004488; 
-                border-color: #00aaff;
-                color: #00aaff;
-            }
-            QLineEdit {
-                background-color: #151515;
-                font-family: 'Consolas', 'Courier New';
-                font-size: 13px;
-                border: 1px solid #333;
-                border-radius: 3px;
-                padding: 2px 4px;
-                color: #fff;
-            }
-            QLineEdit:focus { border-color: #00aaff; }
-            QLabel#header_label {
-                color: #888;
-                font-size: 10px;
-                text-transform: uppercase;
-                font-weight: bold;
-            }
-        """)
+        self.refresh_theme()
         
         self.main_layout = QHBoxLayout(self)
         self.main_layout.setContentsMargins(15, 6, 15, 6)
@@ -239,3 +202,45 @@ class TimeDomainMarkerPanel(QFrame):
         
         self.btn_lock_delta.setEnabled(mode in ['TIME', 'MAG'])
         self.btn_lock_center.setEnabled(mode in ['TIME', 'MAG'])
+
+    def refresh_theme(self):
+        theme = self.controller.parent_window.settings_mgr.get("ui/theme", "Dark")
+        p = get_palette(theme)
+        self.setStyleSheet(f"""
+            TimeDomainMarkerPanel {{ 
+                background-color: {p.bg_widget}; 
+                border-radius: 6px;
+                border: 1px solid {p.border};
+            }}
+            QPushButton#mode_btn {{
+                background-color: {p.bg_sidebar};
+                border: 1px solid {p.border};
+                border-radius: 4px;
+                min-width: 32px;
+                min-height: 32px;
+                font-size: 16px;
+                padding: 0;
+            }}
+            QPushButton#mode_btn:hover {{ background-color: {p.border_light}; }}
+            QPushButton#mode_btn:checked {{ 
+                background-color: {p.accent_dim}; 
+                border-color: {p.accent};
+                color: {p.accent};
+            }}
+            QLineEdit {{
+                background-color: {p.bg_input};
+                font-family: 'Consolas', 'Courier New';
+                font-size: 13px;
+                border: 1px solid {p.border};
+                border-radius: 3px;
+                padding: 2px 4px;
+                color: {p.text_main};
+            }}
+            QLineEdit:focus {{ border-color: {p.accent}; }}
+            QLabel#header_label {{
+                color: {p.text_dim};
+                font-size: 10px;
+                text-transform: uppercase;
+                font-weight: bold;
+            }}
+        """)

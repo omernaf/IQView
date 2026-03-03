@@ -6,6 +6,7 @@ from pyqtgraph.graphicsItems.GradientPresets import Gradients
 import pyqtgraph as pg
 import numpy as np
 import copy
+from .themes import get_palette
 
 class SpectrogramView(QWidget):
     def __init__(self, parent_window):
@@ -16,11 +17,10 @@ class SpectrogramView(QWidget):
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(0)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setStyleSheet("background-color: #121212;")
         
         # Internal Graphics Layout for Plot
         self.glw_plot = pg.GraphicsLayoutWidget()
-        self.glw_plot.setBackground('#121212')
+        # Initial theme applied at end of __init__
         self.glw_plot.setContentsMargins(0, 0, 0, 0)
         self.layout.addWidget(self.glw_plot, 0, 1)
         
@@ -70,6 +70,7 @@ class SpectrogramView(QWidget):
         """
         self.x_scroll.setStyleSheet(scrollbar_style)
         self.y_scroll.setStyleSheet(scrollbar_style)
+        # Scrollbar colors could also be themed if we use qss templates in themes.py
         
         # Add scrollbars to grid
         self.layout.addWidget(self.y_scroll, 0, 0) # Left side
@@ -77,7 +78,7 @@ class SpectrogramView(QWidget):
         
         # Internal Graphics Layout for Histogram -> Now Spectrum Envelope
         self.glw_hist = pg.GraphicsLayoutWidget()
-        self.glw_hist.setBackground('#121212')
+        # Background set in refresh_theme
         self.glw_hist.setFixedWidth(180) # Slightly wider for the new dual-control
         self.layout.addWidget(self.glw_hist, 0, 2)
         
@@ -163,6 +164,8 @@ class SpectrogramView(QWidget):
         self.x_scroll.valueChanged.connect(self.scroll_view)
         self.y_scroll.valueChanged.connect(self.scroll_view)
 
+        self.refresh_theme()
+
     def on_levels_changed(self):
         low, high = self.level_region.getRegion()
         self.img.setLevels([low, high])
@@ -217,7 +220,9 @@ class SpectrogramView(QWidget):
         super().keyPressEvent(ev)
 
     def keyReleaseEvent(self, ev):
-        if ev.key() == Qt.Key.Key_Control:
+        s = self.parent_window.settings_mgr
+        zoom_key = s.get('keybinds/zoom_mode', 'Control')
+        if zoom_key == "Control" and ev.key() == Qt.Key.Key_Control:
             self.parent_window.refresh_cursor()
         super().keyReleaseEvent(ev)
 
@@ -323,3 +328,29 @@ class SpectrogramView(QWidget):
         if auto_range:
             # Only auto-range the Y-axis (Signal Level)
             self.spectrum_plot.setYRange(min_v, max_v, padding=0.1)
+
+    def refresh_theme(self):
+        theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
+        p = get_palette(theme)
+        
+        self.setStyleSheet(f"background-color: {p.bg_main};")
+        self.glw_plot.setBackground(p.plot_bg)
+        self.glw_hist.setBackground(p.plot_bg)
+        
+        # Update spectrum plot lines
+        if hasattr(self, 'min_env_curve'):
+            self.min_env_curve.setPen(pg.mkPen(p.text_dim, width=1))
+            self.max_env_curve.setPen(pg.mkPen(p.accent, width=1.5))
+            
+            # Update level region
+            for line in self.level_region.lines:
+                line.setPen(pg.mkPen(p.text_header, style=Qt.PenStyle.DashLine, width=1.5))
+                line.setHoverPen(pg.mkPen(p.accent, width=2))
+            
+            # Update spectrum plot grid and axes
+            self.spectrum_plot.getAxis('left').setPen(p.text_dim)
+            self.spectrum_plot.getAxis('bottom').setPen(p.text_dim)
+            
+            # Update main plot axes
+            self.plot_item.getAxis('left').setPen(p.text_dim)
+            self.plot_item.getAxis('bottom').setPen(p.text_dim)

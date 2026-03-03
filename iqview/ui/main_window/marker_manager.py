@@ -1,6 +1,7 @@
 import pyqtgraph as pg
 import numpy as np
 from PyQt6.QtCore import Qt
+from ..themes import get_palette
 
 class MarkerManagerMixin:
     def place_marker(self, scene_pos, drag_mode=False):
@@ -76,7 +77,10 @@ class MarkerManagerMixin:
                         old_marker = active_markers.pop(0)
                         self.spectrogram_view.plot_item.removeItem(old_marker)
                     
-                    marker = pg.InfiniteLine(pos=val, angle=angle, movable=False, pen=pg.mkPen('r', width=2))
+                    theme = self.settings_mgr.get("ui/theme", "Dark")
+                    p = get_palette(theme)
+                    color = p.marker_time if is_time else p.marker_mag
+                    marker = pg.InfiniteLine(pos=val, angle=angle, movable=False, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine))
                     marker.setZValue(10)
                     self.spectrogram_view.plot_item.addItem(marker, ignoreBounds=True)
                     active_markers.append(marker)
@@ -279,3 +283,12 @@ class MarkerManagerMixin:
             self.spectrogram_view.plot_item.removeItem(marker)
         markers.clear()
         self.update_marker_info()
+
+    def refresh_spectrogram_markers(self):
+        theme = self.settings_mgr.get("ui/theme", "Dark")
+        p = get_palette(theme)
+        
+        for m in self.markers_time:
+            m.setPen(pg.mkPen(p.marker_time, width=2, style=Qt.PenStyle.DashLine))
+        for m in self.markers_freq:
+            m.setPen(pg.mkPen(p.marker_mag, width=2, style=Qt.PenStyle.DashLine))

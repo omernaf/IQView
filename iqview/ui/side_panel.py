@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QLineEdit, QVBoxLayout, QComboBox
+from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QLineEdit, QVBoxLayout, QComboBox, QPushButton
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QFont
 import numpy as np
@@ -6,8 +6,9 @@ import numpy as np
 class SidePanel(QFrame):
     parametersChanged = pyqtSignal(dict)
 
-    def __init__(self, fs, fc, fft_size):
+    def __init__(self, fs, fc, fft_size, parent_window=None):
         super().__init__()
+        self.parent_window = parent_window
         self.fs = fs
         self.fc = fc
         self.fft_size = fft_size
@@ -19,11 +20,10 @@ class SidePanel(QFrame):
 
     def setup_ui(self):
         self.setFixedWidth(240)
+        # Base style handled by main stylesheet, but keep sidebar specific borders
         self.setStyleSheet("""
-            QFrame { 
-                background-color: #1a1a1a; 
+            SidePanel { 
                 border-right: 1px solid #2a2a2a;
-                padding: 15px;
             }
             QLabel#section_header {
                 color: #00aaff;
@@ -36,7 +36,6 @@ class SidePanel(QFrame):
                 text-transform: uppercase;
             }
             QLabel#title {
-                color: #ffffff;
                 font-size: 16px;
                 font-weight: bold;
                 margin-bottom: 10px;
@@ -107,6 +106,22 @@ class SidePanel(QFrame):
         self.rbw_display = QLineEdit()
         self.rbw_display.setReadOnly(True)
         self.layout.addWidget(self.rbw_display)
+
+        self.layout.addStretch()
+
+        # --- SETTINGS BUTTON ---
+        self.settings_btn = QPushButton("⚙️ Settings")
+        self.settings_btn.clicked.connect(self.open_settings)
+        self.layout.addWidget(self.settings_btn)
+
+    def open_settings(self):
+        if self.parent_window:
+            from .settings_dialog import SettingsDialog
+            dialog = SettingsDialog(self.parent_window.settings_mgr, self.parent_window)
+            if dialog.exec():
+                # Apply changes
+                self.parent_window.apply_current_theme()
+                # We could update other things here too
 
     def update_derived_values(self):
         # RBW = Fs / FFT

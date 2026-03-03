@@ -1,6 +1,7 @@
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6 import QtWidgets, QtCore, QtGui
 import pyqtgraph as pg
+from .themes import get_palette
 
 class DoubleClickButton(QtWidgets.QPushButton):
     doubleClicked = pyqtSignal()
@@ -102,8 +103,11 @@ class CustomViewBox(pg.ViewBox):
             return
             
         if ev.button() == Qt.MouseButton.LeftButton:
-            is_ctrl = ev.modifiers() & Qt.KeyboardModifier.ControlModifier
-            if self.ui_controller.interaction_mode == 'ZOOM' or is_ctrl:
+            s = self.ui_controller.settings_mgr
+            zoom_key = s.get('keybinds/zoom_mode', 'Control')
+            is_zoom_mod = (zoom_key == "Control" and (ev.modifiers() & Qt.KeyboardModifier.ControlModifier))
+            
+            if self.ui_controller.interaction_mode == 'ZOOM' or is_zoom_mod:
                 # --- Rubberband Zoom Logic ---
                 if ev.isStart():
                     if self.zoom_rect: self.removeItem(self.zoom_rect)
@@ -130,7 +134,9 @@ class CustomViewBox(pg.ViewBox):
                         ndx, ndy = dx / (xr[1]-xr[0]), dy / (yr[1]-yr[0])
                         
                         path = pg.QtGui.QPainterPath()
-                        pen = pg.mkPen('#ffffff', width=2) # Contrast White
+                        theme = s.get("ui/theme", "Dark")
+                        p = get_palette(theme)
+                        pen = pg.mkPen(p.text_header, width=2) # Contrast Header Color
                         if ndx < 0.15 * ndy:
                             self.zoom_type = 'Y_ONLY'
                             # Vertical line with horizontal ticks
@@ -155,8 +161,11 @@ class CustomViewBox(pg.ViewBox):
                             path.lineTo(x_max, p1.y() + tick)
                         else:
                             self.zoom_type = 'BOTH'
-                            pen = pg.mkPen('#ffffff', width=2, style=Qt.PenStyle.DashLine)
-                            self.zoom_rect.setBrush(pg.mkBrush(255, 255, 255, 40))
+                            pen = pg.mkPen(p.text_header, width=2, style=Qt.PenStyle.DashLine)
+                            # Convert hex to RGBA for brush
+                            c = QtGui.QColor(p.text_header)
+                            c.setAlpha(40)
+                            self.zoom_rect.setBrush(QtGui.QBrush(c))
                             path.addRect(pg.QtCore.QRectF(p1, p2))
                         
                         self.zoom_rect.setPath(path)
