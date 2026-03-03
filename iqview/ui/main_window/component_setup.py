@@ -24,29 +24,20 @@ class UIComponentsMixin:
         self.central_widget = QWidget()
         self.central_widget.setObjectName("central")
         self.setCentralWidget(self.central_widget)
-        self.main_h_layout = QHBoxLayout(self.central_widget)
-        self.main_h_layout.setContentsMargins(0, 0, 0, 0)
-        self.main_h_layout.setSpacing(0)
-        self.sidebar = SidePanel(self.rate, self.fc, self.fft_size)
-        self.sidebar.parametersChanged.connect(self.on_parameters_changed)
-        self.main_h_layout.addWidget(self.sidebar)
-        self.main_v_container = QWidget()
-        self.v_layout = QVBoxLayout(self.main_v_container)
-        self.v_layout.setContentsMargins(0, 0, 0, 0)
-        self.v_layout.setSpacing(0)
-        self.main_h_layout.addWidget(self.main_v_container)
+        
+        # --- Root Layout (Vertical) ---
+        self.root_layout = QVBoxLayout(self.central_widget)
+        self.root_layout.setContentsMargins(0, 0, 0, 0)
+        self.root_layout.setSpacing(0)
+        
+        # 1. Global Progress Bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setFixedHeight(2)
         self.progress_bar.setTextVisible(False)
         self.progress_bar.setStyleSheet("QProgressBar { background-color: transparent; border: none; } QProgressBar::chunk { background-color: #00aaff; }")
-        self.v_layout.addWidget(self.progress_bar)
-        self.marker_panel = MarkerPanel(self)
-        self.marker_panel.interactionModeChanged.connect(self.set_interaction_mode)
-        self.marker_panel.resetZoomRequested.connect(self.reset_zoom)
-        self.marker_panel.markerClearRequested.connect(self.handle_marker_clear)
-        self.v_layout.addWidget(self.marker_panel)
+        self.root_layout.addWidget(self.progress_bar)
         
-        # --- Tabbed View (Spectrogram + Time Domain) ---
+        # 2. Main Tab Widget
         from PyQt6.QtWidgets import QTabWidget
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(True)
@@ -61,15 +52,41 @@ class UIComponentsMixin:
             }
             QTabBar::tab:hover { background-color: #252525; color: #ccc; }
             QTabBar::tab:selected { background-color: #121212; color: #00aaff; border-bottom: 2px solid #00aaff; }
-            QTabBar::close-button { image: none; } /* Hide close button on Spectrogram via widget-specific logic if needed, or global hide */
+            QTabBar::close-button { image: none; }
         """)
+        self.root_layout.addWidget(self.tabs)
         
-        self.v_layout.addWidget(self.tabs)
+        # --- Spectrogram Tab Content (Specialized Layout) ---
+        self.spec_tab_page = QWidget()
+        self.spec_h_layout = QHBoxLayout(self.spec_tab_page)
+        self.spec_h_layout.setContentsMargins(0, 0, 0, 0)
+        self.spec_h_layout.setSpacing(0)
+        
+        # Sidebar (Left)
+        self.sidebar = SidePanel(self.rate, self.fc, self.fft_size)
+        self.sidebar.parametersChanged.connect(self.on_parameters_changed)
+        self.spec_h_layout.addWidget(self.sidebar)
+        
+        # Right Side Container (MarkerPanel + SpectrogramView)
+        self.spec_v_container = QWidget()
+        self.spec_v_layout = QVBoxLayout(self.spec_v_container)
+        self.spec_v_layout.setContentsMargins(0, 0, 0, 0)
+        self.spec_v_layout.setSpacing(0)
+        self.spec_h_layout.addWidget(self.spec_v_container)
+        
+        self.marker_panel = MarkerPanel(self)
+        self.marker_panel.interactionModeChanged.connect(self.set_interaction_mode)
+        self.marker_panel.resetZoomRequested.connect(self.reset_zoom)
+        self.marker_panel.markerClearRequested.connect(self.handle_marker_clear)
+        self.spec_v_layout.addWidget(self.marker_panel)
         
         self.spectrogram_view = SpectrogramView(self)
-        self.tabs.addTab(self.spectrogram_view, "Spectrogram")
+        self.spec_v_layout.addWidget(self.spectrogram_view)
         
-        # Hide close button on the first tab (Spectrogram)
+        # Add to tabs
+        self.tabs.addTab(self.spec_tab_page, "Spectrogram")
+        
+        # Hide close button on the first tab
         from PyQt6.QtWidgets import QTabBar
         self.tabs.tabBar().setTabButton(0, QTabBar.ButtonPosition.RightSide, None)
 
