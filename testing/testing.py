@@ -67,10 +67,7 @@ def main():
     cmd = [
         sys.executable, main_py,
         "-f", filename,
-        "-t", "complex64",
-        "-r", str(sample_rate),
-        "-c", "0e6",
-        "-s", "1024"
+        "-r", str(sample_rate)
     ]
     
     if args.profile:

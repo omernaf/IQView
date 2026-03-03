@@ -22,8 +22,8 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         self.fc = center_freq
         self.rate = sample_rate
         self.fft_size = fft_size
-        self.window_type = "Hanning"
-        self.overlap_percent = 99.0
+        self.window_type = self.settings_mgr.get("core/window_type", "Hanning")
+        self.overlap_percent = float(self.settings_mgr.get("core/overlap", 99.0))
         self.file_path = file_path
         self.data_type = data_type
         self.profile_enabled = profile_enabled

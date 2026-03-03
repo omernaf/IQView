@@ -11,8 +11,6 @@ class SettingsManager:
 
     def _set_defaults(self):
         # Only set if they don't exist
-        if not self.settings.contains("core/fs"):
-            self.settings.setValue("core/fs", 2.0e6)
         if not self.settings.contains("core/fc"):
             self.settings.setValue("core/fc", 0.0)
         if not self.settings.contains("core/fft_size"):

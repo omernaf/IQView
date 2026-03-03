@@ -12,14 +12,16 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import QApplication
 from iqview.ui import SpectrogramWindow
+from iqview.utils.settings_manager import SettingsManager
 
 def parse_args():
+    sm = SettingsManager()
     parser = argparse.ArgumentParser(description="IQView - High-performance Static RF Spectrogram Viewer")
     parser.add_argument('-f', '--file', required=True, help='Path to the binary IQ file')
-    parser.add_argument('-t', '--type', required=True, type=str, help='Data type (e.g., np.int16, np.float32, np.complex64)')
-    parser.add_argument('-r', '--rate', type=float, default=1e6, help='Sample rate in Hz')
-    parser.add_argument('-c', '--fc', type=float, default=0.0, help='Center frequency in Hz')
-    parser.add_argument('-s', '--fft', type=int, default=1024, help='FFT bin size')
+    parser.add_argument('-t', '--type', default='complex64', type=str, help='Data type (default: complex64)')
+    parser.add_argument('-r', '--rate', type=float, required=True, help='Sample rate in Hz')
+    parser.add_argument('-c', '--fc', type=float, default=float(sm.get("core/fc", 0.0)), help='Center frequency in Hz')
+    parser.add_argument('-s', '--fft', type=int, default=int(sm.get("core/fft_size", 1024)), help='FFT bin size')
     parser.add_argument('--profile', action='store_true', help='Enable cProfile profiling')
     return parser.parse_args()
 
