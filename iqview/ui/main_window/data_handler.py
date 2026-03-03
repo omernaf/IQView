@@ -28,3 +28,35 @@ class DataHandlerMixin:
         self.spectrogram_view.update_spectrogram(full_spectrogram, self.fc, self.rate, self.time_duration, auto_range=self.is_first_load)
         self.is_first_load = False
         self.update_marker_info()
+
+    def extract_iq_segment(self, start_sec, end_sec):
+        """
+        Extracts raw complex IQ samples from the file for a given time range.
+        """
+        try:
+            start_sample = int(round(start_sec * self.rate))
+            end_sample = int(round(end_sec * self.rate))
+            if start_sample > end_sample: start_sample, end_sample = end_sample, start_sample
+            
+            num_samples = end_sample - start_sample
+            if num_samples <= 0: return None
+            
+            # Cap extraction for performance
+            MAX_EXTRACT_SAMPLES = 1_000_000
+            if num_samples > MAX_EXTRACT_SAMPLES:
+                num_samples = MAX_EXTRACT_SAMPLES
+                end_sample = start_sample + num_samples
+
+            item_size = np.dtype(self.data_type).itemsize
+            offset = start_sample * 2 * item_size # 2 for I/Q
+            
+            # Use np.fromfile to read specific chunk
+            with open(self.file_path, 'rb') as f:
+                f.seek(offset)
+                raw_data = np.fromfile(f, dtype=self.data_type, count=num_samples * 2)
+                
+            complex_data = raw_data[0::2].astype(np.float32) + 1j * raw_data[1::2].astype(np.float32)
+            return complex_data
+        except Exception as e:
+            print(f"Error extracting IQ segment: {e}")
+            return None

@@ -1,5 +1,6 @@
-from PyQt6.QtWidgets import QMainWindow
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QMainWindow, QMenu
+from PyQt6.QtCore import Qt, QEvent
+from PyQt6.QtGui import QAction
 
 from .component_setup import UIComponentsMixin
 from .marker_manager import MarkerManagerMixin
@@ -9,6 +10,7 @@ from .data_handler import DataHandlerMixin
 class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, ViewControllerMixin, DataHandlerMixin):
     def __init__(self, file_path, data_type, sample_rate, center_freq, fft_size, profile_enabled=False):
         super().__init__()
+        self.is_spectrogram = True
         self.setWindowTitle("IQView - Spectrogram Viewer")
         self.resize(1280, 800)
         
@@ -41,6 +43,27 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         
         self.setup_ui()
         self.start_processing()
+
+    def eventFilter(self, obj, event):
+        """Handle middle-click and right-click on the tab bar."""
+        if obj == self.tabs.tabBar() and event.type() == QEvent.Type.MouseButtonPress:
+            index = self.tabs.tabBar().tabAt(event.pos())
+            if index > 0:  # Ignore Spectrogram tab
+                if event.button() == Qt.MouseButton.MiddleButton:
+                    self.close_tab(index)
+                    return True
+                elif event.button() == Qt.MouseButton.RightButton:
+                    self.handle_tab_context_menu(index, event.globalPosition().toPoint())
+                    return True
+        return super().eventFilter(obj, event)
+
+    def handle_tab_context_menu(self, index, pos):
+        """Show context menu for a tab."""
+        menu = QMenu(self)
+        close_action = QAction("Close Tab", self)
+        close_action.triggered.connect(lambda: self.close_tab(index))
+        menu.addAction(close_action)
+        menu.exec(pos)
 
     def closeEvent(self, event):
         if hasattr(self, 'worker'): self.worker.stop()
