@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "iqview"
+version = "0.1.0"
+description = "High-performance Static RF Spectrogram Viewer"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy",
+    "PyQt6",
+    "pyqtgraph",
+    "PyOpenGL"
+]
+
+[project.scripts]
+iqview = "iqview.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["iqview*"]

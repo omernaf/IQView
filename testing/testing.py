@@ -63,7 +63,7 @@ def main():
     
     print("Launching IQView Spectrogram Viewer...")
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    main_py = os.path.join(root_dir, "main.py")
+    main_py = os.path.join(root_dir, "iqview", "main.py")
     cmd = [
         sys.executable, main_py,
         "-f", filename,
@@ -78,7 +78,9 @@ def main():
     
     try:
         # Run the main IQView app natively
-        subprocess.run(cmd)
+        env = os.environ.copy()
+        env["PYTHONPATH"] = root_dir + os.pathsep + env.get("PYTHONPATH", "")
+        subprocess.run(cmd, env=env)
     except KeyboardInterrupt:
         print("\nTest interrupted by user.")
     finally:
