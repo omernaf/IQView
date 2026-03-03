@@ -9,6 +9,66 @@ class DoubleClickButton(QPushButton):
         self.doubleClicked.emit()
         super().mouseDoubleClickEvent(a0)
 
+class FormattedLineEdit(QLineEdit):
+    """
+    A QLineEdit that displays 3-digit grouped numbers (e.g. 1 000 000)
+    but allows editing and copying the raw number.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._raw_text = ""
+        self.editingFinished.connect(self._handle_editing_finished)
+
+    def setText(self, text):
+        self._raw_text = str(text)
+        if not self.hasFocus():
+            super().setText(self._format_text(self._raw_text))
+        else:
+            super().setText(self._raw_text)
+
+    def text(self):
+        # Return raw text even if displayed with spaces
+        return self._raw_text
+
+    def _format_text(self, text):
+        if not text: return ""
+        try:
+            # Handle numbers with decimals
+            if '.' in text:
+                parts = text.split('.')
+                # Format integer part with spaces
+                int_part = "{:,}".format(int(parts[0])).replace(",", " ")
+                
+                # Format fractional part with spaces every 3 digits (from the left)
+                frac_part = parts[1]
+                formatted_frac = ""
+                for i in range(0, len(frac_part), 3):
+                    formatted_frac += frac_part[i:i+3] + " "
+                
+                return f"{int_part}.{formatted_frac.rstrip()}"
+            else:
+                # Format integer with spaces
+                return "{:,}".format(int(text)).replace(",", " ")
+        except (ValueError, TypeError):
+            return text
+
+    def _handle_editing_finished(self):
+        # Update raw text when user finishes typing
+        self._raw_text = super().text().replace(" ", "")
+        if not self.hasFocus():
+            super().setText(self._format_text(self._raw_text))
+
+    def focusInEvent(self, event):
+        super().setText(self._raw_text)
+        super().focusInEvent(event)
+        self.selectAll()
+
+    def focusOutEvent(self, event):
+        # Re-format on focus loss
+        self._raw_text = super().text().replace(" ", "")
+        super().setText(self._format_text(self._raw_text))
+        super().focusOutEvent(event)
+
 class MarkerPanel(QFrame):
     interactionModeChanged = pyqtSignal(str) # 'TIME', 'FREQ', 'ZOOM'
     resetZoomRequested = pyqtSignal()
@@ -177,8 +237,8 @@ class MarkerPanel(QFrame):
         # Edit Widgets
         self.widgets = []
         for i in range(2):
-            sec_edit = QLineEdit(); sec_edit.setFixedWidth(130); sec_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            sam_edit = QLineEdit(); sam_edit.setFixedWidth(130); sam_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            sec_edit = FormattedLineEdit(); sec_edit.setFixedWidth(130); sec_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            sam_edit = FormattedLineEdit(); sam_edit.setFixedWidth(130); sam_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
             sec_edit.setObjectName(f"m{i}_sec")
             sam_edit.setObjectName(f"m{i}_sam")
             sec_edit.returnPressed.connect(self.parent_window.marker_edit_finished)
@@ -188,10 +248,10 @@ class MarkerPanel(QFrame):
             self.widgets.append({'sec': sec_edit, 'sam': sam_edit})
 
         # Delta/Center Edits
-        self.delta_sec = QLineEdit(); self.delta_sec.setFixedWidth(130); self.delta_sec.setObjectName("delta_sec"); self.delta_sec.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.delta_sam = QLineEdit(); self.delta_sam.setFixedWidth(130); self.delta_sam.setObjectName("delta_sam"); self.delta_sam.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.center_sec = QLineEdit(); self.center_sec.setFixedWidth(130); self.center_sec.setObjectName("center_sec"); self.center_sec.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.center_sam = QLineEdit(); self.center_sam.setFixedWidth(130); self.center_sam.setObjectName("center_sam"); self.center_sam.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.delta_sec = FormattedLineEdit(); self.delta_sec.setFixedWidth(130); self.delta_sec.setObjectName("delta_sec"); self.delta_sec.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.delta_sam = FormattedLineEdit(); self.delta_sam.setFixedWidth(130); self.delta_sam.setObjectName("delta_sam"); self.delta_sam.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.center_sec = FormattedLineEdit(); self.center_sec.setFixedWidth(130); self.center_sec.setObjectName("center_sec"); self.center_sec.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.center_sam = FormattedLineEdit(); self.center_sam.setFixedWidth(130); self.center_sam.setObjectName("center_sam"); self.center_sam.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         for w in [self.delta_sec, self.delta_sam, self.center_sec, self.center_sam]:
             w.returnPressed.connect(self.parent_window.marker_edit_finished)

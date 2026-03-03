@@ -47,8 +47,8 @@ def main():
     parser.add_argument('--generate', action='store_true', default=GENERATE_ENABLED, help='Force regenerate test file')
     args, unknown = parser.parse_known_args()
 
-    filename = "samples/temp1.32fc"
-    sample_rate = 2e6  # 2 MHz
+    filename = "samples/mavic_air_2.32fc"
+    sample_rate = 50e6  # 2 MHz
     duration = 10.0    # 10 seconds of simulated RF recording
     if args.line_profile:
         print("Running Deep Line-by-Line Profiler...")
@@ -69,7 +69,7 @@ def main():
         "-f", filename,
         "-t", "complex64",
         "-r", str(sample_rate),
-        "-c", "100e6",
+        "-c", "0e6",
         "-s", "1024"
     ]
     
