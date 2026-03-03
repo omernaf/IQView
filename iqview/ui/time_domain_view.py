@@ -24,6 +24,7 @@ class TimeDomainView(QWidget):
         self.markers_time = []
         self.markers_y = [] # Magnitude markers (Horizontal lines)
         self.y_label_text = "Amplitude (Real)"
+        self.current_plot_data = samples.real # Cache for marker sampling
         
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(10, 10, 10, 10)
@@ -132,17 +133,34 @@ class TimeDomainView(QWidget):
         self._update_plot(pad_freq, "Instantaneous Frequency (Hz)")
 
     def _update_plot(self, data, y_label):
+        self.current_plot_data = data # Sync for sampling
         self.y_label_text = y_label
         self.marker_panel.update_headers(self.interaction_mode, y_label)
         self.plot_item.clear()
         self.plot_item.getAxis('left').setLabel(y_label)
         
-        # Restore markers
-        for m in self.markers_time: self.plot_item.addItem(m)
-        for m in self.markers_y: self.plot_item.addItem(m)
-        
         pen = pg.mkPen('#00aaff', width=1.5)
         self.plot_item.plot(self.time_axis, data, pen=pen)
+        
+        # Restore markers AFTER plot for correct Z-order
+        for m in self.markers_time: 
+            self.plot_item.addItem(m)
+            m.setZValue(100)
+        for m in self.markers_y: 
+            self.plot_item.addItem(m)
+            m.setZValue(100)
+        
+        # --- Constraints ---
+        t_start, t_end = self.time_axis[0], self.time_axis[-1]
+        t_pad = (t_end - t_start) * 0.01
+        
+        y_min, y_max = np.min(data), np.max(data)
+        y_range = y_max - y_min
+        if y_range == 0: y_range = 1.0 # Avoid div by zero/flat limits
+        y_pad = y_range * 0.05
+        
+        self.view_box.setLimits(xMin=t_start - t_pad, xMax=t_end + t_pad,
+                                yMin=y_min - y_pad, yMax=y_max + y_pad)
         self.plot_item.autoRange()
 
     # --- Marker Logic ---
@@ -165,15 +183,24 @@ class TimeDomainView(QWidget):
             self.marker_panel.btn_lock_delta.blockSignals(False)
             self.marker_panel.btn_lock_center.setText(f"Center 🔒")
 
+    def _get_y_bounds(self):
+        # Current data bounds for clamping
+        y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
+        return y_min, y_max
+
     def place_marker(self, scene_pos, drag_mode=False):
         v_pos = self.view_box.mapSceneToView(scene_pos)
         is_time = (self.interaction_mode == 'TIME')
-        val = v_pos.x() if is_time else v_pos.y()
-        active_markers = self.markers_time if is_time else self.markers_y
         
-        xr, yr = self.view_box.viewRange()
-        curr_min = xr[0] if is_time else yr[0]
-        curr_max = xr[1] if is_time else yr[1]
+        # Clamp to bounds
+        if is_time:
+            t_min, t_max = self.time_axis[0], self.time_axis[-1]
+            val = max(t_min, min(t_max, v_pos.x()))
+        else:
+            y_min, y_max = self._get_y_bounds()
+            val = max(y_min, min(y_max, v_pos.y()))
+        
+        active_markers = self.markers_time if is_time else self.markers_y
         
         # 1. Shift pair if locked
         if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
@@ -184,11 +211,26 @@ class TimeDomainView(QWidget):
             shift = val - target.value()
             if self.marker_panel.btn_lock_delta.isChecked():
                 new_t, new_o = val, other.value() + shift
-                target.setValue(new_t); other.setValue(new_o)
+                # Check bounds for BOTH
+                if is_time:
+                    t_min, t_max = self.time_axis[0], self.time_axis[-1]
+                    if t_min <= new_t <= t_max and t_min <= new_o <= t_max:
+                        target.setValue(new_t); other.setValue(new_o)
+                else:
+                    y_min, y_max = self._get_y_bounds()
+                    if y_min <= new_t <= y_max and y_min <= new_o <= y_max:
+                        target.setValue(new_t); other.setValue(new_o)
             elif self.marker_panel.btn_lock_center.isChecked():
                 ct = (m1_pos + m2_pos) / 2
                 new_o = 2 * ct - val
-                target.setValue(val); other.setValue(new_o)
+                if is_time:
+                    t_min, t_max = self.time_axis[0], self.time_axis[-1]
+                    if t_min <= val <= t_max and t_min <= new_o <= t_max:
+                        target.setValue(val); other.setValue(new_o)
+                else:
+                    y_min, y_max = self._get_y_bounds()
+                    if y_min <= val <= y_max and y_min <= new_o <= y_max:
+                        target.setValue(val); other.setValue(new_o)
             
             if drag_mode: self.active_drag_marker = target
             self.update_marker_info()
@@ -215,6 +257,7 @@ class TimeDomainView(QWidget):
         color = '#00ff00' if is_time else '#ffaa00'
         orient = 90 if is_time else 0
         new_m = pg.InfiniteLine(pos=val, angle=orient, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine), movable=False)
+        new_m.setZValue(100)
         active_markers.append(new_m)
         self.plot_item.addItem(new_m, ignoreBounds=True)
         if drag_mode: self.active_drag_marker = new_m
@@ -224,17 +267,40 @@ class TimeDomainView(QWidget):
         if not self.active_drag_marker: return
         v_pos = self.view_box.mapSceneToView(scene_pos)
         is_time = self.active_drag_marker in self.markers_time
-        val = v_pos.x() if is_time else v_pos.y()
+        
+        if is_time:
+            t_min, t_max = self.time_axis[0], self.time_axis[-1]
+            val = max(t_min, min(t_max, v_pos.x()))
+        else:
+            y_min, y_max = self._get_y_bounds()
+            val = max(y_min, min(y_max, v_pos.y()))
+        
         active_markers = self.markers_time if is_time else self.markers_y
         
         if len(active_markers) == 2:
             other = active_markers[0] if active_markers[1] == self.active_drag_marker else active_markers[1]
             shift = val - self.active_drag_marker.value()
             if self.marker_panel.btn_lock_delta.isChecked():
-                self.active_drag_marker.setValue(val); other.setValue(other.value() + shift)
+                new_o = other.value() + shift
+                if is_time:
+                    t_min, t_max = self.time_axis[0], self.time_axis[-1]
+                    if t_min <= val <= t_max and t_min <= new_o <= t_max:
+                        self.active_drag_marker.setValue(val); other.setValue(new_o)
+                else:
+                    y_min, y_max = self._get_y_bounds()
+                    if y_min <= val <= y_max and y_min <= new_o <= y_max:
+                        self.active_drag_marker.setValue(val); other.setValue(new_o)
             elif self.marker_panel.btn_lock_center.isChecked():
                 ct = (self.active_drag_marker.value() + other.value()) / 2
-                self.active_drag_marker.setValue(val); other.setValue(2 * ct - val)
+                new_o = 2 * ct - val
+                if is_time:
+                    t_min, t_max = self.time_axis[0], self.time_axis[-1]
+                    if t_min <= val <= t_max and t_min <= new_o <= t_max:
+                        self.active_drag_marker.setValue(val); other.setValue(new_o)
+                else:
+                    y_min, y_max = self._get_y_bounds()
+                    if y_min <= val <= y_max and y_min <= new_o <= y_max:
+                        self.active_drag_marker.setValue(val); other.setValue(new_o)
             else: self.active_drag_marker.setValue(val)
         else: self.active_drag_marker.setValue(val)
         self.update_marker_info()
