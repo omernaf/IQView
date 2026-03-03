@@ -209,9 +209,9 @@ class SpectrogramWindow(QMainWindow):
             # 3. Shift view range to keep relative zoom consistent
             vr = self.spectrogram_view.plot_item.viewRange()
             
-            # Relative time range [0, 1] - accounts for 1.0 offset
-            rel_t_min = (vr[0][0] - 1.0) / old_duration
-            rel_t_max = (vr[0][1] - 1.0) / old_duration
+            # Relative time range [0, 1]
+            rel_t_min = vr[0][0] / old_duration
+            rel_t_max = vr[0][1] / old_duration
             
             # Relative frequency range [0, 1] within the span
             rel_f_min = (vr[1][0] - old_bottom) / old_rate
@@ -221,14 +221,14 @@ class SpectrogramWindow(QMainWindow):
             new_bottom = self.fc - self.rate / 2
             
             # Update viewport to match relative position in new coordinate system
-            self.spectrogram_view.plot_item.setXRange(1.0 + rel_t_min * self.time_duration, 1.0 + rel_t_max * self.time_duration, padding=0)
+            self.spectrogram_view.plot_item.setXRange(rel_t_min * self.time_duration, rel_t_max * self.time_duration, padding=0)
             self.spectrogram_view.plot_item.setYRange(new_bottom + rel_f_min * self.rate, new_bottom + rel_f_max * self.rate, padding=0)
 
             # 4. Update markers to preserve relative position
-            # Time markers: Constant X - accounts for 1.0 offset
+            # Time markers: Constant X
             for marker in self.markers_time:
                 old_t = marker.value()
-                new_t = 1.0 + ((old_t - 1.0) / old_duration) * self.time_duration
+                new_t = (old_t / old_duration) * self.time_duration
                 marker.setPos(new_t)
             
             # Frequency markers: Constant Y
@@ -383,14 +383,21 @@ class SpectrogramWindow(QMainWindow):
             # Determine active markers and bounds based on mode
             if self.interaction_mode == 'TIME':
                 active_markers = self.markers_time
-                val = float(np.clip(mouse_v.x(), 1.0, 1.0 + self.time_duration))
-                curr_min, curr_max = 1.0, 1.0 + self.time_duration
+                curr_min, curr_max = 0.0, self.time_duration
+                # Snap to discrete sample
+                raw_val = float(np.clip(mouse_v.x(), 0.0, self.time_duration))
+                sample = int(round(raw_val * self.rate)) + 1
+                val = (sample - 1.0) / self.rate
                 angle = 90 # Vertical line for constant Time (X)
             elif self.interaction_mode == 'FREQ':
                 active_markers = self.markers_freq
                 f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
-                val = float(np.clip(mouse_v.y(), f_min, f_max))
                 curr_min, curr_max = f_min, f_max
+                # Snap to discrete bin
+                raw_val = float(np.clip(mouse_v.y(), f_min, f_max))
+                rbw = self.rate / self.fft_size
+                bin_idx = int(round((raw_val - f_min) / rbw)) + 1
+                val = f_min + (bin_idx - 1.0) * rbw
                 angle = 0 # Horizontal line for constant Frequency (Y)
             else:
                 return # Should not happen in place_marker
@@ -507,13 +514,20 @@ class SpectrogramWindow(QMainWindow):
             active_markers = self.markers_time if is_time else self.markers_freq
             
             if is_time:
-                new_v = float(np.clip(mouse_v.x(), 1.0, 1.0 + self.time_duration))
                 get_pos = lambda m: m.value()
-                f_min, f_max = 1.0, 1.0 + self.time_duration
+                f_min, f_max = 0.0, self.time_duration
+                # Snap to discrete sample
+                raw_val = float(np.clip(mouse_v.x(), 0.0, self.time_duration))
+                sample = int(round(raw_val * self.rate)) + 1
+                new_v = (sample - 1.0) / self.rate
             else:
                 f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
-                new_v = float(np.clip(mouse_v.y(), f_min, f_max))
                 get_pos = lambda m: m.value()
+                # Snap to discrete bin
+                raw_val = float(np.clip(mouse_v.y(), f_min, f_max))
+                rbw = self.rate / self.fft_size
+                bin_idx = int(round((raw_val - f_min) / rbw)) + 1
+                new_v = f_min + (bin_idx - 1.0) * rbw
 
             if len(active_markers) == 2:
                 other_marker = active_markers[0] if active_markers[1] == self.active_drag_marker else active_markers[1]
@@ -588,8 +602,8 @@ class SpectrogramWindow(QMainWindow):
                 self.marker_panel.widgets[i]['sec'].setText(f"{val:.2f}")
                 self.marker_panel.widgets[i]['sam'].setText(f"{bin_idx}")
             else:
-                # Sample starts at 1 at Time=1.0. Time = (Sample - 1) / Fs + 1.0 -> Sample = (Time - 1.0) * Fs + 1
-                sample = int(round((val - 1.0) * self.rate)) + 1
+                # Sample starts at 1 at Time=0.0. Time = (Sample - 1) / Fs -> Sample = round(Time * Fs) + 1
+                sample = int(round(val * self.rate)) + 1
                 sample = max(1, min(sample, getattr(self, 'total_samples_in_cache', 1e9)))
                 self.marker_panel.widgets[i]['sec'].setText(f"{val:.6f}")
                 self.marker_panel.widgets[i]['sam'].setText(f"{sample}")
@@ -623,14 +637,14 @@ class SpectrogramWindow(QMainWindow):
                 self.marker_panel.center_sam.setText(f"{cs}")
             else:
                 # Calculate discrete samples first
-                s1 = int(round((p1 - 1.0) * self.rate)) + 1
-                s2 = int(round((p2 - 1.0) * self.rate)) + 1
+                s1 = int(round(p1 * self.rate)) + 1
+                s2 = int(round(p2 * self.rate)) + 1
                 max_s = getattr(self, 'total_samples_in_cache', 1e9)
                 s1, s2 = np.clip([s1, s2], 1, max_s)
                 ds = abs(s2 - s1) + 1
                 
                 cp = (p1 + p2) / 2
-                cs = int(round((cp - 1.0) * self.rate)) + 1
+                cs = int(round(cp * self.rate)) + 1
                 cs = max(1, min(cs, max_s))
                 
                 self.marker_panel.delta_sec.setText(f"{abs(p2 - p1):.6f}")
@@ -674,11 +688,11 @@ class SpectrogramWindow(QMainWindow):
                     # Map 1-based bin back to Hz: f_min + (bin - 1) * rbw
                     new_p = np.clip(f_min + (bin_val - 1) * rbw if unit == 'sam' else val, f_min, f_max)
                 else:
-                    # Map 1-based sample back to Time: (sample - 1) / rate + 1.0
+                    # Map 1-based sample back to Time: (sample - 1) / rate
                     max_s = getattr(self, 'total_samples_in_cache', 1e9)
-                    s_val = np.clip(val if unit == 'sam' else (val - 1.0) * self.rate + 1.0, 1, max_s)
-                    new_p = (s_val - 1.0) / self.rate + 1.0
-                    new_p = np.clip(new_p, 1.0, 1.0 + self.time_duration)
+                    s_val = np.clip(val if unit == 'sam' else val * self.rate + 1.0, 1, max_s)
+                    new_p = (s_val - 1.0) / self.rate
+                    new_p = np.clip(new_p, 0.0, self.time_duration)
                 
                 if len(sorted_markers) == 2:
                     other_idx = 1 - idx
@@ -718,8 +732,8 @@ class SpectrogramWindow(QMainWindow):
                         # Center point is absolute coord: f_min + (cs - 1) * rbw
                         new_ct_coords = np.clip((val - 1) * rbw + f_min if 'sam' in name else val, f_min, f_max)
                     else:
-                        # Center point is absolute coord: (cs - 1) / rate + 1.0
-                        new_ct_coords = np.clip((val - 1) / self.rate + 1.0 if 'sam' in name else val, 1.0, 1.0 + self.time_duration)
+                        # Center point is absolute coord: (cs - 1) / rate
+                        new_ct_coords = np.clip((val - 1) / self.rate if 'sam' in name else val, 0.0, self.time_duration)
                     m1_new, m2_new = new_ct_coords - dt_coords/2, new_ct_coords + dt_coords/2
                     if curr_min <= m1_new and m2_new <= curr_max:
                         sorted_markers[0].setPos(m1_new)

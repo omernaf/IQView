@@ -9,7 +9,7 @@ class CustomViewBox(pg.ViewBox):
         self.zoom_rect = None
         self.setMenuEnabled(False) # Disable default pg menu
 
-    def mouseDragEvent(self, ev):
+    def mouseDragEvent(self, ev, axis=None):
         if not hasattr(ev, 'isStart'):
             super().mouseDragEvent(ev)
             return

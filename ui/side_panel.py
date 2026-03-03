@@ -121,14 +121,17 @@ class SidePanel(QFrame):
         # dt = step_size / Fs
         step_size = int(self.fft_size * (1.0 - self.overlap_percent / 100.0))
         step_size = max(1, step_size)
-        dt = step_size / self.fs
         
-        if dt < 1e-3:
-            self.dt_display.setText(f"{dt*1e6:.2f} µs")
-        elif dt < 1:
-            self.dt_display.setText(f"{dt*1e3:.2f} ms")
+        if self.fs == 0:
+            self.dt_display.setText("inf")
         else:
-            self.dt_display.setText(f"{dt:.6f} s")
+            dt = step_size / self.fs
+            if dt < 1e-3:
+                self.dt_display.setText(f"{dt*1e6:.2f} µs")
+            elif dt < 1:
+                self.dt_display.setText(f"{dt*1e3:.2f} ms")
+            else:
+                self.dt_display.setText(f"{dt:.6f} s")
 
     def on_fft_combo_changed(self):
         self.fft_size = int(self.fft_combo.currentText())
