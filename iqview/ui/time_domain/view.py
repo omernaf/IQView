@@ -422,6 +422,12 @@ class TimeDomainView(QWidget):
         p = get_palette(theme)
         color = p.marker_time if is_time else p.marker_mag
         orient = 90 if is_time else 0
+        
+        # Recycling logic
+        if len(active_markers) >= 2:
+            old_m = active_markers.pop(0)
+            self.plot_item.removeItem(old_m)
+
         new_m = pg.InfiniteLine(pos=val, angle=orient, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine), movable=False)
         new_m.setZValue(100)
         active_markers.append(new_m)
