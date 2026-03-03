@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QMainWindow, QMenu
 from PyQt6.QtCore import Qt, QEvent
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QKeySequence
 
 from .component_setup import UIComponentsMixin
 from .marker_manager import MarkerManagerMixin
@@ -92,6 +92,7 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         event.accept()
 
     def keyPressEvent(self, event):
+        if event.isAutoRepeat(): return
         s = self.settings_mgr
         key_name = QKeySequence(event.key()).toString()
         if key_name == "Control": key_name = "Ctrl"
@@ -107,7 +108,19 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         elif key_name == freq_seq:
             self.set_interaction_mode('FREQ')
         elif key_name == zoom_seq:
-            # Zoom mode is handled by ViewBox if we hold the key
-            pass
+            self._prev_interaction_mode = getattr(self, 'interaction_mode', 'TIME')
+            self.set_interaction_mode('ZOOM')
         else:
             super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        if event.isAutoRepeat(): return
+        s = self.settings_mgr
+        key_name = QKeySequence(event.key()).toString()
+        if key_name == "Control": key_name = "Ctrl"
+        zoom_seq = s.get('keybinds/zoom_mode', 'Ctrl')
+
+        if key_name == zoom_seq:
+            prev = getattr(self, '_prev_interaction_mode', 'TIME')
+            self.set_interaction_mode(prev)
+        super().keyReleaseEvent(event)

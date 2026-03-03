@@ -3,6 +3,7 @@ import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                              QButtonGroup, QLabel, QFrame, QScrollBar, QGridLayout)
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QKeySequence
 from ..widgets import CustomViewBox
 from .marker_panel import TimeDomainMarkerPanel
 from ..themes import get_palette, get_scrollbar_stylesheet
@@ -131,6 +132,7 @@ class TimeDomainView(QWidget):
         self.y_scroll.valueChanged.connect(self.scroll_view)
 
     def keyPressEvent(self, event):
+        if event.isAutoRepeat(): return
         s = self.parent_window.settings_mgr
         key_name = QKeySequence(event.key()).toString()
         if key_name == "Control": key_name = "Ctrl"
@@ -144,17 +146,20 @@ class TimeDomainView(QWidget):
         elif key_name == mag_seq:
             self.set_interaction_mode('MAG')
         elif key_name == zoom_seq:
+            self._prev_interaction_mode = getattr(self, 'interaction_mode', 'TIME')
             self.set_interaction_mode('ZOOM')
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
+        if event.isAutoRepeat(): return
         s = self.parent_window.settings_mgr
         key_name = QKeySequence(event.key()).toString()
         if key_name == "Control": key_name = "Ctrl"
         zoom_seq = s.get('keybinds/zoom_mode', 'Ctrl')
 
         if key_name == zoom_seq:
-            self.set_interaction_mode('TIME')
+            prev = getattr(self, '_prev_interaction_mode', 'TIME')
+            self.set_interaction_mode(prev)
         super().keyReleaseEvent(event)
 
     def set_interaction_mode(self, mode):

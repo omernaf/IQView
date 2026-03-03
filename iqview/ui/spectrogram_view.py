@@ -171,19 +171,35 @@ class SpectrogramView(QWidget):
         ev.accept()
 
     def keyPressEvent(self, ev):
-        if ev.key() == Qt.Key.Key_Control:
-            self.setCursor(Qt.CursorShape.CrossCursor)
-        elif ev.key() == Qt.Key.Key_T:
+        if ev.isAutoRepeat(): return
+        s = self.parent_window.settings_mgr
+        key_name = QKeySequence(ev.key()).toString()
+        if key_name == "Control": key_name = "Ctrl"
+        
+        time_seq = s.get('keybinds/time_markers', 'T')
+        freq_seq = s.get('keybinds/mag_markers', 'F')
+        zoom_seq = s.get('keybinds/zoom_mode', 'Ctrl')
+        
+        if key_name == time_seq:
             self.parent_window.set_interaction_mode('TIME')
-        elif ev.key() == Qt.Key.Key_F:
+        elif key_name == freq_seq:
             self.parent_window.set_interaction_mode('FREQ')
+        elif key_name == zoom_seq:
+            # Tell parent to enter zoom mode
+            self.parent_window._prev_interaction_mode = getattr(self.parent_window, 'interaction_mode', 'TIME')
+            self.parent_window.set_interaction_mode('ZOOM')
         super().keyPressEvent(ev)
 
     def keyReleaseEvent(self, ev):
+        if ev.isAutoRepeat(): return
         s = self.parent_window.settings_mgr
-        zoom_key = s.get('keybinds/zoom_mode', 'Control')
-        if zoom_key == "Control" and ev.key() == Qt.Key.Key_Control:
-            self.parent_window.refresh_cursor()
+        key_name = QKeySequence(ev.key()).toString()
+        if key_name == "Control": key_name = "Ctrl"
+        zoom_seq = s.get('keybinds/zoom_mode', 'Ctrl')
+
+        if key_name == zoom_seq:
+            prev = getattr(self.parent_window, '_prev_interaction_mode', 'TIME')
+            self.parent_window.set_interaction_mode(prev)
         super().keyReleaseEvent(ev)
 
     def update_scrollbars(self):
