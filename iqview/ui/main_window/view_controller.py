@@ -68,7 +68,7 @@ class ViewControllerMixin:
         samples = self.extract_iq_segment(start_t, end_t)
         if samples is not None:
             from ..time_domain_view import TimeDomainView
-            td_view = TimeDomainView(samples, start_t, self.rate)
+            td_view = TimeDomainView(samples, start_t, self.rate, parent_window=self)
             idx = self.tabs.addTab(td_view, f"Time Domain ({start_t:.3f}s)")
             self.tabs.setCurrentIndex(idx)
 
