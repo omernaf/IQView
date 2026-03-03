@@ -47,10 +47,15 @@ class ViewControllerMixin:
     def set_interaction_mode(self, mode):
         self.interaction_mode = mode
         self.zoom_mode = (mode == 'ZOOM')
-        if mode == 'ZOOM': self.spectrogram_view.setCursor(Qt.CursorShape.CrossCursor)
-        else: self.spectrogram_view.setCursor(Qt.CursorShape.ArrowCursor)
+        self.refresh_cursor()
         self.marker_panel.update_headers(mode)
         self.update_marker_info()
+
+    def refresh_cursor(self):
+        if hasattr(self, 'zoom_mode') and self.zoom_mode:
+            self.spectrogram_view.setCursor(Qt.CursorShape.CrossCursor)
+        else:
+            self.spectrogram_view.setCursor(Qt.CursorShape.ArrowCursor)
 
     def reset_zoom(self):
         self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())

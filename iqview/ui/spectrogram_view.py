@@ -15,6 +15,7 @@ class SpectrogramView(QWidget):
         self.layout = QGridLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(0)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setStyleSheet("background-color: #121212;")
         
         # Internal Graphics Layout for Plot
@@ -205,6 +206,16 @@ class SpectrogramView(QWidget):
         
         menu.exec(ev.screenPos().toPoint())
         ev.accept()
+
+    def keyPressEvent(self, ev):
+        if ev.key() == Qt.Key.Key_Control:
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        super().keyPressEvent(ev)
+
+    def keyReleaseEvent(self, ev):
+        if ev.key() == Qt.Key.Key_Control:
+            self.parent_window.refresh_cursor()
+        super().keyReleaseEvent(ev)
 
     def update_scrollbars(self):
         if self._block_signals: return

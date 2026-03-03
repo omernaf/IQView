@@ -15,7 +15,8 @@ class CustomViewBox(pg.ViewBox):
             return
             
         if ev.button() == Qt.MouseButton.LeftButton:
-            if self.ui_controller.interaction_mode == 'ZOOM':
+            is_ctrl = ev.modifiers() & Qt.KeyboardModifier.ControlModifier
+            if self.ui_controller.interaction_mode == 'ZOOM' or is_ctrl:
                 # --- Rubberband Zoom Logic ---
                 if ev.isStart():
                     if self.zoom_rect: self.removeItem(self.zoom_rect)
