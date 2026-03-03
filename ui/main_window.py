@@ -583,16 +583,17 @@ class SpectrogramWindow(QMainWindow):
             self.marker_panel.widgets[i]['sec'].blockSignals(True)
             self.marker_panel.widgets[i]['sam'].blockSignals(True)
             if is_freq:
-                # Value is Hz. "Samples" -> FFT Bin
+                # Value is Hz. "Samples" -> FFT Bin (1-based)
                 rbw = self.rate / self.fft_size
-                bin_idx = int((val - (self.fc - self.rate/2)) / rbw)
-                bin_idx = max(0, min(bin_idx, self.fft_size - 1))
+                bin_idx = int(round((val - (self.fc - self.rate/2)) / rbw)) + 1
+                bin_idx = max(1, min(bin_idx, self.fft_size))
                 self.marker_panel.widgets[i]['sec'].setText(f"{val:.2f}")
                 self.marker_panel.widgets[i]['sam'].setText(f"{bin_idx}")
             else:
-                samples = int(val * self.rate)
+                # Sample starts at 1. Time = (Sample - 1) / Fs -> Sample = Time * Fs + 1
+                sample = int(round(val * self.rate)) + 1
                 self.marker_panel.widgets[i]['sec'].setText(f"{val:.6f}")
-                self.marker_panel.widgets[i]['sam'].setText(f"{samples}")
+                self.marker_panel.widgets[i]['sam'].setText(f"{sample}")
             self.marker_panel.widgets[i]['sec'].blockSignals(False)
             self.marker_panel.widgets[i]['sam'].blockSignals(False)
 
@@ -607,15 +608,18 @@ class SpectrogramWindow(QMainWindow):
 
             if is_freq:
                 rbw = self.rate / self.fft_size
-                # Clip bin indices to [0, nfft-1]
-                ds = max(0, min(int(dp / rbw), self.fft_size - 1))
-                cs = max(0, min(int((cp - (self.fc - self.rate/2)) / rbw), self.fft_size - 1))
+                # Inclusive Delta: (dp/rbw) + 1
+                ds = int(round(dp / rbw)) + 1
+                # Center mapped to 1-based bin mapping
+                cs = int(round((cp - (self.fc - self.rate/2)) / rbw)) + 1
                 self.marker_panel.delta_sec.setText(f"{dp:.2f}")
                 self.marker_panel.delta_sam.setText(f"{ds}")
                 self.marker_panel.center_sec.setText(f"{cp:.2f}")
                 self.marker_panel.center_sam.setText(f"{cs}")
             else:
-                ds, cs = int(dp * self.rate), int(cp * self.rate)
+                # Inclusive Delta: (dp * rate) + 1
+                ds = int(round(dp * self.rate)) + 1
+                cs = int(round(cp * self.rate)) + 1
                 self.marker_panel.delta_sec.setText(f"{dp:.6f}")
                 self.marker_panel.delta_sam.setText(f"{ds}")
                 self.marker_panel.center_sec.setText(f"{cp:.6f}")
@@ -652,11 +656,13 @@ class SpectrogramWindow(QMainWindow):
                 unit = name[3:]
                 
                 if is_freq:
-                    # Clip input bin to [0, nfft-1]
-                    bin_val = max(0, min(val, self.fft_size - 1))
-                    new_p = np.clip(f_min + bin_val * rbw if unit == 'sam' else val, f_min, f_max)
+                    # Clip input bin to [1, nfft]
+                    bin_val = max(1, min(val, self.fft_size))
+                    # Map 1-based bin back to Hz: f_min + (bin - 1) * rbw
+                    new_p = np.clip(f_min + (bin_val - 1) * rbw if unit == 'sam' else val, f_min, f_max)
                 else:
-                    new_p = np.clip(val / self.rate if unit == 'sam' else val, 0, self.time_duration)
+                    # Map 1-based sample back to Time: (sample - 1) / rate
+                    new_p = np.clip((val - 1) / self.rate if unit == 'sam' else val, 0, self.time_duration)
                 
                 if len(sorted_markers) == 2:
                     other_idx = 1 - idx
@@ -683,18 +689,20 @@ class SpectrogramWindow(QMainWindow):
                 
                 if 'delta' in name:
                     if is_freq:
-                        new_dt = np.clip(val * rbw if 'sam' in name else val, 0, self.rate)
+                        # For delta entry, inclusive "samples" subtract 1
+                        new_dt = np.clip((val - 1) * rbw if 'sam' in name else val, 0, self.rate)
                     else:
-                        new_dt = np.clip(val / self.rate if 'sam' in name else val, 0, self.time_duration)
+                        new_dt = np.clip((val - 1) / self.rate if 'sam' in name else val, 0, self.time_duration)
                     m1_new, m2_new = ct - new_dt/2, ct + new_dt/2
                     if curr_min <= m1_new and m2_new <= curr_max:
                         sorted_markers[0].setPos(m1_new)
                         sorted_markers[1].setPos(m2_new)
                 elif 'center' in name:
                     if is_freq:
-                        new_ct = np.clip(val * rbw + f_min if 'sam' in name else val, f_min, f_max)
+                        # Center point is absolute coord: f_min + (cs - 1) * rbw
+                        new_ct = np.clip((val - 1) * rbw + f_min if 'sam' in name else val, f_min, f_max)
                     else:
-                        new_ct = np.clip(val / self.rate if 'sam' in name else val, 0, self.time_duration)
+                        new_ct = np.clip((val - 1) / self.rate if 'sam' in name else val, 0, self.time_duration)
                     m1_new, m2_new = new_ct - dt/2, new_ct + dt/2
                     if curr_min <= m1_new and m2_new <= curr_max:
                         sorted_markers[0].setPos(m1_new)
