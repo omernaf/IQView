@@ -11,6 +11,30 @@ class SettingsDialog(QDialog):
         self.resize(500, 400)
         self.setup_ui()
 
+        self.layout.addWidget(self.tabs)
+
+    def _add_reset_row(self, form, label, widget, key):
+        """Helper to add a row with a reset button."""
+        row_layout = QHBoxLayout()
+        row_layout.addWidget(widget)
+        
+        reset_btn = QPushButton("🔄")
+        reset_btn.setToolTip("Reset to default")
+        reset_btn.setFixedWidth(30)
+        reset_btn.setStyleSheet("padding: 2px; font-size: 14px;")
+        
+        def reset_clicked():
+            default_val = self.mgr.get_default(key)
+            if isinstance(widget, QLineEdit):
+                widget.setText(str(default_val))
+            elif isinstance(widget, QComboBox):
+                widget.setCurrentText(str(default_val))
+        
+        reset_btn.clicked.connect(reset_clicked)
+        row_layout.addWidget(reset_btn)
+        
+        form.addRow(label, row_layout)
+
     def setup_ui(self):
         self.layout = QVBoxLayout(self)
         self.tabs = QTabWidget()
@@ -36,11 +60,11 @@ class SettingsDialog(QDialog):
         self.window_combo.addItems(["Hanning", "Hamming", "Blackman", "Bartlett", "Rectangular"])
         self.window_combo.setCurrentText(str(self.mgr.get("core/window_type")))
 
-        self.general_form.addRow("Default Center Freq (Hz):", self.fc_edit)
-        self.general_form.addRow("Default File Type:", self.type_combo)
-        self.general_form.addRow("Default FFT Size:", self.fft_combo)
-        self.general_form.addRow("Default Overlap (%):", self.overlap_edit)
-        self.general_form.addRow("Default Window:", self.window_combo)
+        self._add_reset_row(self.general_form, "Default Center Freq (Hz):", self.fc_edit, "core/fc")
+        self._add_reset_row(self.general_form, "Default File Type:", self.type_combo, "core/type")
+        self._add_reset_row(self.general_form, "Default FFT Size:", self.fft_combo, "core/fft_size")
+        self._add_reset_row(self.general_form, "Default Overlap (%):", self.overlap_edit, "core/overlap")
+        self._add_reset_row(self.general_form, "Default Window:", self.window_combo, "core/window_type")
         
         self.tabs.addTab(self.general_tab, "General")
 
@@ -52,22 +76,20 @@ class SettingsDialog(QDialog):
         self.theme_combo.addItems(["Dark", "Light"])
         self.theme_combo.setCurrentText(str(self.mgr.get("ui/theme")))
         
-        self.appearance_form.addRow("Theme:", self.theme_combo)
+        self._add_reset_row(self.appearance_form, "Theme:", self.theme_combo, "ui/theme")
         self.tabs.addTab(self.appearance_tab, "Appearance")
 
         # --- Keyboard Tab ---
         self.keyboard_tab = QWidget()
         self.keyboard_form = QFormLayout(self.keyboard_tab)
         
-        # In a real app we'd use QKeySequenceEdit, but for single-key triggers like 'T'
-        # we'll stick to a simple mapping for now.
         self.time_key = QLineEdit(str(self.mgr.get("keybinds/time_markers")))
         self.mag_key = QLineEdit(str(self.mgr.get("keybinds/mag_markers")))
         self.zoom_key = QLineEdit(str(self.mgr.get("keybinds/zoom_mode")))
         
-        self.keyboard_form.addRow("Time Markers Key:", self.time_key)
-        self.keyboard_form.addRow("Magnitude/Freq Markers Key:", self.mag_key)
-        self.keyboard_form.addRow("Zoom Pulse Key (Hold):", self.zoom_key)
+        self._add_reset_row(self.keyboard_form, "Time Markers Key:", self.time_key, "keybinds/time_markers")
+        self._add_reset_row(self.keyboard_form, "Magnitude/Freq Markers Key:", self.mag_key, "keybinds/mag_markers")
+        self._add_reset_row(self.keyboard_form, "Zoom Pulse Key (Hold):", self.zoom_key, "keybinds/zoom_mode")
         
         self.tabs.addTab(self.keyboard_tab, "Keyboard")
 
