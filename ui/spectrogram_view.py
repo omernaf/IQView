@@ -283,9 +283,9 @@ class SpectrogramView(QWidget):
             self.level_region.setRegion([min_v, max_v])
         
         self.img.setImage(full_spectrogram, autoLevels=False, levels=levels, autoDownsample=True)
-        self.img.setRect(QRectF(0, fc - rate/2, time_duration, rate))
+        self.img.setRect(QRectF(1.0, fc - rate/2, time_duration, rate))
         
-        self.full_t_range = (0, time_duration)
+        self.full_t_range = (1.0, 1.0 + time_duration)
         self.full_f_range = (fc - rate/2, fc + rate/2)
         
         if auto_range:
