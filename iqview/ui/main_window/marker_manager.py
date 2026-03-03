@@ -5,63 +5,81 @@ from PyQt6.QtCore import Qt
 class MarkerManagerMixin:
     def place_marker(self, scene_pos, drag_mode=False):
         if self.spectrogram_view.plot_item.sceneBoundingRect().contains(scene_pos):
-            mouse_v = self.spectrogram_view.plot_item.vb.mapSceneToView(scene_pos)
+            vb = self.spectrogram_view.plot_item.vb
+            mouse_v = vb.mapSceneToView(scene_pos)
             
-            if self.interaction_mode == 'TIME':
-                active_markers = self.markers_time
-                curr_min, curr_max = 0.0, self.time_duration
+            is_time = (self.interaction_mode == 'TIME')
+            active_markers = self.markers_time if is_time else self.markers_freq
+            curr_min, curr_max = (0.0, self.time_duration) if is_time else (self.fc - self.rate/2, self.fc + self.rate/2)
+            angle = 90 if is_time else 0
+            
+            # 1. Hit-test existing markers first (Pixel-based distance)
+            hit_threshold = 20 # pixels
+            best_marker = None
+            min_dist = float('inf')
+            
+            for m in active_markers:
+                m_pos = m.value()
+                p_scene = vb.mapViewToScene(pg.Point(m_pos, 0)) if is_time else vb.mapViewToScene(pg.Point(0, m_pos))
+                dist = abs(scene_pos.x() - p_scene.x()) if is_time else abs(scene_pos.y() - p_scene.y())
+                
+                if dist < hit_threshold and dist < min_dist:
+                    min_dist = dist
+                    best_marker = m
+
+            # 2. Logic Selection: Drag Existing vs Place New
+            if is_time:
                 raw_val = float(np.clip(mouse_v.x(), 0.0, self.time_duration))
                 sample = int(round(raw_val * self.rate)) + 1
                 val = (sample - 1.0) / self.rate
-                angle = 90
-            elif self.interaction_mode == 'FREQ':
-                active_markers = self.markers_freq
-                f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
-                curr_min, curr_max = f_min, f_max
-                raw_val = float(np.clip(mouse_v.y(), f_min, f_max))
+            else:
+                f_min = self.fc - self.rate/2
+                raw_val = float(np.clip(mouse_v.y(), f_min, self.fc + self.rate/2))
                 rbw = self.rate / self.fft_size
                 bin_idx = int(round((raw_val - f_min) / rbw)) + 1
                 val = f_min + (bin_idx - 1.0) * rbw
-                angle = 0
-            else:
-                return
 
-            if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
-                m0_pos = active_markers[0].value()
-                m1_pos = active_markers[1].value()
-                m0_dist = abs(m0_pos - val)
-                m1_dist = abs(m1_pos - val)
-                target = active_markers[0] if m0_dist < m1_dist else active_markers[1]
-                other = active_markers[1] if m0_dist < m1_dist else active_markers[0]
-                old_p = target.value()
-                shift = val - old_p
+            if best_marker:
+                # We've grabbed an existing marker
+                if drag_mode:
+                    self.active_drag_marker = best_marker
                 
-                if self.marker_panel.btn_lock_delta.isChecked():
-                    new_target_p = val
-                    new_other_p = other.value() + shift
-                    in_bounds = (curr_min <= new_target_p <= curr_max and curr_min <= new_other_p <= curr_max)
-                    if in_bounds:
-                        target.setPos(new_target_p)
-                        other.setPos(new_other_p)
-                elif self.marker_panel.btn_lock_center.isChecked():
-                    new_target_p = val
-                    center = (m0_pos + m1_pos) / 2
-                    new_other_p = 2 * center - new_target_p
-                    in_bounds = (curr_min <= new_target_p <= curr_max and curr_min <= new_other_p <= curr_max)
-                    if in_bounds:
-                        target.setPos(new_target_p)
-                        other.setPos(new_other_p)
-                
-                if drag_mode: self.active_drag_marker = target
+                # If locked, we move BOTH markers. We need to decide which is target.
+                # Usually best_marker IS the target.
+                if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+                    target = best_marker
+                    other = active_markers[0] if active_markers[1] == target else active_markers[1]
+                    old_p = target.value()
+                    shift = val - old_p
+                    
+                    if self.marker_panel.btn_lock_delta.isChecked():
+                        new_target_p = val
+                        new_other_p = other.value() + shift
+                        if curr_min <= new_target_p <= curr_max and curr_min <= new_other_p <= curr_max:
+                            target.setPos(new_target_p)
+                            other.setPos(new_other_p)
+                    elif self.marker_panel.btn_lock_center.isChecked():
+                        new_target_p = val
+                        center = (active_markers[0].value() + active_markers[1].value()) / 2
+                        new_other_p = 2 * center - new_target_p
+                        if curr_min <= new_target_p <= curr_max and curr_min <= new_other_p <= curr_max:
+                            target.setPos(new_target_p)
+                            other.setPos(new_other_p)
+                else:
+                    # Not locked, just move the one we grabbed
+                    best_marker.setPos(val)
             else:
+                # No hit: Place a new marker or replace oldest
                 if len(active_markers) >= 2:
                     old_marker = active_markers.pop(0)
                     self.spectrogram_view.plot_item.removeItem(old_marker)
+                
                 marker = pg.InfiniteLine(pos=val, angle=angle, movable=False, pen=pg.mkPen('r', width=2))
                 marker.setZValue(10)
                 self.spectrogram_view.plot_item.addItem(marker, ignoreBounds=True)
                 active_markers.append(marker)
                 if drag_mode: self.active_drag_marker = marker
+            
             self.update_marker_info()
 
     def update_drag(self, scene_pos):
