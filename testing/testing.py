@@ -50,11 +50,11 @@ def main():
     filename = "samples/temp1.32fc"
     sample_rate = 2e6  # 2 MHz
     duration = 10.0    # 10 seconds of simulated RF recording
-    
     if args.line_profile:
         print("Running Deep Line-by-Line Profiler...")
-        # Note: profile_script.py expects to be run from root or within profiler/
-        subprocess.run([sys.executable, "profiler/profile_script.py"])
+        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        prof_script = os.path.join(root_dir, "profiler", "profile_script.py")
+        subprocess.run([sys.executable, prof_script])
         return
 
     if args.generate or not os.path.exists(filename):
@@ -62,8 +62,10 @@ def main():
         generate_test_file(filename, sample_rate, duration)
     
     print("Launching IQView Spectrogram Viewer...")
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    main_py = os.path.join(root_dir, "main.py")
     cmd = [
-        sys.executable, "main.py",
+        sys.executable, main_py,
         "-f", filename,
         "-t", "complex64",
         "-r", str(sample_rate),

@@ -1,6 +1,6 @@
 import numpy as np
 from PyQt6.QtCore import pyqtSlot
-from utils import FileReaderThread
+from dsp import FileReaderThread
 
 class DataHandlerMixin:
     def start_processing(self):

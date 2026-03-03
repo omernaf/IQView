@@ -1,7 +1,7 @@
 import os
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
-from dsp import preprocess_chunk, postprocess_fft
+from .dsp import preprocess_chunk, postprocess_fft
 
 class FileReaderThread(QThread):
     """
