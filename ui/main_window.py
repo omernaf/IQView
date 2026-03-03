@@ -194,48 +194,58 @@ class SpectrogramWindow(QMainWindow):
         
         if needs_reprocess:
             self.start_processing()
-        else:
-            # Soft update: refresh labels and markers
-            if hasattr(self, 'full_spectrogram_cache'):
-                # 1. Store old duration for relative coordinate calculation
-                old_duration = self.time_duration
-                
-                # 2. Re-calculate duration based on new rate
-                if hasattr(self, 'total_samples_in_cache'):
-                    self.time_duration = self.total_samples_in_cache / self.rate
-                else:
-                    self.time_duration = (old_duration * old_rate) / self.rate
+            
+        if hasattr(self, 'full_spectrogram_cache'):
+            # 1. Store old context for relative coordinate calculation
+            old_duration = self.time_duration
+            old_bottom = old_fc - old_rate / 2
+            
+            # 2. Re-calculate duration based on new rate
+            if hasattr(self, 'total_samples_in_cache'):
+                self.time_duration = self.total_samples_in_cache / self.rate
+            else:
+                self.time_duration = (old_duration * old_rate) / self.rate
 
-                # 3. Shift view range to keep relative zoom consistent (avoid "stretching and moving")
-                vr = self.spectrogram_view.plot_item.viewRange()
-                
-                # Relative time range [0, 1]
-                rel_t_min = vr[0][0] / old_duration
-                rel_t_max = vr[0][1] / old_duration
-                
-                # Relative frequency range [0, 1]
-                old_bottom = old_fc - old_rate / 2
-                rel_f_min = (vr[1][0] - old_bottom) / old_rate
-                rel_f_max = (vr[1][1] - old_bottom) / old_rate
-                
-                # New bottom
-                new_bottom = self.fc - self.rate / 2
-                
-                # Update viewport to match relative position in new coordinate system
-                self.spectrogram_view.plot_item.setXRange(rel_t_min * self.time_duration, rel_t_max * self.time_duration, padding=0)
-                self.spectrogram_view.plot_item.setYRange(new_bottom + rel_f_min * self.rate, new_bottom + rel_f_max * self.rate, padding=0)
+            # 3. Shift view range to keep relative zoom consistent
+            vr = self.spectrogram_view.plot_item.viewRange()
+            
+            # Relative time range [0, 1]
+            rel_t_min = vr[0][0] / old_duration
+            rel_t_max = vr[0][1] / old_duration
+            
+            # Relative frequency range [0, 1] within the span
+            rel_f_min = (vr[1][0] - old_bottom) / old_rate
+            rel_f_max = (vr[1][1] - old_bottom) / old_rate
+            
+            # New coordinate anchor
+            new_bottom = self.fc - self.rate / 2
+            
+            # Update viewport to match relative position in new coordinate system
+            self.spectrogram_view.plot_item.setXRange(rel_t_min * self.time_duration, rel_t_max * self.time_duration, padding=0)
+            self.spectrogram_view.plot_item.setYRange(new_bottom + rel_f_min * self.rate, new_bottom + rel_f_max * self.rate, padding=0)
 
-                # 4. Update time markers to preserve sample position
-                for marker in self.markers_time:
-                    samples = marker.getYPos() * old_rate # Time is Y coordinate
-                    new_t = samples / self.rate
-                    marker.setPos(new_t)
+            # 4. Update markers to preserve relative position
+            # Time markers: Constant X
+            for marker in self.markers_time:
+                old_t = marker.getXPos()
+                new_t = (old_t / old_duration) * self.time_duration
+                marker.setPos(new_t)
+            
+            # Frequency markers: Constant Y
+            for marker in self.markers_freq:
+                old_f = marker.getYPos()
+                # Maintain relative position within the captured bandwidth
+                rel_f = (old_f - old_bottom) / old_rate
+                new_f = new_bottom + rel_f * self.rate
+                marker.setPos(new_f)
 
-                # 5. Final Spectrogram coordinate update
+            # 5. Update Spectrogram coordinate system (unless reprocessing which calls display_spectrogram)
+            if not needs_reprocess:
                 self.spectrogram_view.update_spectrogram(
                     self.full_spectrogram_cache, self.fc, self.rate, self.time_duration, auto_range=False
                 )
-            self.update_marker_info()
+        
+        self.update_marker_info()
 
     def set_interaction_mode(self, mode):
         self.interaction_mode = mode
