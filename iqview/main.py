@@ -1,9 +1,17 @@
+# Support running as a script without installation
+if __name__ == "__main__" and __package__ is None:
+    import os, sys
+    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if parent_dir not in sys.path:
+        sys.path.insert(0, parent_dir)
+    __package__ = "iqview"
+
 import sys
 import argparse
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import QApplication
-from ui import SpectrogramWindow
+from iqview.ui import SpectrogramWindow
 
 def parse_args():
     parser = argparse.ArgumentParser(description="IQView - High-performance Static RF Spectrogram Viewer")
