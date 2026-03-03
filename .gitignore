@@ -1,7 +1,16 @@
+# Samples and Data
 *.32fc
-venv/*
-__pycache__/*
+samples/
+
+# Python / Packaging
+.venv/
+build/
+dist/*.whl
+!dist/iqview-*.whl
+*.egg-info/
 *.pyc
+__pycache__/
+
 # Profiler artifacts
 profiler/*.txt
 profiler/*.prof
