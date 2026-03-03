@@ -97,8 +97,8 @@ class SpectrogramView(QWidget):
         self.spectrum_plot.addItem(self.min_env_curve)
         self.spectrum_plot.addItem(self.max_env_curve)
         
-        # 2. Level Region (Clipping Controls) - Now Vertical mapping Signal Level to X
-        self.level_region = pg.LinearRegionItem(orientation='vertical', brush=pg.mkBrush(0, 170, 255, 30))
+        # 2. Level Region (Clipping Controls) - Now horizontal mapping Signal Level to Y
+        self.level_region = pg.LinearRegionItem(orientation='horizontal', brush=pg.mkBrush(0, 170, 255, 30))
         # Style the lines to be dashed
         for line in self.level_region.lines:
             line.setPen(pg.mkPen('#fff', style=Qt.PenStyle.DashLine, width=1.5))
@@ -298,13 +298,13 @@ class SpectrogramView(QWidget):
         
         freqs = np.linspace(fc - rate/2, fc + rate/2, len(min_env))
         
-        # Map Level to X and Frequency to Y to align with main plot
-        self.min_env_curve.setData(min_env, freqs)
-        self.max_env_curve.setData(max_env, freqs)
+        # Map Frequency to X and Level to Y
+        self.min_env_curve.setData(freqs, min_env)
+        self.max_env_curve.setData(freqs, max_env)
         
-        # Explicitly sync Y-axis with main plot's frequency range
-        self.spectrum_plot.setYRange(fc - rate/2, fc + rate/2, padding=0)
+        # Explicitly sync X-axis with main plot's frequency range
+        self.spectrum_plot.setXRange(fc - rate/2, fc + rate/2, padding=0)
         
         if auto_range:
-            # Only auto-range the X-axis (Signal Level)
-            self.spectrum_plot.setXRange(min_v, max_v, padding=0.1)
+            # Only auto-range the Y-axis (Signal Level)
+            self.spectrum_plot.setYRange(min_v, max_v, padding=0.1)
