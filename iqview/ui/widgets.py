@@ -1,6 +1,91 @@
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6 import QtWidgets, QtCore, QtGui
 import pyqtgraph as pg
-from PyQt6.QtCore import Qt
-from PyQt6 import QtWidgets
+
+class DoubleClickButton(QtWidgets.QPushButton):
+    doubleClicked = pyqtSignal()
+    
+    def mouseDoubleClickEvent(self, a0: QtGui.QMouseEvent) -> None:
+        self.doubleClicked.emit()
+        super().mouseDoubleClickEvent(a0)
+
+class FormattedLineEdit(QtWidgets.QLineEdit):
+    """
+    A QLineEdit that displays 3-digit grouped numbers (e.g. 1 000 000)
+    but allows editing and copying the raw number.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._raw_text = ""
+        self.editingFinished.connect(self._handle_editing_finished)
+
+    def setText(self, text):
+        self._raw_text = str(text)
+        if not self.hasFocus():
+            super().setText(self._format_text(self._raw_text))
+        else:
+            super().setText(self._raw_text)
+
+    def text(self):
+        # Return raw text even if displayed with spaces
+        return self._raw_text
+
+    def _format_text(self, text):
+        if not text: return ""
+        try:
+            MAX_CHARS = 16 # Safe limit for 130px box with Consolas 13px
+            
+            # Handle numbers with decimals
+            if '.' in text:
+                parts = text.split('.')
+                # Format integer part with spaces
+                int_part = "{:,}".format(int(parts[0])).replace(",", " ")
+                
+                # Start with "int_part."
+                result = f"{int_part}."
+                if len(result) >= MAX_CHARS:
+                    return result.rstrip('.') # Fallback if even int_part is huge
+                
+                # Format fractional part with spaces every 3 digits
+                frac_part = parts[1]
+                for i in range(0, len(frac_part), 3):
+                    chunk = frac_part[i:i+3]
+                    # Check if we can fit the next chunk (with a space)
+                    potential_addition = (" " if i > 0 else "") + chunk
+                    if len(result) + len(potential_addition) <= MAX_CHARS:
+                        result += potential_addition
+                    else:
+                        # Try to fit as many individual digits from this chunk as possible
+                        for digit in potential_addition:
+                            if len(result) + 1 <= MAX_CHARS:
+                                result += digit
+                            else:
+                                break
+                        break
+                
+                return result.rstrip()
+            else:
+                # Format integer with spaces
+                return "{:,}".format(int(text)).replace(",", " ")
+        except (ValueError, TypeError):
+            return text
+
+    def _handle_editing_finished(self):
+        # Update raw text when user finishes typing
+        self._raw_text = super().text().replace(" ", "")
+        if not self.hasFocus():
+            super().setText(self._format_text(self._raw_text))
+
+    def focusInEvent(self, event):
+        super().setText(self._raw_text)
+        super().focusInEvent(event)
+        self.selectAll()
+
+    def focusOutEvent(self, event):
+        # Re-format on focus loss
+        self._raw_text = super().text().replace(" ", "")
+        super().setText(self._format_text(self._raw_text))
+        super().focusOutEvent(event)
 
 class CustomViewBox(pg.ViewBox):
     def __init__(self, ui_controller, *args, **kwds):
@@ -109,51 +194,55 @@ class CustomViewBox(pg.ViewBox):
 
     def raise_custom_menu(self, ev):
         menu = QtWidgets.QMenu()
+        is_spec = getattr(self.ui_controller, 'is_spectrogram', False)
         
         view_all_act = menu.addAction("View All")
         view_all_act.triggered.connect(self.ui_controller.reset_zoom)
         
         menu.addSeparator()
         
-        td_popup_act = menu.addAction("Time Domain Popup")
-        time_markers_count = len(self.ui_controller.markers_time)
-        td_popup_act.setEnabled(time_markers_count == 2)
-        td_popup_act.triggered.connect(self.ui_controller.open_time_domain_tab)
+        if is_spec:
+            td_popup_act = menu.addAction("Time Domain Popup")
+            time_markers_count = len(self.ui_controller.markers_time)
+            td_popup_act.setEnabled(time_markers_count == 2)
+            td_popup_act.triggered.connect(self.ui_controller.open_time_domain_tab)
 
         fit_act = menu.addAction("Fit to Screen")
-        active_markers = self.ui_controller.markers_freq if self.ui_controller.interaction_mode == 'FREQ' else self.ui_controller.markers_time
+        # Handle 'Y' mode for TimeDomainView or 'FREQ' for Spectrogram
+        y_mode = 'FREQ' if is_spec else 'Y'
+        active_markers = getattr(self.ui_controller, f'markers_{y_mode.lower()}', []) if self.ui_controller.interaction_mode == y_mode else self.ui_controller.markers_time
         fit_act.setEnabled(len(active_markers) == 2)
         fit_act.triggered.connect(self.ui_controller.fit_to_markers)
         
-        menu.addSeparator()
-        
-        # Time Grid Submenu
-        grid_time_menu = menu.addMenu("Time Grid")
-        grid_time_menu.setEnabled(len(self.ui_controller.markers_time) == 2)
-        
-        grid_time_enable_act = grid_time_menu.addAction("Enabled")
-        grid_time_enable_act.setCheckable(True)
-        grid_time_enable_act.setChecked(self.ui_controller.grid_time_enabled)
-        grid_time_enable_act.triggered.connect(lambda checked: self.ui_controller.toggle_grid('TIME', checked))
-        
-        grid_time_track_act = grid_time_menu.addAction("Tracking")
-        grid_time_track_act.setCheckable(True)
-        grid_time_track_act.setChecked(self.ui_controller.grid_time_tracking)
-        grid_time_track_act.triggered.connect(lambda checked: self.ui_controller.toggle_tracking('TIME', checked))
-        
-        # Freq Grid Submenu
-        grid_freq_menu = menu.addMenu("Frequency Grid")
-        grid_freq_menu.setEnabled(len(self.ui_controller.markers_freq) == 2)
-        
-        grid_freq_enable_act = grid_freq_menu.addAction("Enabled")
-        grid_freq_enable_act.setCheckable(True)
-        grid_freq_enable_act.setChecked(self.ui_controller.grid_freq_enabled)
-        grid_freq_enable_act.triggered.connect(lambda checked: self.ui_controller.toggle_grid('FREQ', checked))
-        
-        grid_freq_track_act = grid_freq_menu.addAction("Tracking")
-        grid_freq_track_act.setCheckable(True)
-        grid_freq_track_act.setChecked(self.ui_controller.grid_freq_tracking)
-        grid_freq_track_act.triggered.connect(lambda checked: self.ui_controller.toggle_tracking('FREQ', checked))
+        if is_spec:
+            menu.addSeparator()
+            # Time Grid Submenu
+            grid_time_menu = menu.addMenu("Time Grid")
+            grid_time_menu.setEnabled(len(self.ui_controller.markers_time) == 2)
+            
+            grid_time_enable_act = grid_time_menu.addAction("Enabled")
+            grid_time_enable_act.setCheckable(True)
+            grid_time_enable_act.setChecked(self.ui_controller.grid_time_enabled)
+            grid_time_enable_act.triggered.connect(lambda checked: self.ui_controller.toggle_grid('TIME', checked))
+            
+            grid_time_track_act = grid_time_menu.addAction("Tracking")
+            grid_time_track_act.setCheckable(True)
+            grid_time_track_act.setChecked(self.ui_controller.grid_time_tracking)
+            grid_time_track_act.triggered.connect(lambda checked: self.ui_controller.toggle_tracking('TIME', checked))
+            
+            # Freq Grid Submenu
+            grid_freq_menu = menu.addMenu("Frequency Grid")
+            grid_freq_menu.setEnabled(len(self.ui_controller.markers_freq) == 2)
+            
+            grid_freq_enable_act = grid_freq_menu.addAction("Enabled")
+            grid_freq_enable_act.setCheckable(True)
+            grid_freq_enable_act.setChecked(self.ui_controller.grid_freq_enabled)
+            grid_freq_enable_act.triggered.connect(lambda checked: self.ui_controller.toggle_grid('FREQ', checked))
+            
+            grid_freq_track_act = grid_freq_menu.addAction("Tracking")
+            grid_freq_track_act.setCheckable(True)
+            grid_freq_track_act.setChecked(self.ui_controller.grid_freq_tracking)
+            grid_freq_track_act.triggered.connect(lambda checked: self.ui_controller.toggle_tracking('FREQ', checked))
         
         menu.addSeparator()
         
@@ -162,7 +251,6 @@ class CustomViewBox(pg.ViewBox):
             try:
                 from pyqtgraph.exportDialog import ExportDialog
             except ImportError:
-                # Fallback for different pyqtgraph versions
                 from pyqtgraph.exporters.exportDialog import ExportDialog
             self.export_dialog = ExportDialog(self.scene())
             self.export_dialog.show()

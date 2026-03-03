@@ -9,6 +9,7 @@ from .data_handler import DataHandlerMixin
 class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, ViewControllerMixin, DataHandlerMixin):
     def __init__(self, file_path, data_type, sample_rate, center_freq, fft_size, profile_enabled=False):
         super().__init__()
+        self.is_spectrogram = True
         self.setWindowTitle("IQView - Spectrogram Viewer")
         self.resize(1280, 800)
         
