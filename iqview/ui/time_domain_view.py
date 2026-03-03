@@ -22,7 +22,7 @@ class TimeDomainView(QWidget):
         self.zoom_mode = False
         self.active_drag_marker = None
         self.markers_time = []
-        self.markers_y = [] # Magnitude markers (Horizontal)
+        self.markers_y = [] # Magnitude markers (Horizontal lines)
         self.y_label_text = "Amplitude (Real)"
         
         self.layout = QVBoxLayout(self)
@@ -101,23 +101,16 @@ class TimeDomainView(QWidget):
 
     def keyReleaseEvent(self, event):
         if event.key() == Qt.Key.Key_Control:
-            # Revert to previous non-zoom mode
             self.set_interaction_mode('TIME')
         super().keyReleaseEvent(event)
 
     def set_interaction_mode(self, mode):
-        # Normalize mode string (MAG vs Y)
-        if mode == 'MAG': pass
-        elif mode == 'Y': mode = 'MAG'
-        
+        if mode == 'Y': mode = 'MAG'
         self.interaction_mode = mode
         self.zoom_mode = (mode == 'ZOOM')
-        if mode == 'ZOOM':
-            self.plot_widget.setCursor(Qt.CursorShape.CrossCursor)
-        elif mode == 'MOVE':
-            self.plot_widget.setCursor(Qt.CursorShape.SizeAllCursor)
-        else:
-            self.plot_widget.setCursor(Qt.CursorShape.ArrowCursor)
+        if mode == 'ZOOM': self.plot_widget.setCursor(Qt.CursorShape.CrossCursor)
+        elif mode == 'MOVE': self.plot_widget.setCursor(Qt.CursorShape.SizeAllCursor)
+        else: self.plot_widget.setCursor(Qt.CursorShape.ArrowCursor)
         
         self.marker_panel.update_mode_ui(mode)
         self.marker_panel.update_headers(mode, self.y_label_text)
@@ -135,9 +128,10 @@ class TimeDomainView(QWidget):
     def plot_inst_freq(self):
         phase = np.unwrap(np.angle(self.samples))
         freq = np.diff(phase) / (2 * np.pi) * self.rate
-        self._update_plot(freq, "Instantaneous Frequency (Hz)", use_diff_time=True)
+        pad_freq = np.concatenate(([freq[0]], freq))
+        self._update_plot(pad_freq, "Instantaneous Frequency (Hz)")
 
-    def _update_plot(self, data, y_label, use_diff_time=False):
+    def _update_plot(self, data, y_label):
         self.y_label_text = y_label
         self.marker_panel.update_headers(self.interaction_mode, y_label)
         self.plot_item.clear()
@@ -147,12 +141,8 @@ class TimeDomainView(QWidget):
         for m in self.markers_time: self.plot_item.addItem(m)
         for m in self.markers_y: self.plot_item.addItem(m)
         
-        x_data = self.time_axis
-        if use_diff_time:
-            x_data = (self.time_axis[:-1] + self.time_axis[1:]) / 2
-            
         pen = pg.mkPen('#00aaff', width=1.5)
-        self.plot_item.plot(x_data, data, pen=pen)
+        self.plot_item.plot(self.time_axis, data, pen=pen)
         self.plot_item.autoRange()
 
     # --- Marker Logic ---
@@ -181,40 +171,35 @@ class TimeDomainView(QWidget):
         val = v_pos.x() if is_time else v_pos.y()
         active_markers = self.markers_time if is_time else self.markers_y
         
-        curr_min = 0.0 if is_time else -1e12
-        curr_max = getattr(self.parent_window, 'time_duration', 1e9) if is_time else 1e12
+        xr, yr = self.view_box.viewRange()
+        curr_min = xr[0] if is_time else yr[0]
+        curr_max = xr[1] if is_time else yr[1]
         
         # 1. Shift pair if locked
         if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
             m1_pos, m2_pos = active_markers[0].value(), active_markers[1].value()
-            dist1, dist2 = abs(val - m1_pos), abs(val - m2_pos)
-            target = active_markers[0] if dist1 < dist2 else active_markers[1]
-            other = active_markers[1] if dist1 < dist2 else active_markers[0]
+            target = active_markers[0] if abs(val-m1_pos) < abs(val-m2_pos) else active_markers[1]
+            other = active_markers[1] if target == active_markers[0] else active_markers[0]
             
             shift = val - target.value()
             if self.marker_panel.btn_lock_delta.isChecked():
                 new_t, new_o = val, other.value() + shift
-                if curr_min <= new_t <= curr_max and curr_min <= new_o <= curr_max:
-                    target.setValue(new_t); other.setValue(new_o)
+                target.setValue(new_t); other.setValue(new_o)
             elif self.marker_panel.btn_lock_center.isChecked():
-                center = (m1_pos + m2_pos) / 2
-                new_o = 2 * center - val
-                if curr_min <= val <= curr_max and curr_min <= new_o <= curr_max:
-                    target.setValue(val); other.setValue(new_o)
+                ct = (m1_pos + m2_pos) / 2
+                new_o = 2 * ct - val
+                target.setValue(val); other.setValue(new_o)
             
             if drag_mode: self.active_drag_marker = target
             self.update_marker_info()
             return
 
-        # 2. Hit test for single marker
-        pixel_pos = scene_pos
+        # 2. Hit test
         found_marker = None
         for m in active_markers:
             m_pixel = self.view_box.mapViewToScene(pg.Point(m.value(), 0) if is_time else pg.Point(0, m.value()))
-            dist = abs(pixel_pos.x() - m_pixel.x()) if is_time else abs(pixel_pos.y() - m_pixel.y())
-            if dist < 20:
-                found_marker = m
-                break
+            dist = abs(scene_pos.x() - m_pixel.x()) if is_time else abs(scene_pos.y() - m_pixel.y())
+            if dist < 20: found_marker = m; break
         
         if found_marker:
             found_marker.setValue(val)
@@ -227,9 +212,9 @@ class TimeDomainView(QWidget):
             old = active_markers.pop(0)
             self.plot_item.removeItem(old)
             
-        orient = 'vertical' if is_time else 'horizontal'
         color = '#00ff00' if is_time else '#ffaa00'
-        new_m = pg.InfiniteLine(pos=val, angle=90 if orient=='vertical' else 0, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine), movable=False)
+        orient = 90 if is_time else 0
+        new_m = pg.InfiniteLine(pos=val, angle=orient, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine), movable=False)
         active_markers.append(new_m)
         self.plot_item.addItem(new_m, ignoreBounds=True)
         if drag_mode: self.active_drag_marker = new_m
@@ -242,21 +227,14 @@ class TimeDomainView(QWidget):
         val = v_pos.x() if is_time else v_pos.y()
         active_markers = self.markers_time if is_time else self.markers_y
         
-        curr_min = 0.0 if is_time else -1e12
-        curr_max = getattr(self.parent_window, 'time_duration', 1e9) if is_time else 1e12
-
         if len(active_markers) == 2:
             other = active_markers[0] if active_markers[1] == self.active_drag_marker else active_markers[1]
             shift = val - self.active_drag_marker.value()
             if self.marker_panel.btn_lock_delta.isChecked():
-                new_o = other.value() + shift
-                if curr_min <= val <= curr_max and curr_min <= new_o <= curr_max:
-                    self.active_drag_marker.setValue(val); other.setValue(new_o)
+                self.active_drag_marker.setValue(val); other.setValue(other.value() + shift)
             elif self.marker_panel.btn_lock_center.isChecked():
                 ct = (self.active_drag_marker.value() + other.value()) / 2
-                new_o = 2 * ct - val
-                if curr_min <= val <= curr_max and curr_min <= new_o <= curr_max:
-                    self.active_drag_marker.setValue(val); other.setValue(new_o)
+                self.active_drag_marker.setValue(val); other.setValue(2 * ct - val)
             else: self.active_drag_marker.setValue(val)
         else: self.active_drag_marker.setValue(val)
         self.update_marker_info()
@@ -280,13 +258,12 @@ class TimeDomainView(QWidget):
                 self.marker_panel.m_widgets[i]['v1'].blockSignals(True)
                 self.marker_panel.m_widgets[i]['v2'].blockSignals(True)
                 
-                # Precisions based on mode
                 prec1 = 9 if is_time else 6
                 self.marker_panel.m_widgets[i]['v1'].setText(f"{m_val:.{prec1}f}")
                 
                 if is_time:
-                    s = int(round(m_val * self.rate)) + 1
-                    self.marker_panel.m_widgets[i]['v2'].setText(f"{s}")
+                    abs_s = int(round(m_val * self.rate)) + 1
+                    self.marker_panel.m_widgets[i]['v2'].setText(f"{abs_s}")
                 
                 self.marker_panel.m_widgets[i]['v1'].blockSignals(False)
                 self.marker_panel.m_widgets[i]['v2'].blockSignals(False)
@@ -294,12 +271,14 @@ class TimeDomainView(QWidget):
         # Update Delta/Center
         if len(sorted_m) == 2:
             v1, v2 = sorted_m[0].value(), sorted_m[1].value()
+            prec1 = 9 if is_time else 6
+            
             self.marker_panel.delta_v1.blockSignals(True)
             self.marker_panel.center_v1.blockSignals(True)
-            
-            prec1 = 9 if is_time else 6
             self.marker_panel.delta_v1.setText(f"{abs(v2-v1):.{prec1}f}")
             self.marker_panel.center_v1.setText(f"{(v1+v2)/2:.{prec1}f}")
+            self.marker_panel.delta_v1.blockSignals(False)
+            self.marker_panel.center_v1.blockSignals(False)
             
             if is_time:
                 s1, s2 = int(round(v1 * self.rate)) + 1, int(round(v2 * self.rate)) + 1
@@ -310,18 +289,12 @@ class TimeDomainView(QWidget):
                 self.marker_panel.delta_v2.blockSignals(False)
                 self.marker_panel.center_v2.blockSignals(False)
 
-            self.marker_panel.delta_v1.blockSignals(False)
-            self.marker_panel.center_v1.blockSignals(False)
-
     def marker_edit_finished(self):
         sender = self.sender()
         name = sender.objectName()
         is_time = (self.interaction_mode == 'TIME')
         active_markers = self.markers_time if is_time else self.markers_y
         sorted_markers = sorted(active_markers, key=lambda m: m.value())
-        
-        curr_min = 0.0 if is_time else -1e12
-        curr_max = getattr(self.parent_window, 'time_duration', 1e9) if is_time else 1e12
 
         try:
             val = float(sender.text())
@@ -337,14 +310,10 @@ class TimeDomainView(QWidget):
                     other_idx = 1 - idx
                     shift = new_p - sorted_markers[idx].value()
                     if self.marker_panel.btn_lock_delta.isChecked():
-                        other_new = sorted_markers[other_idx].value() + shift
-                        if curr_min <= new_p <= curr_max and curr_min <= other_new <= curr_max:
-                            sorted_markers[idx].setValue(new_p); sorted_markers[other_idx].setValue(other_new)
+                        sorted_markers[idx].setValue(new_p); sorted_markers[other_idx].setValue(sorted_markers[other_idx].value() + shift)
                     elif self.marker_panel.btn_lock_center.isChecked():
                         ct = (sorted_markers[0].value() + sorted_markers[1].value()) / 2
-                        other_new = 2 * ct - new_p
-                        if curr_min <= new_p <= curr_max and curr_min <= other_new <= curr_max:
-                            sorted_markers[idx].setValue(new_p); sorted_markers[other_idx].setValue(other_new)
+                        sorted_markers[idx].setValue(new_p); sorted_markers[other_idx].setValue(2 * ct - new_p)
                     else: sorted_markers[idx].setValue(new_p)
                 else: sorted_markers[idx].setValue(new_p)
                 
@@ -352,25 +321,18 @@ class TimeDomainView(QWidget):
                 p1, p2 = sorted_markers[0].value(), sorted_markers[1].value()
                 if 'delta' in name:
                     dv = val
-                    if 'v2' in name and is_time:
-                        dv = (val - 1) / self.rate
-                    m1_new, m2_new = (p1+p2)/2 - dv/2, (p1+p2)/2 + dv/2
-                    if curr_min <= m1_new and m2_new <= curr_max:
-                        sorted_markers[0].setValue(m1_new); sorted_markers[1].setValue(m2_new)
+                    if 'v2' in name and is_time: dv = (val - 1) / self.rate
+                    sorted_markers[0].setValue((p1+p2)/2 - dv/2); sorted_markers[1].setValue((p1+p2)/2 + dv/2)
                 elif 'center' in name:
                     ct = val
-                    if 'v2' in name and is_time:
-                        ct = (val - 1) / self.rate
+                    if 'v2' in name and is_time: ct = (val - 1) / self.rate
                     dv = abs(p2-p1)
-                    m1_new, m2_new = ct - dv/2, ct + dv/2
-                    if curr_min <= m1_new and m2_new <= curr_max:
-                        sorted_markers[0].setValue(m1_new); sorted_markers[1].setValue(m2_new)
+                    sorted_markers[0].setValue(ct - dv/2); sorted_markers[1].setValue(ct + dv/2)
                         
             self.update_marker_info()
         except ValueError: self.update_marker_info()
 
     def handle_marker_clear(self, mode):
-        # controller handles 'TIME' and 'Y'
         markers = self.markers_time if mode == 'TIME' else self.markers_y
         for m in markers: self.plot_item.removeItem(m)
         markers.clear()
@@ -380,19 +342,13 @@ class TimeDomainView(QWidget):
         self.plot_item.autoRange()
 
     def handle_zoom_rectangle(self, rect, zoom_type):
-        if zoom_type == 'X_ONLY':
-            self.plot_item.setXRange(rect.left(), rect.right(), padding=0)
-        elif zoom_type == 'Y_ONLY':
-            self.plot_item.setYRange(rect.top(), rect.bottom(), padding=0)
-        else:
-            self.plot_item.setRange(rect, padding=0)
+        if zoom_type == 'X_ONLY': self.plot_item.setXRange(rect.left(), rect.right(), padding=0)
+        elif zoom_type == 'Y_ONLY': self.plot_item.setYRange(rect.top(), rect.bottom(), padding=0)
+        else: self.plot_item.setRange(rect, padding=0)
 
     def handle_move_drag(self, pos, is_start=False, is_finish=False):
-        if is_start:
-            self.last_move_scene_pos = pos
-            return
+        if is_start: self.last_move_scene_pos = pos; return
         if self.last_move_scene_pos is None: return
-        
         delta = pos - self.last_move_scene_pos
         self.view_box.translateBy(x=-self.view_box.mapSceneToView(delta).x() + self.view_box.mapSceneToView(pg.Point(0,0)).x(),
                                   y=-self.view_box.mapSceneToView(delta).y() + self.view_box.mapSceneToView(pg.Point(0,0)).y())
