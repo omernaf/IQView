@@ -22,7 +22,18 @@ class TimeDomainView(QWidget):
         self.zoom_mode = False
         self.active_drag_marker = None
         self.markers_time = []
-        self.markers_y = [] # Magnitude markers (Horizontal lines)
+        
+        # Mode-specific Magnitude markers
+        self.markers_y_dict = {
+            "Amplitude (Real)": [],
+            "Amplitude (Imag)": [],
+            "Magnitude": [],
+            "Instantaneous Frequency (Hz)": []
+        }
+        
+        # Mode-specific Y-zoom states (yMin, yMax)
+        self.zoom_y_dict = {}
+        
         self.y_label_text = "Amplitude (Real)"
         self.current_plot_data = samples.real # Cache for marker sampling
         
@@ -88,7 +99,8 @@ class TimeDomainView(QWidget):
         self.layout.addWidget(self.plot_widget)
         
         self.time_axis = np.linspace(start_time, end_time, len(samples))
-        self.plot_real() # Default plot
+        # Initial call - we don't have zoom yet, so we just let _update_plot handle it
+        self._update_plot(self.samples.real, "Amplitude (Real)")
         self.set_interaction_mode('TIME')
 
     def keyPressEvent(self, event):
@@ -133,35 +145,64 @@ class TimeDomainView(QWidget):
         self._update_plot(pad_freq, "Instantaneous Frequency (Hz)")
 
     def _update_plot(self, data, y_label):
-        self.current_plot_data = data # Sync for sampling
+        # 1. Save current view ranges (if not first run)
+        old_x_range = None
+        if hasattr(self, 'view_box') and self.view_box.viewRect() is not None:
+            old_x_range, old_y_range = self.view_box.viewRange()
+            self.zoom_y_dict[self.y_label_text] = old_y_range
+
+        # 2. Update state
+        self.current_plot_data = data
         self.y_label_text = y_label
         self.marker_panel.update_headers(self.interaction_mode, y_label)
+        
+        # 3. Clear and Re-plot
         self.plot_item.clear()
         self.plot_item.getAxis('left').setLabel(y_label)
         
         pen = pg.mkPen('#00aaff', width=1.5)
         self.plot_item.plot(self.time_axis, data, pen=pen)
         
-        # Restore markers AFTER plot for correct Z-order
+        # 4. Restore markers
         for m in self.markers_time: 
             self.plot_item.addItem(m)
             m.setZValue(100)
-        for m in self.markers_y: 
+            
+        active_y = self.markers_y_dict.get(y_label, [])
+        for m in active_y:
             self.plot_item.addItem(m)
             m.setZValue(100)
         
-        # --- Constraints ---
+        # 5. Constraints
         t_start, t_end = self.time_axis[0], self.time_axis[-1]
         t_pad = (t_end - t_start) * 0.01
         
-        y_min, y_max = np.min(data), np.max(data)
-        y_range = y_max - y_min
-        if y_range == 0: y_range = 1.0 # Avoid div by zero/flat limits
-        y_pad = y_range * 0.05
+        y_min_data, y_max_data = np.min(data), np.max(data)
+        y_range_val = y_max_data - y_min_data
+        if y_range_val == 0: y_range_val = 1.0 
+        y_pad = y_range_val * 0.05
         
+        # IMPORTANT: unset limits temporarily to allow restoring old zoom if it was outside data bounds
+        self.view_box.setLimits(xMin=None, xMax=None, yMin=None, yMax=None)
+        
+        # 6. Restore Zooms
+        if y_label in self.zoom_y_dict:
+            y_r = self.zoom_y_dict[y_label]
+            self.plot_item.setYRange(y_r[0], y_r[1], padding=0)
+        else:
+            # Fit Y to data if no cached zoom
+            self.plot_item.setYRange(y_min_data - y_pad, y_max_data + y_pad, padding=0)
+
+        if old_x_range is not None:
+            # Always restore X zoom
+            self.plot_item.setXRange(old_x_range[0], old_x_range[1], padding=0)
+        else:
+            # Initial fit X
+            self.plot_item.setXRange(t_start, t_end, padding=0)
+
+        # 7. Finalize limits
         self.view_box.setLimits(xMin=t_start - t_pad, xMax=t_end + t_pad,
-                                yMin=y_min - y_pad, yMax=y_max + y_pad)
-        self.plot_item.autoRange()
+                                yMin=y_min_data - y_pad, yMax=y_max_data + y_pad)
 
     # --- Marker Logic ---
     def handle_lock_change(self, lock_type, checked):
@@ -184,8 +225,8 @@ class TimeDomainView(QWidget):
             self.marker_panel.btn_lock_center.setText(f"Center 🔒")
 
     def _get_y_bounds(self):
-        # Current data bounds for clamping
-        y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
+        y_min = np.min(self.current_plot_data)
+        y_max = np.max(self.current_plot_data)
         return y_min, y_max
 
     def place_marker(self, scene_pos, drag_mode=False):
@@ -200,7 +241,7 @@ class TimeDomainView(QWidget):
             y_min, y_max = self._get_y_bounds()
             val = max(y_min, min(y_max, v_pos.y()))
         
-        active_markers = self.markers_time if is_time else self.markers_y
+        active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
         
         # 1. Shift pair if locked
         if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
@@ -275,7 +316,7 @@ class TimeDomainView(QWidget):
             y_min, y_max = self._get_y_bounds()
             val = max(y_min, min(y_max, v_pos.y()))
         
-        active_markers = self.markers_time if is_time else self.markers_y
+        active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
         
         if len(active_markers) == 2:
             other = active_markers[0] if active_markers[1] == self.active_drag_marker else active_markers[1]
@@ -307,7 +348,7 @@ class TimeDomainView(QWidget):
 
     def update_marker_info(self):
         is_time = (self.interaction_mode == 'TIME')
-        active_markers = self.markers_time if is_time else self.markers_y
+        active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
         sorted_m = sorted(active_markers, key=lambda m: m.value())
         
         # Clear fields
@@ -350,8 +391,11 @@ class TimeDomainView(QWidget):
                 s1, s2 = int(round(v1 * self.rate)) + 1, int(round(v2 * self.rate)) + 1
                 self.marker_panel.delta_v2.blockSignals(True)
                 self.marker_panel.center_v2.blockSignals(True)
+                # Correct Delta Samples: difference in indexes + 1
                 self.marker_panel.delta_v2.setText(f"{abs(s2-s1)+1}")
-                self.marker_panel.center_v2.setText(f"{int(round(((v1+v2)/2)*self.rate))+1}")
+                # Center sample
+                cv = (v1+v2)/2
+                self.marker_panel.center_v2.setText(f"{int(round(cv*self.rate))+1}")
                 self.marker_panel.delta_v2.blockSignals(False)
                 self.marker_panel.center_v2.blockSignals(False)
 
@@ -359,7 +403,7 @@ class TimeDomainView(QWidget):
         sender = self.sender()
         name = sender.objectName()
         is_time = (self.interaction_mode == 'TIME')
-        active_markers = self.markers_time if is_time else self.markers_y
+        active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
         sorted_markers = sorted(active_markers, key=lambda m: m.value())
 
         try:
@@ -399,7 +443,7 @@ class TimeDomainView(QWidget):
         except ValueError: self.update_marker_info()
 
     def handle_marker_clear(self, mode):
-        markers = self.markers_time if mode == 'TIME' else self.markers_y
+        markers = self.markers_time if mode == 'TIME' else self.markers_y_dict[self.y_label_text]
         for m in markers: self.plot_item.removeItem(m)
         markers.clear()
         self.update_marker_info()
@@ -422,7 +466,7 @@ class TimeDomainView(QWidget):
         if is_finish: self.last_move_scene_pos = None
 
     def fit_to_markers(self):
-        m = self.markers_time if self.interaction_mode == 'TIME' else self.markers_y
+        m = self.markers_time if self.interaction_mode == 'TIME' else self.markers_y_dict[self.y_label_text]
         if len(m) == 2:
             v1, v2 = m[0].value(), m[1].value()
             if self.interaction_mode == 'TIME':
