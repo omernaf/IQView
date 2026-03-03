@@ -13,21 +13,7 @@ class MarkerManagerMixin:
             curr_min, curr_max = (0.0, self.time_duration) if is_time else (self.fc - self.rate/2, self.fc + self.rate/2)
             angle = 90 if is_time else 0
             
-            # 1. Hit-test existing markers first (Pixel-based distance)
-            hit_threshold = 20 # pixels
-            best_marker = None
-            min_dist = float('inf')
-            
-            for m in active_markers:
-                m_pos = m.value()
-                p_scene = vb.mapViewToScene(pg.Point(m_pos, 0)) if is_time else vb.mapViewToScene(pg.Point(0, m_pos))
-                dist = abs(scene_pos.x() - p_scene.x()) if is_time else abs(scene_pos.y() - p_scene.y())
-                
-                if dist < hit_threshold and dist < min_dist:
-                    min_dist = dist
-                    best_marker = m
-
-            # 2. Logic Selection: Drag Existing vs Place New
+            # 1. Determine the target logical value
             if is_time:
                 raw_val = float(np.clip(mouse_v.x(), 0.0, self.time_duration))
                 sample = int(round(raw_val * self.rate)) + 1
@@ -39,46 +25,62 @@ class MarkerManagerMixin:
                 bin_idx = int(round((raw_val - f_min) / rbw)) + 1
                 val = f_min + (bin_idx - 1.0) * rbw
 
-            if best_marker:
-                # We've grabbed an existing marker
-                if drag_mode:
-                    self.active_drag_marker = best_marker
+            # 2. HIGHEST PRIORITY: If 2 markers exist and lock is on, ALWAYS shift the pair
+            if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+                m1_pos, m2_pos = active_markers[0].value(), active_markers[1].value()
+                dist1 = abs(val - m1_pos)
+                dist2 = abs(val - m2_pos)
+                target = active_markers[0] if dist1 < dist2 else active_markers[1]
+                other = active_markers[1] if dist1 < dist2 else active_markers[0]
                 
-                # If locked, we move BOTH markers. We need to decide which is target.
-                # Usually best_marker IS the target.
-                if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
-                    target = best_marker
-                    other = active_markers[0] if active_markers[1] == target else active_markers[1]
-                    old_p = target.value()
-                    shift = val - old_p
-                    
-                    if self.marker_panel.btn_lock_delta.isChecked():
-                        new_target_p = val
-                        new_other_p = other.value() + shift
-                        if curr_min <= new_target_p <= curr_max and curr_min <= new_other_p <= curr_max:
-                            target.setPos(new_target_p)
-                            other.setPos(new_other_p)
-                    elif self.marker_panel.btn_lock_center.isChecked():
-                        new_target_p = val
-                        center = (active_markers[0].value() + active_markers[1].value()) / 2
-                        new_other_p = 2 * center - new_target_p
-                        if curr_min <= new_target_p <= curr_max and curr_min <= new_other_p <= curr_max:
-                            target.setPos(new_target_p)
-                            other.setPos(new_other_p)
-                else:
-                    # Not locked, just move the one we grabbed
-                    best_marker.setPos(val)
+                old_p = target.value()
+                shift = val - old_p
+                
+                if self.marker_panel.btn_lock_delta.isChecked():
+                    new_target_p = val
+                    new_other_p = other.value() + shift
+                    if curr_min <= new_target_p <= curr_max and curr_min <= new_other_p <= curr_max:
+                        target.setPos(new_target_p)
+                        other.setPos(new_other_p)
+                elif self.marker_panel.btn_lock_center.isChecked():
+                    new_target_p = val
+                    center = (m1_pos + m2_pos) / 2
+                    new_other_p = 2 * center - new_target_p
+                    if curr_min <= new_target_p <= curr_max and curr_min <= new_other_p <= curr_max:
+                        target.setPos(new_target_p)
+                        other.setPos(new_other_p)
+                
+                if drag_mode: self.active_drag_marker = target
+
+            # 3. SECOND PRIORITY: Hit-test for dragging a single marker
             else:
-                # No hit: Place a new marker or replace oldest
-                if len(active_markers) >= 2:
-                    old_marker = active_markers.pop(0)
-                    self.spectrogram_view.plot_item.removeItem(old_marker)
+                hit_threshold = 20 # pixels
+                best_marker = None
+                min_dist = float('inf')
                 
-                marker = pg.InfiniteLine(pos=val, angle=angle, movable=False, pen=pg.mkPen('r', width=2))
-                marker.setZValue(10)
-                self.spectrogram_view.plot_item.addItem(marker, ignoreBounds=True)
-                active_markers.append(marker)
-                if drag_mode: self.active_drag_marker = marker
+                for m in active_markers:
+                    m_pos = m.value()
+                    p_scene = vb.mapViewToScene(pg.Point(m_pos, 0)) if is_time else vb.mapViewToScene(pg.Point(0, m_pos))
+                    dist = abs(scene_pos.x() - p_scene.x()) if is_time else abs(scene_pos.y() - p_scene.y())
+                    
+                    if dist < hit_threshold and dist < min_dist:
+                        min_dist = dist
+                        best_marker = m
+
+                if best_marker:
+                    best_marker.setPos(val)
+                    if drag_mode: self.active_drag_marker = best_marker
+                else:
+                    # 4. LOWEST PRIORITY: Place brand new marker (and replace oldest if needed)
+                    if len(active_markers) >= 2:
+                        old_marker = active_markers.pop(0)
+                        self.spectrogram_view.plot_item.removeItem(old_marker)
+                    
+                    marker = pg.InfiniteLine(pos=val, angle=angle, movable=False, pen=pg.mkPen('r', width=2))
+                    marker.setZValue(10)
+                    self.spectrogram_view.plot_item.addItem(marker, ignoreBounds=True)
+                    active_markers.append(marker)
+                    if drag_mode: self.active_drag_marker = marker
             
             self.update_marker_info()
 
