@@ -29,7 +29,9 @@ class TimeDomainView(QWidget):
             "Amplitude (Real)": [],
             "Amplitude (Imag)": [],
             "Magnitude": [],
-            "Instantaneous Frequency (Hz)": []
+            "Instantaneous Frequency (Hz)": [],
+            "Phase (rad)": [],
+            "Unwrapped Phase (rad)": []
         }
         
         # Mode-specific Y-zoom states (yMin, yMax)
@@ -68,7 +70,9 @@ class TimeDomainView(QWidget):
             ("Real (I)", self.plot_real),
             ("Imag (Q)", self.plot_imag),
             ("Absolute", self.plot_abs),
-            ("Inst. Freq", self.plot_inst_freq)
+            ("Inst. Freq", self.plot_inst_freq),
+            ("Phase", self.plot_phase),
+            ("Unwrapped Phase", self.plot_unwrapped_phase)
         ]
         
         for i, (name, callback) in enumerate(self.modes):
@@ -183,6 +187,12 @@ class TimeDomainView(QWidget):
         freq = np.diff(phase) / (2 * np.pi) * self.rate
         pad_freq = np.concatenate(([freq[0]], freq))
         self._update_plot(pad_freq, "Instantaneous Frequency (Hz)")
+
+    def plot_phase(self):
+        self._update_plot(np.angle(self.samples), "Phase (rad)")
+
+    def plot_unwrapped_phase(self):
+        self._update_plot(np.unwrap(np.angle(self.samples)), "Unwrapped Phase (rad)")
 
     def _update_plot(self, data, y_label):
         # 1. Save current view ranges (if not first run)
