@@ -33,29 +33,30 @@ class FormattedLineEdit(QtWidgets.QLineEdit):
     def _format_text(self, text):
         if not text: return ""
         try:
-            MAX_CHARS = 16 # Safe limit for 130px box with Consolas 13px
+            MAX_CHARS = 16 
             
-            # Handle numbers with decimals
-            if '.' in text:
-                parts = text.split('.')
+            # Preserve sign
+            is_negative = text.startswith('-')
+            abs_text = text.lstrip('-')
+            
+            if '.' in abs_text:
+                parts = abs_text.split('.')
                 # Format integer part with spaces
                 int_part = "{:,}".format(int(parts[0])).replace(",", " ")
                 
-                # Start with "int_part."
-                result = f"{int_part}."
+                # Start with sign + "int_part."
+                result = ("-" if is_negative else "") + f"{int_part}."
                 if len(result) >= MAX_CHARS:
-                    return result.rstrip('.') # Fallback if even int_part is huge
+                    return result.rstrip('.') 
                 
                 # Format fractional part with spaces every 3 digits
                 frac_part = parts[1]
                 for i in range(0, len(frac_part), 3):
                     chunk = frac_part[i:i+3]
-                    # Check if we can fit the next chunk (with a space)
                     potential_addition = (" " if i > 0 else "") + chunk
                     if len(result) + len(potential_addition) <= MAX_CHARS:
                         result += potential_addition
                     else:
-                        # Try to fit as many individual digits from this chunk as possible
                         for digit in potential_addition:
                             if len(result) + 1 <= MAX_CHARS:
                                 result += digit
@@ -66,7 +67,8 @@ class FormattedLineEdit(QtWidgets.QLineEdit):
                 return result.rstrip()
             else:
                 # Format integer with spaces
-                return "{:,}".format(int(text)).replace(",", " ")
+                int_part = "{:,}".format(int(abs_text)).replace(",", " ")
+                return ("-" if is_negative else "") + int_part
         except (ValueError, TypeError):
             return text
 
