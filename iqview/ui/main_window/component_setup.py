@@ -40,9 +40,8 @@ class UIComponentsMixin:
         # 2. Main Tab Widget
         from PyQt6.QtWidgets import QTabWidget
         self.tabs = QTabWidget()
-        self.tabs.setTabsClosable(True)
+        self.tabs.setTabsClosable(False) # Removed explicit close button
         self.tabs.setMovable(False)
-        self.tabs.tabCloseRequested.connect(self.close_tab)
         self.tabs.setStyleSheet("""
             QTabWidget::pane { border: 1px solid #333; top: -1px; background-color: #121212; }
             QTabBar::tab { 
@@ -50,11 +49,13 @@ class UIComponentsMixin:
                 border: 1px solid #333; border-bottom: none; border-top-left-radius: 4px; border-top-right-radius: 4px;
                 margin-right: 2px; font-size: 12px; font-weight: bold;
             }
-            QTabBar::tab:hover { background-color: #252525; color: #ccc; }
-            QTabBar::tab:selected { background-color: #121212; color: #00aaff; border-bottom: 2px solid #00aaff; }
-            QTabBar::close-button { image: none; }
+             QTabBar::tab:hover { background-color: #252525; color: #ccc; }
+             QTabBar::tab:selected { background-color: #121212; color: #00aaff; border-bottom: 2px solid #00aaff; }
         """)
         self.root_layout.addWidget(self.tabs)
+        
+        # Install event filter for middle/right click closing
+        self.tabs.tabBar().installEventFilter(self)
         
         # --- Spectrogram Tab Content (Specialized Layout) ---
         self.spec_tab_page = QWidget()

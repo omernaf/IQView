@@ -68,8 +68,9 @@ class ViewControllerMixin:
         samples = self.extract_iq_segment(start_t, end_t)
         if samples is not None:
             from ..time_domain_view import TimeDomainView
+            self.td_tab_counter += 1
             td_view = TimeDomainView(samples, start_t, self.rate, parent_window=self)
-            idx = self.tabs.addTab(td_view, f"Time Domain ({start_t:.3f}s)")
+            idx = self.tabs.addTab(td_view, f"Time Domain ({self.td_tab_counter})")
             self.tabs.setCurrentIndex(idx)
 
     def reset_zoom(self):
