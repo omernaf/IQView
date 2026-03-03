@@ -99,3 +99,13 @@ class UIComponentsMixin:
             widget = self.tabs.widget(index)
             self.tabs.removeTab(index)
             widget.deleteLater()
+            self.update_tab_names()
+
+    def update_tab_names(self):
+        """Update tab names dynamically: 'Time Domain' or 'Time Domain (1)', '(2)', etc."""
+        td_indices = [i for i in range(self.tabs.count()) if i > 0]
+        if len(td_indices) == 1:
+            self.tabs.setTabText(td_indices[0], "Time Domain")
+        elif len(td_indices) > 1:
+            for i, idx in enumerate(td_indices):
+                self.tabs.setTabText(idx, f"Time Domain ({i+1})")

@@ -30,7 +30,6 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         self.zoom_mode = False
         self.is_first_load = True
         self.zoom_history = []
-        self.td_tab_counter = 0
         
         self.grid_time_enabled = False
         self.grid_freq_enabled = False
