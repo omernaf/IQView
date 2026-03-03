@@ -1,7 +1,7 @@
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                             QButtonGroup, QLabel, QFrame)
+                             QButtonGroup, QLabel, QFrame, QScrollBar, QGridLayout)
 from PyQt6.QtCore import Qt, pyqtSignal
 from .widgets import CustomViewBox
 from .time_domain_marker_panel import TimeDomainMarkerPanel
@@ -22,6 +22,7 @@ class TimeDomainView(QWidget):
         self.zoom_mode = False
         self.active_drag_marker = None
         self.markers_time = []
+        self._block_signals = False
         
         # Mode-specific Magnitude markers
         self.markers_y_dict = {
@@ -37,16 +38,16 @@ class TimeDomainView(QWidget):
         self.y_label_text = "Amplitude (Real)"
         self.current_plot_data = samples.real # Cache for marker sampling
         
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(10, 10, 10, 10)
-        self.layout.setSpacing(5)
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(10, 10, 10, 10)
+        self.main_layout.setSpacing(5)
         
         # --- Marker Panel ---
         self.marker_panel = TimeDomainMarkerPanel(self)
         self.marker_panel.interactionModeChanged.connect(self.set_interaction_mode)
         self.marker_panel.resetZoomRequested.connect(self.reset_zoom)
         self.marker_panel.markerClearRequested.connect(self.handle_marker_clear)
-        self.layout.addWidget(self.marker_panel)
+        self.main_layout.addWidget(self.marker_panel)
         
         # --- Toolbar ---
         self.toolbar = QFrame()
@@ -85,9 +86,14 @@ class TimeDomainView(QWidget):
         range_label.setStyleSheet("color: #888; font-family: Consolas; font-size: 11px;")
         self.toolbar_layout.addWidget(range_label)
         
-        self.layout.addWidget(self.toolbar)
+        self.main_layout.addWidget(self.toolbar)
         
-        # --- Plot ---
+        # --- Plot & Scrollbars ---
+        self.grid_container = QWidget()
+        self.grid_layout = QGridLayout(self.grid_container)
+        self.grid_layout.setContentsMargins(0, 0, 0, 0)
+        self.grid_layout.setSpacing(0)
+        
         self.view_box = CustomViewBox(self)
         self.plot_widget = pg.PlotWidget(viewBox=self.view_box)
         self.plot_item = self.plot_widget.getPlotItem()
@@ -96,12 +102,45 @@ class TimeDomainView(QWidget):
         self.plot_widget.getAxis('bottom').setLabel('Time', units='s')
         self.plot_widget.getAxis('left').setPen('#666')
         self.plot_widget.getAxis('bottom').setPen('#666')
-        self.layout.addWidget(self.plot_widget)
+        
+        self.grid_layout.addWidget(self.plot_widget, 0, 1)
+
+        # Scrollbars
+        self.x_scroll = QScrollBar(Qt.Orientation.Horizontal)
+        self.y_scroll = QScrollBar(Qt.Orientation.Vertical)
+        
+        scrollbar_style = """
+            QScrollBar:horizontal { background: #121212; height: 8px; margin: 0px; border: none; }
+            QScrollBar::handle:horizontal { background: #3d3d3d; min-width: 40px; border-radius: 4px; margin: 0px; }
+            QScrollBar::handle:horizontal:hover { background: #00aaff; }
+            
+            QScrollBar:vertical { background: #121212; width: 8px; margin: 0px; border: none; }
+            QScrollBar::handle:vertical { background: #3d3d3d; min-height: 40px; border-radius: 4px; margin: 0px; }
+            QScrollBar::handle:vertical:hover { background: #00aaff; }
+            
+            QScrollBar::add-line, QScrollBar::sub-line { width: 0px; height: 0px; }
+            QScrollBar::add-page, QScrollBar::sub-page { background: none; }
+        """
+        self.x_scroll.setStyleSheet(scrollbar_style)
+        self.y_scroll.setStyleSheet(scrollbar_style)
+        
+        self.grid_layout.addWidget(self.y_scroll, 0, 0)
+        self.grid_layout.addWidget(self.x_scroll, 1, 1)
+        
+        self.x_scroll.hide()
+        self.y_scroll.hide()
+        
+        self.main_layout.addWidget(self.grid_container)
         
         self.time_axis = np.linspace(start_time, end_time, len(samples))
-        # Initial call - we don't have zoom yet, so we just let _update_plot handle it
+        # Initial call
         self._update_plot(self.samples.real, "Amplitude (Real)")
         self.set_interaction_mode('TIME')
+
+        # Connect scrollbars
+        self.view_box.sigRangeChanged.connect(self.update_scrollbars)
+        self.x_scroll.valueChanged.connect(self.scroll_view)
+        self.y_scroll.valueChanged.connect(self.scroll_view)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_T:
@@ -175,7 +214,8 @@ class TimeDomainView(QWidget):
         
         # 5. Constraints
         t_start, t_end = self.time_axis[0], self.time_axis[-1]
-        t_pad = (t_end - t_start) * 0.01
+        t_total = t_end - t_start
+        t_pad = t_total * 0.01
         
         y_min_data, y_max_data = np.min(data), np.max(data)
         y_range_val = y_max_data - y_min_data
@@ -203,6 +243,78 @@ class TimeDomainView(QWidget):
         # 7. Finalize limits
         self.view_box.setLimits(xMin=t_start - t_pad, xMax=t_end + t_pad,
                                 yMin=y_min_data - y_pad, yMax=y_max_data + y_pad)
+        
+        # Explicitly update scrollbars
+        self.update_scrollbars()
+
+    def update_scrollbars(self):
+        if self._block_signals: return
+        self._block_signals = True
+        
+        xr, yr = self.view_box.viewRange()
+        
+        # Time axis (X)
+        t_start, t_end = self.time_axis[0], self.time_axis[-1]
+        t_total = t_end - t_start
+        if t_total > 0:
+            visible_ratio_x = (xr[1] - xr[0]) / t_total
+            if visible_ratio_x < 0.999:
+                self.x_scroll.show()
+                page_step = int(visible_ratio_x * 1000)
+                self.x_scroll.setRange(0, 1000 - page_step)
+                self.x_scroll.setPageStep(page_step)
+                pos = (xr[0] - t_start) / t_total * 1000
+                self.x_scroll.setValue(int(pos))
+            else:
+                self.x_scroll.hide()
+        
+        # Magnitude axis (Y)
+        y_min_data, y_max_data = self._get_y_bounds()
+        y_range_total = y_max_data - y_min_data
+        if y_range_total > 0:
+            visible_ratio_y = (yr[1] - yr[0]) / y_range_total
+            if visible_ratio_y < 0.999:
+                self.y_scroll.show()
+                page_step = int(visible_ratio_y * 1000)
+                self.y_scroll.setRange(0, 1000 - page_step)
+                self.y_scroll.setPageStep(page_step)
+                # Value 0 is TOP (y_max), Max is BOTTOM (y_min)
+                pos_from_bottom = (yr[0] - y_min_data) / y_range_total * 1000
+                inv_pos = 1000 - page_step - int(pos_from_bottom)
+                self.y_scroll.setValue(inv_pos)
+            else:
+                self.y_scroll.hide()
+                
+        self._block_signals = False
+
+    def scroll_view(self):
+        if self._block_signals: return
+        self._block_signals = True
+        
+        val_x = self.x_scroll.value()
+        val_y = self.y_scroll.value()
+        
+        t_start, t_end = self.time_axis[0], self.time_axis[-1]
+        t_total = t_end - t_start
+        
+        y_min_data, y_max_data = self._get_y_bounds()
+        y_range_total = y_max_data - y_min_data
+        
+        xr, yr = self.view_box.viewRange()
+        width = xr[1] - xr[0]
+        height = yr[1] - yr[0]
+        
+        new_left = t_start + (val_x / 1000.0) * t_total
+        # Flip Y back: top of scrollbar is y_max
+        inv_val_y = 1000 - self.y_scroll.pageStep() - val_y
+        new_bottom = y_min_data + (inv_val_y / 1000.0) * y_range_total
+        
+        if self.x_scroll.isVisible():
+            self.plot_item.setXRange(new_left, new_left + width, padding=0)
+        if self.y_scroll.isVisible():
+            self.plot_item.setYRange(new_bottom, new_bottom + height, padding=0)
+            
+        self._block_signals = False
 
     # --- Marker Logic ---
     def handle_lock_change(self, lock_type, checked):
@@ -252,7 +364,6 @@ class TimeDomainView(QWidget):
             shift = val - target.value()
             if self.marker_panel.btn_lock_delta.isChecked():
                 new_t, new_o = val, other.value() + shift
-                # Check bounds for BOTH
                 if is_time:
                     t_min, t_max = self.time_axis[0], self.time_axis[-1]
                     if t_min <= new_t <= t_max and t_min <= new_o <= t_max:
@@ -391,7 +502,6 @@ class TimeDomainView(QWidget):
                 s1, s2 = int(round(v1 * self.rate)) + 1, int(round(v2 * self.rate)) + 1
                 self.marker_panel.delta_v2.blockSignals(True)
                 self.marker_panel.center_v2.blockSignals(True)
-                # Correct Delta Samples: difference in indexes + 1
                 self.marker_panel.delta_v2.setText(f"{abs(s2-s1)+1}")
                 # Center sample
                 cv = (v1+v2)/2
@@ -466,10 +576,11 @@ class TimeDomainView(QWidget):
         if is_finish: self.last_move_scene_pos = None
 
     def fit_to_markers(self):
-        m = self.markers_time if self.interaction_mode == 'TIME' else self.markers_y_dict[self.y_label_text]
-        if len(m) == 2:
-            v1, v2 = m[0].value(), m[1].value()
-            if self.interaction_mode == 'TIME':
+        is_time = (self.interaction_mode == 'TIME')
+        active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
+        if len(active_markers) == 2:
+            v1, v2 = active_markers[0].value(), active_markers[1].value()
+            if is_time:
                 self.plot_item.setXRange(min(v1, v2), max(v1, v2), padding=0)
             else:
                 self.plot_item.setYRange(min(v1, v2), max(v1, v2), padding=0)

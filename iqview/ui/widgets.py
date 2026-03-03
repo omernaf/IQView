@@ -130,7 +130,7 @@ class CustomViewBox(pg.ViewBox):
                         ndx, ndy = dx / (xr[1]-xr[0]), dy / (yr[1]-yr[0])
                         
                         path = pg.QtGui.QPainterPath()
-                        pen = pg.mkPen('#00aaff', width=2) # Premium Blue Accent
+                        pen = pg.mkPen('#ffffff', width=2) # Contrast White
                         if ndx < 0.15 * ndy:
                             self.zoom_type = 'Y_ONLY'
                             # Vertical line with horizontal ticks
@@ -155,8 +155,8 @@ class CustomViewBox(pg.ViewBox):
                             path.lineTo(x_max, p1.y() + tick)
                         else:
                             self.zoom_type = 'BOTH'
-                            pen = pg.mkPen('#00aaff', width=2, style=Qt.PenStyle.DashLine)
-                            self.zoom_rect.setBrush(pg.mkBrush(0, 170, 255, 40))
+                            pen = pg.mkPen('#ffffff', width=2, style=Qt.PenStyle.DashLine)
+                            self.zoom_rect.setBrush(pg.mkBrush(255, 255, 255, 40))
                             path.addRect(pg.QtCore.QRectF(p1, p2))
                         
                         self.zoom_rect.setPath(path)
@@ -211,8 +211,15 @@ class CustomViewBox(pg.ViewBox):
 
         fit_act = menu.addAction("Fit to Screen")
         # Handle 'Y' mode for TimeDomainView or 'FREQ' for Spectrogram
-        y_mode = 'FREQ' if is_spec else 'Y'
-        active_markers = getattr(self.ui_controller, f'markers_{y_mode.lower()}', []) if self.ui_controller.interaction_mode == y_mode else self.ui_controller.markers_time
+        if is_spec:
+            active_markers = self.ui_controller.markers_freq if self.ui_controller.interaction_mode == 'FREQ' else self.ui_controller.markers_time
+        else:
+            # TimeDomainView
+            if self.ui_controller.interaction_mode == 'MAG':
+                active_markers = self.ui_controller.markers_y_dict.get(self.ui_controller.y_label_text, [])
+            else:
+                active_markers = self.ui_controller.markers_time
+                
         fit_act.setEnabled(len(active_markers) == 2)
         fit_act.triggered.connect(self.ui_controller.fit_to_markers)
         
