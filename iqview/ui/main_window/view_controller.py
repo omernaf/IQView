@@ -64,6 +64,7 @@ class ViewControllerMixin:
                 )
                 self.spectrogram_view.plot_item.addItem(self.filter_region)
                 self.filter_region.sigRegionChanged.connect(self.on_filter_region_changed)
+                self.filter_region.sigRegionChangeFinished.connect(self.on_filter_region_finished)
             self.filter_region.show()
         else:
             if self.filter_region and not self.filter_enabled:
@@ -82,8 +83,13 @@ class ViewControllerMixin:
             self.start_processing()
 
     def on_filter_region_changed(self):
-        # We could update something here, but usually we just read the values when start_processing is called
+        # Useful for real-time label updates if we had any
         pass
+
+    def on_filter_region_finished(self):
+        # Trigger reprocessing when the user finishes dragging the region
+        if getattr(self, 'filter_enabled', False) and hasattr(self, 'full_spectrogram_cache'):
+            self.start_processing()
 
     def refresh_cursor(self):
         if hasattr(self, 'zoom_mode') and self.zoom_mode:

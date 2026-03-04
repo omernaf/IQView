@@ -27,32 +27,35 @@ def postprocess_fft(fft_result, fft_size):
 # Convert to dB
     return 20.0 * np.log10(mag)
 
-def apply_bpf(data, fs, f_min, f_max, numtaps=65):
+from scipy import signal
+
+def apply_bpf(data, fs, f_min, f_max, order=8, rp=0.1, rs=60):
     """
-    Applies a Band-Pass FIR filter to complex IQ data using NumPy.
-    Normalized frequencies are relative to fs.
+    Applies a sharp Band-Pass Elliptic filter to complex IQ data using Scipy.
+    Elliptic filters provide the sharpest transition for a given order.
+    Uses Second-Order Sections (SOS) for numerical stability.
     """
     if f_min >= f_max:
         return data
         
-    # Normalized frequencies (0 to 1.0, where 1.0 is fs)
-    # But for sinc design, we need normalization relative to Nyquist (0.5 fs)
+    # Band frequencies normalized to Nyquist
     nyquist = fs / 2.0
-    w_low = f_min / nyquist
-    w_high = f_max / nyquist
+    low = f_min / nyquist
+    high = f_max / nyquist
     
-    # Design FIR impulse response using sinc functions
-    n = np.arange(numtaps) - (numtaps - 1) / 2.0
+    # Ensure frequencies are within valid range (0, 1) and have a minimum width
+    min_width = 0.001
+    if (high - low) < min_width:
+        center = (low + high) / 2
+        low = max(0.001, center - min_width/2)
+        high = min(0.999, center + min_width/2)
+    else:
+        low = max(0.001, min(low, 0.999))
+        high = max(low + 0.0001, min(high, 0.999))
     
-    # Ideal BPF is the difference of two Low-Pass filters
-    h = (w_high * np.sinc(w_high * n)) - (w_low * np.sinc(w_low * n))
+    # Design the filter (Elliptic for sharpest roll-off)
+    # rp is passband ripple (dB), rs is stopband attenuation (dB)
+    sos = signal.ellip(order, rp, rs, [low, high], btype='band', output='sos')
     
-    # Apply Hamming window to reduce sidelobes
-    h *= np.hamming(numtaps)
-    
-    # Normalize gain at center frequency (approximate)
-    h /= np.sum(h.real) if np.sum(h.real) != 0 else 1.0
-    
-    # Apply filter using convolution
-    # mode='same' keeps the output length identical to input
-    return np.convolve(data, h, mode='same')
+    # Apply filter
+    return signal.sosfilt(sos, data)

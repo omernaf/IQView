@@ -12,7 +12,8 @@ dependencies = [
     "numpy",
     "PyQt6",
     "pyqtgraph",
-    "PyOpenGL"
+    "PyOpenGL",
+    "scipy"
 ]
 
 [project.scripts]
