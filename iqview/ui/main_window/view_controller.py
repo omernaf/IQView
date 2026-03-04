@@ -51,29 +51,34 @@ class ViewControllerMixin:
         self.marker_panel.update_headers(mode)
         self.update_marker_info()
         
-        # Handle Filter Region Visibility
-        if mode == 'FILTER':
-            if self.filter_region is None:
-                # Create region if it doesn't exist
-                f_min, f_max = self.fc - self.rate/4, self.fc + self.rate/4
-                self.filter_region = pg.LinearRegionItem(
-                    values=[f_min, f_max], 
-                    orientation='horizontal',
-                    brush=pg.mkBrush(255, 100, 0, 40),
-                    pen=pg.mkPen('#ff6400', width=2)
-                )
-                self.spectrogram_view.plot_item.addItem(self.filter_region)
-                self.filter_region.sigRegionChanged.connect(self.on_filter_region_changed)
-                self.filter_region.sigRegionChangeFinished.connect(self.on_filter_region_finished)
-            self.filter_region.show()
-        else:
-            if self.filter_region and not self.filter_enabled:
+        # Handle Filter Region Visibility & Interaction
+        if self.filter_region:
+            if mode == 'FILTER':
+                self.filter_region.show()
+                self.filter_region.setMovable(True)
+            else:
                 self.filter_region.hide()
+                self.filter_region.setMovable(False)
+        
+        if mode == 'FILTER' and self.filter_region is None:
+            # Create region if it doesn't exist
+            f_min, f_max = self.fc - self.rate/4, self.fc + self.rate/4
+            self.filter_region = pg.LinearRegionItem(
+                values=[f_min, f_max], 
+                orientation='horizontal',
+                brush=pg.mkBrush(255, 100, 0, 40),
+                pen=pg.mkPen('#ff6400', width=2)
+            )
+            self.spectrogram_view.plot_item.addItem(self.filter_region)
+            self.filter_region.sigRegionChanged.connect(self.on_filter_region_changed)
+            self.filter_region.sigRegionChangeFinished.connect(self.on_filter_region_finished)
+            self.filter_region.setMovable(True)
+            self.filter_region.show()
 
     def on_filter_toggled(self, checked):
         self.filter_enabled = checked
         if self.filter_region:
-            if checked:
+            if checked and self.interaction_mode == 'FILTER':
                 self.filter_region.show()
             elif self.interaction_mode != 'FILTER':
                 self.filter_region.hide()
