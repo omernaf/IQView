@@ -31,31 +31,32 @@ from scipy import signal
 
 def apply_bpf(data, fs, f_min, f_max, order=8, rp=0.1, rs=60):
     """
-    Applies a sharp Band-Pass Elliptic filter to complex IQ data using Scipy.
-    Elliptic filters provide the sharpest transition for a given order.
-    Uses Second-Order Sections (SOS) for numerical stability.
+    Applies a sharp COMPLEX (Asymmetric) Band-Pass filter to IQ data.
+    Uses Shift-to-Baseband -> Low-Pass Filter -> Shift-Back-Up approach.
+    This ensures that ONLY the selected freq range is kept even in complex signals.
     """
-    if f_min >= f_max:
+    if f_min >= f_max or len(data) == 0:
         return data
         
-    # Band frequencies normalized to Nyquist
+    f_center = (f_min + f_max) / 2.0
+    bandwidth = f_max - f_min
+    
+    # 1. Shift target band to 0 Hz
+    t = np.arange(len(data)) / fs
+    shift_vector = np.exp(-2j * np.pi * f_center * t)
+    data_shifted = data * shift_vector
+    
+    # 2. Design Low-Pass Filter at half-bandwidth
+    # Normalized frequency (0 to 1.0, where 1.0 is Nyquist)
     nyquist = fs / 2.0
-    low = f_min / nyquist
-    high = f_max / nyquist
+    cutoff = (bandwidth / 2.0) / nyquist
+    cutoff = max(0.0001, min(cutoff, 0.9999))
     
-    # Ensure frequencies are within valid range (0, 1) and have a minimum width
-    min_width = 0.001
-    if (high - low) < min_width:
-        center = (low + high) / 2
-        low = max(0.001, center - min_width/2)
-        high = min(0.999, center + min_width/2)
-    else:
-        low = max(0.001, min(low, 0.999))
-        high = max(low + 0.0001, min(high, 0.999))
+    # Use Elliptic Low-Pass Filter for sharpest roll-off
+    sos = signal.ellip(order, rp, rs, cutoff, btype='low', output='sos')
     
-    # Design the filter (Elliptic for sharpest roll-off)
-    # rp is passband ripple (dB), rs is stopband attenuation (dB)
-    sos = signal.ellip(order, rp, rs, [low, high], btype='band', output='sos')
+    # 3. Apply Filter
+    data_filtered = signal.sosfilt(sos, data_shifted)
     
-    # Apply filter
-    return signal.sosfilt(sos, data)
+    # 4. Shift back to original frequency band
+    return data_filtered * np.conj(shift_vector)
