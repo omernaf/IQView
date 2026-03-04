@@ -1,6 +1,7 @@
 import pyqtgraph as pg
 import numpy as np
 from PyQt6.QtCore import Qt
+from ..themes import get_palette
 
 class MarkerManagerMixin:
     def place_marker(self, scene_pos, drag_mode=False):
@@ -76,7 +77,19 @@ class MarkerManagerMixin:
                         old_marker = active_markers.pop(0)
                         self.spectrogram_view.plot_item.removeItem(old_marker)
                     
-                    marker = pg.InfiniteLine(pos=val, angle=angle, movable=False, pen=pg.mkPen('r', width=2))
+                    theme = self.settings_mgr.get("ui/theme", "Dark").lower()
+                    color = self.settings_mgr.get(f"ui/{theme}/time_marker_color") if is_time else self.settings_mgr.get(f"ui/{theme}/freq_marker_color")
+                    style_name = self.settings_mgr.get(f"ui/{theme}/time_marker_style") if is_time else self.settings_mgr.get(f"ui/{theme}/freq_marker_style")
+                    
+                    style_map = {
+                        "SolidLine": Qt.PenStyle.SolidLine,
+                        "DashLine": Qt.PenStyle.DashLine,
+                        "DotLine": Qt.PenStyle.DotLine,
+                        "DashDotLine": Qt.PenStyle.DashDotLine
+                    }
+                    style = style_map.get(str(style_name), Qt.PenStyle.DashLine)
+                    
+                    marker = pg.InfiniteLine(pos=val, angle=angle, movable=False, pen=pg.mkPen(color, width=2, style=style))
                     marker.setZValue(10)
                     self.spectrogram_view.plot_item.addItem(marker, ignoreBounds=True)
                     active_markers.append(marker)
@@ -146,15 +159,15 @@ class MarkerManagerMixin:
             self.marker_panel.widgets[i]['sam'].blockSignals(True)
             if is_freq:
                 rbw = self.rate / self.fft_size
-                bin_idx = int(round((val - (self.fc - self.rate/2)) / rbw)) + 1
-                bin_idx = max(1, min(bin_idx, self.fft_size))
-                self.marker_panel.widgets[i]['sec'].setText(f"{val:.6f}")
-                self.marker_panel.widgets[i]['sam'].setText(f"{bin_idx}")
+                label_val = int(round((val - (self.fc - self.rate/2)) / rbw)) + 1
+                label_val = max(1, min(label_val, self.fft_size))
             else:
                 sample = int(round(val * self.rate)) + 1
-                sample = max(1, min(sample, getattr(self, 'total_samples_in_cache', 1e9)))
-                self.marker_panel.widgets[i]['sec'].setText(f"{val:.9f}")
-                self.marker_panel.widgets[i]['sam'].setText(f"{sample}")
+                label_val = max(1, min(sample, getattr(self, 'total_samples_in_cache', 1e9)))
+                
+            prec = int(self.settings_mgr.get("ui/label_precision", 6 if is_freq else 9))
+            self.marker_panel.widgets[i]['sec'].setText(f"{val:.{prec}f}")
+            self.marker_panel.widgets[i]['sam'].setText(f"{label_val}")
             self.marker_panel.widgets[i]['sec'].blockSignals(False)
             self.marker_panel.widgets[i]['sam'].blockSignals(False)
 
@@ -165,6 +178,11 @@ class MarkerManagerMixin:
             self.marker_panel.center_sec.blockSignals(True)
             self.marker_panel.center_sam.blockSignals(True)
 
+            prec = int(self.settings_mgr.get("ui/label_precision", 6 if is_freq else 9))
+            self.marker_panel.delta_sec.setText(f"{abs(p2 - p1):.{prec}f}")
+            cp = (p1 + p2) / 2
+            self.marker_panel.center_sec.setText(f"{cp:.{prec}f}")
+
             if is_freq:
                 f_min = self.fc - self.rate/2
                 rbw = self.rate / self.fft_size
@@ -172,26 +190,19 @@ class MarkerManagerMixin:
                 s2 = int(round((p2 - f_min) / rbw)) + 1
                 s1, s2 = np.clip([s1, s2], 1, self.fft_size)
                 ds = abs(s2 - s1) + 1
-                cp = (p1 + p2) / 2
                 cs = int(round((cp - f_min) / rbw)) + 1
                 cs = max(1, min(cs, self.fft_size))
-                self.marker_panel.delta_sec.setText(f"{abs(p2 - p1):.6f}")
-                self.marker_panel.delta_sam.setText(f"{ds}")
-                self.marker_panel.center_sec.setText(f"{cp:.6f}")
-                self.marker_panel.center_sam.setText(f"{cs}")
             else:
                 s1 = int(round(p1 * self.rate)) + 1
                 s2 = int(round(p2 * self.rate)) + 1
-                max_s = getattr(self, 'total_samples_in_cache', 1e9)
-                s1, s2 = np.clip([s1, s2], 1, max_s)
+                limit = getattr(self, 'total_samples_in_cache', 1e9)
+                s1, s2 = np.clip([s1, s2], 1, limit)
                 ds = abs(s2 - s1) + 1
-                cp = (p1 + p2) / 2
                 cs = int(round(cp * self.rate)) + 1
-                cs = max(1, min(cs, max_s))
-                self.marker_panel.delta_sec.setText(f"{abs(p2 - p1):.9f}")
-                self.marker_panel.delta_sam.setText(f"{ds}")
-                self.marker_panel.center_sec.setText(f"{cp:.9f}")
-                self.marker_panel.center_sam.setText(f"{cs}")
+                cs = max(1, min(cs, limit))
+
+            self.marker_panel.delta_sam.setText(f"{ds}")
+            self.marker_panel.center_sam.setText(f"{cs}")
 
             self.marker_panel.delta_sec.blockSignals(False)
             self.marker_panel.delta_sam.blockSignals(False)
@@ -279,3 +290,24 @@ class MarkerManagerMixin:
             self.spectrogram_view.plot_item.removeItem(marker)
         markers.clear()
         self.update_marker_info()
+
+    def refresh_spectrogram_markers(self):
+        theme = self.settings_mgr.get("ui/theme", "Dark").lower()
+        
+        style_map = {
+            "SolidLine": Qt.PenStyle.SolidLine,
+            "DashLine": Qt.PenStyle.DashLine,
+            "DotLine": Qt.PenStyle.DotLine,
+            "DashDotLine": Qt.PenStyle.DashDotLine
+        }
+
+        t_color = self.settings_mgr.get(f"ui/{theme}/time_marker_color")
+        t_style = style_map.get(str(self.settings_mgr.get(f"ui/{theme}/time_marker_style")), Qt.PenStyle.DashLine)
+        
+        f_color = self.settings_mgr.get(f"ui/{theme}/freq_marker_color")
+        f_style = style_map.get(str(self.settings_mgr.get(f"ui/{theme}/freq_marker_style")), Qt.PenStyle.DashLine)
+        
+        for m in self.markers_time:
+            m.setPen(pg.mkPen(t_color, width=2, style=t_style))
+        for m in self.markers_freq:
+            m.setPen(pg.mkPen(f_color, width=2, style=f_style))

@@ -3,8 +3,10 @@ import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                              QButtonGroup, QLabel, QFrame, QScrollBar, QGridLayout)
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QKeySequence
 from ..widgets import CustomViewBox
 from .marker_panel import TimeDomainMarkerPanel
+from ..themes import get_palette, get_scrollbar_stylesheet
 
 class TimeDomainView(QWidget):
     """
@@ -17,6 +19,7 @@ class TimeDomainView(QWidget):
         self.start_time = start_time
         self.rate = sample_rate
         self.parent_window = parent_window
+        self.settings_mgr = parent_window.settings_mgr if parent_window else None
         self.is_spectrogram = False
         self.interaction_mode = 'TIME'
         self.zoom_mode = False
@@ -54,12 +57,7 @@ class TimeDomainView(QWidget):
         # --- Toolbar ---
         self.toolbar = QFrame()
         self.toolbar.setObjectName("td_toolbar")
-        self.toolbar.setStyleSheet("""
-            QFrame#td_toolbar { background-color: #1a1a1a; border-radius: 6px; border: 1px solid #333; }
-            QPushButton { background-color: #252525; padding: 5px 15px; border-radius: 3px; color: #ccc; }
-            QPushButton:hover { background-color: #333; }
-            QPushButton:checked { background-color: #004488; color: #00aaff; border: 1px solid #00aaff; }
-        """)
+        self.update_toolbar_style()
         self.toolbar_layout = QHBoxLayout(self.toolbar)
         self.toolbar_layout.setContentsMargins(10, 5, 10, 5)
         
@@ -101,12 +99,9 @@ class TimeDomainView(QWidget):
         self.view_box = CustomViewBox(self)
         self.plot_widget = pg.PlotWidget(viewBox=self.view_box)
         self.plot_item = self.plot_widget.getPlotItem()
-        self.plot_widget.setBackground('#121212')
-        self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
+        self.refresh_plot_style()
         self.plot_widget.getAxis('bottom').setLabel('Time', units='s')
         self.plot_widget.getAxis('left').setLabel('Amplitude (Real)')
-        self.plot_widget.getAxis('left').setPen('#666')
-        self.plot_widget.getAxis('bottom').setPen('#666')
         
         self.grid_layout.addWidget(self.plot_widget, 0, 1)
 
@@ -114,18 +109,7 @@ class TimeDomainView(QWidget):
         self.x_scroll = QScrollBar(Qt.Orientation.Horizontal)
         self.y_scroll = QScrollBar(Qt.Orientation.Vertical)
         
-        scrollbar_style = """
-            QScrollBar:horizontal { background: #121212; height: 8px; margin: 0px; border: none; }
-            QScrollBar::handle:horizontal { background: #3d3d3d; min-width: 40px; border-radius: 4px; margin: 0px; }
-            QScrollBar::handle:horizontal:hover { background: #00aaff; }
-            
-            QScrollBar:vertical { background: #121212; width: 8px; margin: 0px; border: none; }
-            QScrollBar::handle:vertical { background: #3d3d3d; min-height: 40px; border-radius: 4px; margin: 0px; }
-            QScrollBar::handle:vertical:hover { background: #00aaff; }
-            
-            QScrollBar::add-line, QScrollBar::sub-line { width: 0px; height: 0px; }
-            QScrollBar::add-page, QScrollBar::sub-page { background: none; }
-        """
+        scrollbar_style = get_scrollbar_stylesheet(get_palette(self.parent_window.settings_mgr.get("ui/theme", "Dark")))
         self.x_scroll.setStyleSheet(scrollbar_style)
         self.y_scroll.setStyleSheet(scrollbar_style)
         
@@ -148,17 +132,34 @@ class TimeDomainView(QWidget):
         self.y_scroll.valueChanged.connect(self.scroll_view)
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_T:
+        if event.isAutoRepeat(): return
+        s = self.parent_window.settings_mgr
+        key_name = QKeySequence(event.key()).toString()
+        if key_name == "Control": key_name = "Ctrl"
+        
+        time_seq = s.get('keybinds/time_markers', 'T')
+        mag_seq = s.get('keybinds/mag_markers', 'F')
+        zoom_seq = s.get('keybinds/zoom_mode', 'Ctrl')
+        
+        if key_name == time_seq:
             self.set_interaction_mode('TIME')
-        elif event.key() == Qt.Key.Key_F or event.key() == Qt.Key.Key_M:
+        elif key_name == mag_seq:
             self.set_interaction_mode('MAG')
-        elif event.key() == Qt.Key.Key_Control:
+        elif key_name == zoom_seq:
+            self._prev_interaction_mode = getattr(self, 'interaction_mode', 'TIME')
             self.set_interaction_mode('ZOOM')
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
-        if event.key() == Qt.Key.Key_Control:
-            self.set_interaction_mode('TIME')
+        if event.isAutoRepeat(): return
+        s = self.parent_window.settings_mgr
+        key_name = QKeySequence(event.key()).toString()
+        if key_name == "Control": key_name = "Ctrl"
+        zoom_seq = s.get('keybinds/zoom_mode', 'Ctrl')
+
+        if key_name == zoom_seq:
+            prev = getattr(self, '_prev_interaction_mode', 'TIME')
+            self.set_interaction_mode(prev)
         super().keyReleaseEvent(event)
 
     def set_interaction_mode(self, mode):
@@ -210,16 +211,20 @@ class TimeDomainView(QWidget):
         self.plot_item.clear()
         self.plot_item.getAxis('left').setLabel(y_label)
         
-        pen = pg.mkPen('#00aaff', width=1.5)
+        theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
+        p = get_palette(theme)
+        pen = pg.mkPen(p.accent, width=1.5)
         self.plot_item.plot(self.time_axis, data, pen=pen)
         
         # 4. Restore markers
         for m in self.markers_time: 
+            m.setPen(pg.mkPen(p.marker_time, width=2, style=Qt.PenStyle.DashLine))
             self.plot_item.addItem(m)
             m.setZValue(100)
             
         active_y = self.markers_y_dict.get(y_label, [])
         for m in active_y:
+            m.setPen(pg.mkPen(p.marker_mag, width=2, style=Qt.PenStyle.DashLine))
             self.plot_item.addItem(m)
             m.setZValue(100)
         
@@ -412,13 +417,16 @@ class TimeDomainView(QWidget):
             self.update_marker_info()
             return
 
-        # 3. Add brand new
-        if len(active_markers) >= 2:
-            old = active_markers.pop(0)
-            self.plot_item.removeItem(old)
-            
-        color = '#00ff00' if is_time else '#ffaa00'
+        theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
+        p = get_palette(theme)
+        color = p.marker_time if is_time else p.marker_mag
         orient = 90 if is_time else 0
+        
+        # Recycling logic
+        if len(active_markers) >= 2:
+            old_m = active_markers.pop(0)
+            self.plot_item.removeItem(old_m)
+
         new_m = pg.InfiniteLine(pos=val, angle=orient, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine), movable=False)
         new_m.setZValue(100)
         active_markers.append(new_m)
@@ -487,7 +495,7 @@ class TimeDomainView(QWidget):
                 self.marker_panel.m_widgets[i]['v1'].blockSignals(True)
                 self.marker_panel.m_widgets[i]['v2'].blockSignals(True)
                 
-                prec1 = 9 if is_time else 6
+                prec1 = int(self.settings_mgr.get("ui/label_precision", 9)) if is_time else int(self.settings_mgr.get("ui/label_precision", 6))
                 self.marker_panel.m_widgets[i]['v1'].setText(f"{m_val:.{prec1}f}")
                 
                 if is_time:
@@ -500,7 +508,7 @@ class TimeDomainView(QWidget):
         # Update Delta/Center
         if len(sorted_m) == 2:
             v1, v2 = sorted_m[0].value(), sorted_m[1].value()
-            prec1 = 9 if is_time else 6
+            prec1 = int(self.settings_mgr.get("ui/label_precision", 9)) if is_time else int(self.settings_mgr.get("ui/label_precision", 6))
             
             self.marker_panel.delta_v1.blockSignals(True)
             self.marker_panel.center_v1.blockSignals(True)
@@ -595,3 +603,48 @@ class TimeDomainView(QWidget):
                 self.plot_item.setXRange(min(v1, v2), max(v1, v2), padding=0)
             else:
                 self.plot_item.setYRange(min(v1, v2), max(v1, v2), padding=0)
+
+    def refresh_theme(self):
+        theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
+        p = get_palette(theme)
+        
+        self.update_toolbar_style()
+        self.refresh_plot_style()
+        self.marker_panel.refresh_theme()
+        
+        # Update scrollbars
+        sb_style = get_scrollbar_stylesheet(p)
+        self.x_scroll.setStyleSheet(sb_style)
+        self.y_scroll.setStyleSheet(sb_style)
+        
+        # Re-plot to refresh curve and marker colors
+        self._update_plot(self.current_plot_data, self.y_label_text)
+
+    def update_toolbar_style(self):
+        theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
+        p = get_palette(theme)
+        self.toolbar.setStyleSheet(f"""
+            QFrame#td_toolbar {{ background-color: {p.bg_sidebar}; border-radius: 6px; border: 1px solid {p.border}; }}
+            QPushButton {{ background-color: {p.bg_widget}; padding: 5px 15px; border-radius: 3px; color: {p.text_main}; }}
+            QPushButton:hover {{ background-color: {p.border_light}; }}
+            QPushButton:checked {{ background-color: {p.accent_dim}; color: {p.accent}; border: 1px solid {p.accent}; }}
+        """)
+
+    def refresh_plot_style(self):
+        theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
+        p = get_palette(theme)
+        self.plot_widget.setBackground(p.plot_bg)
+        
+        from PyQt6.QtGui import QFont
+        font = QFont()
+        font.setPointSize(int(self.parent_window.settings_mgr.get("ui/axis_font_size", 10)))
+        
+        grid_enabled = bool(self.parent_window.settings_mgr.get("ui/grid_enabled", True))
+        grid_alpha = int(self.parent_window.settings_mgr.get("ui/grid_alpha", 30)) / 100.0
+        
+        self.plot_item.getAxis('left').setTickFont(font)
+        self.plot_item.getAxis('bottom').setTickFont(font)
+        self.plot_widget.showGrid(x=grid_enabled, y=grid_enabled, alpha=grid_alpha)
+        
+        self.plot_item.getAxis('left').setPen(p.text_dim)
+        self.plot_item.getAxis('bottom').setPen(p.text_dim)

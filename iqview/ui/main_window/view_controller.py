@@ -124,9 +124,25 @@ class ViewControllerMixin:
         delta = abs(p2 - p1)
         if delta <= 0: return
         angle = 0 if is_freq else 90
+        theme = self.settings_mgr.get("ui/theme", "Dark").lower()
+        color = self.settings_mgr.get(f"ui/{theme}/grid_color", "#c8c8ff")
+        style_name = self.settings_mgr.get(f"ui/{theme}/grid_style", "SolidLine")
+        alpha = int(self.settings_mgr.get("ui/grid_alpha", 30))
+        
+        style_map = {
+            "SolidLine": Qt.PenStyle.SolidLine,
+            "DashLine": Qt.PenStyle.DashLine,
+            "DotLine": Qt.PenStyle.DotLine,
+            "DashDotLine": Qt.PenStyle.DashDotLine
+        }
+        style = style_map.get(str(style_name), Qt.PenStyle.SolidLine)
+        
+        # Convert hex color to QColor and set alpha
+        from PyQt6.QtGui import QColor
+        qcolor = QColor(color)
+        qcolor.setAlphaF(alpha / 100.0)
         v_min = (self.fc - self.rate/2) if is_freq else 0
         v_max = (self.fc + self.rate/2) if is_freq else self.time_duration
-        pen = pg.mkPen(color=(200, 200, 255, 180), width=2, style=Qt.PenStyle.SolidLine)
         
         curr = p1
         while curr <= v_max + 1e-9:

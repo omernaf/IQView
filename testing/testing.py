@@ -48,6 +48,7 @@ def main():
     args, unknown = parser.parse_known_args()
 
     filename = "samples/mavic_air_2.32fc"
+    # filename = "samples/long_sweep.32fc"
     sample_rate = 50e6  # 2 MHz
     duration = 10.0    # 10 seconds of simulated RF recording
     if args.line_profile:
@@ -57,9 +58,9 @@ def main():
         subprocess.run([sys.executable, prof_script])
         return
 
-    if args.generate or not os.path.exists(filename):
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        generate_test_file(filename, sample_rate, duration)
+    # if args.generate or not os.path.exists(filename):
+    #     os.makedirs(os.path.dirname(filename), exist_ok=True)
+    #     generate_test_file(filename, sample_rate, duration)
     
     print("Launching IQView Spectrogram Viewer...")
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -67,10 +68,7 @@ def main():
     cmd = [
         sys.executable, main_py,
         "-f", filename,
-        "-t", "complex64",
-        "-r", str(sample_rate),
-        "-c", "0e6",
-        "-s", "1024"
+        "-r", str(sample_rate)
     ]
     
     if args.profile:

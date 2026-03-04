@@ -1,11 +1,12 @@
 from PyQt6.QtCore import Qt, QRectF, pyqtSignal
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import QWidget, QGridLayout, QScrollBar, QSizePolicy
 from pyqtgraph.widgets.ColorMapMenu import ColorMapMenu
 from pyqtgraph.graphicsItems.GradientPresets import Gradients
 import pyqtgraph as pg
 import numpy as np
 import copy
+from .themes import get_palette, get_scrollbar_stylesheet
 
 class SpectrogramView(QWidget):
     def __init__(self, parent_window):
@@ -16,11 +17,10 @@ class SpectrogramView(QWidget):
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(0)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setStyleSheet("background-color: #121212;")
         
         # Internal Graphics Layout for Plot
         self.glw_plot = pg.GraphicsLayoutWidget()
-        self.glw_plot.setBackground('#121212')
+        # Initial theme applied at end of __init__
         self.glw_plot.setContentsMargins(0, 0, 0, 0)
         self.layout.addWidget(self.glw_plot, 0, 1)
         
@@ -28,46 +28,7 @@ class SpectrogramView(QWidget):
         self.x_scroll = QScrollBar(Qt.Orientation.Horizontal)
         self.y_scroll = QScrollBar(Qt.Orientation.Vertical)
         
-        scrollbar_style = """
-            QScrollBar:horizontal {
-                background: #121212;
-                height: 8px;
-                margin: 0px;
-                border: none;
-            }
-            QScrollBar::handle:horizontal {
-                background: #3d3d3d;
-                min-width: 40px;
-                border-radius: 4px;
-                margin: 0px;
-            }
-            QScrollBar::handle:horizontal:hover {
-                background: #00aaff;
-            }
-            
-            QScrollBar:vertical {
-                background: #121212;
-                width: 8px;
-                margin: 0px;
-                border: none;
-            }
-            QScrollBar::handle:vertical {
-                background: #3d3d3d;
-                min-height: 40px;
-                border-radius: 4px;
-                margin: 0px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: #00aaff;
-            }
-            
-            QScrollBar::add-line, QScrollBar::sub-line {
-                width: 0px; height: 0px;
-            }
-            QScrollBar::add-page, QScrollBar::sub-page {
-                background: none;
-            }
-        """
+        scrollbar_style = get_scrollbar_stylesheet(get_palette(self.parent_window.settings_mgr.get("ui/theme", "Dark")))
         self.x_scroll.setStyleSheet(scrollbar_style)
         self.y_scroll.setStyleSheet(scrollbar_style)
         
@@ -77,7 +38,7 @@ class SpectrogramView(QWidget):
         
         # Internal Graphics Layout for Histogram -> Now Spectrum Envelope
         self.glw_hist = pg.GraphicsLayoutWidget()
-        self.glw_hist.setBackground('#121212')
+        # Background set in refresh_theme
         self.glw_hist.setFixedWidth(180) # Slightly wider for the new dual-control
         self.layout.addWidget(self.glw_hist, 0, 2)
         
@@ -144,9 +105,10 @@ class SpectrogramView(QWidget):
         self.plot_item.addItem(self.img)
         
         # Initialize Colormap
-        self.gradient.loadPreset('turbo')
-        self._current_cmap = self.gradient.colorMap()
-        self._cmap_reversed = False
+        self.apply_colormap(
+            self.parent_window.settings_mgr.get("ui/colormap", "turbo"),
+            bool(self.parent_window.settings_mgr.get("ui/colormap_reversed", False))
+        )
         
         # Connections
         self.level_region.sigRegionChanged.connect(self.on_levels_changed)
@@ -163,6 +125,8 @@ class SpectrogramView(QWidget):
         self.x_scroll.valueChanged.connect(self.scroll_view)
         self.y_scroll.valueChanged.connect(self.scroll_view)
 
+        self.refresh_theme()
+
     def on_levels_changed(self):
         low, high = self.level_region.getRegion()
         self.img.setLevels([low, high])
@@ -170,6 +134,25 @@ class SpectrogramView(QWidget):
     def on_gradient_changed(self):
         # Simply apply the current state of the gradient editor to the image
         self.img.setColorMap(self.gradient.colorMap())
+
+    def apply_colormap(self, cmap_name, reversed_mode):
+        """Apply a named colormap to the gradient editor and image."""
+        self._cmap_reversed = reversed_mode
+        if not cmap_name:
+            cmap_name = "turbo"
+            
+        try:
+            self.gradient.loadPreset(cmap_name)
+        except Exception:
+            self.gradient.loadPreset("turbo")
+            
+        self._current_cmap = self.gradient.colorMap()
+        
+        display_cmap = copy.deepcopy(self._current_cmap)
+        if self._cmap_reversed:
+            display_cmap.reverse()
+        self.gradient.setColorMap(display_cmap)
+        self.img.setColorMap(display_cmap)
 
     def custom_gradient_menu(self, ev):
         if ev.button() != Qt.MouseButton.RightButton:
@@ -208,17 +191,35 @@ class SpectrogramView(QWidget):
         ev.accept()
 
     def keyPressEvent(self, ev):
-        if ev.key() == Qt.Key.Key_Control:
-            self.setCursor(Qt.CursorShape.CrossCursor)
-        elif ev.key() == Qt.Key.Key_T:
+        if ev.isAutoRepeat(): return
+        s = self.parent_window.settings_mgr
+        key_name = QKeySequence(ev.key()).toString()
+        if key_name == "Control": key_name = "Ctrl"
+        
+        time_seq = s.get('keybinds/time_markers', 'T')
+        freq_seq = s.get('keybinds/mag_markers', 'F')
+        zoom_seq = s.get('keybinds/zoom_mode', 'Ctrl')
+        
+        if key_name == time_seq:
             self.parent_window.set_interaction_mode('TIME')
-        elif ev.key() == Qt.Key.Key_F:
+        elif key_name == freq_seq:
             self.parent_window.set_interaction_mode('FREQ')
+        elif key_name == zoom_seq:
+            # Tell parent to enter zoom mode
+            self.parent_window._prev_interaction_mode = getattr(self.parent_window, 'interaction_mode', 'TIME')
+            self.parent_window.set_interaction_mode('ZOOM')
         super().keyPressEvent(ev)
 
     def keyReleaseEvent(self, ev):
-        if ev.key() == Qt.Key.Key_Control:
-            self.parent_window.refresh_cursor()
+        if ev.isAutoRepeat(): return
+        s = self.parent_window.settings_mgr
+        key_name = QKeySequence(ev.key()).toString()
+        if key_name == "Control": key_name = "Ctrl"
+        zoom_seq = s.get('keybinds/zoom_mode', 'Ctrl')
+
+        if key_name == zoom_seq:
+            prev = getattr(self.parent_window, '_prev_interaction_mode', 'TIME')
+            self.parent_window.set_interaction_mode(prev)
         super().keyReleaseEvent(ev)
 
     def update_scrollbars(self):
@@ -323,3 +324,55 @@ class SpectrogramView(QWidget):
         if auto_range:
             # Only auto-range the Y-axis (Signal Level)
             self.spectrum_plot.setYRange(min_v, max_v, padding=0.1)
+
+    def refresh_theme(self):
+        theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
+        p = get_palette(theme)
+        
+        self.setStyleSheet(f"background-color: {p.bg_main};")
+        self.glw_plot.setBackground(p.plot_bg)
+        self.glw_hist.setBackground(p.plot_bg)
+        
+        # Update colormap from settings
+        self.apply_colormap(
+            self.parent_window.settings_mgr.get("ui/colormap", "turbo"),
+            bool(self.parent_window.settings_mgr.get("ui/colormap_reversed", False))
+        )
+        
+        # Update spectrum plot lines
+        if hasattr(self, 'min_env_curve'):
+            self.min_env_curve.setPen(pg.mkPen(p.text_dim, width=1))
+            self.max_env_curve.setPen(pg.mkPen(p.accent, width=1.5))
+            
+            # Update level region
+            for line in self.level_region.lines:
+                line.setPen(pg.mkPen(p.text_header, style=Qt.PenStyle.DashLine, width=1.5))
+                line.setHoverPen(pg.mkPen(p.accent, width=2))
+            
+            # Update spectrum plot grid and axes
+            from PyQt6.QtGui import QFont
+            font = QFont()
+            font.setPointSize(int(self.parent_window.settings_mgr.get("ui/axis_font_size", 10)))
+            
+            grid_enabled = bool(self.parent_window.settings_mgr.get("ui/grid_enabled", True))
+            grid_alpha = int(self.parent_window.settings_mgr.get("ui/grid_alpha", 30)) / 100.0
+            
+            self.spectrum_plot.getAxis('left').setTickFont(font)
+            self.spectrum_plot.getAxis('bottom').setTickFont(font)
+            self.spectrum_plot.showGrid(x=grid_enabled, y=grid_enabled, alpha=grid_alpha)
+            
+            self.spectrum_plot.getAxis('left').setPen(p.text_dim)
+            self.spectrum_plot.getAxis('bottom').setPen(p.text_dim)
+            
+            # Update main plot axes
+            self.plot_item.getAxis('left').setTickFont(font)
+            self.plot_item.getAxis('bottom').setTickFont(font)
+            self.plot_item.showGrid(x=grid_enabled, y=grid_enabled, alpha=grid_alpha)
+            
+            self.plot_item.getAxis('left').setPen(p.text_dim)
+            self.plot_item.getAxis('bottom').setPen(p.text_dim)
+            
+        # Update scrollbars
+        sb_style = get_scrollbar_stylesheet(p)
+        self.x_scroll.setStyleSheet(sb_style)
+        self.y_scroll.setStyleSheet(sb_style)

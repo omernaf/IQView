@@ -6,21 +6,8 @@ from ..side_panel import SidePanel
 
 class UIComponentsMixin:
     def setup_ui(self):
-        self.setStyleSheet("""
-            QMainWindow, QWidget#central { background-color: #121212; color: #e0e0e0; font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif; }
-            QLabel { color: #aaaaaa; }
-            QPushButton { background-color: #2a2a2a; color: #ffffff; border: 1px solid #3d3d3d; border-radius: 4px; padding: 6px 12px; font-size: 13px; }
-            QPushButton:hover { background-color: #353535; border-color: #555555; }
-            QPushButton:pressed { background-color: #1a1a1a; }
-            QPushButton:checked { background-color: #004488; border-color: #00aaff; color: #00aaff; }
-            QLineEdit { background-color: #1a1a1a; color: #ffffff; border: 1px solid #3d3d3d; border-radius: 4px; padding: 4px 8px; selection-background-color: #00aaff; }
-            QLineEdit:focus { border-color: #00aaff; }
-            QLineEdit[readOnly="true"] { color: #777777; background-color: #151515; }
-            QComboBox { background-color: #1a1a1a; color: #ffffff; border: 1px solid #3d3d3d; border-radius: 4px; padding: 4px 8px; }
-            QComboBox:on { border-color: #00aaff; }
-            QComboBox::drop-down { border: none; width: 20px; }
-            QComboBox QAbstractItemView { background-color: #1a1a1a; color: #ffffff; selection-background-color: #333333; border: 1px solid #3d3d3d; outline: none; }
-        """)
+        # The main stylesheet is now handled by apply_current_theme in SpectrogramWindow
+        
         self.central_widget = QWidget()
         self.central_widget.setObjectName("central")
         self.setCentralWidget(self.central_widget)
@@ -42,16 +29,10 @@ class UIComponentsMixin:
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(False) # Removed explicit close button
         self.tabs.setMovable(False)
-        self.tabs.setStyleSheet("""
-            QTabWidget::pane { border: 1px solid #333; top: -1px; background-color: #121212; }
-            QTabBar::tab { 
-                background-color: #1a1a1a; color: #888; padding: 8px 20px; 
-                border: 1px solid #333; border-bottom: none; border-top-left-radius: 4px; border-top-right-radius: 4px;
-                margin-right: 2px; font-size: 12px; font-weight: bold;
-            }
-             QTabBar::tab:hover { background-color: #252525; color: #ccc; }
-             QTabBar::tab:selected { background-color: #121212; color: #00aaff; border-bottom: 2px solid #00aaff; }
-        """)
+        self.tabs = QTabWidget()
+        self.tabs.setTabsClosable(False) # Removed explicit close button
+        self.tabs.setMovable(False)
+        # Tab style moved to themes.py but we keep the pane/selected override if specific to QTabWidget
         self.root_layout.addWidget(self.tabs)
         
         # Install event filter for middle/right click closing
@@ -64,7 +45,10 @@ class UIComponentsMixin:
         self.spec_h_layout.setSpacing(0)
         
         # Sidebar (Left)
-        self.sidebar = SidePanel(self.rate, self.fc, self.fft_size)
+        self.sidebar = SidePanel(self.rate, self.fc, self.fft_size, 
+                                 window_type=self.window_type, 
+                                 overlap_percent=self.overlap_percent, 
+                                 parent_window=self)
         self.sidebar.parametersChanged.connect(self.on_parameters_changed)
         self.spec_h_layout.addWidget(self.sidebar)
         

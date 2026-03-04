@@ -1,6 +1,7 @@
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6 import QtWidgets, QtCore, QtGui
 import pyqtgraph as pg
+from .themes import get_palette
 
 class DoubleClickButton(QtWidgets.QPushButton):
     doubleClicked = pyqtSignal()
@@ -89,6 +90,42 @@ class FormattedLineEdit(QtWidgets.QLineEdit):
         super().setText(self._format_text(self._raw_text))
         super().focusOutEvent(event)
 
+class KeyBindEdit(QtWidgets.QLineEdit):
+    """
+    A QLineEdit that captures a single key press (including standalone modifiers) 
+    and sets its text to that key's name.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setReadOnly(True)
+        self.setPlaceholderText("Click and press a key...")
+        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.key_name = ""
+
+    def keyPressEvent(self, event):
+        key = event.key()
+        if key == QtCore.Qt.Key.Key_Escape:
+            self.clear()
+            self.key_name = ""
+            return
+
+        # Use QKeySequence to get a friendly name for the key
+        # We use just the key (no modifiers) unless it's a combination.
+        # But here we want the user to be able to set just 'Ctrl', 'Alt', etc.
+        name = QtGui.QKeySequence(key).toString()
+        
+        # QKeySequence(Qt.Key_Control).toString() -> "Control"
+        # We might want to shorten it to "Ctrl" for UI consistency
+        if name == "Control": name = "Ctrl"
+        
+        if name:
+            self.setText(name)
+            self.key_name = name
+            self.clearFocus()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
 class CustomViewBox(pg.ViewBox):
     def __init__(self, ui_controller, *args, **kwds):
         super().__init__(*args, **kwds)
@@ -102,8 +139,11 @@ class CustomViewBox(pg.ViewBox):
             return
             
         if ev.button() == Qt.MouseButton.LeftButton:
-            is_ctrl = ev.modifiers() & Qt.KeyboardModifier.ControlModifier
-            if self.ui_controller.interaction_mode == 'ZOOM' or is_ctrl:
+            s = self.ui_controller.settings_mgr
+            zoom_key = s.get('keybinds/zoom_mode', 'Control')
+            is_zoom_mod = (zoom_key == "Control" and (ev.modifiers() & Qt.KeyboardModifier.ControlModifier))
+            
+            if self.ui_controller.interaction_mode == 'ZOOM' or is_zoom_mod:
                 # --- Rubberband Zoom Logic ---
                 if ev.isStart():
                     if self.zoom_rect: self.removeItem(self.zoom_rect)
@@ -130,7 +170,20 @@ class CustomViewBox(pg.ViewBox):
                         ndx, ndy = dx / (xr[1]-xr[0]), dy / (yr[1]-yr[0])
                         
                         path = pg.QtGui.QPainterPath()
-                        pen = pg.mkPen('#ffffff', width=2) # Contrast White
+                        theme = s.get("ui/theme", "Dark").lower()
+                        
+                        box_color = s.get(f"ui/{theme}/zoom_box_color")
+                        box_style_name = s.get(f"ui/{theme}/zoom_box_style")
+                        
+                        style_map = {
+                            "SolidLine": Qt.PenStyle.SolidLine,
+                            "DashLine": Qt.PenStyle.DashLine,
+                            "DotLine": Qt.PenStyle.DotLine,
+                            "DashDotLine": Qt.PenStyle.DashDotLine
+                        }
+                        box_style = style_map.get(str(box_style_name), Qt.PenStyle.DashLine)
+
+                        pen = pg.mkPen(box_color, width=2) # Standard for 1D zoom
                         if ndx < 0.15 * ndy:
                             self.zoom_type = 'Y_ONLY'
                             # Vertical line with horizontal ticks
@@ -155,8 +208,11 @@ class CustomViewBox(pg.ViewBox):
                             path.lineTo(x_max, p1.y() + tick)
                         else:
                             self.zoom_type = 'BOTH'
-                            pen = pg.mkPen('#ffffff', width=2, style=Qt.PenStyle.DashLine)
-                            self.zoom_rect.setBrush(pg.mkBrush(255, 255, 255, 40))
+                            pen = pg.mkPen(box_color, width=2, style=box_style)
+                            # Convert hex to RGBA for brush
+                            c = QtGui.QColor(box_color)
+                            c.setAlpha(40)
+                            self.zoom_rect.setBrush(QtGui.QBrush(c))
                             path.addRect(pg.QtCore.QRectF(p1, p2))
                         
                         self.zoom_rect.setPath(path)

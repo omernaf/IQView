@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QCheckBox, QPushButton,
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from .widgets import FormattedLineEdit, DoubleClickButton
+from .themes import get_palette
 
 class MarkerPanel(QFrame):
     interactionModeChanged = pyqtSignal(str) # 'TIME', 'FREQ', 'ZOOM'
@@ -17,43 +18,7 @@ class MarkerPanel(QFrame):
         self.setFixedHeight(115)
         self.header_font = QFont("Segoe UI", 9, QFont.Weight.Bold)
         self.mono_font = QFont("Consolas", 10)
-        
-        self.setStyleSheet("""
-            MarkerPanel { 
-                background-color: #252525; 
-                border-bottom: 2px solid #1a1a1a;
-            }
-            QPushButton#mode_btn {
-                background-color: #333;
-                border: 1px solid #444;
-                border-radius: 4px;
-                min-width: 34px;
-                min-height: 34px;
-                font-size: 16px;
-                padding: 0;
-            }
-            QPushButton#mode_btn:hover { background-color: #444; }
-            QPushButton#mode_btn:checked { 
-                background-color: #004488; 
-                border-color: #00aaff;
-                color: #00aaff;
-            }
-            QLineEdit {
-                background-color: #151515;
-                font-family: 'Consolas', 'Courier New';
-                font-size: 13px;
-                border: 1px solid #333;
-                border-radius: 3px;
-                padding: 2px 4px;
-            }
-            QLineEdit:focus { border-color: #00aaff; }
-            QLabel#header_label {
-                color: #888;
-                font-size: 10px;
-                text-transform: uppercase;
-                font-weight: bold;
-            }
-        """)
+        self.refresh_theme()
         
         self.main_layout = QHBoxLayout(self)
         self.main_layout.setContentsMargins(15, 8, 15, 8)
@@ -142,22 +107,14 @@ class MarkerPanel(QFrame):
         self.btn_lock_delta = QPushButton("Delta (Δ) 🔓")
         self.btn_lock_delta.setFont(self.header_font)
         self.btn_lock_delta.setCheckable(True)
-        self.btn_lock_delta.setStyleSheet("""
-            QPushButton { background: none; border: none; color: #888; padding: 0; text-transform: uppercase; font-size: 10px; }
-            QPushButton:hover { color: #FFF; }
-            QPushButton:checked { color: #00aaff; }
-        """)
+        # Style moved to refresh_theme
         self.grid.addWidget(self.btn_lock_delta, 0, 3)
 
         # Center Header (Combined with Lock)
         self.btn_lock_center = QPushButton("Center 🔓")
         self.btn_lock_center.setFont(self.header_font)
         self.btn_lock_center.setCheckable(True)
-        self.btn_lock_center.setStyleSheet("""
-            QPushButton { background: none; border: none; color: #888; padding: 0; text-transform: uppercase; font-size: 10px; }
-            QPushButton:hover { color: #FFF; }
-            QPushButton:checked { color: #00aaff; }
-        """)
+        # Style moved to refresh_theme
         self.grid.addWidget(self.btn_lock_center, 0, 4)
 
         # Side labels (Row names)
@@ -263,3 +220,54 @@ class MarkerPanel(QFrame):
         else:
             self.btn_lock_delta.setEnabled(False)
             self.btn_lock_center.setEnabled(False)
+
+    def refresh_theme(self):
+        theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
+        p = get_palette(theme)
+        
+        self.setStyleSheet(f"""
+            MarkerPanel {{ 
+                background-color: {p.bg_widget}; 
+                border-bottom: 2px solid {p.bg_main};
+            }}
+            QPushButton#mode_btn {{
+                background-color: {p.bg_sidebar};
+                border: 1px solid {p.border};
+                border-radius: 4px;
+                min-width: 34px;
+                min-height: 34px;
+                font-size: 16px;
+                padding: 0;
+            }}
+            QPushButton#mode_btn:hover {{ background-color: {p.border_light}; }}
+            QPushButton#mode_btn:checked {{ 
+                background-color: {p.accent_dim}; 
+                border-color: {p.accent};
+                color: {p.accent};
+            }}
+            QLineEdit {{
+                background-color: {p.bg_input};
+                font-family: 'Consolas', 'Courier New';
+                font-size: 13px;
+                border: 1px solid {p.border};
+                border-radius: 3px;
+                padding: 2px 4px;
+                color: {p.text_main};
+            }}
+            QLineEdit:focus {{ border-color: {p.accent}; }}
+            QLabel#header_label {{
+                color: {p.text_dim};
+                font-size: 10px;
+                text-transform: uppercase;
+                font-weight: bold;
+            }}
+        """)
+        
+        lock_style = f"""
+            QPushButton {{ background: none; border: none; color: {p.text_dim}; padding: 0; text-transform: uppercase; font-size: 10px; }}
+            QPushButton:hover {{ color: {p.text_header}; }}
+            QPushButton:checked {{ color: {p.accent}; }}
+        """
+        if hasattr(self, 'btn_lock_delta'):
+            self.btn_lock_delta.setStyleSheet(lock_style)
+            self.btn_lock_center.setStyleSheet(lock_style)
