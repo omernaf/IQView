@@ -1,5 +1,5 @@
 from PyQt6.QtCore import Qt, QRectF, pyqtSignal
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import QWidget, QGridLayout, QScrollBar, QSizePolicy
 from pyqtgraph.widgets.ColorMapMenu import ColorMapMenu
 from pyqtgraph.graphicsItems.GradientPresets import Gradients
