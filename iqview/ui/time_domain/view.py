@@ -495,7 +495,7 @@ class TimeDomainView(QWidget):
                 self.marker_panel.m_widgets[i]['v1'].blockSignals(True)
                 self.marker_panel.m_widgets[i]['v2'].blockSignals(True)
                 
-                prec1 = 9 if is_time else 6
+                prec1 = int(self.settings_mgr.get("ui/label_precision", 9)) if is_time else int(self.settings_mgr.get("ui/label_precision", 6))
                 self.marker_panel.m_widgets[i]['v1'].setText(f"{m_val:.{prec1}f}")
                 
                 if is_time:
@@ -508,7 +508,7 @@ class TimeDomainView(QWidget):
         # Update Delta/Center
         if len(sorted_m) == 2:
             v1, v2 = sorted_m[0].value(), sorted_m[1].value()
-            prec1 = 9 if is_time else 6
+            prec1 = int(self.settings_mgr.get("ui/label_precision", 9)) if is_time else int(self.settings_mgr.get("ui/label_precision", 6))
             
             self.marker_panel.delta_v1.blockSignals(True)
             self.marker_panel.center_v1.blockSignals(True)
@@ -634,6 +634,17 @@ class TimeDomainView(QWidget):
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
         p = get_palette(theme)
         self.plot_widget.setBackground(p.plot_bg)
-        self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
+        
+        from PyQt6.QtGui import QFont
+        font = QFont()
+        font.setPointSize(int(self.parent_window.settings_mgr.get("ui/axis_font_size", 10)))
+        
+        grid_enabled = bool(self.parent_window.settings_mgr.get("ui/grid_enabled", True))
+        grid_alpha = int(self.parent_window.settings_mgr.get("ui/grid_alpha", 30)) / 100.0
+        
+        self.plot_item.getAxis('left').setTickFont(font)
+        self.plot_item.getAxis('bottom').setTickFont(font)
+        self.plot_widget.showGrid(x=grid_enabled, y=grid_enabled, alpha=grid_alpha)
+        
         self.plot_item.getAxis('left').setPen(p.text_dim)
         self.plot_item.getAxis('bottom').setPen(p.text_dim)

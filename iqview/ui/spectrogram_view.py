@@ -350,10 +350,25 @@ class SpectrogramView(QWidget):
                 line.setHoverPen(pg.mkPen(p.accent, width=2))
             
             # Update spectrum plot grid and axes
+            from PyQt6.QtGui import QFont
+            font = QFont()
+            font.setPointSize(int(self.parent_window.settings_mgr.get("ui/axis_font_size", 10)))
+            
+            grid_enabled = bool(self.parent_window.settings_mgr.get("ui/grid_enabled", True))
+            grid_alpha = int(self.parent_window.settings_mgr.get("ui/grid_alpha", 30)) / 100.0
+            
+            self.spectrum_plot.getAxis('left').setTickFont(font)
+            self.spectrum_plot.getAxis('bottom').setTickFont(font)
+            self.spectrum_plot.showGrid(x=grid_enabled, y=grid_enabled, alpha=grid_alpha)
+            
             self.spectrum_plot.getAxis('left').setPen(p.text_dim)
             self.spectrum_plot.getAxis('bottom').setPen(p.text_dim)
             
             # Update main plot axes
+            self.plot_item.getAxis('left').setTickFont(font)
+            self.plot_item.getAxis('bottom').setTickFont(font)
+            self.plot_item.showGrid(x=grid_enabled, y=grid_enabled, alpha=grid_alpha)
+            
             self.plot_item.getAxis('left').setPen(p.text_dim)
             self.plot_item.getAxis('bottom').setPen(p.text_dim)
             

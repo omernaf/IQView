@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, 
                              QWidget, QLabel, QLineEdit, QComboBox, QPushButton, 
                              QFormLayout, QDialogButtonBox, QKeySequenceEdit, QCheckBox,
-                             QColorDialog)
+                             QColorDialog, QSlider, QSpinBox)
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QKeySequence, QIcon, QPixmap, QPainter, QLinearGradient, QColor
 from .widgets import KeyBindEdit
@@ -171,6 +171,41 @@ class SettingsDialog(QDialog):
         self._add_reset_row(self.appearance_form, "Reverse Colormap:", self.cmap_reverse_cb, "ui/colormap_reversed")
         
         self.appearance_form.addRow(QLabel(" "))
+        self.appearance_form.addRow(QLabel("<b>Grid Customization</b>"))
+        
+        self.grid_enabled_cb = QCheckBox("Enabled")
+        self.grid_color_btn = ColorButton("#c8c8ff")
+        self.grid_style_combo = QComboBox()
+        self.grid_style_combo.addItems(["SolidLine", "DashLine", "DotLine", "DashDotLine"])
+        
+        self.grid_alpha_slider = QSlider(Qt.Orientation.Horizontal)
+        self.grid_alpha_slider.setRange(0, 100)
+        self.grid_alpha_slider.setTickInterval(10)
+        self.grid_alpha_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.grid_alpha_label = QLabel("30%")
+        self.grid_alpha_slider.valueChanged.connect(lambda v: self.grid_alpha_label.setText(f"{v}%"))
+        
+        grid_alpha_layout = QHBoxLayout()
+        grid_alpha_layout.addWidget(self.grid_alpha_slider)
+        grid_alpha_layout.addWidget(self.grid_alpha_label)
+        
+        self.appearance_form.addRow("Grid Visibility:", self.grid_enabled_cb)
+        self._add_reset_row(self.appearance_form, "Grid Color:", self.grid_color_btn, lambda: f"ui/{self.theme_combo.currentText().lower()}/grid_color")
+        self._add_reset_row(self.appearance_form, "Grid Style:", self.grid_style_combo, lambda: f"ui/{self.theme_combo.currentText().lower()}/grid_style")
+        self.appearance_form.addRow("Grid Opacity:", grid_alpha_layout)
+
+        self.appearance_form.addRow(QLabel(" "))
+        self.appearance_form.addRow(QLabel("<b>Font & Scaling</b>"))
+        
+        self.axis_font_spin = QSpinBox()
+        self.axis_font_spin.setRange(6, 24)
+        self.precision_spin = QSpinBox()
+        self.precision_spin.setRange(0, 12)
+        
+        self._add_reset_row(self.appearance_form, "Axis Font Size:", self.axis_font_spin, "ui/axis_font_size")
+        self._add_reset_row(self.appearance_form, "Label Precision:", self.precision_spin, "ui/label_precision")
+
+        self.appearance_form.addRow(QLabel(" "))
         self.appearance_form.addRow(QLabel("<b>Marker & Zoom Customization</b>"))
         
         t_key = lambda: f"ui/{self.theme_combo.currentText().lower()}"
@@ -247,6 +282,16 @@ class SettingsDialog(QDialog):
             self.mgr.set(f"ui/{theme}/zoom_box_color", self.zoom_color_btn.color())
             self.mgr.set(f"ui/{theme}/zoom_box_style", self.zoom_style_combo.currentText())
 
+            # Grid Settings
+            self.mgr.set("ui/grid_enabled", self.grid_enabled_cb.isChecked())
+            self.mgr.set("ui/grid_alpha", self.grid_alpha_slider.value())
+            self.mgr.set(f"ui/{theme}/grid_color", self.grid_color_btn.color())
+            self.mgr.set(f"ui/{theme}/grid_style", self.grid_style_combo.currentText())
+            
+            # Font & Scaling
+            self.mgr.set("ui/axis_font_size", self.axis_font_spin.value())
+            self.mgr.set("ui/label_precision", self.precision_spin.value())
+
             self.mgr.set("keybinds/time_markers", self.time_key.text())
             self.mgr.set("keybinds/mag_markers", self.mag_key.text())
             self.mgr.set("keybinds/zoom_mode", self.zoom_key.text())
@@ -267,3 +312,15 @@ class SettingsDialog(QDialog):
         self.freq_style_combo.setCurrentText(str(self.mgr.get(f"ui/{theme}/freq_marker_style")))
         self.zoom_color_btn.setColor(str(self.mgr.get(f"ui/{theme}/zoom_box_color")))
         self.zoom_style_combo.setCurrentText(str(self.mgr.get(f"ui/{theme}/zoom_box_style")))
+        
+        self.grid_color_btn.setColor(str(self.mgr.get(f"ui/{theme}/grid_color")))
+        self.grid_style_combo.setCurrentText(str(self.mgr.get(f"ui/{theme}/grid_style")))
+        
+        # Load non-theme specific but related to appearance
+        self.grid_enabled_cb.setChecked(bool(self.mgr.get("ui/grid_enabled", True)))
+        alpha = int(self.mgr.get("ui/grid_alpha", 30))
+        self.grid_alpha_slider.setValue(alpha)
+        self.grid_alpha_label.setText(f"{alpha}%")
+        
+        self.axis_font_spin.setValue(int(self.mgr.get("ui/axis_font_size", 10)))
+        self.precision_spin.setValue(int(self.mgr.get("ui/label_precision", 6)))

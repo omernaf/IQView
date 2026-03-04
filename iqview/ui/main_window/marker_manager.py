@@ -161,13 +161,11 @@ class MarkerManagerMixin:
                 rbw = self.rate / self.fft_size
                 bin_idx = int(round((val - (self.fc - self.rate/2)) / rbw)) + 1
                 bin_idx = max(1, min(bin_idx, self.fft_size))
-                self.marker_panel.widgets[i]['sec'].setText(f"{val:.6f}")
-                self.marker_panel.widgets[i]['sam'].setText(f"{bin_idx}")
-            else:
                 sample = int(round(val * self.rate)) + 1
                 sample = max(1, min(sample, getattr(self, 'total_samples_in_cache', 1e9)))
-                self.marker_panel.widgets[i]['sec'].setText(f"{val:.9f}")
-                self.marker_panel.widgets[i]['sam'].setText(f"{sample}")
+                prec = int(self.settings_mgr.get("ui/label_precision", 6)) if is_freq else int(self.settings_mgr.get("ui/label_precision", 9))
+                self.marker_panel.widgets[i]['sec'].setText(f"{val:.{prec}f}")
+                self.marker_panel.widgets[i]['sam'].setText(f"{bin_idx if is_freq else sample}")
             self.marker_panel.widgets[i]['sec'].blockSignals(False)
             self.marker_panel.widgets[i]['sam'].blockSignals(False)
 
@@ -188,22 +186,10 @@ class MarkerManagerMixin:
                 cp = (p1 + p2) / 2
                 cs = int(round((cp - f_min) / rbw)) + 1
                 cs = max(1, min(cs, self.fft_size))
-                self.marker_panel.delta_sec.setText(f"{abs(p2 - p1):.6f}")
+                prec = int(self.settings_mgr.get("ui/label_precision", 6)) if is_freq else int(self.settings_mgr.get("ui/label_precision", 9))
+                self.marker_panel.delta_sec.setText(f"{abs(p2 - p1):.{prec}f}")
                 self.marker_panel.delta_sam.setText(f"{ds}")
-                self.marker_panel.center_sec.setText(f"{cp:.6f}")
-                self.marker_panel.center_sam.setText(f"{cs}")
-            else:
-                s1 = int(round(p1 * self.rate)) + 1
-                s2 = int(round(p2 * self.rate)) + 1
-                max_s = getattr(self, 'total_samples_in_cache', 1e9)
-                s1, s2 = np.clip([s1, s2], 1, max_s)
-                ds = abs(s2 - s1) + 1
-                cp = (p1 + p2) / 2
-                cs = int(round(cp * self.rate)) + 1
-                cs = max(1, min(cs, max_s))
-                self.marker_panel.delta_sec.setText(f"{abs(p2 - p1):.9f}")
-                self.marker_panel.delta_sam.setText(f"{ds}")
-                self.marker_panel.center_sec.setText(f"{cp:.9f}")
+                self.marker_panel.center_sec.setText(f"{cp:.{prec}f}")
                 self.marker_panel.center_sam.setText(f"{cs}")
 
             self.marker_panel.delta_sec.blockSignals(False)
