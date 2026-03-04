@@ -1,11 +1,13 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, 
                              QWidget, QLabel, QLineEdit, QComboBox, QPushButton, 
                              QFormLayout, QDialogButtonBox, QKeySequenceEdit)
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence
 from .widgets import KeyBindEdit
 
 class SettingsDialog(QDialog):
+    settingsApplied = pyqtSignal()
+
     def __init__(self, settings_manager, parent=None):
         super().__init__(parent)
         self.mgr = settings_manager
@@ -105,12 +107,26 @@ class SettingsDialog(QDialog):
         self.tabs.addTab(self.keyboard_tab, "Keyboard")
 
         # --- Buttons ---
-        self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        self.button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | 
+            QDialogButtonBox.StandardButton.Apply | 
+            QDialogButtonBox.StandardButton.Cancel
+        )
         self.button_box.accepted.connect(self.save_and_close)
+        self.button_box.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(self.apply_settings)
         self.button_box.rejected.connect(self.reject)
         self.layout.addWidget(self.button_box)
 
+    def apply_settings(self):
+        if self.save_settings():
+            self.settingsApplied.emit()
+
     def save_and_close(self):
+        if self.save_settings():
+            self.settingsApplied.emit()
+            self.accept()
+
+    def save_settings(self):
         try:
             self.mgr.set("core/fc", float(self.fc_edit.text()))
             self.mgr.set("core/type", self.type_combo.currentText())
@@ -122,8 +138,8 @@ class SettingsDialog(QDialog):
             self.mgr.set("keybinds/time_markers", self.time_key.text())
             self.mgr.set("keybinds/mag_markers", self.mag_key.text())
             self.mgr.set("keybinds/zoom_mode", self.zoom_key.text())
-            
-            self.accept()
+            return True
         except ValueError as e:
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Invalid Value", f"Please check your inputs.\nError: {str(e)}")
+            return False
