@@ -46,6 +46,10 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         self.last_move_scene_pos = None
         self.active_drag_marker = None
         
+        # Filter State
+        self.filter_enabled = False
+        self.filter_region = None # LinearRegionItem added in setup_ui or on demand
+        
         self.setup_ui()
         self.start_processing()
 

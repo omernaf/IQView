@@ -8,7 +8,16 @@ class DataHandlerMixin:
             self.worker.stop()
         self.progress_bar.setValue(0)
         self.progress_bar.setStyleSheet("QProgressBar { background-color: transparent; border: none; } QProgressBar::chunk { background-color: #00aaff; }")
-        self.worker = FileReaderThread(self.file_path, self.data_type, self.fft_size, self.overlap_percent, self.rate, self.profile_enabled, self.window_type)
+        f_min, f_max = None, None
+        if self.filter_region:
+            v_low, v_high = self.filter_region.getRegion()
+            f_min, f_max = min(v_low, v_high), max(v_low, v_high)
+
+        self.worker = FileReaderThread(
+            self.file_path, self.data_type, self.fft_size, self.overlap_percent, self.rate, 
+            self.profile_enabled, self.window_type,
+            filter_enabled=self.filter_enabled, f_min=f_min, f_max=f_max
+        )
         self.worker.progress.connect(self.update_progress)
         self.worker.finished_processing.connect(self.display_spectrogram)
         self.worker.start()
@@ -56,6 +65,14 @@ class DataHandlerMixin:
                 raw_data = np.fromfile(f, dtype=self.data_type, count=num_samples * 2)
                 
             complex_data = raw_data[0::2].astype(np.float32) + 1j * raw_data[1::2].astype(np.float32)
+            
+            # Apply Filter if enabled
+            if hasattr(self, 'filter_enabled') and self.filter_enabled and self.filter_region:
+                from iqview.dsp import apply_bpf
+                v_low, v_high = self.filter_region.getRegion()
+                f_min, f_max = min(v_low, v_high), max(v_low, v_high)
+                complex_data = apply_bpf(complex_data, self.rate, f_min, f_max)
+                
             return complex_data
         except Exception as e:
             print(f"Error extracting IQ segment: {e}")

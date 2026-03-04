@@ -50,6 +50,40 @@ class ViewControllerMixin:
         self.refresh_cursor()
         self.marker_panel.update_headers(mode)
         self.update_marker_info()
+        
+        # Handle Filter Region Visibility
+        if mode == 'FILTER':
+            if self.filter_region is None:
+                # Create region if it doesn't exist
+                f_min, f_max = self.fc - self.rate/4, self.fc + self.rate/4
+                self.filter_region = pg.LinearRegionItem(
+                    values=[f_min, f_max], 
+                    orientation='horizontal',
+                    brush=pg.mkBrush(255, 100, 0, 40),
+                    pen=pg.mkPen('#ff6400', width=2)
+                )
+                self.spectrogram_view.plot_item.addItem(self.filter_region)
+                self.filter_region.sigRegionChanged.connect(self.on_filter_region_changed)
+            self.filter_region.show()
+        else:
+            if self.filter_region and not self.filter_enabled:
+                self.filter_region.hide()
+
+    def on_filter_toggled(self, checked):
+        self.filter_enabled = checked
+        if self.filter_region:
+            if checked:
+                self.filter_region.show()
+            elif self.interaction_mode != 'FILTER':
+                self.filter_region.hide()
+        
+        # Trigger reprocessing if we have data
+        if hasattr(self, 'full_spectrogram_cache'):
+            self.start_processing()
+
+    def on_filter_region_changed(self):
+        # We could update something here, but usually we just read the values when start_processing is called
+        pass
 
     def refresh_cursor(self):
         if hasattr(self, 'zoom_mode') and self.zoom_mode:

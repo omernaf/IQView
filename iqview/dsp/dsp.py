@@ -24,5 +24,35 @@ def postprocess_fft(fft_result, fft_size):
     epsilon = np.float32(1e-10)
     mag = np.maximum(mag, epsilon)
     
-    # Convert to dB
+# Convert to dB
     return 20.0 * np.log10(mag)
+
+def apply_bpf(data, fs, f_min, f_max, numtaps=65):
+    """
+    Applies a Band-Pass FIR filter to complex IQ data using NumPy.
+    Normalized frequencies are relative to fs.
+    """
+    if f_min >= f_max:
+        return data
+        
+    # Normalized frequencies (0 to 1.0, where 1.0 is fs)
+    # But for sinc design, we need normalization relative to Nyquist (0.5 fs)
+    nyquist = fs / 2.0
+    w_low = f_min / nyquist
+    w_high = f_max / nyquist
+    
+    # Design FIR impulse response using sinc functions
+    n = np.arange(numtaps) - (numtaps - 1) / 2.0
+    
+    # Ideal BPF is the difference of two Low-Pass filters
+    h = (w_high * np.sinc(w_high * n)) - (w_low * np.sinc(w_low * n))
+    
+    # Apply Hamming window to reduce sidelobes
+    h *= np.hamming(numtaps)
+    
+    # Normalize gain at center frequency (approximate)
+    h /= np.sum(h.real) if np.sum(h.real) != 0 else 1.0
+    
+    # Apply filter using convolution
+    # mode='same' keeps the output length identical to input
+    return np.convolve(data, h, mode='same')
