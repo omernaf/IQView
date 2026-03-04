@@ -1,9 +1,37 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, 
                              QWidget, QLabel, QLineEdit, QComboBox, QPushButton, 
-                             QFormLayout, QDialogButtonBox, QKeySequenceEdit, QCheckBox)
-from PyQt6.QtCore import Qt, pyqtSignal
+                             QFormLayout, QDialogButtonBox, QKeySequenceEdit, QCheckBox,
+                             QColorDialog)
+from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QKeySequence, QIcon, QPixmap, QPainter, QLinearGradient, QColor
 from .widgets import KeyBindEdit
+
+class ColorButton(QPushButton):
+    colorChanged = pyqtSignal(str)
+
+    def __init__(self, color, parent=None):
+        super().__init__(parent)
+        self._color = color
+        self.setFixedSize(QSize(40, 24))
+        self.clicked.connect(self._on_clicked)
+        self._update_style()
+
+    def _update_style(self):
+        self.setStyleSheet(f"background-color: {self._color}; border: 1px solid #888; border-radius: 4px;")
+
+    def color(self):
+        return self._color
+
+    def setColor(self, color):
+        self._color = color
+        self._update_style()
+
+    def _on_clicked(self):
+        new_color = QColorDialog.getColor(QColor(self._color), self)
+        if new_color.isValid():
+            self._color = new_color.name()
+            self._update_style()
+            self.colorChanged.emit(self._color)
 
 class SettingsDialog(QDialog):
     settingsApplied = pyqtSignal()
@@ -37,8 +65,8 @@ class SettingsDialog(QDialog):
         painter.end()
         return QIcon(pixmap)
 
-    def _add_reset_row(self, form, label, widget, key):
-        """Helper to add a row with a reset button."""
+    def _add_reset_row(self, form, label, widget, key_or_func):
+        """Helper to add a row with a reset button. key_or_func can be a string or a callable."""
         row_layout = QHBoxLayout()
         row_layout.addWidget(widget)
         
@@ -48,6 +76,7 @@ class SettingsDialog(QDialog):
         reset_btn.setStyleSheet("padding: 2px; font-size: 14px;")
         
         def reset_clicked():
+            key = key_or_func() if callable(key_or_func) else key_or_func
             default_val = self.mgr.get_default(key)
             if isinstance(widget, QLineEdit):
                 widget.setText(str(default_val))
@@ -57,6 +86,10 @@ class SettingsDialog(QDialog):
                 widget.setText(str(default_val))
             elif isinstance(widget, QKeySequenceEdit):
                 widget.setKeySequence(QKeySequence(str(default_val)))
+            elif isinstance(widget, QCheckBox):
+                widget.setChecked(bool(default_val))
+            elif isinstance(widget, ColorButton):
+                widget.setColor(str(default_val))
         
         reset_btn.clicked.connect(reset_clicked)
         row_layout.addWidget(reset_btn)
@@ -103,6 +136,7 @@ class SettingsDialog(QDialog):
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["Dark", "Light"])
         self.theme_combo.setCurrentText(str(self.mgr.get("ui/theme")))
+        self.theme_combo.currentTextChanged.connect(self._on_theme_changed)
         
         self.cmap_combo = QComboBox()
         cmaps = ['thermal', 'flame', 'yellowy', 'bipolar', 'spectrum', 'cyclic', 'greyclip', 'grey', 'viridis', 'inferno', 'plasma', 'magma', 'turbo']
@@ -110,13 +144,48 @@ class SettingsDialog(QDialog):
             icon = self._make_colormap_icon(name)
             self.cmap_combo.addItem(icon, name)
         self.cmap_combo.setCurrentText(str(self.mgr.get("ui/colormap", "turbo")))
-
+        
         self.cmap_reverse_cb = QCheckBox("Reverse")
         self.cmap_reverse_cb.setChecked(bool(self.mgr.get("ui/colormap_reversed", False)))
 
+        # Marker and Zoom Box Styles
+        self.marker_styles = ["SolidLine", "DashLine", "DotLine", "DashDotLine"]
+        
+        # Time Markers
+        self.time_color_btn = ColorButton("#000000")
+        self.time_style_combo = QComboBox()
+        self.time_style_combo.addItems(self.marker_styles)
+        
+        # Freq Markers
+        self.freq_color_btn = ColorButton("#000000")
+        self.freq_style_combo = QComboBox()
+        self.freq_style_combo.addItems(self.marker_styles)
+        
+        # Zoom Box
+        self.zoom_color_btn = ColorButton("#000000")
+        self.zoom_style_combo = QComboBox()
+        self.zoom_style_combo.addItems(self.marker_styles)
+
         self._add_reset_row(self.appearance_form, "Theme:", self.theme_combo, "ui/theme")
         self._add_reset_row(self.appearance_form, "Default Colormap:", self.cmap_combo, "ui/colormap")
-        self.appearance_form.addRow("Reverse Colormap:", self.cmap_reverse_cb)
+        self._add_reset_row(self.appearance_form, "Reverse Colormap:", self.cmap_reverse_cb, "ui/colormap_reversed")
+        
+        self.appearance_form.addRow(QLabel(" "))
+        self.appearance_form.addRow(QLabel("<b>Marker & Zoom Customization</b>"))
+        
+        t_key = lambda: f"ui/{self.theme_combo.currentText().lower()}"
+        self._add_reset_row(self.appearance_form, "Time Marker Color:", self.time_color_btn, lambda: f"{t_key()}/time_marker_color")
+        self._add_reset_row(self.appearance_form, "Time Marker Style:", self.time_style_combo, lambda: f"{t_key()}/time_marker_style")
+        
+        self._add_reset_row(self.appearance_form, "Freq Marker Color:", self.freq_color_btn, lambda: f"{t_key()}/freq_marker_color")
+        self._add_reset_row(self.appearance_form, "Freq Marker Style:", self.freq_style_combo, lambda: f"{t_key()}/freq_marker_style")
+        
+        self._add_reset_row(self.appearance_form, "Zoom Box Color:", self.zoom_color_btn, lambda: f"{t_key()}/zoom_box_color")
+        self._add_reset_row(self.appearance_form, "Zoom Box Style:", self.zoom_style_combo, lambda: f"{t_key()}/zoom_box_style")
+
+        # Initial load based on current theme
+        self._load_theme_specific_settings(self.theme_combo.currentText())
+        
         self.tabs.addTab(self.appearance_tab, "Appearance")
 
         # --- Keyboard Tab ---
@@ -169,6 +238,15 @@ class SettingsDialog(QDialog):
             self.mgr.set("ui/colormap", self.cmap_combo.currentText())
             self.mgr.set("ui/colormap_reversed", self.cmap_reverse_cb.isChecked())
             
+            # Save theme-specific styles for the CURRENTLY SELECTED theme in the dialog
+            theme = self.theme_combo.currentText().lower()
+            self.mgr.set(f"ui/{theme}/time_marker_color", self.time_color_btn.color())
+            self.mgr.set(f"ui/{theme}/time_marker_style", self.time_style_combo.currentText())
+            self.mgr.set(f"ui/{theme}/freq_marker_color", self.freq_color_btn.color())
+            self.mgr.set(f"ui/{theme}/freq_marker_style", self.freq_style_combo.currentText())
+            self.mgr.set(f"ui/{theme}/zoom_box_color", self.zoom_color_btn.color())
+            self.mgr.set(f"ui/{theme}/zoom_box_style", self.zoom_style_combo.currentText())
+
             self.mgr.set("keybinds/time_markers", self.time_key.text())
             self.mgr.set("keybinds/mag_markers", self.mag_key.text())
             self.mgr.set("keybinds/zoom_mode", self.zoom_key.text())
@@ -177,3 +255,15 @@ class SettingsDialog(QDialog):
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Invalid Value", f"Please check your inputs.\nError: {str(e)}")
             return False
+
+    def _on_theme_changed(self, theme_text):
+        self._load_theme_specific_settings(theme_text)
+
+    def _load_theme_specific_settings(self, theme_text):
+        theme = theme_text.lower()
+        self.time_color_btn.setColor(str(self.mgr.get(f"ui/{theme}/time_marker_color")))
+        self.time_style_combo.setCurrentText(str(self.mgr.get(f"ui/{theme}/time_marker_style")))
+        self.freq_color_btn.setColor(str(self.mgr.get(f"ui/{theme}/freq_marker_color")))
+        self.freq_style_combo.setCurrentText(str(self.mgr.get(f"ui/{theme}/freq_marker_style")))
+        self.zoom_color_btn.setColor(str(self.mgr.get(f"ui/{theme}/zoom_box_color")))
+        self.zoom_style_combo.setCurrentText(str(self.mgr.get(f"ui/{theme}/zoom_box_style")))

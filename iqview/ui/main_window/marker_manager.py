@@ -77,10 +77,19 @@ class MarkerManagerMixin:
                         old_marker = active_markers.pop(0)
                         self.spectrogram_view.plot_item.removeItem(old_marker)
                     
-                    theme = self.settings_mgr.get("ui/theme", "Dark")
-                    p = get_palette(theme)
-                    color = p.marker_time if is_time else p.marker_mag
-                    marker = pg.InfiniteLine(pos=val, angle=angle, movable=False, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine))
+                    theme = self.settings_mgr.get("ui/theme", "Dark").lower()
+                    color = self.settings_mgr.get(f"ui/{theme}/time_marker_color") if is_time else self.settings_mgr.get(f"ui/{theme}/freq_marker_color")
+                    style_name = self.settings_mgr.get(f"ui/{theme}/time_marker_style") if is_time else self.settings_mgr.get(f"ui/{theme}/freq_marker_style")
+                    
+                    style_map = {
+                        "SolidLine": Qt.PenStyle.SolidLine,
+                        "DashLine": Qt.PenStyle.DashLine,
+                        "DotLine": Qt.PenStyle.DotLine,
+                        "DashDotLine": Qt.PenStyle.DashDotLine
+                    }
+                    style = style_map.get(str(style_name), Qt.PenStyle.DashLine)
+                    
+                    marker = pg.InfiniteLine(pos=val, angle=angle, movable=False, pen=pg.mkPen(color, width=2, style=style))
                     marker.setZValue(10)
                     self.spectrogram_view.plot_item.addItem(marker, ignoreBounds=True)
                     active_markers.append(marker)
@@ -285,10 +294,22 @@ class MarkerManagerMixin:
         self.update_marker_info()
 
     def refresh_spectrogram_markers(self):
-        theme = self.settings_mgr.get("ui/theme", "Dark")
-        p = get_palette(theme)
+        theme = self.settings_mgr.get("ui/theme", "Dark").lower()
+        
+        style_map = {
+            "SolidLine": Qt.PenStyle.SolidLine,
+            "DashLine": Qt.PenStyle.DashLine,
+            "DotLine": Qt.PenStyle.DotLine,
+            "DashDotLine": Qt.PenStyle.DashDotLine
+        }
+
+        t_color = self.settings_mgr.get(f"ui/{theme}/time_marker_color")
+        t_style = style_map.get(str(self.settings_mgr.get(f"ui/{theme}/time_marker_style")), Qt.PenStyle.DashLine)
+        
+        f_color = self.settings_mgr.get(f"ui/{theme}/freq_marker_color")
+        f_style = style_map.get(str(self.settings_mgr.get(f"ui/{theme}/freq_marker_style")), Qt.PenStyle.DashLine)
         
         for m in self.markers_time:
-            m.setPen(pg.mkPen(p.marker_time, width=2, style=Qt.PenStyle.DashLine))
+            m.setPen(pg.mkPen(t_color, width=2, style=t_style))
         for m in self.markers_freq:
-            m.setPen(pg.mkPen(p.marker_mag, width=2, style=Qt.PenStyle.DashLine))
+            m.setPen(pg.mkPen(f_color, width=2, style=f_style))

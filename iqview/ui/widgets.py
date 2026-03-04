@@ -170,9 +170,20 @@ class CustomViewBox(pg.ViewBox):
                         ndx, ndy = dx / (xr[1]-xr[0]), dy / (yr[1]-yr[0])
                         
                         path = pg.QtGui.QPainterPath()
-                        theme = s.get("ui/theme", "Dark")
-                        p = get_palette(theme)
-                        pen = pg.mkPen(p.text_header, width=2) # Contrast Header Color
+                        theme = s.get("ui/theme", "Dark").lower()
+                        
+                        box_color = s.get(f"ui/{theme}/zoom_box_color")
+                        box_style_name = s.get(f"ui/{theme}/zoom_box_style")
+                        
+                        style_map = {
+                            "SolidLine": Qt.PenStyle.SolidLine,
+                            "DashLine": Qt.PenStyle.DashLine,
+                            "DotLine": Qt.PenStyle.DotLine,
+                            "DashDotLine": Qt.PenStyle.DashDotLine
+                        }
+                        box_style = style_map.get(str(box_style_name), Qt.PenStyle.DashLine)
+
+                        pen = pg.mkPen(box_color, width=2) # Standard for 1D zoom
                         if ndx < 0.15 * ndy:
                             self.zoom_type = 'Y_ONLY'
                             # Vertical line with horizontal ticks
@@ -197,9 +208,9 @@ class CustomViewBox(pg.ViewBox):
                             path.lineTo(x_max, p1.y() + tick)
                         else:
                             self.zoom_type = 'BOTH'
-                            pen = pg.mkPen(p.text_header, width=2, style=Qt.PenStyle.DashLine)
+                            pen = pg.mkPen(box_color, width=2, style=box_style)
                             # Convert hex to RGBA for brush
-                            c = QtGui.QColor(p.text_header)
+                            c = QtGui.QColor(box_color)
                             c.setAlpha(40)
                             self.zoom_rect.setBrush(QtGui.QBrush(c))
                             path.addRect(pg.QtCore.QRectF(p1, p2))

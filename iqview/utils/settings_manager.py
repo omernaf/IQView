@@ -13,6 +13,23 @@ class SettingsManager:
         "ui/theme": "Light",
         "ui/colormap": "turbo",
         "ui/colormap_reversed": False,
+        
+        # Dark Theme Styles
+        "ui/dark/time_marker_color": "#00ff00",
+        "ui/dark/time_marker_style": "DashLine",
+        "ui/dark/freq_marker_color": "#ffaa00",
+        "ui/dark/freq_marker_style": "DashLine",
+        "ui/dark/zoom_box_color": "#ffffff",
+        "ui/dark/zoom_box_style": "DashLine",
+
+        # Light Theme Styles
+        "ui/light/time_marker_color": "#008800",
+        "ui/light/time_marker_style": "DashLine",
+        "ui/light/freq_marker_color": "#cc6600",
+        "ui/light/freq_marker_style": "DashLine",
+        "ui/light/zoom_box_color": "#000000",
+        "ui/light/zoom_box_style": "DashLine",
+
         "keybinds/time_markers": "T",
         "keybinds/mag_markers": "F",
         "keybinds/zoom_mode": "Ctrl"

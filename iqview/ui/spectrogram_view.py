@@ -138,7 +138,14 @@ class SpectrogramView(QWidget):
     def apply_colormap(self, cmap_name, reversed_mode):
         """Apply a named colormap to the gradient editor and image."""
         self._cmap_reversed = reversed_mode
-        self.gradient.loadPreset(cmap_name)
+        if not cmap_name:
+            cmap_name = "turbo"
+            
+        try:
+            self.gradient.loadPreset(cmap_name)
+        except Exception:
+            self.gradient.loadPreset("turbo")
+            
         self._current_cmap = self.gradient.colorMap()
         
         display_cmap = copy.deepcopy(self._current_cmap)
