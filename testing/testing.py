@@ -58,9 +58,9 @@ def main():
         subprocess.run([sys.executable, prof_script])
         return
 
-    if args.generate or not os.path.exists(filename):
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        generate_test_file(filename, sample_rate, duration)
+    # if args.generate or not os.path.exists(filename):
+    #     os.makedirs(os.path.dirname(filename), exist_ok=True)
+    #     generate_test_file(filename, sample_rate, duration)
     
     print("Launching IQView Spectrogram Viewer...")
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

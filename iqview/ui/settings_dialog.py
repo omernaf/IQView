@@ -1,8 +1,8 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, 
                              QWidget, QLabel, QLineEdit, QComboBox, QPushButton, 
-                             QFormLayout, QDialogButtonBox, QKeySequenceEdit)
+                             QFormLayout, QDialogButtonBox, QKeySequenceEdit, QCheckBox)
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QKeySequence
+from PyQt6.QtGui import QKeySequence, QIcon, QPixmap, QPainter, QLinearGradient, QColor
 from .widgets import KeyBindEdit
 
 class SettingsDialog(QDialog):
@@ -15,7 +15,27 @@ class SettingsDialog(QDialog):
         self.resize(500, 400)
         self.setup_ui()
 
-        self.layout.addWidget(self.tabs)
+    def _make_colormap_icon(self, cmap_name):
+        from pyqtgraph.graphicsItems.GradientPresets import Gradients
+        if cmap_name not in Gradients:
+            return QIcon()
+        
+        pixmap = QPixmap(64, 16)
+        pixmap.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(pixmap)
+        
+        gradient = QLinearGradient(0, 0, 64, 0)
+        preset = Gradients[cmap_name]
+        for pos, color in preset['ticks']:
+            if isinstance(color, tuple):
+                qcolor = QColor(*color)
+            else:
+                qcolor = QColor(color)
+            gradient.setColorAt(pos, qcolor)
+            
+        painter.fillRect(pixmap.rect(), gradient)
+        painter.end()
+        return QIcon(pixmap)
 
     def _add_reset_row(self, form, label, widget, key):
         """Helper to add a row with a reset button."""
@@ -84,7 +104,19 @@ class SettingsDialog(QDialog):
         self.theme_combo.addItems(["Dark", "Light"])
         self.theme_combo.setCurrentText(str(self.mgr.get("ui/theme")))
         
+        self.cmap_combo = QComboBox()
+        cmaps = ['thermal', 'flame', 'yellowy', 'bipolar', 'spectrum', 'cyclic', 'greyclip', 'grey', 'viridis', 'inferno', 'plasma', 'magma', 'turbo']
+        for name in cmaps:
+            icon = self._make_colormap_icon(name)
+            self.cmap_combo.addItem(icon, name)
+        self.cmap_combo.setCurrentText(str(self.mgr.get("ui/colormap", "turbo")))
+
+        self.cmap_reverse_cb = QCheckBox("Reverse")
+        self.cmap_reverse_cb.setChecked(bool(self.mgr.get("ui/colormap_reversed", False)))
+
         self._add_reset_row(self.appearance_form, "Theme:", self.theme_combo, "ui/theme")
+        self._add_reset_row(self.appearance_form, "Default Colormap:", self.cmap_combo, "ui/colormap")
+        self.appearance_form.addRow("Reverse Colormap:", self.cmap_reverse_cb)
         self.tabs.addTab(self.appearance_tab, "Appearance")
 
         # --- Keyboard Tab ---
@@ -134,6 +166,8 @@ class SettingsDialog(QDialog):
             self.mgr.set("core/overlap", float(self.overlap_edit.text()))
             self.mgr.set("core/window_type", self.window_combo.currentText())
             self.mgr.set("ui/theme", self.theme_combo.currentText())
+            self.mgr.set("ui/colormap", self.cmap_combo.currentText())
+            self.mgr.set("ui/colormap_reversed", self.cmap_reverse_cb.isChecked())
             
             self.mgr.set("keybinds/time_markers", self.time_key.text())
             self.mgr.set("keybinds/mag_markers", self.mag_key.text())

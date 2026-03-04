@@ -11,6 +11,8 @@ class SettingsManager:
         "core/window_type": "Hamming",
         "core/type": "complex64",
         "ui/theme": "Light",
+        "ui/colormap": "turbo",
+        "ui/colormap_reversed": False,
         "keybinds/time_markers": "T",
         "keybinds/mag_markers": "F",
         "keybinds/zoom_mode": "Ctrl"
@@ -32,7 +34,11 @@ class SettingsManager:
         return self.DEFAULT_SETTINGS.get(key)
 
     def get(self, key, default=None):
-        return self.settings.value(key, default)
+        val = self.settings.value(key, default)
+        if isinstance(val, str):
+            if val.lower() == "true": return True
+            if val.lower() == "false": return False
+        return val
 
     def set(self, key, value):
         self.settings.setValue(key, value)

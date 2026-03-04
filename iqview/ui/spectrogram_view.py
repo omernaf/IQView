@@ -105,9 +105,10 @@ class SpectrogramView(QWidget):
         self.plot_item.addItem(self.img)
         
         # Initialize Colormap
-        self.gradient.loadPreset('turbo')
-        self._current_cmap = self.gradient.colorMap()
-        self._cmap_reversed = False
+        self.apply_colormap(
+            self.parent_window.settings_mgr.get("ui/colormap", "turbo"),
+            bool(self.parent_window.settings_mgr.get("ui/colormap_reversed", False))
+        )
         
         # Connections
         self.level_region.sigRegionChanged.connect(self.on_levels_changed)
@@ -133,6 +134,18 @@ class SpectrogramView(QWidget):
     def on_gradient_changed(self):
         # Simply apply the current state of the gradient editor to the image
         self.img.setColorMap(self.gradient.colorMap())
+
+    def apply_colormap(self, cmap_name, reversed_mode):
+        """Apply a named colormap to the gradient editor and image."""
+        self._cmap_reversed = reversed_mode
+        self.gradient.loadPreset(cmap_name)
+        self._current_cmap = self.gradient.colorMap()
+        
+        display_cmap = copy.deepcopy(self._current_cmap)
+        if self._cmap_reversed:
+            display_cmap.reverse()
+        self.gradient.setColorMap(display_cmap)
+        self.img.setColorMap(display_cmap)
 
     def custom_gradient_menu(self, ev):
         if ev.button() != Qt.MouseButton.RightButton:
@@ -312,6 +325,12 @@ class SpectrogramView(QWidget):
         self.setStyleSheet(f"background-color: {p.bg_main};")
         self.glw_plot.setBackground(p.plot_bg)
         self.glw_hist.setBackground(p.plot_bg)
+        
+        # Update colormap from settings
+        self.apply_colormap(
+            self.parent_window.settings_mgr.get("ui/colormap", "turbo"),
+            bool(self.parent_window.settings_mgr.get("ui/colormap_reversed", False))
+        )
         
         # Update spectrum plot lines
         if hasattr(self, 'min_env_curve'):
