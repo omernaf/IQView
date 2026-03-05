@@ -46,6 +46,15 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         self.last_move_scene_pos = None
         self.active_drag_marker = None
         
+        # Filter State
+        self.filter_enabled = False
+        self.filter_region = None # LinearRegionItem added in setup_ui or on demand
+        self.filter_placed = False
+        self.filter_placing = False
+        self.filter_bounds = [] # [f1, f2] sorted
+        self.filter_marker_order = [] # [v1, v2] in placement order
+        self.filter_line = None # pg.InfiniteLine for the first bound
+        
         self.setup_ui()
         self.start_processing()
 
@@ -65,6 +74,12 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
                 widget = self.tabs.widget(i)
                 if hasattr(widget, 'refresh_theme'):
                     widget.refresh_theme()
+
+    def on_settings_applied(self):
+        """Handle settings changes: refresh theme and re-process if filter is active."""
+        self.apply_current_theme()
+        if self.filter_enabled:
+            self.start_processing()
 
     def eventFilter(self, obj, event):
         """Handle middle-click and right-click on the tab bar."""

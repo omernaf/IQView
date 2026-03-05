@@ -1,17 +1,19 @@
 import os
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
-from .dsp import preprocess_chunk, postprocess_fft
+from .dsp import preprocess_chunk, postprocess_fft, apply_bpf
 
 class FileReaderThread(QThread):
     """
     Worker thread that reads the entire IQ file, processes it via DSP module, and emits the static spectrogram.
-    Now supports overlapping windows.
+    Now supports overlapping windows and Band-Pass filtering.
     """
     progress = pyqtSignal(int, int)
     finished_processing = pyqtSignal(np.ndarray, float)
     
-    def __init__(self, filename, dtype, fft_size, overlap_percent, sample_rate, profile_enabled=False, window_type="Hanning"):
+    def __init__(self, filename, dtype, fft_size, overlap_percent, sample_rate, 
+                 profile_enabled=False, window_type="Hanning",
+                 filter_enabled=False, f_min=None, f_max=None, **kwargs):
         super().__init__()
         self.filename = filename
         self.dtype = dtype
@@ -19,6 +21,16 @@ class FileReaderThread(QThread):
         self.sample_rate = sample_rate
         self.profile_enabled = profile_enabled
         self.running = True
+        
+        # Filter settings
+        self.filter_enabled = filter_enabled
+        self.f_min = f_min
+        self.f_max = f_max
+        self.filter_type = kwargs.get('filter_type', 'Elliptic')
+        self.filter_order = kwargs.get('filter_order', 8)
+        self.filter_ripple = kwargs.get('filter_ripple', 0.1)
+        self.filter_stopband = kwargs.get('filter_stopband', 60.0)
+        self.filter_bessel_norm = kwargs.get('filter_bessel_norm', 'phase')
         
         # Select Window Function
         if window_type == "Hanning":
@@ -115,6 +127,15 @@ class FileReaderThread(QThread):
                     # Real/Imag de-interleave
                     full_complex = raw_array[0::2] + 1j * raw_array[1::2]
                     
+                    # Apply Band-Pass Filter if enabled
+                    if self.filter_enabled and self.f_min is not None and self.f_max is not None:
+                        full_complex = apply_bpf(
+                            full_complex, self.sample_rate, self.f_min, self.f_max,
+                            filter_type=self.filter_type, order=self.filter_order,
+                            rp=self.filter_ripple, rs=self.filter_stopband,
+                            bessel_norm=self.filter_bessel_norm
+                        )
+
                     # Extract windows into a 2D array for vectorized processing
                     # We use stride_tricks to avoid copying data where possible
                     from numpy.lib.stride_tricks import as_strided

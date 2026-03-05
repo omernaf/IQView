@@ -50,6 +50,65 @@ class ViewControllerMixin:
         self.refresh_cursor()
         self.marker_panel.update_headers(mode)
         self.update_marker_info()
+        
+        # Handle Filter Region Toggle Visibility
+        if hasattr(self.marker_panel, 'filter_container'):
+            self.marker_panel.filter_container.setVisible(mode == 'FILTER')
+
+        # Handle Filter Region Visibility & Interaction
+        b_len = len(getattr(self, 'filter_bounds', []))
+        if self.filter_region:
+            if mode == 'FILTER' and (getattr(self, 'filter_placed', False) or b_len == 1):
+                self.filter_region.show()
+                # Use our custom hit-testing and dragging logic instead of pg regional movement
+                self.filter_region.setMovable(False)
+            else:
+                self.filter_region.hide()
+                self.filter_region.setMovable(False)
+        
+        if hasattr(self, 'filter_line') and self.filter_line:
+            if mode == 'FILTER' and b_len == 1 and not self.filter_region.isVisible():
+                self.filter_line.show()
+            else:
+                self.filter_line.hide()
+
+    def on_filter_toggled(self, checked):
+        self.filter_enabled = checked
+        if self.filter_region:
+            if checked and self.interaction_mode == 'FILTER' and getattr(self, 'filter_placed', False):
+                self.filter_region.show()
+            elif self.interaction_mode != 'FILTER' or not getattr(self, 'filter_placed', False):
+                self.filter_region.hide()
+        
+        # Trigger reprocessing if we have data
+        if hasattr(self, 'full_spectrogram_cache'):
+            self.start_processing()
+
+    def on_filter_region_changed(self):
+        # Update marker table in real-time when the region is dragged
+        self.update_marker_info()
+
+    def on_filter_region_finished(self):
+        # Sync bounds if region exists
+        if self.filter_region:
+            new_bounds = sorted(list(self.filter_region.getRegion()))
+            
+            # Map old values to new ones in the order list
+            if hasattr(self, 'filter_marker_order') and len(self.filter_marker_order) == 2:
+                old_sorted = sorted(self.filter_bounds)
+                for i in range(2):
+                    if i < len(old_sorted) and i < len(new_bounds):
+                        old_v = old_sorted[i]
+                        new_v = new_bounds[i]
+                        if old_v in self.filter_marker_order:
+                            oidx = self.filter_marker_order.index(old_v)
+                            self.filter_marker_order[oidx] = new_v
+            
+            self.filter_bounds = new_bounds
+            
+        # Trigger reprocessing when the user finishes dragging the region
+        if getattr(self, 'filter_enabled', False) and hasattr(self, 'full_spectrogram_cache'):
+            self.start_processing()
 
     def refresh_cursor(self):
         if hasattr(self, 'zoom_mode') and self.zoom_mode:

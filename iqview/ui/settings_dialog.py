@@ -242,6 +242,37 @@ class SettingsDialog(QDialog):
         
         self.tabs.addTab(self.keyboard_tab, "Keyboard")
 
+        # --- Filter Tab ---
+        self.filter_tab = QWidget()
+        self.filter_form = QFormLayout(self.filter_tab)
+        
+        self.filter_type_combo = QComboBox()
+        self.filter_type_combo.addItems(["Butterworth", "Chebyshev I", "Chebyshev II", "Elliptic", "Bessel"])
+        self.filter_type_combo.setCurrentText(str(self.mgr.get("core/filter_type", "Elliptic")))
+        self.filter_type_combo.currentTextChanged.connect(self._on_filter_type_changed)
+        
+        self.filter_order_spin = QSpinBox()
+        self.filter_order_spin.setRange(1, 32)
+        self.filter_order_spin.setValue(int(self.mgr.get("core/filter_order", 8)))
+        
+        self.filter_ripple_edit = QLineEdit(str(self.mgr.get("core/filter_ripple", 0.1)))
+        self.filter_stopband_edit = QLineEdit(str(self.mgr.get("core/filter_stopband", 60.0)))
+        
+        self.filter_bessel_norm_combo = QComboBox()
+        self.filter_bessel_norm_combo.addItems(["phase", "delay", "mag"])
+        self.filter_bessel_norm_combo.setCurrentText(str(self.mgr.get("core/filter_bessel_norm", "phase")))
+        
+        self._add_reset_row(self.filter_form, "Filter Type:", self.filter_type_combo, "core/filter_type")
+        self._add_reset_row(self.filter_form, "Filter Order:", self.filter_order_spin, "core/filter_order")
+        self._add_reset_row(self.filter_form, "Passband Ripple (dB):", self.filter_ripple_edit, "core/filter_ripple")
+        self._add_reset_row(self.filter_form, "Stopband Atten (dB):", self.filter_stopband_edit, "core/filter_stopband")
+        self._add_reset_row(self.filter_form, "Bessel Norm:", self.filter_bessel_norm_combo, "core/filter_bessel_norm")
+        
+        # Initial field visibility
+        self._on_filter_type_changed(self.filter_type_combo.currentText())
+        
+        self.tabs.addTab(self.filter_tab, "Filter")
+
         # --- Buttons ---
         self.button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | 
@@ -295,6 +326,14 @@ class SettingsDialog(QDialog):
             self.mgr.set("keybinds/time_markers", self.time_key.text())
             self.mgr.set("keybinds/mag_markers", self.mag_key.text())
             self.mgr.set("keybinds/zoom_mode", self.zoom_key.text())
+
+            # Filter Settings
+            self.mgr.set("core/filter_type", self.filter_type_combo.currentText())
+            self.mgr.set("core/filter_order", self.filter_order_spin.value())
+            self.mgr.set("core/filter_ripple", float(self.filter_ripple_edit.text()))
+            self.mgr.set("core/filter_stopband", float(self.filter_stopband_edit.text()))
+            self.mgr.set("core/filter_bessel_norm", self.filter_bessel_norm_combo.currentText())
+            
             return True
         except ValueError as e:
             from PyQt6.QtWidgets import QMessageBox
@@ -324,3 +363,15 @@ class SettingsDialog(QDialog):
         
         self.axis_font_spin.setValue(int(self.mgr.get("ui/axis_font_size", 10)))
         self.precision_spin.setValue(int(self.mgr.get("ui/label_precision", 6)))
+
+    def _on_filter_type_changed(self, filter_type):
+        """Show/Hide ripple, stopband, and norm inputs based on filter type."""
+        is_ripple_valid = filter_type in ["Chebyshev I", "Elliptic"]
+        is_stopband_valid = filter_type in ["Chebyshev II", "Elliptic"]
+        is_bessel = filter_type == "Bessel"
+        
+        # QFormLayout.setRowVisible is available in Qt 5.15+ (PyQt6 6.0+)
+        # Rows are: 0: Type, 1: Order, 2: Ripple, 3: Stopband, 4: Bessel Norm
+        self.filter_form.setRowVisible(2, is_ripple_valid)
+        self.filter_form.setRowVisible(3, is_stopband_valid)
+        self.filter_form.setRowVisible(4, is_bessel)

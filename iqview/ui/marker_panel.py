@@ -28,7 +28,8 @@ class MarkerPanel(QFrame):
         self.current_mode = 'TIME'
         self.lock_states = {
             'TIME': {'delta': False, 'center': False},
-            'FREQ': {'delta': False, 'center': False}
+            'FREQ': {'delta': False, 'center': False},
+            'FILTER': {'delta': False, 'center': False}
         }
 
         # --- Interaction Mode Buttons (Left Side) ---
@@ -70,6 +71,13 @@ class MarkerPanel(QFrame):
         self.btn_home.setToolTip("Reset Zoom (Home)")
         self.mode_btn_layout.addWidget(self.btn_home, 0, 2)
 
+        # 6. BPF Mode
+        self.btn_bpf = QPushButton("📊")
+        self.btn_bpf.setObjectName("mode_btn")
+        self.btn_bpf.setToolTip("BPF Selection Mode")
+        self.btn_bpf.setCheckable(True)
+        self.mode_btn_layout.addWidget(self.btn_bpf, 1, 2)
+
         self.btn_home.clicked.connect(self.resetZoomRequested.emit)
         
         # Mutual Exclusion Group
@@ -79,13 +87,17 @@ class MarkerPanel(QFrame):
         self.mode_group.addButton(self.btn_marker_freq)
         self.mode_group.addButton(self.btn_zoom)
         self.mode_group.addButton(self.btn_move)
+        self.mode_group.addButton(self.btn_bpf)
         self.mode_group.setExclusive(True)
+
+        # Connections
 
         # Connections
         self.btn_marker_time.clicked.connect(lambda: self.interactionModeChanged.emit('TIME'))
         self.btn_marker_freq.clicked.connect(lambda: self.interactionModeChanged.emit('FREQ'))
         self.btn_zoom.clicked.connect(lambda: self.interactionModeChanged.emit('ZOOM'))
         self.btn_move.clicked.connect(lambda: self.interactionModeChanged.emit('MOVE'))
+        self.btn_bpf.clicked.connect(lambda: self.interactionModeChanged.emit('FILTER'))
         
         self.btn_marker_time.doubleClicked.connect(lambda: self.markerClearRequested.emit('TIME'))
         self.btn_marker_freq.doubleClicked.connect(lambda: self.markerClearRequested.emit('FREQ'))
@@ -153,6 +165,25 @@ class MarkerPanel(QFrame):
         # Connect locks to parent
         self.btn_lock_delta.toggled.connect(self.on_lock_delta_toggled)
         self.btn_lock_center.toggled.connect(self.on_lock_center_toggled)
+
+        # Filter Activation Checkbox (Moved next to table)
+        from PyQt6.QtWidgets import QVBoxLayout, QWidget
+        self.filter_container = QWidget()
+        self.filter_layout = QVBoxLayout(self.filter_container)
+        self.filter_layout.setContentsMargins(0, 0, 0, 0)
+        self.filter_layout.setSpacing(0)
+        
+        self.filter_enable_cb = QCheckBox("Filter On")
+        self.filter_enable_cb.setToolTip("Enable Band-Pass Filter")
+        self.filter_layout.addStretch()
+        self.filter_layout.addWidget(self.filter_enable_cb)
+        self.filter_layout.addStretch()
+        
+        self.filter_container.setFixedWidth(80)
+        self.filter_enable_cb.setEnabled(False)
+        self.filter_container.setVisible(False)
+        self.grid.addWidget(self.filter_container, 1, 5, 2, 1)
+        self.filter_enable_cb.toggled.connect(self.parent_window.on_filter_toggled)
         
         # Explicit Default Force
         self.btn_marker_time.setChecked(True)
@@ -185,11 +216,13 @@ class MarkerPanel(QFrame):
         self.btn_marker_freq.setChecked(mode == 'FREQ')
         self.btn_zoom.setChecked(mode == 'ZOOM')
         self.btn_move.setChecked(mode == 'MOVE')
+        self.btn_bpf.setChecked(mode == 'FILTER')
         
         self.btn_marker_time.blockSignals(False)
         self.btn_marker_freq.blockSignals(False)
         self.btn_zoom.blockSignals(False)
         self.btn_move.blockSignals(False)
+        self.btn_bpf.blockSignals(False)
 
         self.current_mode = mode
         if mode == 'FREQ':
@@ -198,6 +231,12 @@ class MarkerPanel(QFrame):
         elif mode == 'TIME':
             self.row1_label.setText("Time (sec)")
             self.row2_label.setText("Samples")
+        elif mode == 'FILTER':
+            self.row1_label.setText("Freq (Hz)")
+            self.row2_label.setText("Bin")
+            # Enable checkbox only if 2 bounds are placed
+            has_bounds = getattr(self.parent_window, 'filter_placed', False)
+            self.filter_enable_cb.setEnabled(has_bounds)
             
         # Sync lock UI with saved state for this mode (if applicable)
         if mode in self.lock_states:

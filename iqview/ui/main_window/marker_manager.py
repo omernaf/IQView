@@ -26,7 +26,127 @@ class MarkerManagerMixin:
                 bin_idx = int(round((raw_val - f_min) / rbw)) + 1
                 val = f_min + (bin_idx - 1.0) * rbw
 
-            # 2. HIGHEST PRIORITY: If 2 markers exist and lock is on, ALWAYS shift the pair
+            # 2. HIGHEST PRIORITY: Handle FILTER mode placement
+            if self.interaction_mode == 'FILTER':
+                # 1. Hit-test for existing bounds
+                if self.filter_bounds:
+                    hit_threshold = 20 # pixels
+                    vb = self.spectrogram_view.plot_item.vb
+                    best_idx = -1
+                    min_dist = hit_threshold
+                    
+                    # Sticky Lock: If 2 bounds exist and a lock is on, always hit the closest one
+                    is_locked = len(self.filter_bounds) == 2 and (
+                        self.marker_panel.btn_lock_delta.isChecked() or 
+                        self.marker_panel.btn_lock_center.isChecked()
+                    )
+                    
+                    for i, b_val in enumerate(self.filter_bounds):
+                        p_scene = vb.mapViewToScene(pg.Point(0, b_val))
+                        dist = abs(scene_pos.y() - p_scene.y())
+                        if is_locked:
+                            # Bypass threshold, find global nearest
+                            if best_idx == -1 or dist < min_dist:
+                                min_dist = dist
+                                best_idx = i
+                        elif dist < min_dist:
+                            min_dist = dist
+                            best_idx = i
+                    
+                    if best_idx != -1:
+                        # Success: Drag existing bound
+                        old_v = self.filter_bounds[best_idx]
+                        
+                        # --- LOCKED MOVEMENT SUPPORT ---
+                        if len(self.filter_bounds) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+                            shift = val - old_v
+                            other_idx = 1 - best_idx
+                            other_old_v = self.filter_bounds[other_idx]
+                            
+                            f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
+                            
+                            if self.marker_panel.btn_lock_delta.isChecked():
+                                new_other_v = other_old_v + shift
+                                if f_min <= val <= f_max and f_min <= new_other_v <= f_max:
+                                    self.filter_bounds[best_idx] = val
+                                    self.filter_bounds[other_idx] = new_other_v
+                            elif self.marker_panel.btn_lock_center.isChecked():
+                                center = (old_v + other_old_v) / 2
+                                new_other_v = 2 * center - val
+                                if f_min <= val <= f_max and f_min <= new_other_v <= f_max:
+                                    self.filter_bounds[best_idx] = val
+                                    self.filter_bounds[other_idx] = new_other_v
+                            
+                            # Sync both values in the placement-order tracker
+                            for i, v in enumerate([old_v, other_old_v]):
+                                if v in self.filter_marker_order:
+                                    oidx = self.filter_marker_order.index(v)
+                                    self.filter_marker_order[oidx] = self.filter_bounds[best_idx if i==0 else other_idx]
+                        else:
+                            # Standard single bound jump
+                            self.filter_bounds[best_idx] = val 
+                            if old_v in self.filter_marker_order:
+                                oidx = self.filter_marker_order.index(old_v)
+                                self.filter_marker_order[oidx] = val
+                        
+                        # Maintain sorted state for UI/Region
+                        self.filter_bounds.sort()
+                        self.active_drag_filter_bound_idx = self.filter_bounds.index(val)
+                        
+                        if len(self.filter_bounds) == 1:
+                            if self.filter_line: self.filter_line.setPos(val)
+                        else:
+                            if self.filter_region: self.filter_region.setRegion(self.filter_bounds)
+                        self.update_marker_info()
+                        return
+
+                # 2. No hit - Place new bound or replace oldest in PLACEMENT ORDER
+                if len(self.filter_marker_order) >= 2:
+                    oldest_v = self.filter_marker_order.pop(0)
+                    if oldest_v in self.filter_bounds:
+                        self.filter_bounds.remove(oldest_v)
+
+                self.filter_marker_order.append(val)
+                self.filter_bounds.append(val)
+                self.filter_bounds.sort()
+                self.active_drag_filter_bound_idx = self.filter_bounds.index(val)
+                
+                if len(self.filter_bounds) == 1:
+                    if not self.filter_line:
+                        self.filter_line = pg.InfiniteLine(angle=0, pen=pg.mkPen('#ff6400', width=2, style=Qt.PenStyle.DashLine))
+                    if self.filter_line not in self.spectrogram_view.plot_item.items:
+                        self.spectrogram_view.plot_item.addItem(self.filter_line)
+                    self.filter_line.setPos(val)
+                    self.filter_line.show()
+                else:
+                    if self.filter_line: self.filter_line.hide()
+                    f1 = self.filter_bounds[0]
+                    f2 = self.filter_bounds[1]
+                    if not self.filter_region:
+                        # Lazily create the region
+                        self.filter_region = pg.LinearRegionItem(
+                            values=[f1, f2], orientation='horizontal',
+                            brush=pg.mkBrush(255, 100, 0, 40), pen=pg.mkPen('#ff6400', width=2),
+                            movable=False
+                        )
+                        self.filter_region.sigRegionChanged.connect(self.on_filter_region_changed)
+                        self.filter_region.sigRegionChangeFinished.connect(self.on_filter_region_finished)
+
+                    if self.filter_region not in self.spectrogram_view.plot_item.items:
+                        self.spectrogram_view.plot_item.addItem(self.filter_region)
+                    else:
+                        self.filter_region.setRegion(self.filter_bounds)
+                        self.filter_region.show()
+                    
+                    self.filter_placed = True
+                    self.marker_panel.filter_enable_cb.setEnabled(True)
+                    if not drag_mode:
+                        self.on_filter_region_finished()
+                
+                self.update_marker_info()
+                return
+
+            # 3. SECOND PRIORITY: If 2 markers exist and lock is on, ALWAYS shift the pair
             if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
                 m1_pos, m2_pos = active_markers[0].value(), active_markers[1].value()
                 dist1 = abs(val - m1_pos)
@@ -53,7 +173,7 @@ class MarkerManagerMixin:
                 
                 if drag_mode: self.active_drag_marker = target
 
-            # 3. SECOND PRIORITY: Hit-test for dragging a single marker
+            # 4. THIRD PRIORITY: Hit-test for dragging a single marker
             else:
                 hit_threshold = 20 # pixels
                 best_marker = None
@@ -72,7 +192,7 @@ class MarkerManagerMixin:
                     best_marker.setPos(val)
                     if drag_mode: self.active_drag_marker = best_marker
                 else:
-                    # 4. LOWEST PRIORITY: Place brand new marker (and replace oldest if needed)
+                    # 5. LOWEST PRIORITY: Place brand new marker (and replace oldest if needed)
                     if len(active_markers) >= 2:
                         old_marker = active_markers.pop(0)
                         self.spectrogram_view.plot_item.removeItem(old_marker)
@@ -98,8 +218,99 @@ class MarkerManagerMixin:
             self.update_marker_info()
 
     def update_drag(self, scene_pos):
-        if self.active_drag_marker and self.spectrogram_view.plot_item.sceneBoundingRect().contains(scene_pos):
+        if self.spectrogram_view.plot_item.sceneBoundingRect().contains(scene_pos):
             mouse_v = self.spectrogram_view.plot_item.vb.mapSceneToView(scene_pos)
+            
+            # 1. Handle explicit BPF bound dragging (highest priority)
+            if self.interaction_mode == 'FILTER' and getattr(self, 'active_drag_filter_bound_idx', -1) != -1:
+                idx = self.active_drag_filter_bound_idx
+                f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
+                raw_val = float(np.clip(mouse_v.y(), f_min, f_max))
+                rbw = self.rate / self.fft_size
+                bin_idx = int(round((raw_val - f_min) / rbw)) + 1
+                new_v = f_min + (bin_idx - 1.0) * rbw
+                
+                old_v = self.filter_bounds[idx]
+                
+                # --- LOCKED MOVEMENT SUPPORT ---
+                if len(self.filter_bounds) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+                    shift = new_v - old_v
+                    other_idx = 1 - idx
+                    other_old_v = self.filter_bounds[other_idx]
+                    
+                    actual_new_v = old_v
+                    actual_other_new_v = other_old_v
+                    
+                    if self.marker_panel.btn_lock_delta.isChecked():
+                        potential_other = other_old_v + shift
+                        if f_min <= new_v <= f_max and f_min <= potential_other <= f_max:
+                            actual_new_v = new_v
+                            actual_other_new_v = potential_other
+                    elif self.marker_panel.btn_lock_center.isChecked():
+                        center = (old_v + other_old_v) / 2
+                        potential_other = 2 * center - new_v
+                        if f_min <= new_v <= f_max and f_min <= potential_other <= f_max:
+                            actual_new_v = new_v
+                            actual_other_new_v = potential_other
+                            
+                    self.filter_bounds[idx] = actual_new_v
+                    self.filter_bounds[other_idx] = actual_other_new_v
+                    
+                    # Sync placement order too
+                    for v_old, v_new in [(old_v, actual_new_v), (other_old_v, actual_other_new_v)]:
+                        if hasattr(self, 'filter_marker_order') and v_old in self.filter_marker_order:
+                            oidx = self.filter_marker_order.index(v_old)
+                            self.filter_marker_order[oidx] = v_new
+                else:
+                    # Standard single bound drag
+                    self.filter_bounds[idx] = new_v
+                    if hasattr(self, 'filter_marker_order') and old_v in self.filter_marker_order:
+                        order_idx = self.filter_marker_order.index(old_v)
+                        self.filter_marker_order[order_idx] = new_v
+                
+                if len(self.filter_bounds) == 2:
+                    self.filter_bounds.sort()
+                    # Re-find index to stay attached to the same edge
+                    self.active_drag_filter_bound_idx = self.filter_bounds.index(new_v if (not (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked())) else self.filter_bounds[idx])
+                
+                if len(self.filter_bounds) == 1:
+                    if self.filter_line: self.filter_line.setPos(new_v)
+                elif len(self.filter_bounds) == 2:
+                    if self.filter_region: self.filter_region.setRegion(self.filter_bounds)
+
+                self.update_marker_info()
+                return
+
+            # 2. Handle BPF placement preview (rubberband between first bound and mouse)
+            if self.interaction_mode == 'FILTER' and len(self.filter_bounds) == 1:
+                f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
+                raw_val = float(np.clip(mouse_v.y(), f_min, f_max))
+                rbw = self.rate / self.fft_size
+                bin_idx = int(round((raw_val - f_min) / rbw)) + 1
+                new_v = f_min + (bin_idx - 1.0) * rbw
+                
+                f1 = self.filter_bounds[0]
+                if not self.filter_region:
+                    self.filter_region = pg.LinearRegionItem(
+                        values=[f1, new_v], orientation='horizontal',
+                        brush=pg.mkBrush(255, 100, 0, 40), pen=pg.mkPen('#ff6400', width=2),
+                        movable=False
+                    )
+                    if self.filter_region not in self.spectrogram_view.plot_item.items:
+                        self.spectrogram_view.plot_item.addItem(self.filter_region)
+                    self.filter_region.sigRegionChanged.connect(self.on_filter_region_changed)
+                    self.filter_region.sigRegionChangeFinished.connect(self.on_filter_region_finished)
+                
+                self.filter_region.setRegion([f1, new_v])
+                self.filter_region.show()
+                if self.filter_line: self.filter_line.hide()
+
+                self.update_marker_info()
+                return
+
+            if not self.active_drag_marker:
+                return
+
             is_time = self.active_drag_marker in self.markers_time
             active_markers = self.markers_time if is_time else self.markers_freq
             
@@ -139,9 +350,26 @@ class MarkerManagerMixin:
 
     def update_marker_info(self):
         is_freq = (self.interaction_mode == 'FREQ')
-        active_markers = self.markers_freq if is_freq else self.markers_time
-        get_pos = lambda m: m.value()
-        sorted_markers = sorted(active_markers, key=get_pos)
+        is_filter = (self.interaction_mode == 'FILTER')
+        
+        if is_filter:
+            if not getattr(self, 'filter_placed', False) and not getattr(self, 'filter_placing', False):
+                # Clear all widgets and return
+                for widgets in self.marker_panel.widgets:
+                    widgets['sec'].clear()
+                    widgets['sam'].clear()
+                self.marker_panel.delta_sec.clear()
+                self.marker_panel.delta_sam.clear()
+                self.marker_panel.center_sec.clear()
+                self.marker_panel.center_sam.clear()
+                return
+            if not self.filter_region: return
+            f1, f2 = self.filter_region.getRegion()
+            active_values = sorted([f1, f2])
+        else:
+            active_markers = self.markers_freq if is_freq else self.markers_time
+            get_pos = lambda m: m.value()
+            active_values = sorted([get_pos(m) for m in active_markers])
         
         for widgets in self.marker_panel.widgets:
             widgets['sec'].clear()
@@ -151,13 +379,13 @@ class MarkerManagerMixin:
         self.marker_panel.center_sec.clear()
         self.marker_panel.center_sam.clear()
 
-        if not sorted_markers: return
+        if not active_values: return
 
-        for i, marker in enumerate(sorted_markers):
-            val = get_pos(marker)
+        for i, val in enumerate(active_values):
+            if i >= 2: break
             self.marker_panel.widgets[i]['sec'].blockSignals(True)
             self.marker_panel.widgets[i]['sam'].blockSignals(True)
-            if is_freq:
+            if is_freq or is_filter:
                 rbw = self.rate / self.fft_size
                 label_val = int(round((val - (self.fc - self.rate/2)) / rbw)) + 1
                 label_val = max(1, min(label_val, self.fft_size))
@@ -165,25 +393,25 @@ class MarkerManagerMixin:
                 sample = int(round(val * self.rate)) + 1
                 label_val = max(1, min(sample, getattr(self, 'total_samples_in_cache', 1e9)))
                 
-            prec = int(self.settings_mgr.get("ui/label_precision", 6 if is_freq else 9))
+            prec = int(self.settings_mgr.get("ui/label_precision", 6 if (is_freq or is_filter) else 9))
             self.marker_panel.widgets[i]['sec'].setText(f"{val:.{prec}f}")
             self.marker_panel.widgets[i]['sam'].setText(f"{label_val}")
             self.marker_panel.widgets[i]['sec'].blockSignals(False)
             self.marker_panel.widgets[i]['sam'].blockSignals(False)
 
-        if len(sorted_markers) == 2:
-            p1, p2 = get_pos(sorted_markers[0]), get_pos(sorted_markers[1])
+        if len(active_values) == 2:
+            p1, p2 = active_values[0], active_values[1]
             self.marker_panel.delta_sec.blockSignals(True)
             self.marker_panel.delta_sam.blockSignals(True)
             self.marker_panel.center_sec.blockSignals(True)
             self.marker_panel.center_sam.blockSignals(True)
 
-            prec = int(self.settings_mgr.get("ui/label_precision", 6 if is_freq else 9))
+            prec = int(self.settings_mgr.get("ui/label_precision", 6 if (is_freq or is_filter) else 9))
             self.marker_panel.delta_sec.setText(f"{abs(p2 - p1):.{prec}f}")
             cp = (p1 + p2) / 2
             self.marker_panel.center_sec.setText(f"{cp:.{prec}f}")
 
-            if is_freq:
+            if is_freq or is_filter:
                 f_min = self.fc - self.rate/2
                 rbw = self.rate / self.fft_size
                 s1 = int(round((p1 - f_min) / rbw)) + 1
@@ -215,60 +443,105 @@ class MarkerManagerMixin:
         sender = self.sender()
         name = sender.objectName()
         is_freq = (self.interaction_mode == 'FREQ')
-        active_markers = self.markers_freq if is_freq else self.markers_time
-        get_pos = lambda m: m.value()
+        is_filter = (self.interaction_mode == 'FILTER')
+        
+        if is_filter:
+            if not self.filter_region: return
+            f1, f2 = self.filter_region.getRegion()
+            active_values = sorted([f1, f2])
+        else:
+            active_markers = self.markers_freq if is_freq else self.markers_time
+            get_pos = lambda m: m.value()
+            active_values = sorted([get_pos(m) for m in active_markers])
+            
         try:
             val = float(sender.text())
-            sorted_markers = sorted(active_markers, key=get_pos)
             f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
             rbw = self.rate / self.fft_size
-            curr_max = f_max if is_freq else self.time_duration
-            curr_min = f_min if is_freq else 0
-            if name.startswith('m') and len(sorted_markers) > int(name[1]):
+            curr_max = f_max if (is_freq or is_filter) else self.time_duration
+            curr_min = f_min if (is_freq or is_filter) else 0
+            
+            if name.startswith('m') and len(active_values) > int(name[1]):
                 idx, unit = int(name[1]), name[3:]
-                if is_freq:
+                if is_freq or is_filter:
                     bin_val = max(1, min(val, self.fft_size))
                     new_p = np.clip(f_min + (bin_val - 1) * rbw if unit == 'sam' else val, f_min, f_max)
                 else:
                     max_s = getattr(self, 'total_samples_in_cache', 1e9)
                     s_val = np.clip(val if unit == 'sam' else val * self.rate + 1.0, 1, max_s)
                     new_p = np.clip((s_val - 1.0) / self.rate, 0.0, self.time_duration)
-                if len(sorted_markers) == 2:
+                
+                if is_filter:
+                    new_region = list(active_values)
+                    old_v = new_region[idx]
+                    
+                    if len(new_region) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+                        shift = new_p - old_v
+                        other_idx = 1 - idx
+                        other_old_v = new_region[other_idx]
+                        
+                        if self.marker_panel.btn_lock_delta.isChecked():
+                            other_new = other_old_v + shift
+                            if curr_min <= new_p <= curr_max and curr_min <= other_new <= curr_max:
+                                new_region[idx] = new_p
+                                new_region[other_idx] = other_new
+                        elif self.marker_panel.btn_lock_center.isChecked():
+                            center = (old_v + other_old_v) / 2
+                            other_new = 2 * center - new_p
+                            if curr_min <= new_p <= curr_max and curr_min <= other_new <= curr_max:
+                                new_region[idx] = new_p
+                                new_region[other_idx] = other_new
+                    else:
+                        new_region[idx] = new_p
+                        
+                    self.filter_region.setRegion(new_region)
+                elif len(active_values) == 2:
+                    sorted_markers = sorted(active_markers, key=get_pos)
                     other_idx = 1 - idx
-                    old_p = get_pos(sorted_markers[idx])
+                    old_p = active_values[idx]
                     shift = new_p - old_p
                     if self.marker_panel.btn_lock_delta.isChecked():
-                        other_new = get_pos(sorted_markers[other_idx]) + shift
+                        other_new = active_values[other_idx] + shift
                         if curr_min <= other_new <= curr_max:
                             sorted_markers[idx].setPos(new_p)
                             sorted_markers[other_idx].setPos(other_new)
                     elif self.marker_panel.btn_lock_center.isChecked():
-                        p1, p2 = get_pos(sorted_markers[0]), get_pos(sorted_markers[1])
+                        p1, p2 = active_values[0], active_values[1]
                         ct = (p1 + p2) / 2
                         other_new = 2 * ct - new_p
                         if curr_min <= other_new <= curr_max:
                             sorted_markers[idx].setPos(new_p)
                             sorted_markers[other_idx].setPos(other_new)
                     else: sorted_markers[idx].setPos(new_p)
-                else: sorted_markers[idx].setPos(new_p)
-            elif len(sorted_markers) == 2:
-                p1, p2 = get_pos(sorted_markers[0]), get_pos(sorted_markers[1])
+                else: 
+                    sorted_markers = sorted(active_markers, key=get_pos)
+                    sorted_markers[idx].setPos(new_p)
+                    
+            elif len(active_values) == 2:
+                p1, p2 = active_values[0], active_values[1]
                 dt_coords, ct_coords = abs(p2 - p1), (p1 + p2) / 2
                 if 'delta' in name:
-                    if is_freq: new_dt_coords = np.clip((val - 1) * rbw if 'sam' in name else val, 0, self.rate)
+                    if is_freq or is_filter: new_dt_coords = np.clip((val - 1) * rbw if 'sam' in name else val, 0, self.rate)
                     else: new_dt_coords = np.clip((val - 1) / self.rate if 'sam' in name else val, 0, self.time_duration)
                     m1_new, m2_new = ct_coords - new_dt_coords/2, ct_coords + new_dt_coords/2
                     if curr_min <= m1_new and m2_new <= curr_max:
-                        sorted_markers[0].setPos(m1_new)
-                        sorted_markers[1].setPos(m2_new)
+                        if is_filter: self.filter_region.setRegion([m1_new, m2_new])
+                        else:
+                            sorted_markers = sorted(active_markers, key=get_pos)
+                            sorted_markers[0].setPos(m1_new)
+                            sorted_markers[1].setPos(m2_new)
                 elif 'center' in name:
-                    if is_freq: new_ct_coords = np.clip((val - 1) * rbw + f_min if 'sam' in name else val, f_min, f_max)
+                    if is_freq or is_filter: new_ct_coords = np.clip((val - 1) * rbw + f_min if 'sam' in name else val, f_min, f_max)
                     else: new_ct_coords = np.clip((val - 1) / self.rate if 'sam' in name else val, 0.0, self.time_duration)
                     m1_new, m2_new = new_ct_coords - dt_coords/2, new_ct_coords + dt_coords/2
                     if curr_min <= m1_new and m2_new <= curr_max:
-                        sorted_markers[0].setPos(m1_new)
-                        sorted_markers[1].setPos(m2_new)
+                        if is_filter: self.filter_region.setRegion([m1_new, m2_new])
+                        else:
+                            sorted_markers = sorted(active_markers, key=get_pos)
+                            sorted_markers[0].setPos(m1_new)
+                            sorted_markers[1].setPos(m2_new)
             self.update_marker_info()
+            if is_filter: self.on_filter_region_finished()
         except ValueError: self.update_marker_info()
 
     def handle_lock_change(self, lock_type, checked):
