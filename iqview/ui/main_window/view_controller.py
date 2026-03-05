@@ -209,6 +209,8 @@ class ViewControllerMixin:
         v_min = (self.fc - self.rate/2) if is_freq else 0
         v_max = (self.fc + self.rate/2) if is_freq else self.time_duration
         
+        pen = pg.mkPen(qcolor, width=1, style=style)
+        
         curr = p1
         while curr <= v_max + 1e-9:
             line = pg.InfiniteLine(pos=curr, angle=angle, pen=pen, movable=False)
