@@ -29,7 +29,7 @@ def postprocess_fft(fft_result, fft_size):
 
 from scipy import signal
 
-def apply_bpf(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0):
+def apply_bpf(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, **kwargs):
     """
     Applies a sharp COMPLEX (Asymmetric) Band-Pass filter to IQ data.
     Uses Shift-to-Baseband -> Low-Pass Filter -> Shift-Back-Up approach.
@@ -60,7 +60,8 @@ def apply_bpf(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, r
     elif filter_type == "Chebyshev II":
         sos = signal.cheby2(order, rs, cutoff, btype='low', output='sos')
     elif filter_type == "Bessel":
-        sos = signal.bessel(order, cutoff, btype='low', output='sos')
+        b_norm = kwargs.get('bessel_norm', 'phase')
+        sos = signal.bessel(order, cutoff, btype='low', output='sos', norm=b_norm)
     else: # Default: Elliptic
         sos = signal.ellip(order, rp, rs, cutoff, btype='low', output='sos')
     

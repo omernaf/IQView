@@ -30,6 +30,7 @@ class FileReaderThread(QThread):
         self.filter_order = kwargs.get('filter_order', 8)
         self.filter_ripple = kwargs.get('filter_ripple', 0.1)
         self.filter_stopband = kwargs.get('filter_stopband', 60.0)
+        self.filter_bessel_norm = kwargs.get('filter_bessel_norm', 'phase')
         
         # Select Window Function
         if window_type == "Hanning":
@@ -131,7 +132,8 @@ class FileReaderThread(QThread):
                         full_complex = apply_bpf(
                             full_complex, self.sample_rate, self.f_min, self.f_max,
                             filter_type=self.filter_type, order=self.filter_order,
-                            rp=self.filter_ripple, rs=self.filter_stopband
+                            rp=self.filter_ripple, rs=self.filter_stopband,
+                            bessel_norm=self.filter_bessel_norm
                         )
 
                     # Extract windows into a 2D array for vectorized processing

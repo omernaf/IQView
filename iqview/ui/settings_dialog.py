@@ -258,10 +258,15 @@ class SettingsDialog(QDialog):
         self.filter_ripple_edit = QLineEdit(str(self.mgr.get("core/filter_ripple", 0.1)))
         self.filter_stopband_edit = QLineEdit(str(self.mgr.get("core/filter_stopband", 60.0)))
         
+        self.filter_bessel_norm_combo = QComboBox()
+        self.filter_bessel_norm_combo.addItems(["phase", "delay", "mag"])
+        self.filter_bessel_norm_combo.setCurrentText(str(self.mgr.get("core/filter_bessel_norm", "phase")))
+        
         self._add_reset_row(self.filter_form, "Filter Type:", self.filter_type_combo, "core/filter_type")
         self._add_reset_row(self.filter_form, "Filter Order:", self.filter_order_spin, "core/filter_order")
         self._add_reset_row(self.filter_form, "Passband Ripple (dB):", self.filter_ripple_edit, "core/filter_ripple")
         self._add_reset_row(self.filter_form, "Stopband Atten (dB):", self.filter_stopband_edit, "core/filter_stopband")
+        self._add_reset_row(self.filter_form, "Bessel Norm:", self.filter_bessel_norm_combo, "core/filter_bessel_norm")
         
         # Initial field visibility
         self._on_filter_type_changed(self.filter_type_combo.currentText())
@@ -327,6 +332,7 @@ class SettingsDialog(QDialog):
             self.mgr.set("core/filter_order", self.filter_order_spin.value())
             self.mgr.set("core/filter_ripple", float(self.filter_ripple_edit.text()))
             self.mgr.set("core/filter_stopband", float(self.filter_stopband_edit.text()))
+            self.mgr.set("core/filter_bessel_norm", self.filter_bessel_norm_combo.currentText())
             
             return True
         except ValueError as e:
@@ -359,16 +365,13 @@ class SettingsDialog(QDialog):
         self.precision_spin.setValue(int(self.mgr.get("ui/label_precision", 6)))
 
     def _on_filter_type_changed(self, filter_type):
-        """Enable/Disable ripple and stopband inputs based on filter type."""
+        """Show/Hide ripple, stopband, and norm inputs based on filter type."""
         is_ripple_valid = filter_type in ["Chebyshev I", "Elliptic"]
         is_stopband_valid = filter_type in ["Chebyshev II", "Elliptic"]
+        is_bessel = filter_type == "Bessel"
         
-        self.filter_ripple_edit.setEnabled(is_ripple_valid)
-        self.filter_stopband_edit.setEnabled(is_stopband_valid)
-        
-        # Style hint for disabled state
-        style = "" if is_ripple_valid else "background-color: #f0f0f0; color: #888;"
-        self.filter_ripple_edit.setStyleSheet(style)
-        
-        style = "" if is_stopband_valid else "background-color: #f0f0f0; color: #888;"
-        self.filter_stopband_edit.setStyleSheet(style)
+        # QFormLayout.setRowVisible is available in Qt 5.15+ (PyQt6 6.0+)
+        # Rows are: 0: Type, 1: Order, 2: Ripple, 3: Stopband, 4: Bessel Norm
+        self.filter_form.setRowVisible(2, is_ripple_valid)
+        self.filter_form.setRowVisible(3, is_stopband_valid)
+        self.filter_form.setRowVisible(4, is_bessel)

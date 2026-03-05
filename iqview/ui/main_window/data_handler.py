@@ -20,7 +20,8 @@ class DataHandlerMixin:
             filter_type=str(self.settings_mgr.get("core/filter_type", "Elliptic")),
             filter_order=int(self.settings_mgr.get("core/filter_order", 8)),
             filter_ripple=float(self.settings_mgr.get("core/filter_ripple", 0.1)),
-            filter_stopband=float(self.settings_mgr.get("core/filter_stopband", 60.0))
+            filter_stopband=float(self.settings_mgr.get("core/filter_stopband", 60.0)),
+            filter_bessel_norm=str(self.settings_mgr.get("core/filter_bessel_norm", "phase"))
         )
         self.worker.progress.connect(self.update_progress)
         self.worker.finished_processing.connect(self.display_spectrogram)
@@ -80,11 +81,13 @@ class DataHandlerMixin:
                 f_order = int(self.settings_mgr.get("core/filter_order", 8))
                 f_ripple = float(self.settings_mgr.get("core/filter_ripple", 0.1))
                 f_stopband = float(self.settings_mgr.get("core/filter_stopband", 60.0))
+                f_bessel_norm = str(self.settings_mgr.get("core/filter_bessel_norm", "phase"))
                 
                 complex_data = apply_bpf(
                     complex_data, self.rate, f_min, f_max,
                     filter_type=f_type, order=f_order,
-                    rp=f_ripple, rs=f_stopband
+                    rp=f_ripple, rs=f_stopband,
+                    bessel_norm=f_bessel_norm
                 )
                 
             return complex_data
