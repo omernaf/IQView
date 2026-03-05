@@ -51,7 +51,8 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         self.filter_region = None # LinearRegionItem added in setup_ui or on demand
         self.filter_placed = False
         self.filter_placing = False
-        self.filter_bounds = [] # [f1, f2]
+        self.filter_bounds = [] # [f1, f2] sorted
+        self.filter_marker_order = [] # [v1, v2] in placement order
         self.filter_line = None # pg.InfiniteLine for the first bound
         
         self.setup_ui()

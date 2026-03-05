@@ -91,7 +91,20 @@ class ViewControllerMixin:
     def on_filter_region_finished(self):
         # Sync bounds if region exists
         if self.filter_region:
-            self.filter_bounds = list(self.filter_region.getRegion())
+            new_bounds = sorted(list(self.filter_region.getRegion()))
+            
+            # Map old values to new ones in the order list
+            if hasattr(self, 'filter_marker_order') and len(self.filter_marker_order) == 2:
+                old_sorted = sorted(self.filter_bounds)
+                for i in range(2):
+                    if i < len(old_sorted) and i < len(new_bounds):
+                        old_v = old_sorted[i]
+                        new_v = new_bounds[i]
+                        if old_v in self.filter_marker_order:
+                            oidx = self.filter_marker_order.index(old_v)
+                            self.filter_marker_order[oidx] = new_v
+            
+            self.filter_bounds = new_bounds
             
         # Trigger reprocessing when the user finishes dragging the region
         if getattr(self, 'filter_enabled', False) and hasattr(self, 'full_spectrogram_cache'):

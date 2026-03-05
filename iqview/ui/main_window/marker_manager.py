@@ -44,8 +44,16 @@ class MarkerManagerMixin:
                     
                     if best_idx != -1:
                         # Success: Drag existing bound
+                        old_v = self.filter_bounds[best_idx]
                         self.filter_bounds[best_idx] = val # Jump to mouse
-                        self.filter_bounds.sort() # Ensure sorted
+                        
+                        # Sync the placement-order tracker
+                        if old_v in self.filter_marker_order:
+                            idx_in_order = self.filter_marker_order.index(old_v)
+                            self.filter_marker_order[idx_in_order] = val
+                        
+                        # Maintain sorted state for UI/Region
+                        self.filter_bounds.sort()
                         self.active_drag_filter_bound_idx = self.filter_bounds.index(val)
                         
                         if len(self.filter_bounds) == 1:
@@ -55,11 +63,13 @@ class MarkerManagerMixin:
                         self.update_marker_info()
                         return
 
-                # 2. No hit - Place new bound or replace oldest
-                if len(self.filter_bounds) >= 2:
-                    # Pop first (oldest or just lowest if sorted)
-                    self.filter_bounds.pop(0)
+                # 2. No hit - Place new bound or replace oldest in PLACEMENT ORDER
+                if len(self.filter_marker_order) >= 2:
+                    oldest_v = self.filter_marker_order.pop(0)
+                    if oldest_v in self.filter_bounds:
+                        self.filter_bounds.remove(oldest_v)
 
+                self.filter_marker_order.append(val)
                 self.filter_bounds.append(val)
                 self.filter_bounds.sort()
                 self.active_drag_filter_bound_idx = self.filter_bounds.index(val)
@@ -73,7 +83,8 @@ class MarkerManagerMixin:
                     self.filter_line.show()
                 else:
                     if self.filter_line: self.filter_line.hide()
-                    f1, f2 = self.filter_bounds
+                    f1 = self.filter_bounds[0]
+                    f2 = self.filter_bounds[1]
                     if not self.filter_region:
                         # Lazily create the region
                         self.filter_region = pg.LinearRegionItem(
@@ -182,7 +193,14 @@ class MarkerManagerMixin:
                 bin_idx = int(round((raw_val - f_min) / rbw)) + 1
                 new_v = f_min + (bin_idx - 1.0) * rbw
                 
+                old_v = self.filter_bounds[idx]
                 self.filter_bounds[idx] = new_v
+                
+                # Sync placement order too
+                if hasattr(self, 'filter_marker_order') and old_v in self.filter_marker_order:
+                    order_idx = self.filter_marker_order.index(old_v)
+                    self.filter_marker_order[order_idx] = new_v
+                
                 if len(self.filter_bounds) == 2:
                     self.filter_bounds.sort()
                     # Re-find index to stay attached to the same edge
