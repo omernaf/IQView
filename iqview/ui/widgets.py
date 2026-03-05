@@ -132,6 +132,72 @@ class CustomViewBox(pg.ViewBox):
         self.ui_controller = ui_controller
         self.zoom_rect = None
         self.setMenuEnabled(False) # Disable default pg menu
+        self.setAcceptHoverEvents(True) # Enable hover for cursor indicators
+
+    def hoverMoveEvent(self, ev):
+        if not self.ui_controller:
+            return super().hoverMoveEvent(ev)
+            
+        scene_pos = ev.scenePos()
+        hit_threshold = 20 # pixels
+        
+        is_near_marker = False
+        cursor_shape = None
+        
+        # Check markers based on current mode
+        mode = self.ui_controller.interaction_mode
+        if mode in ['TIME', 'FREQ', 'FILTER']:
+            is_time = (mode == 'TIME')
+            
+            if mode == 'FILTER':
+                # Filter bounds are always horizontal (frequency)
+                for val in getattr(self.ui_controller, 'filter_bounds', []):
+                    p_scene = self.mapViewToScene(pg.Point(0, val))
+                    if abs(scene_pos.y() - p_scene.y()) < hit_threshold:
+                        is_near_marker = True
+                        cursor_shape = Qt.CursorShape.SizeVerCursor
+                        break
+            else:
+                active_markers = self.ui_controller.markers_time if is_time else self.ui_controller.markers_freq
+                lock_m1 = self.ui_controller.marker_panel.btn_lock_m1.isChecked()
+                lock_m2 = self.ui_controller.marker_panel.btn_lock_m2.isChecked()
+                
+                # Sort markers to identify M1 (lower) and M2 (higher)
+                sorted_m = sorted(active_markers, key=lambda m: m.value())
+                
+                for m in active_markers:
+                    m_pos = m.value()
+                    
+                    # Skip locked markers
+                    if len(sorted_m) == 2:
+                        if lock_m1 and m is sorted_m[0]: continue
+                        if lock_m2 and m is sorted_m[1]: continue
+
+                    if is_time:
+                        p_scene = self.mapViewToScene(pg.Point(m_pos, 0))
+                        if abs(scene_pos.x() - p_scene.x()) < hit_threshold:
+                            is_near_marker = True
+                            cursor_shape = Qt.CursorShape.SizeHorCursor
+                            break
+                    else:
+                        p_scene = self.mapViewToScene(pg.Point(0, m_pos))
+                        if abs(scene_pos.y() - p_scene.y()) < hit_threshold:
+                            is_near_marker = True
+                            cursor_shape = Qt.CursorShape.SizeVerCursor
+                            break
+
+        if is_near_marker:
+            self.setCursor(cursor_shape)
+        else:
+            # Fall back to default mode cursor
+            self.ui_controller.refresh_cursor()
+            
+        super().hoverMoveEvent(ev)
+
+    def hoverLeaveEvent(self, ev):
+        if self.ui_controller:
+            self.ui_controller.refresh_cursor()
+        super().hoverLeaveEvent(ev)
 
     def mouseDragEvent(self, ev, axis=None):
         if not hasattr(ev, 'isStart'):
@@ -220,8 +286,10 @@ class CustomViewBox(pg.ViewBox):
                 ev.accept()
             elif self.ui_controller.interaction_mode == 'MOVE':
                 if ev.isStart():
+                    self.setCursor(Qt.CursorShape.ClosedHandCursor)
                     self.ui_controller.handle_move_drag(ev.buttonDownScenePos(), is_start=True)
                 elif ev.isFinish():
+                    self.setCursor(Qt.CursorShape.OpenHandCursor)
                     self.ui_controller.handle_move_drag(ev.scenePos(), is_finish=True)
                 else:
                     self.ui_controller.handle_move_drag(ev.scenePos())

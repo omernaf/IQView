@@ -113,7 +113,11 @@ class ViewControllerMixin:
             self.start_processing()
 
     def refresh_cursor(self):
-        if hasattr(self, 'zoom_mode') and self.zoom_mode:
+        if self.interaction_mode == 'ZOOM':
+            self.spectrogram_view.setCursor(Qt.CursorShape.CrossCursor)
+        elif self.interaction_mode == 'MOVE':
+            self.spectrogram_view.setCursor(Qt.CursorShape.OpenHandCursor)
+        elif self.interaction_mode in ['TIME', 'FREQ', 'FILTER']:
             self.spectrogram_view.setCursor(Qt.CursorShape.CrossCursor)
         else:
             self.spectrogram_view.setCursor(Qt.CursorShape.ArrowCursor)
