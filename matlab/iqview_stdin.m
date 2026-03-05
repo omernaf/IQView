@@ -29,9 +29,7 @@ end
 if nargin < 4 || isempty(type)
     type = 'complex64';
 end
-% Paths - edit these to match your environment
-python_exe = 'd:\Projects\IQView\.venv\Scripts\python.exe';
-iqview_main = 'd:\Projects\IQView\iqview\main.py';
+
 % Convert data to interleaved float32 bytes: [ r0, i0, r1, i1, ... ]
 data_single = single(data( :));
 interleaved = zeros(2 * numel(data_single), 1, 'single');
@@ -41,8 +39,7 @@ byte_data = typecast(interleaved, 'uint8');
 total_bytes = numel(byte_data);
 % Build argument list and launch IQView via Java ProcessBuilder
 % (ProcessBuilder is used because MATLAB's system() can't write to a subprocess's stdin)
-cmd_args = {python_exe, iqview_main, '--stdin', '-r', num2str(fs, '%.6g'), '-c', num2str(fc, '%.6g'), '-t', type};
-% cmd_args = {'iqview', '--stdin', '-r', num2str(fs, '%.6g'), '-c', num2str(fc, '%.6g'), '-t', type};
+cmd_args = {'iqview', '--stdin', '-r', num2str(fs, '%.6g'), '-c', num2str(fc, '%.6g'), '-t', type};
 pb = java.lang.ProcessBuilder(cmd_args);
 pb.redirectErrorStream(true);
 fprintf('Launching IQView and streaming %d samples (%.2f MB)...\n', numel(data_single), total_bytes / 1024^2);

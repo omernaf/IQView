@@ -8,6 +8,7 @@ Requires-Dist: numpy
 Requires-Dist: PyQt6
 Requires-Dist: pyqtgraph
 Requires-Dist: PyOpenGL
+Requires-Dist: scipy
 
 # IQView
 
