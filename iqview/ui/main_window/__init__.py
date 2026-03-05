@@ -17,9 +17,11 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         
         self.is_spectrogram = True
 
-        # data_source is either a str (file path) or bytes (piped from stdin)
+        # data_source is either a str (file path), bytes (piped from stdin), or None (empty launch)
         self.data_source = data_source
-        if isinstance(data_source, (bytes, bytearray)):
+        if data_source is None:
+            display_name = "No File Loaded"
+        elif isinstance(data_source, (bytes, bytearray)):
             display_name = "<stdin>"
         else:
             display_name = data_source
@@ -65,7 +67,8 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         self.filter_line = None # pg.InfiniteLine for the first bound
         
         self.setup_ui()
-        self.start_processing()
+        if data_source is not None:
+            self.start_processing()
 
     def apply_current_theme(self):
         theme = self.settings_mgr.get("ui/theme", "Light")

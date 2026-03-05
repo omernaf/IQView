@@ -5,6 +5,8 @@ from iqview.dsp import FileReaderThread
 
 class DataHandlerMixin:
     def start_processing(self):
+        if self.data_source is None:
+            return  # nothing loaded yet — waiting for user to open a file
         if hasattr(self, 'worker') and self.worker.isRunning():
             self.worker.stop()
         self.progress_bar.setValue(0)
