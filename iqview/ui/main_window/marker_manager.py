@@ -204,6 +204,48 @@ class MarkerManagerMixin:
                     best_marker.setPos(val)
                     if drag_mode: self.active_drag_marker = best_marker
                 else:
+                    # 4.5 Check for Grid Lines (Shadow Markers)
+                    lock_delta = self.marker_panel.btn_lock_delta.isChecked()
+                    if not lock_delta and (self.interaction_mode in ['TIME', 'FREQ']):
+                        grid_lines = getattr(self, 'grid_lines_time' if is_time else 'grid_lines_freq', [])
+                        best_gl = None
+                        min_gl_dist = 20 # pixels
+                        
+                        for gl in grid_lines:
+                            gl_pos = gl.value()
+                            p_scene = vb.mapViewToScene(pg.Point(gl_pos, 0)) if is_time else vb.mapViewToScene(pg.Point(0, gl_pos))
+                            dist = abs(scene_pos.x() - p_scene.x()) if is_time else abs(scene_pos.y() - p_scene.y())
+                            
+                            if dist < min_gl_dist:
+                                min_gl_dist = dist
+                                best_gl = gl
+                        
+                        if best_gl and len(active_markers) == 2:
+                            # We hit a shadow marker! Calculate k and figure out which marker to move.
+                            sorted_m = sorted(active_markers, key=lambda m: m.value())
+                            p1 = sorted_m[0].value()
+                            p2 = sorted_m[1].value()
+                            delta = p2 - p1
+                            g_pos = best_gl.value()
+                            k = (g_pos - p1) / delta
+                            
+                            # Which marker to control?
+                            # User says: "the one closer to it"
+                            move_p1 = (k < 0.5)
+                            
+                            if drag_mode:
+                                self.active_drag_grid_info = {
+                                    'k': k,
+                                    'move_p1': move_p1,
+                                    'fixed_val': p2 if move_p1 else p1,
+                                    'is_time': is_time
+                                }
+                                # We also need a marker to pass validation in update_drag, 
+                                # but we might want to handle this specially. 
+                                # Let's set active_drag_marker to None but active_drag_grid_info to something.
+                                self.active_drag_marker = None 
+                            return
+                    
                     # 5. LOWEST PRIORITY: Place brand new marker (and replace oldest if needed)
                     # If a marker position is locked and we have 2 markers, move only the free one.
                     lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
@@ -331,6 +373,47 @@ class MarkerManagerMixin:
                 self.filter_region.show()
                 if self.filter_line: self.filter_line.hide()
 
+                self.update_marker_info()
+                return
+
+            # 1.5 Handle Shadow Marker (Grid Line) dragging
+            if getattr(self, 'active_drag_grid_info', None):
+                info = self.active_drag_grid_info
+                is_time = info['is_time']
+                k = info['k']
+                move_p1 = info['move_p1']
+                fixed_val = info['fixed_val']
+                
+                if is_time:
+                    f_min, f_max = 0.0, self.time_duration
+                    raw_val = float(np.clip(mouse_v.x(), 0.0, self.time_duration))
+                    sample = int(round(raw_val * self.rate)) + 1
+                    g_prime = (sample - 1.0) / self.rate
+                else:
+                    f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
+                    raw_val = float(np.clip(mouse_v.y(), f_min, f_max))
+                    rbw = self.rate / self.fft_size
+                    bin_idx = int(round((raw_val - f_min) / rbw)) + 1
+                    g_prime = f_min + (bin_idx - 1.0) * rbw
+                
+                active_markers = self.markers_time if is_time else self.markers_freq
+                if len(active_markers) == 2:
+                    sorted_m = sorted(active_markers, key=lambda m: m.value())
+                    m1, m2 = sorted_m[0], sorted_m[1]
+                    
+                    try:
+                        if move_p1:
+                            if abs(1 - k) > 1e-9:
+                                new_p1 = (g_prime - k * fixed_val) / (1 - k)
+                                if f_min <= new_p1 <= f_max:
+                                    m1.setPos(new_p1)
+                        else:
+                            if abs(k) > 1e-9:
+                                new_p2 = fixed_val + (g_prime - fixed_val) / k
+                                if f_min <= new_p2 <= f_max:
+                                    m2.setPos(new_p2)
+                    except ZeroDivisionError: pass
+                    
                 self.update_marker_info()
                 return
 

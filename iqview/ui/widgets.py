@@ -179,6 +179,22 @@ class CustomViewBox(pg.ViewBox):
                         self.setCursor(Qt.CursorShape.SizeHorCursor if angle == 90 else Qt.CursorShape.SizeVerCursor)
                         break
             
+            # 4. Check for Grid Lines (Shadow Markers) if delta lock is off
+            if not found_near and mode in ['TIME', 'FREQ']:
+                lock_delta = getattr(self.ui_controller.marker_panel, 'btn_lock_delta', None)
+                if lock_delta and not lock_delta.isChecked():
+                    grid_lines = getattr(self.ui_controller, 'grid_lines_time' if mode == 'TIME' else 'grid_lines_freq', [])
+                    for gl in grid_lines:
+                        gl_val = gl.value()
+                        angle = gl.angle
+                        gl_pixel = self.mapViewToScene(pg.Point(gl_val, 0) if angle == 90 else pg.Point(0, gl_val))
+                        dist = abs(scene_pos.x() - gl_pixel.x()) if angle == 90 else abs(scene_pos.y() - gl_pixel.y())
+                        
+                        if dist < 20:
+                            found_near = True
+                            self.setCursor(Qt.CursorShape.SizeHorCursor if angle == 90 else Qt.CursorShape.SizeVerCursor)
+                            break
+            
             if not found_near:
                 self.setCursor(Qt.CursorShape.CrossCursor)
 
@@ -282,6 +298,7 @@ class CustomViewBox(pg.ViewBox):
                         self.ui_controller.place_marker(ev.buttonDownScenePos(), drag_mode=True)
                     elif ev.isFinish():
                         self.ui_controller.active_drag_marker = None
+                        self.ui_controller.active_drag_grid_info = None
                         if getattr(self.ui_controller, 'active_drag_filter_bound_idx', -1) != -1:
                             self.ui_controller.on_filter_region_finished()
                             self.ui_controller.active_drag_filter_bound_idx = -1
