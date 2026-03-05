@@ -132,6 +132,73 @@ class CustomViewBox(pg.ViewBox):
         self.ui_controller = ui_controller
         self.zoom_rect = None
         self.setMenuEnabled(False) # Disable default pg menu
+        self.setAcceptHoverEvents(True)
+
+    def hoverEvent(self, ev):
+        if ev.isExit():
+            return
+            
+        mode = getattr(self.ui_controller, 'interaction_mode', None)
+        if mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER']:
+            # Find closest marker
+            is_time = (mode == 'TIME')
+            is_freq = (mode == 'FREQ' or mode == 'FILTER')
+            is_mag = (mode == 'MAG' or mode == 'Y')
+            
+            # Determine active markers list based on controller type
+            active_markers = []
+            is_spec = getattr(self.ui_controller, 'is_spectrogram', False)
+            
+            if is_time:
+                active_markers = getattr(self.ui_controller, 'markers_time', [])
+            elif is_freq:
+                if mode == 'FILTER':
+                    active_values = getattr(self.ui_controller, 'filter_bounds', [])
+                    # filter_bounds are just numbers, we need to treat them as horizontal lines
+                    found_near = False
+                    scene_pos = ev.scenePos()
+                    for b_val in active_values:
+                        p_scene = self.mapViewToScene(pg.Point(0, b_val))
+                        dist = abs(scene_pos.y() - p_scene.y())
+                        if dist < 20:
+                            found_near = True
+                            self.setCursor(Qt.CursorShape.SizeVerCursor)
+                            break
+                    if found_near:
+                        super().hoverMoveEvent(ev)
+                        return
+                active_markers = getattr(self.ui_controller, 'markers_freq', [])
+            elif is_mag:
+                if hasattr(self.ui_controller, 'markers_y_dict'):
+                    y_label = getattr(self.ui_controller, 'y_label_text', "")
+                    active_markers = self.ui_controller.markers_y_dict.get(y_label, [])
+            
+            found_near = False
+            scene_pos = ev.scenePos()
+            
+            for m in active_markers:
+                # markers are InfiniteLines. angle=90 is vertical (Time in Spec/TD), angle=0 is horizontal (Freq in Spec, Mag in TD)
+                m_val = m.value()
+                angle = m.angle
+                
+                m_pixel = self.mapViewToScene(pg.Point(m_val, 0) if angle == 90 else pg.Point(0, m_val))
+                dist = abs(scene_pos.x() - m_pixel.x()) if angle == 90 else abs(scene_pos.y() - m_pixel.y())
+                
+                if dist < 20: # Threshold same as in place_marker
+                    found_near = True
+                    if angle == 90:
+                        self.setCursor(Qt.CursorShape.SizeHorCursor)
+                    else:
+                        self.setCursor(Qt.CursorShape.SizeVerCursor)
+                    break
+            
+            if not found_near:
+                self.setCursor(Qt.CursorShape.CrossCursor)
+        
+        # We don't call super().hoverEvent(ev) here because ViewBox.hoverEvent 
+        # doesn't do much by default and might intercept things we don't want.
+        # Actually, it's safer to call it if it exists.
+        # super().hoverEvent(ev) 
 
     def mouseDragEvent(self, ev, axis=None):
         if not hasattr(ev, 'isStart'):

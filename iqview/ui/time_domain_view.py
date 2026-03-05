@@ -102,6 +102,7 @@ class TimeDomainView(QWidget):
         self.plot_widget.getAxis('bottom').setLabel('Time', units='s')
         self.plot_widget.getAxis('left').setPen('#666')
         self.plot_widget.getAxis('bottom').setPen('#666')
+        self.plot_widget.setMouseTracking(True)
         
         self.grid_layout.addWidget(self.plot_widget, 0, 1)
 
@@ -162,6 +163,7 @@ class TimeDomainView(QWidget):
         self.zoom_mode = (mode == 'ZOOM')
         if mode == 'ZOOM': self.plot_widget.setCursor(Qt.CursorShape.CrossCursor)
         elif mode == 'MOVE': self.plot_widget.setCursor(Qt.CursorShape.SizeAllCursor)
+        elif mode in ['TIME', 'MAG']: self.plot_widget.setCursor(Qt.CursorShape.CrossCursor)
         else: self.plot_widget.setCursor(Qt.CursorShape.ArrowCursor)
         
         self.marker_panel.update_mode_ui(mode)
