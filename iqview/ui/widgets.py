@@ -17,8 +17,10 @@ class FormattedLineEdit(QtWidgets.QLineEdit):
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._raw_text = ""
+        self._raw_text = super().text()
         self.editingFinished.connect(self._handle_editing_finished)
+        if self._raw_text:
+            super().setText(self._format_text(self._raw_text))
 
     def setText(self, text):
         self._raw_text = str(text)
@@ -28,7 +30,9 @@ class FormattedLineEdit(QtWidgets.QLineEdit):
             super().setText(self._raw_text)
 
     def text(self):
-        # Return raw text even if displayed with spaces
+        # Return raw text. If focused, strip spaces from current display.
+        if self.hasFocus():
+            return super().text().replace(" ", "")
         return self._raw_text
 
     def _format_text(self, text):

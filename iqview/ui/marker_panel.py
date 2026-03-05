@@ -365,83 +365,133 @@ class MarkerPanel(QFrame):
                 btn.setEnabled(False)
 
     def update_endless_list(self, markers, mode):
-        """Update the scroll area with rows for each endless marker."""
-        # Clear existing rows (keep the stretch at the end)
-        while self.scroll_layout.count() > 1:
-            item = self.scroll_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        
+        """Update the scroll area with rows for each endless marker, reusing widgets where possible."""
         is_freq = 'FREQ' in mode
         unit_main = "Hz" if is_freq else "sec"
         unit_sub = "Bin" if is_freq else "Sam"
         
-        # Header Row
-        header_widget = QWidget()
-        h_layout = QHBoxLayout(header_widget)
-        h_layout.setContentsMargins(5, 2, 5, 2)
-        h_layout.setSpacing(10)
-        
-        l_id = QLabel("ID"); l_id.setFixedWidth(30); l_id.setObjectName("header_label")
-        l_main = QLabel(f"Pos ({unit_main})"); l_main.setObjectName("header_label")
-        l_sub = QLabel(unit_sub); l_sub.setObjectName("header_label")
-        l_del = QLabel(""); l_del.setFixedWidth(24)
-        
-        h_layout.addWidget(l_id)
-        h_layout.addWidget(l_main, 1) # Give position more space
-        h_layout.addWidget(l_sub, 1)  # Give sub-unit more space
-        h_layout.addWidget(l_del)
-        self.scroll_layout.insertWidget(self.scroll_layout.count()-1, header_widget)
+        # 1. Initialize or find internal row storage
+        if not hasattr(self, '_endless_rows'):
+            self._endless_rows = []
+        if not hasattr(self, '_header_widget'):
+            self._header_widget = QWidget()
+            h_layout = QHBoxLayout(self._header_widget)
+            h_layout.setContentsMargins(5, 2, 5, 2)
+            h_layout.setSpacing(10)
+            
+            l_id = QLabel("ID"); l_id.setFixedWidth(30); l_id.setObjectName("header_label")
+            l_main = QLabel(f"Pos ({unit_main})")
+            l_main.setObjectName("header_label")
+            l_main.setProperty("role", "pos_header")
+            l_sub = QLabel(unit_sub)
+            l_sub.setObjectName("header_label")
+            l_sub.setProperty("role", "sub_header")
+            l_del = QLabel(""); l_del.setFixedWidth(24)
+            
+            h_layout.addWidget(l_id)
+            h_layout.addWidget(l_main, 1)
+            h_layout.addWidget(l_sub, 1)
+            h_layout.addWidget(l_del)
+            self.scroll_layout.insertWidget(0, self._header_widget)
 
-        for i, m in enumerate(markers):
+        # 2. Update header labels
+        for lbl in self._header_widget.findChildren(QLabel, "header_label"):
+            if lbl.property("role") == "pos_header":
+                lbl.setText(f"Pos ({unit_main})")
+            elif lbl.property("role") == "sub_header":
+                lbl.setText(unit_sub)
+
+        # 3. Synchronize row count
+        # Remove excess rows
+        while len(self._endless_rows) > len(markers):
+            row_data = self._endless_rows.pop()
+            row_data['widget'].deleteLater()
+
+        # Add missing rows
+        while len(self._endless_rows) < len(markers):
+            i = len(self._endless_rows)
             row = QWidget()
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(5, 0, 5, 0)
             row_layout.setSpacing(10)
             
-            val = m.value()
-            prec = int(self.parent_window.settings_mgr.get("ui/label_precision", 6 if is_freq else 9))
-            
-            # ID
             lbl_id = QLabel(f"M{i+1}")
             lbl_id.setFixedWidth(30)
             lbl_id.setStyleSheet("color: #ff6400; font-weight: bold;")
             
-            # Position
-            edit_pos = FormattedLineEdit(f"{val:.{prec}f}")
-            edit_pos.setObjectName(f"em_{i}_sec")
+            edit_pos = FormattedLineEdit()
             edit_pos.setFixedHeight(24)
             edit_pos.returnPressed.connect(self.parent_window.marker_edit_finished)
             
-            # Sub-unit (Bin or Sample)
-            if is_freq:
-                rbw = self.parent_window.rate / self.parent_window.fft_size
-                sub_val = int(round((val - (self.parent_window.fc - self.parent_window.rate/2)) / rbw)) + 1
-            else:
-                sub_val = int(round(val * self.parent_window.rate)) + 1
-            
-            edit_sub = FormattedLineEdit(f"{sub_val}")
-            edit_sub.setObjectName(f"em_{i}_sam")
+            edit_sub = FormattedLineEdit()
             edit_sub.setFixedHeight(24)
             edit_sub.returnPressed.connect(self.parent_window.marker_edit_finished)
             
-            # Delete Button
             btn_del = QPushButton("×")
-            btn_del.setFixedWidth(24)
-            btn_del.setFixedHeight(24)
+            btn_del.setFixedWidth(24); btn_del.setFixedHeight(24)
             btn_del.setToolTip("Remove marker")
             btn_del.setStyleSheet("""
                 QPushButton { background: none; color: #ff4444; font-weight: bold; font-size: 16px; border-radius: 12px; }
                 QPushButton:hover { background: rgba(255, 68, 68, 0.2); }
             """)
-            btn_del.clicked.connect(lambda _, m=m: self.parent_window.remove_marker_item(m, mode))
             
             row_layout.addWidget(lbl_id)
             row_layout.addWidget(edit_pos, 1)
             row_layout.addWidget(edit_sub, 1)
             row_layout.addWidget(btn_del)
             
+            # Insert into layout (before the stretch)
+            # Find index of header row or offset
             self.scroll_layout.insertWidget(self.scroll_layout.count()-1, row)
+            
+            self._endless_rows.append({
+                'widget': row,
+                'lbl_id': lbl_id,
+                'edit_pos': edit_pos,
+                'edit_sub': edit_sub,
+                'btn_del': btn_del
+            })
+
+        # 3. Update header widget if units changed
+        # (Assuming the header is the first item in scroll_layout)
+        header_widget = self.scroll_layout.itemAt(0).widget()
+        if header_widget and header_widget.findChild(QLabel, "header_label"):
+            # Update labels to Hz/sec etc if needed
+            labels = header_widget.findChildren(QLabel, "header_label")
+            if len(labels) >= 2:
+                labels[1].setText(f"Pos ({unit_main})")
+                labels[2].setText(unit_sub)
+
+        # 4. Update data for all rows
+        for i, m in enumerate(markers):
+            row_data = self._endless_rows[i]
+            val = m.value()
+            prec = int(self.parent_window.settings_mgr.get("ui/label_precision", 6 if is_freq else 9))
+            
+            row_data['lbl_id'].setText(f"M{i+1}")
+            
+            # Update position
+            row_data['edit_pos'].blockSignals(True)
+            row_data['edit_pos'].setObjectName(f"em_{i}_sec")
+            row_data['edit_pos'].setText(f"{val:.{prec}f}")
+            row_data['edit_pos'].blockSignals(False)
+            
+            # Update sub-unit
+            if is_freq:
+                rbw = self.parent_window.rate / self.parent_window.fft_size
+                sub_val = int(round((val - (self.parent_window.fc - self.parent_window.rate/2)) / rbw)) + 1
+            else:
+                sub_val = int(round(val * self.parent_window.rate)) + 1
+            
+            row_data['edit_sub'].blockSignals(True)
+            row_data['edit_sub'].setObjectName(f"em_{i}_sam")
+            row_data['edit_sub'].setText(f"{sub_val}")
+            row_data['edit_sub'].blockSignals(False)
+            
+            # Update delete button connection
+            try: row_data['btn_del'].clicked.disconnect()
+            except: pass
+            row_data['btn_del'].clicked.connect(lambda _, m=m: self.parent_window.remove_marker_item(m, mode))
 
     def refresh_theme(self):
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
