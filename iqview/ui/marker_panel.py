@@ -27,9 +27,9 @@ class MarkerPanel(QFrame):
         # State
         self.current_mode = 'TIME'
         self.lock_states = {
-            'TIME': {'delta': False, 'center': False},
-            'FREQ': {'delta': False, 'center': False},
-            'FILTER': {'delta': False, 'center': False}
+            'TIME':   {'delta': False, 'center': False, 'm1': False, 'm2': False},
+            'FREQ':   {'delta': False, 'center': False, 'm1': False, 'm2': False},
+            'FILTER': {'delta': False, 'center': False, 'm1': False, 'm2': False}
         }
 
         # --- Interaction Mode Buttons (Left Side) ---
@@ -108,25 +108,30 @@ class MarkerPanel(QFrame):
         self.grid.setVerticalSpacing(4)
         self.main_layout.addLayout(self.grid, 1)
 
-        # Table Headers
+        # Table Headers — Marker 1 and Marker 2 are clickable lock toggles,
+        # same style as the Delta and Center buttons.
         self.grid.addWidget(QLabel(""), 0, 0) # Top-left empty
-        h1 = QLabel("Marker 1"); h1.setObjectName("header_label")
-        h2 = QLabel("Marker 2"); h2.setObjectName("header_label")
-        self.grid.addWidget(h1, 0, 1, Qt.AlignmentFlag.AlignCenter)
-        self.grid.addWidget(h2, 0, 2, Qt.AlignmentFlag.AlignCenter)
+
+        self.btn_lock_m1 = QPushButton("Marker 1 🔓")
+        self.btn_lock_m1.setFont(self.header_font)
+        self.btn_lock_m1.setCheckable(True)
+        self.grid.addWidget(self.btn_lock_m1, 0, 1, Qt.AlignmentFlag.AlignCenter)
+
+        self.btn_lock_m2 = QPushButton("Marker 2 🔓")
+        self.btn_lock_m2.setFont(self.header_font)
+        self.btn_lock_m2.setCheckable(True)
+        self.grid.addWidget(self.btn_lock_m2, 0, 2, Qt.AlignmentFlag.AlignCenter)
 
         # Delta Header (Combined with Lock)
         self.btn_lock_delta = QPushButton("Delta (Δ) 🔓")
         self.btn_lock_delta.setFont(self.header_font)
         self.btn_lock_delta.setCheckable(True)
-        # Style moved to refresh_theme
         self.grid.addWidget(self.btn_lock_delta, 0, 3)
 
         # Center Header (Combined with Lock)
         self.btn_lock_center = QPushButton("Center 🔓")
         self.btn_lock_center.setFont(self.header_font)
         self.btn_lock_center.setCheckable(True)
-        # Style moved to refresh_theme
         self.grid.addWidget(self.btn_lock_center, 0, 4)
 
         # Side labels (Row names)
@@ -161,8 +166,10 @@ class MarkerPanel(QFrame):
             
         self.grid.addWidget(self.delta_sec, 1, 3); self.grid.addWidget(self.delta_sam, 2, 3)
         self.grid.addWidget(self.center_sec, 1, 4); self.grid.addWidget(self.center_sam, 2, 4)
-        
+
         # Connect locks to parent
+        self.btn_lock_m1.toggled.connect(self.on_lock_m1_toggled)
+        self.btn_lock_m2.toggled.connect(self.on_lock_m2_toggled)
         self.btn_lock_delta.toggled.connect(self.on_lock_delta_toggled)
         self.btn_lock_center.toggled.connect(self.on_lock_center_toggled)
 
@@ -189,21 +196,66 @@ class MarkerPanel(QFrame):
         self.btn_marker_time.setChecked(True)
         self.interactionModeChanged.emit('TIME')
 
+    def _clear_marker_locks(self, keep=None):
+        """Uncheck all marker-position locks except the one named in `keep`."""
+        for key, btn, label in [
+            ('m1',     self.btn_lock_m1,     lambda c: f"Marker 1 {'🔒' if c else '🔓'}"),
+            ('m2',     self.btn_lock_m2,     lambda c: f"Marker 2 {'🔒' if c else '🔓'}"),
+            ('delta',  self.btn_lock_delta,  lambda c: f"Delta (Δ) {'🔒' if c else '🔓'}"),
+            ('center', self.btn_lock_center, lambda c: f"Center {'🔒' if c else '🔓'}"),
+        ]:
+            if key == keep:
+                continue
+            btn.blockSignals(True)
+            btn.setChecked(False)
+            btn.setText(label(False))
+            self.lock_states[self.current_mode][key] = False
+            btn.blockSignals(False)
+
     def on_lock_delta_toggled(self, checked):
         self.lock_states[self.current_mode]['delta'] = checked
         if checked:
-            self.lock_states[self.current_mode]['center'] = False
-        
+            self._clear_marker_locks(keep='delta')
         self.btn_lock_delta.setText(f"Delta (Δ) {'🔒' if checked else '🔓'}")
         self.parent_window.handle_lock_change('delta', checked)
 
     def on_lock_center_toggled(self, checked):
         self.lock_states[self.current_mode]['center'] = checked
         if checked:
-            self.lock_states[self.current_mode]['delta'] = False
-            
+            self._clear_marker_locks(keep='center')
         self.btn_lock_center.setText(f"Center {'🔒' if checked else '🔓'}")
         self.parent_window.handle_lock_change('center', checked)
+
+    def on_lock_m1_toggled(self, checked):
+        self.lock_states[self.current_mode]['m1'] = checked
+        if checked:
+            self._clear_marker_locks(keep='m1')
+        self.btn_lock_m1.setText(f"Marker 1 {'🔒' if checked else '🔓'}")
+        self.parent_window.handle_lock_change('m1', checked)
+
+    def on_lock_m2_toggled(self, checked):
+        self.lock_states[self.current_mode]['m2'] = checked
+        if checked:
+            self._clear_marker_locks(keep='m2')
+        self.btn_lock_m2.setText(f"Marker 2 {'🔒' if checked else '🔓'}")
+        self.parent_window.handle_lock_change('m2', checked)
+
+    def flip_m_lock(self):
+        """Silently swap the m1/m2 lock buttons when markers cross each other."""
+        m1 = self.btn_lock_m1.isChecked()
+        m2 = self.btn_lock_m2.isChecked()
+        if not m1 and not m2:
+            return  # neither locked — nothing to flip
+        self.btn_lock_m1.blockSignals(True)
+        self.btn_lock_m2.blockSignals(True)
+        self.btn_lock_m1.setChecked(m2)
+        self.btn_lock_m2.setChecked(m1)
+        self.btn_lock_m1.setText(f"Marker 1 {'🔒' if m2 else '🔓'}")
+        self.btn_lock_m2.setText(f"Marker 2 {'🔒' if m1 else '🔓'}")
+        self.lock_states[self.current_mode]['m1'] = m2
+        self.lock_states[self.current_mode]['m2'] = m1
+        self.btn_lock_m1.blockSignals(False)
+        self.btn_lock_m2.blockSignals(False)
 
     def update_headers(self, mode):
         # Force exclusion sync
@@ -240,25 +292,21 @@ class MarkerPanel(QFrame):
             
         # Sync lock UI with saved state for this mode (if applicable)
         if mode in self.lock_states:
-            self.btn_lock_delta.blockSignals(True)
-            self.btn_lock_center.blockSignals(True)
-            
-            d_locked = self.lock_states[mode]['delta']
-            c_locked = self.lock_states[mode]['center']
-            
-            self.btn_lock_delta.setChecked(d_locked)
-            self.btn_lock_delta.setText(f"Delta (Δ) {'🔒' if d_locked else '🔓'}")
-            
-            self.btn_lock_center.setChecked(c_locked)
-            self.btn_lock_center.setText(f"Center {'🔒' if c_locked else '🔓'}")
-            
-            self.btn_lock_delta.blockSignals(False)
-            self.btn_lock_center.blockSignals(False)
-            self.btn_lock_delta.setEnabled(True)
-            self.btn_lock_center.setEnabled(True)
+            for key, btn, label_fn in [
+                ('m1',     self.btn_lock_m1,     lambda c: f"Marker 1 {'🔒' if c else '🔓'}"),
+                ('m2',     self.btn_lock_m2,     lambda c: f"Marker 2 {'🔒' if c else '🔓'}"),
+                ('delta',  self.btn_lock_delta,  lambda c: f"Delta (Δ) {'🔒' if c else '🔓'}"),
+                ('center', self.btn_lock_center, lambda c: f"Center {'🔒' if c else '🔓'}"),
+            ]:
+                locked = self.lock_states[mode].get(key, False)
+                btn.blockSignals(True)
+                btn.setChecked(locked)
+                btn.setText(label_fn(locked))
+                btn.setEnabled(True)
+                btn.blockSignals(False)
         else:
-            self.btn_lock_delta.setEnabled(False)
-            self.btn_lock_center.setEnabled(False)
+            for btn in [self.btn_lock_m1, self.btn_lock_m2, self.btn_lock_delta, self.btn_lock_center]:
+                btn.setEnabled(False)
 
     def refresh_theme(self):
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
@@ -308,5 +356,5 @@ class MarkerPanel(QFrame):
             QPushButton:checked {{ color: {p.accent}; }}
         """
         if hasattr(self, 'btn_lock_delta'):
-            self.btn_lock_delta.setStyleSheet(lock_style)
-            self.btn_lock_center.setStyleSheet(lock_style)
+            for btn in [self.btn_lock_m1, self.btn_lock_m2, self.btn_lock_delta, self.btn_lock_center]:
+                btn.setStyleSheet(lock_style)

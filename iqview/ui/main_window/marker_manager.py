@@ -184,6 +184,16 @@ class MarkerManagerMixin:
                     p_scene = vb.mapViewToScene(pg.Point(m_pos, 0)) if is_time else vb.mapViewToScene(pg.Point(0, m_pos))
                     dist = abs(scene_pos.x() - p_scene.x()) if is_time else abs(scene_pos.y() - p_scene.y())
                     
+                    # Skip the locked marker so only the free one is draggable
+                    if len(active_markers) == 2 and (
+                        self.marker_panel.btn_lock_m1.isChecked() or
+                        self.marker_panel.btn_lock_m2.isChecked()
+                    ):
+                        sorted_m = sorted(active_markers, key=lambda m: m.value())
+                        locked_marker = sorted_m[0] if self.marker_panel.btn_lock_m1.isChecked() else sorted_m[1]
+                        if m is locked_marker:
+                            continue
+
                     if dist < hit_threshold and dist < min_dist:
                         min_dist = dist
                         best_marker = m
@@ -193,7 +203,20 @@ class MarkerManagerMixin:
                     if drag_mode: self.active_drag_marker = best_marker
                 else:
                     # 5. LOWEST PRIORITY: Place brand new marker (and replace oldest if needed)
-                    if len(active_markers) >= 2:
+                    # If a marker position is locked and we have 2 markers, move only the free one.
+                    lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
+                    lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
+                    if len(active_markers) == 2 and (lock_m1 or lock_m2):
+                        sorted_m = sorted(active_markers, key=lambda m: m.value())
+                        free_m = sorted_m[1] if lock_m1 else sorted_m[0]
+                        locked_m = sorted_m[0] if lock_m1 else sorted_m[1]
+                        free_m.setPos(val)
+                        if drag_mode: self.active_drag_marker = free_m
+                        # Swap list order and lock if free marker crossed the locked one
+                        if (lock_m1 and val < locked_m.value()) or (lock_m2 and val > locked_m.value()):
+                            active_markers[0], active_markers[1] = active_markers[1], active_markers[0]
+                            self.marker_panel.flip_m_lock()
+                    elif len(active_markers) >= 2:
                         old_marker = active_markers.pop(0)
                         self.spectrogram_view.plot_item.removeItem(old_marker)
                     
@@ -344,7 +367,16 @@ class MarkerManagerMixin:
                     if f_min <= other_new <= f_max:
                         self.active_drag_marker.setPos(new_v)
                         other_marker.setPos(other_new)
-                else: self.active_drag_marker.setPos(new_v)
+                else:
+                    self.active_drag_marker.setPos(new_v)
+                    # Swap list order if the free marker crossed the locked one
+                    lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
+                    lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
+                    if (lock_m1 or lock_m2) and len(active_markers) == 2:
+                        sorted_m = sorted(active_markers, key=lambda m: m.value())
+                        if active_markers[0] is not sorted_m[0]:  # order flipped
+                            active_markers[0], active_markers[1] = active_markers[1], active_markers[0]
+                            self.marker_panel.flip_m_lock()
             else: self.active_drag_marker.setPos(new_v)
             self.update_marker_info()
 
@@ -545,17 +577,9 @@ class MarkerManagerMixin:
         except ValueError: self.update_marker_info()
 
     def handle_lock_change(self, lock_type, checked):
-        if not checked: return
-        if lock_type == 'delta':
-            self.marker_panel.btn_lock_center.blockSignals(True)
-            self.marker_panel.btn_lock_center.setChecked(False)
-            self.marker_panel.btn_lock_center.setText("Center 🔓")
-            self.marker_panel.btn_lock_center.blockSignals(False)
-        else:
-            self.marker_panel.btn_lock_delta.blockSignals(True)
-            self.marker_panel.btn_lock_delta.setChecked(False)
-            self.marker_panel.btn_lock_delta.setText("Delta (Δ) 🔓")
-            self.marker_panel.btn_lock_delta.blockSignals(False)
+        # Mutual exclusion between delta and center is already handled in the panel toggle handlers.
+        # Nothing extra needed here for m1/m2 either — _clear_marker_locks does it.
+        pass
 
     def handle_marker_clear(self, mode):
         markers = self.markers_time if mode == 'TIME' else self.markers_freq
