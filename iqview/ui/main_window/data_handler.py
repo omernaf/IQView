@@ -1,3 +1,4 @@
+import io
 import numpy as np
 from PyQt6.QtCore import pyqtSlot
 from iqview.dsp import FileReaderThread
@@ -14,7 +15,7 @@ class DataHandlerMixin:
             f_min, f_max = min(v_low, v_high), max(v_low, v_high)
 
         self.worker = FileReaderThread(
-            self.file_path, self.data_type, self.fft_size, self.overlap_percent, self.rate, 
+            self.data_source, self.data_type, self.fft_size, self.overlap_percent, self.rate, 
             self.profile_enabled, self.window_type,
             filter_enabled=self.filter_enabled, f_min=f_min, f_max=f_max,
             filter_type=str(self.settings_mgr.get("core/filter_type", "Elliptic")),
@@ -45,7 +46,8 @@ class DataHandlerMixin:
 
     def extract_iq_segment(self, start_sec, end_sec):
         """
-        Extracts raw complex IQ samples from the file for a given time range.
+        Extracts raw complex IQ samples from the data source for a given time range.
+        Works with both file paths (on-disk) and in-memory bytes buffers (stdin mode).
         """
         try:
             start_sample = int(round(start_sec * self.rate))
@@ -64,10 +66,15 @@ class DataHandlerMixin:
             item_size = np.dtype(self.data_type).itemsize
             offset = start_sample * 2 * item_size # 2 for I/Q
             
-            # Use np.fromfile to read specific chunk
-            with open(self.file_path, 'rb') as f:
+            # Open the source — either an in-memory BytesIO or a real file
+            if isinstance(self.data_source, (bytes, bytearray)):
+                f = io.BytesIO(self.data_source)
                 f.seek(offset)
-                raw_data = np.fromfile(f, dtype=self.data_type, count=num_samples * 2)
+                raw_data = np.frombuffer(f.read(num_samples * 2 * item_size), dtype=self.data_type)
+            else:
+                with open(self.data_source, 'rb') as f:
+                    f.seek(offset)
+                    raw_data = np.fromfile(f, dtype=self.data_type, count=num_samples * 2)
                 
             complex_data = raw_data[0::2].astype(np.float32) + 1j * raw_data[1::2].astype(np.float32)
             

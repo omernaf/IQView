@@ -1,3 +1,4 @@
+import io
 import os
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -5,17 +6,21 @@ from .dsp import preprocess_chunk, postprocess_fft, apply_bpf
 
 class FileReaderThread(QThread):
     """
-    Worker thread that reads the entire IQ file, processes it via DSP module, and emits the static spectrogram.
-    Now supports overlapping windows and Band-Pass filtering.
+    Worker thread that reads the entire IQ data source, processes it via DSP module,
+    and emits the static spectrogram.  Supports overlapping windows and Band-Pass filtering.
+
+    `source` can be either:
+      - str  : path to a binary IQ file on disk
+      - bytes: raw IQ bytes already loaded in memory (e.g. piped from stdin)
     """
     progress = pyqtSignal(int, int)
     finished_processing = pyqtSignal(np.ndarray, float)
     
-    def __init__(self, filename, dtype, fft_size, overlap_percent, sample_rate, 
+    def __init__(self, source, dtype, fft_size, overlap_percent, sample_rate, 
                  profile_enabled=False, window_type="Hanning",
                  filter_enabled=False, f_min=None, f_max=None, **kwargs):
         super().__init__()
-        self.filename = filename
+        self.source = source
         self.dtype = dtype
         self.fft_size = fft_size
         self.sample_rate = sample_rate
@@ -49,7 +54,11 @@ class FileReaderThread(QThread):
         req_step_size = max(1, req_step_size)
         
         item_size = np.dtype(self.dtype).itemsize
-        file_size = os.path.getsize(self.filename)
+        # Determine data size — works for both file paths and in-memory bytes
+        if isinstance(source, (bytes, bytearray)):
+            file_size = len(source)
+        else:
+            file_size = os.path.getsize(source)
         num_items = file_size // item_size
         self.complex_samples = num_items // 2
         
@@ -96,8 +105,14 @@ class FileReaderThread(QThread):
         # Batching parameters
         batch_size = 1000
         
+        # Open the data source — both io.BytesIO and a real file support .read() / .seek()
+        if isinstance(self.source, (bytes, bytearray)):
+            data_file = io.BytesIO(self.source)
+        else:
+            data_file = open(self.source, 'rb')
+        
         try:
-            with open(self.filename, 'rb') as f:
+            with data_file as f:
                 row_idx = 0
                 while self.running and row_idx < self.num_rows:
                     rows_to_process = min(batch_size, self.num_rows - row_idx)
@@ -207,7 +222,7 @@ class FileReaderThread(QThread):
                     self.finished_processing.emit(self.spectrogram[:actual_rows, :].T, total_duration)
                     
         except Exception as e:
-            print(f"Error reading file {self.filename}: {e}")
+            print(f"Error reading IQ source: {e}")
             
     def stop(self):
         self.running = False

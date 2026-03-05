@@ -10,13 +10,20 @@ from ...utils.settings_manager import SettingsManager
 from ..themes import get_main_stylesheet
 
 class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, ViewControllerMixin, DataHandlerMixin):
-    def __init__(self, file_path, data_type, sample_rate, center_freq, fft_size, profile_enabled=False):
+    def __init__(self, data_source, data_type, sample_rate, center_freq, fft_size, profile_enabled=False):
         super().__init__()
         self.settings_mgr = SettingsManager()
         self.apply_current_theme()
         
         self.is_spectrogram = True
-        self.setWindowTitle("IQView - Spectrogram Viewer")
+
+        # data_source is either a str (file path) or bytes (piped from stdin)
+        self.data_source = data_source
+        if isinstance(data_source, (bytes, bytearray)):
+            display_name = "<stdin>"
+        else:
+            display_name = data_source
+        self.setWindowTitle(f"IQView - {display_name}")
         self.resize(1280, 800)
         
         self.fc = center_freq
@@ -24,10 +31,12 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         self.fft_size = fft_size
         self.window_type = self.settings_mgr.get("core/window_type", "Hamming")
         self.overlap_percent = float(self.settings_mgr.get("core/overlap", 99.0))
-        self.file_path = file_path
         self.data_type = data_type
         self.profile_enabled = profile_enabled
         
+        # Keep file_path as an alias for backwards-compat with any mixin that reads it
+        self.file_path = data_source
+
         self.markers_time = []
         self.markers_freq = []
         self.time_duration = 1.0
