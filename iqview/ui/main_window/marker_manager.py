@@ -9,8 +9,14 @@ class MarkerManagerMixin:
             vb = self.spectrogram_view.plot_item.vb
             mouse_v = vb.mapSceneToView(scene_pos)
             
-            is_time = (self.interaction_mode == 'TIME')
-            active_markers = self.markers_time if is_time else self.markers_freq
+            is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
+            is_endless = 'ENDLESS' in self.interaction_mode
+            
+            if is_endless:
+                active_markers = self.markers_time_endless if is_time else self.markers_freq_endless
+            else:
+                active_markers = self.markers_time if is_time else self.markers_freq
+                
             curr_min, curr_max = (0.0, self.time_duration) if is_time else (self.fc - self.rate/2, self.fc + self.rate/2)
             angle = 90 if is_time else 0
             
@@ -247,41 +253,58 @@ class MarkerManagerMixin:
                             return
                     
                     # 5. LOWEST PRIORITY: Place brand new marker (and replace oldest if needed)
-                    # If a marker position is locked and we have 2 markers, move only the free one.
-                    lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
-                    lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
-                    if len(active_markers) == 2 and (lock_m1 or lock_m2):
-                        sorted_m = sorted(active_markers, key=lambda m: m.value())
-                        free_m = sorted_m[1] if lock_m1 else sorted_m[0]
-                        locked_m = sorted_m[0] if lock_m1 else sorted_m[1]
-                        free_m.setPos(val)
-                        if drag_mode: self.active_drag_marker = free_m
-                        # Swap list order and lock if free marker crossed the locked one
-                        if (lock_m1 and val < locked_m.value()) or (lock_m2 and val > locked_m.value()):
-                            active_markers[0], active_markers[1] = active_markers[1], active_markers[0]
-                            self.marker_panel.flip_m_lock()
-                    else:
-                        if len(active_markers) >= 2:
-                            old_marker = active_markers.pop(0)
-                            self.spectrogram_view.plot_item.removeItem(old_marker)
-                        
+                    if is_endless:
                         theme = self.settings_mgr.get("ui/theme", "Dark").lower()
                         color = self.settings_mgr.get(f"ui/{theme}/time_marker_color") if is_time else self.settings_mgr.get(f"ui/{theme}/freq_marker_color")
-                        style_name = self.settings_mgr.get(f"ui/{theme}/time_marker_style") if is_time else self.settings_mgr.get(f"ui/{theme}/freq_marker_style")
                         
-                        style_map = {
-                            "SolidLine": Qt.PenStyle.SolidLine,
-                            "DashLine": Qt.PenStyle.DashLine,
-                            "DotLine": Qt.PenStyle.DotLine,
-                            "DashDotLine": Qt.PenStyle.DashDotLine
-                        }
-                        style = style_map.get(str(style_name), Qt.PenStyle.DashLine)
-                        
-                        marker = pg.InfiniteLine(pos=val, angle=angle, movable=False, pen=pg.mkPen(color, width=2, style=style))
+                        m_count = len(active_markers)
+                        marker = pg.InfiniteLine(
+                            pos=val, angle=angle, movable=False, 
+                            pen=pg.mkPen(color, width=2, style=Qt.PenStyle.SolidLine),
+                            label=f"M{m_count + 1}",
+                            labelOpts={'position': 0.1, 'color': color, 'anchors': [(0,0), (0,0)]}
+                        )
                         marker.setZValue(10)
                         self.spectrogram_view.plot_item.addItem(marker, ignoreBounds=True)
                         active_markers.append(marker)
                         if drag_mode: self.active_drag_marker = marker
+                    else:
+                        # If a marker position is locked and we have 2 markers, move only the free one.
+                        lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
+                        lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
+                        if len(active_markers) == 2 and (lock_m1 or lock_m2):
+                            # ... (existing code for locked markers)
+                            sorted_m = sorted(active_markers, key=lambda m: m.value())
+                            free_m = sorted_m[1] if lock_m1 else sorted_m[0]
+                            locked_m = sorted_m[0] if lock_m1 else sorted_m[1]
+                            free_m.setPos(val)
+                            if drag_mode: self.active_drag_marker = free_m
+                            # Swap list order and lock if free marker crossed the locked one
+                            if (lock_m1 and val < locked_m.value()) or (lock_m2 and val > locked_m.value()):
+                                active_markers[0], active_markers[1] = active_markers[1], active_markers[0]
+                                self.marker_panel.flip_m_lock()
+                        else:
+                            if len(active_markers) >= 2:
+                                old_marker = active_markers.pop(0)
+                                self.spectrogram_view.plot_item.removeItem(old_marker)
+                            
+                            theme = self.settings_mgr.get("ui/theme", "Dark").lower()
+                            color = self.settings_mgr.get(f"ui/{theme}/time_marker_color") if is_time else self.settings_mgr.get(f"ui/{theme}/freq_marker_color")
+                            style_name = self.settings_mgr.get(f"ui/{theme}/time_marker_style") if is_time else self.settings_mgr.get(f"ui/{theme}/freq_marker_style")
+                            
+                            style_map = {
+                                "SolidLine": Qt.PenStyle.SolidLine,
+                                "DashLine": Qt.PenStyle.DashLine,
+                                "DotLine": Qt.PenStyle.DotLine,
+                                "DashDotLine": Qt.PenStyle.DashDotLine
+                            }
+                            style = style_map.get(str(style_name), Qt.PenStyle.DashLine)
+                            
+                            marker = pg.InfiniteLine(pos=val, angle=angle, movable=False, pen=pg.mkPen(color, width=2, style=style))
+                            marker.setZValue(10)
+                            self.spectrogram_view.plot_item.addItem(marker, ignoreBounds=True)
+                            active_markers.append(marker)
+                            if drag_mode: self.active_drag_marker = marker
             
             self.update_marker_info()
 
@@ -420,8 +443,16 @@ class MarkerManagerMixin:
             if not self.active_drag_marker:
                 return
 
-            is_time = self.active_drag_marker in self.markers_time
-            active_markers = self.markers_time if is_time else self.markers_freq
+            is_time_endless = self.active_drag_marker in self.markers_time_endless
+            is_freq_endless = self.active_drag_marker in self.markers_freq_endless
+            is_endless = is_time_endless or is_freq_endless
+            
+            if is_endless:
+                is_time = is_time_endless
+                active_markers = self.markers_time_endless if is_time else self.markers_freq_endless
+            else:
+                is_time = self.active_drag_marker in self.markers_time
+                active_markers = self.markers_time if is_time else self.markers_freq
             
             if is_time:
                 get_pos = lambda m: m.value()
@@ -437,7 +468,9 @@ class MarkerManagerMixin:
                 bin_idx = int(round((raw_val - f_min) / rbw)) + 1
                 new_v = f_min + (bin_idx - 1.0) * rbw
 
-            if len(active_markers) == 2:
+            if is_endless:
+                self.active_drag_marker.setPos(new_v)
+            elif len(active_markers) == 2:
                 other_marker = active_markers[0] if active_markers[1] == self.active_drag_marker else active_markers[1]
                 old_v = get_pos(self.active_drag_marker)
                 shift = new_v - old_v
@@ -467,9 +500,16 @@ class MarkerManagerMixin:
             self.update_marker_info()
 
     def update_marker_info(self):
-        is_freq = (self.interaction_mode == 'FREQ')
+        is_freq = (self.interaction_mode in ['FREQ', 'FREQ_ENDLESS'])
+        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
+        is_endless = 'ENDLESS' in self.interaction_mode
         is_filter = (self.interaction_mode == 'FILTER')
         
+        if is_endless:
+            markers = self.markers_time_endless if is_time else self.markers_freq_endless
+            self.marker_panel.update_endless_list(markers, self.interaction_mode)
+            return
+
         if is_filter:
             if not getattr(self, 'filter_placed', False) and not getattr(self, 'filter_placing', False):
                 # Clear all widgets and return
@@ -560,7 +600,7 @@ class MarkerManagerMixin:
     def marker_edit_finished(self):
         sender = self.sender()
         name = sender.objectName()
-        is_freq = (self.interaction_mode == 'FREQ')
+        is_freq = (self.interaction_mode in ['FREQ', 'FREQ_ENDLESS'])
         is_filter = (self.interaction_mode == 'FILTER')
         
         if is_filter:
@@ -687,12 +727,33 @@ class MarkerManagerMixin:
             # 3. Update UI
             self.marker_panel.filter_enable_cb.setChecked(False)
             self.marker_panel.filter_enable_cb.setEnabled(False)
+        elif mode == 'TIME_ENDLESS':
+            for marker in self.markers_time_endless:
+                self.spectrogram_view.plot_item.removeItem(marker)
+            self.markers_time_endless.clear()
+        elif mode == 'FREQ_ENDLESS':
+            for marker in self.markers_freq_endless:
+                self.spectrogram_view.plot_item.removeItem(marker)
+            self.markers_freq_endless.clear()
         else:
             markers = self.markers_time if mode == 'TIME' else self.markers_freq
             for marker in markers:
                 self.spectrogram_view.plot_item.removeItem(marker)
             markers.clear()
         self.update_marker_info()
+
+    def remove_marker_item(self, marker, mode):
+        """Remove a specific marker from the endless collections."""
+        is_time = 'TIME' in mode
+        active_markers = self.markers_time_endless if is_time else self.markers_freq_endless
+        if marker in active_markers:
+            self.spectrogram_view.plot_item.removeItem(marker)
+            active_markers.remove(marker)
+            # Renumber remaining labels
+            for i, m in enumerate(active_markers):
+                if hasattr(m, 'label'):
+                    m.label.setText(f"M{i+1}")
+            self.update_marker_info()
 
     def refresh_spectrogram_markers(self):
         theme = self.settings_mgr.get("ui/theme", "Dark").lower()

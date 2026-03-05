@@ -151,8 +151,12 @@ class ViewControllerMixin:
         else: self.spectrogram_view.plot_item.setRange(rect, padding=0)
 
     def fit_to_markers(self):
-        is_freq = (self.interaction_mode == 'FREQ')
-        active_markers = self.markers_freq if is_freq else self.markers_time
+        is_freq = (self.interaction_mode in ['FREQ', 'FREQ_ENDLESS'])
+        is_endless = 'ENDLESS' in self.interaction_mode
+        if is_endless:
+            active_markers = self.markers_freq_endless if is_freq else self.markers_time_endless
+        else:
+            active_markers = self.markers_freq if is_freq else self.markers_time
         if len(active_markers) == 2:
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             v1, v2 = active_markers[0].value(), active_markers[1].value()

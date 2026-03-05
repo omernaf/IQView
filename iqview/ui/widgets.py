@@ -293,7 +293,7 @@ class CustomViewBox(pg.ViewBox):
                 ev.accept()
             else:
                 # --- Marker Logic ---
-                if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER']:
+                if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS']:
                     if ev.isStart():
                         self.ui_controller.place_marker(ev.buttonDownScenePos(), drag_mode=True)
                     elif ev.isFinish():
@@ -310,7 +310,7 @@ class CustomViewBox(pg.ViewBox):
 
     def mouseClickEvent(self, ev):
         if ev.button() == Qt.MouseButton.LeftButton:
-            if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER']:
+            if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS']:
                 self.ui_controller.place_marker(ev.scenePos(), drag_mode=False)
             ev.accept()
         elif ev.button() == Qt.MouseButton.RightButton:
@@ -337,10 +337,14 @@ class CustomViewBox(pg.ViewBox):
         fit_act = menu.addAction("Fit to Screen")
         # Handle 'Y' mode for TimeDomainView or 'FREQ' for Spectrogram
         if is_spec:
-            active_markers = self.ui_controller.markers_freq if self.ui_controller.interaction_mode == 'FREQ' else self.ui_controller.markers_time
+            is_freq = (self.ui_controller.interaction_mode in ['FREQ', 'FREQ_ENDLESS', 'MAG', 'Y'])
+            active_markers = self.ui_controller.markers_freq_endless if self.ui_controller.interaction_mode == 'FREQ_ENDLESS' else \
+                             self.ui_controller.markers_freq if is_freq else \
+                             self.ui_controller.markers_time_endless if self.ui_controller.interaction_mode == 'TIME_ENDLESS' else \
+                             self.ui_controller.markers_time
         else:
             # TimeDomainView
-            if self.ui_controller.interaction_mode == 'MAG':
+            if self.ui_controller.interaction_mode in ['MAG', 'Y']:
                 active_markers = self.ui_controller.markers_y_dict.get(self.ui_controller.y_label_text, [])
             else:
                 active_markers = self.ui_controller.markers_time

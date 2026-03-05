@@ -345,7 +345,7 @@ class TimeDomainView(QWidget):
 
     def place_marker(self, scene_pos, drag_mode=False):
         v_pos = self.view_box.mapSceneToView(scene_pos)
-        is_time = (self.interaction_mode == 'TIME')
+        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
         
         # Clamp to bounds
         if is_time:
@@ -460,7 +460,7 @@ class TimeDomainView(QWidget):
         self.update_marker_info()
 
     def update_marker_info(self):
-        is_time = (self.interaction_mode == 'TIME')
+        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
         active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
         sorted_m = sorted(active_markers, key=lambda m: m.value())
         
@@ -514,7 +514,7 @@ class TimeDomainView(QWidget):
     def marker_edit_finished(self):
         sender = self.sender()
         name = sender.objectName()
-        is_time = (self.interaction_mode == 'TIME')
+        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
         active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
         sorted_markers = sorted(active_markers, key=lambda m: m.value())
 
@@ -578,7 +578,7 @@ class TimeDomainView(QWidget):
         if is_finish: self.last_move_scene_pos = None
 
     def fit_to_markers(self):
-        is_time = (self.interaction_mode == 'TIME')
+        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
         active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
         if len(active_markers) == 2:
             v1, v2 = active_markers[0].value(), active_markers[1].value()
