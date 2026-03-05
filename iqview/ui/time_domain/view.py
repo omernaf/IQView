@@ -354,23 +354,9 @@ class TimeDomainView(QWidget):
 
     # --- Marker Logic ---
     def handle_lock_change(self, lock_type, checked):
-        if not checked: 
-            self.marker_panel.btn_lock_delta.setText(f"Delta (Δ) 🔓")
-            self.marker_panel.btn_lock_center.setText(f"Center 🔓")
-            return
-            
-        if lock_type == 'delta':
-            self.marker_panel.btn_lock_center.blockSignals(True)
-            self.marker_panel.btn_lock_center.setChecked(False)
-            self.marker_panel.btn_lock_center.setText("Center 🔓")
-            self.marker_panel.btn_lock_center.blockSignals(False)
-            self.marker_panel.btn_lock_delta.setText(f"Delta (Δ) 🔒")
-        else:
-            self.marker_panel.btn_lock_delta.blockSignals(True)
-            self.marker_panel.btn_lock_delta.setChecked(False)
-            self.marker_panel.btn_lock_delta.setText("Delta (Δ) 🔓")
-            self.marker_panel.btn_lock_delta.blockSignals(False)
-            self.marker_panel.btn_lock_center.setText(f"Center 🔒")
+        # MarkerPanel handles the state and UI text
+        # View just needs to react if necessary
+        self.update_marker_info()
 
     def _get_y_bounds(self):
         y_min = np.min(self.current_plot_data)
@@ -395,14 +381,21 @@ class TimeDomainView(QWidget):
         else:
             active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
         
-        # 1. Shift pair if locked (Only for fixed modes)
-        if not is_endless and len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+        if not is_endless and len(active_markers) == 2:
             m1_pos, m2_pos = active_markers[0].value(), active_markers[1].value()
             target = active_markers[0] if abs(val-m1_pos) < abs(val-m2_pos) else active_markers[1]
             other = active_markers[1] if target == active_markers[0] else active_markers[0]
+            target_idx = 0 if target == active_markers[0] else 1
+            other_idx = 1 - target_idx
             
+            lock_target = self.marker_panel.btn_lock_m1.isChecked() if target_idx == 0 else self.marker_panel.btn_lock_m2.isChecked()
+            lock_delta = self.marker_panel.btn_lock_delta.isChecked()
+            lock_center = self.marker_panel.btn_lock_center.isChecked()
+
+            if lock_target: return # Locked marker can't be moved or teleported
+
             shift = val - target.value()
-            if self.marker_panel.btn_lock_delta.isChecked():
+            if lock_delta:
                 new_t, new_o = val, other.value() + shift
                 if is_time:
                     t_min, t_max = self.time_axis[0], self.time_axis[-1]
@@ -412,7 +405,7 @@ class TimeDomainView(QWidget):
                     y_min, y_max = self._get_y_bounds()
                     if y_min <= new_t <= y_max and y_min <= new_o <= y_max:
                         target.setValue(new_t); other.setValue(new_o)
-            elif self.marker_panel.btn_lock_center.isChecked():
+            elif lock_center:
                 ct = (m1_pos + m2_pos) / 2
                 new_o = 2 * ct - val
                 if is_time:
@@ -423,6 +416,12 @@ class TimeDomainView(QWidget):
                     y_min, y_max = self._get_y_bounds()
                     if y_min <= val <= y_max and y_min <= new_o <= y_max:
                         target.setValue(val); other.setValue(new_o)
+            else:
+                target.setValue(val)
+                # Check for crossing - only if NOT locked or linked
+                if (val > other.value() and target_idx == 0) or (val < other.value() and target_idx == 1):
+                    active_markers[0], active_markers[1] = active_markers[1], active_markers[0]
+                    self.marker_panel.flip_m_lock(self.interaction_mode)
             
             if drag_mode: self.active_drag_marker = target
             self.update_marker_info()
@@ -490,8 +489,17 @@ class TimeDomainView(QWidget):
         
         if not is_endless and len(active_markers) == 2:
             other = active_markers[0] if active_markers[1] == self.active_drag_marker else active_markers[1]
+            target_idx = 0 if self.active_drag_marker == active_markers[0] else 1
+            other_idx = 1 - target_idx
+            
+            lock_target = self.marker_panel.btn_lock_m1.isChecked() if target_idx == 0 else self.marker_panel.btn_lock_m2.isChecked()
+            lock_delta = self.marker_panel.btn_lock_delta.isChecked()
+            lock_center = self.marker_panel.btn_lock_center.isChecked()
+
+            if lock_target: return # Dragging a locked marker is a no-op
+
             shift = val - self.active_drag_marker.value()
-            if self.marker_panel.btn_lock_delta.isChecked():
+            if lock_delta:
                 new_o = other.value() + shift
                 if is_time:
                     t_min, t_max = self.time_axis[0], self.time_axis[-1]
@@ -501,7 +509,7 @@ class TimeDomainView(QWidget):
                     y_min, y_max = self._get_y_bounds()
                     if y_min <= val <= y_max and y_min <= new_o <= y_max:
                         self.active_drag_marker.setValue(val); other.setValue(new_o)
-            elif self.marker_panel.btn_lock_center.isChecked():
+            elif lock_center:
                 ct = (self.active_drag_marker.value() + other.value()) / 2
                 new_o = 2 * ct - val
                 if is_time:
@@ -512,7 +520,12 @@ class TimeDomainView(QWidget):
                     y_min, y_max = self._get_y_bounds()
                     if y_min <= val <= y_max and y_min <= new_o <= y_max:
                         self.active_drag_marker.setValue(val); other.setValue(new_o)
-            else: self.active_drag_marker.setValue(val)
+            else: 
+                self.active_drag_marker.setValue(val)
+                # Crossing logic
+                if (val > other.value() and target_idx == 0) or (val < other.value() and target_idx == 1):
+                    active_markers[0], active_markers[1] = active_markers[1], active_markers[0]
+                    self.marker_panel.flip_m_lock(self.interaction_mode)
         else: self.active_drag_marker.setValue(val)
         self.update_marker_info()
 
