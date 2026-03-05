@@ -29,11 +29,12 @@ def postprocess_fft(fft_result, fft_size):
 
 from scipy import signal
 
-def apply_bpf(data, fs, f_min, f_max, order=8, rp=0.1, rs=60):
+def apply_bpf(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0):
     """
     Applies a sharp COMPLEX (Asymmetric) Band-Pass filter to IQ data.
     Uses Shift-to-Baseband -> Low-Pass Filter -> Shift-Back-Up approach.
     This ensures that ONLY the selected freq range is kept even in complex signals.
+    Supports choice of Butterworth, Chebyshev, Elliptic, and Bessel.
     """
     if f_min >= f_max or len(data) == 0:
         return data
@@ -47,13 +48,21 @@ def apply_bpf(data, fs, f_min, f_max, order=8, rp=0.1, rs=60):
     data_shifted = data * shift_vector
     
     # 2. Design Low-Pass Filter at half-bandwidth
-    # Normalized frequency (0 to 1.0, where 1.0 is Nyquist)
     nyquist = fs / 2.0
     cutoff = (bandwidth / 2.0) / nyquist
     cutoff = max(0.0001, min(cutoff, 0.9999))
     
-    # Use Elliptic Low-Pass Filter for sharpest roll-off
-    sos = signal.ellip(order, rp, rs, cutoff, btype='low', output='sos')
+    # Design SOS filter based on selected type
+    if filter_type == "Butterworth":
+        sos = signal.butter(order, cutoff, btype='low', output='sos')
+    elif filter_type == "Chebyshev I":
+        sos = signal.cheby1(order, rp, cutoff, btype='low', output='sos')
+    elif filter_type == "Chebyshev II":
+        sos = signal.cheby2(order, rs, cutoff, btype='low', output='sos')
+    elif filter_type == "Bessel":
+        sos = signal.bessel(order, cutoff, btype='low', output='sos')
+    else: # Default: Elliptic
+        sos = signal.ellip(order, rp, rs, cutoff, btype='low', output='sos')
     
     # 3. Apply Filter
     data_filtered = signal.sosfilt(sos, data_shifted)

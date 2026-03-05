@@ -16,7 +16,11 @@ class DataHandlerMixin:
         self.worker = FileReaderThread(
             self.file_path, self.data_type, self.fft_size, self.overlap_percent, self.rate, 
             self.profile_enabled, self.window_type,
-            filter_enabled=self.filter_enabled, f_min=f_min, f_max=f_max
+            filter_enabled=self.filter_enabled, f_min=f_min, f_max=f_max,
+            filter_type=str(self.settings_mgr.get("core/filter_type", "Elliptic")),
+            filter_order=int(self.settings_mgr.get("core/filter_order", 8)),
+            filter_ripple=float(self.settings_mgr.get("core/filter_ripple", 0.1)),
+            filter_stopband=float(self.settings_mgr.get("core/filter_stopband", 60.0))
         )
         self.worker.progress.connect(self.update_progress)
         self.worker.finished_processing.connect(self.display_spectrogram)
@@ -71,7 +75,17 @@ class DataHandlerMixin:
                 from iqview.dsp import apply_bpf
                 v_low, v_high = self.filter_region.getRegion()
                 f_min, f_max = min(v_low, v_high), max(v_low, v_high)
-                complex_data = apply_bpf(complex_data, self.rate, f_min, f_max)
+                
+                f_type = str(self.settings_mgr.get("core/filter_type", "Elliptic"))
+                f_order = int(self.settings_mgr.get("core/filter_order", 8))
+                f_ripple = float(self.settings_mgr.get("core/filter_ripple", 0.1))
+                f_stopband = float(self.settings_mgr.get("core/filter_stopband", 60.0))
+                
+                complex_data = apply_bpf(
+                    complex_data, self.rate, f_min, f_max,
+                    filter_type=f_type, order=f_order,
+                    rp=f_ripple, rs=f_stopband
+                )
                 
             return complex_data
         except Exception as e:
