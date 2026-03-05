@@ -25,5 +25,5 @@ python -m pip download -d dist .
 ## How to Install (Offline)
 On the target machine, navigate to the folder containing these files and run:
 ```powershell
-pip install --no-index --find-links . iqview-0.1.0-py3-none-any.whl
+pip install iqview-0.1.0-py3-none-any.whl
 ```

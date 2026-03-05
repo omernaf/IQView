@@ -42,14 +42,15 @@ total_bytes = numel(byte_data);
 cmd_args = {'iqview', '--stdin', '-r', num2str(fs, '%.6g'), '-c', num2str(fc, '%.6g'), '-t', type};
 pb = java.lang.ProcessBuilder(cmd_args);
 pb.redirectErrorStream(true);
+
 fprintf('Launching IQView and streaming %d samples (%.2f MB)...\n', numel(data_single), total_bytes / 1024^2);
 proc = pb.start();
-
 stdin_stream = proc.getOutputStream();
 stdin_stream.write(byte_data, 0, total_bytes);
 
 stdin_stream.flush();
 stdin_stream.close(); % EOF - signals Python's sys.stdin.buffer.read() to return
+
 fprintf('Data sent (%.2f MB). IQView is loading...\n', total_bytes / 1024^2);
 % IQView runs independently; we do not wait for it to exit.
 end
