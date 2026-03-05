@@ -114,6 +114,7 @@ class MarkerManagerMixin:
                 if len(self.filter_bounds) == 1:
                     if not self.filter_line:
                         self.filter_line = pg.InfiniteLine(angle=0, pen=pg.mkPen('#ff6400', width=2, style=Qt.PenStyle.DashLine))
+                        self.filter_line.setZValue(10)
                     if self.filter_line not in self.spectrogram_view.plot_item.items:
                         self.spectrogram_view.plot_item.addItem(self.filter_line)
                     self.filter_line.setPos(val)
@@ -129,6 +130,7 @@ class MarkerManagerMixin:
                             brush=pg.mkBrush(255, 100, 0, 40), pen=pg.mkPen('#ff6400', width=2),
                             movable=False
                         )
+                        self.filter_region.setZValue(9)
                         self.filter_region.sigRegionChanged.connect(self.on_filter_region_changed)
                         self.filter_region.sigRegionChangeFinished.connect(self.on_filter_region_finished)
 
@@ -583,10 +585,30 @@ class MarkerManagerMixin:
         pass
 
     def handle_marker_clear(self, mode):
-        markers = self.markers_time if mode == 'TIME' else self.markers_freq
-        for marker in markers:
-            self.spectrogram_view.plot_item.removeItem(marker)
-        markers.clear()
+        if mode == 'FILTER':
+            # 1. Remove items from plot
+            if self.filter_line:
+                self.spectrogram_view.plot_item.removeItem(self.filter_line)
+                self.filter_line = None
+            if self.filter_region:
+                self.spectrogram_view.plot_item.removeItem(self.filter_region)
+                self.filter_region = None
+            
+            # 2. Reset internal state
+            self.filter_bounds = []
+            self.filter_marker_order = []
+            self.filter_placed = False
+            self.filter_placing = False
+            self.filter_enabled = False
+            
+            # 3. Update UI
+            self.marker_panel.filter_enable_cb.setChecked(False)
+            self.marker_panel.filter_enable_cb.setEnabled(False)
+        else:
+            markers = self.markers_time if mode == 'TIME' else self.markers_freq
+            for marker in markers:
+                self.spectrogram_view.plot_item.removeItem(marker)
+            markers.clear()
         self.update_marker_info()
 
     def refresh_spectrogram_markers(self):

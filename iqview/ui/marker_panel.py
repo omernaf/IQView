@@ -72,9 +72,9 @@ class MarkerPanel(QFrame):
         self.mode_btn_layout.addWidget(self.btn_home, 0, 2)
 
         # 6. BPF Mode
-        self.btn_bpf = QPushButton("📊")
+        self.btn_bpf = DoubleClickButton("📊")
         self.btn_bpf.setObjectName("mode_btn")
-        self.btn_bpf.setToolTip("BPF Selection Mode")
+        self.btn_bpf.setToolTip("BPF Selection Mode (Double-click to clear)")
         self.btn_bpf.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_bpf, 1, 2)
 
@@ -101,6 +101,7 @@ class MarkerPanel(QFrame):
         
         self.btn_marker_time.doubleClicked.connect(lambda: self.markerClearRequested.emit('TIME'))
         self.btn_marker_freq.doubleClicked.connect(lambda: self.markerClearRequested.emit('FREQ'))
+        self.btn_bpf.doubleClicked.connect(lambda: self.markerClearRequested.emit('FILTER'))
 
         # Grid for marker data
         self.grid = QGridLayout()
