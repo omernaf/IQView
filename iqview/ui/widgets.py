@@ -161,27 +161,60 @@ class CustomViewBox(pg.ViewBox):
 
             if mode == 'FILTER':
                 active_values = getattr(self.ui_controller, 'filter_bounds', [])
-                for b_val in active_values:
+                for i, b_val in enumerate(active_values):
                     # In Spectrogram, filter bounds are horizontal frequency lines
                     p_scene = self.mapViewToScene(pg.Point(0, b_val))
                     dist = abs(scene_pos.y() - p_scene.y())
                     if dist < 20:
-                        found_near = True
-                        self.setCursor(Qt.CursorShape.SizeVerCursor)
-                        break
+                        # Check lock status
+                        is_b_locked = False
+                        if len(active_values) == 2:
+                            lock_m1 = getattr(self.ui_controller.marker_panel, 'btn_lock_m1', None)
+                            lock_m2 = getattr(self.ui_controller.marker_panel, 'btn_lock_m2', None)
+                            lock_delta = getattr(self.ui_controller.marker_panel, 'btn_lock_delta', None)
+                            lock_center = getattr(self.ui_controller.marker_panel, 'btn_lock_center', None)
+                            
+                            b_locked = (i == 0 and lock_m1 and lock_m1.isChecked()) or \
+                                       (i == 1 and lock_m2 and lock_m2.isChecked())
+                            linked = (lock_delta and lock_delta.isChecked()) or \
+                                     (lock_center and lock_center.isChecked())
+                            if b_locked and not linked:
+                                is_b_locked = True
+                        
+                        if not is_b_locked:
+                            found_near = True
+                            self.setCursor(Qt.CursorShape.SizeVerCursor)
+                            break
             
             if not found_near:
-                for m in active_markers:
+                for i, m in enumerate(active_markers):
                     # markers are InfiniteLines. angle=90 is vertical, angle=0 is horizontal
                     m_val = m.value()
                     angle = m.angle
                     m_pixel = self.mapViewToScene(pg.Point(m_val, 0) if angle == 90 else pg.Point(0, m_val))
                     dist = abs(scene_pos.x() - m_pixel.x()) if angle == 90 else abs(scene_pos.y() - m_pixel.y())
                     
-                    if dist < 20: 
-                        found_near = True
-                        self.setCursor(Qt.CursorShape.SizeHorCursor if angle == 90 else Qt.CursorShape.SizeVerCursor)
-                        break
+                    if dist < 20:
+                        # Check lock status
+                        is_m_locked = False
+                        if len(active_markers) == 2:
+                            lock_m1 = getattr(self.ui_controller.marker_panel, 'btn_lock_m1', None)
+                            lock_m2 = getattr(self.ui_controller.marker_panel, 'btn_lock_m2', None)
+                            lock_delta = getattr(self.ui_controller.marker_panel, 'btn_lock_delta', None)
+                            lock_center = getattr(self.ui_controller.marker_panel, 'btn_lock_center', None)
+                            
+                            m_locked = (i == 0 and lock_m1 and lock_m1.isChecked()) or \
+                                       (i == 1 and lock_m2 and lock_m2.isChecked())
+                            linked = (lock_delta and lock_delta.isChecked()) or \
+                                     (lock_center and lock_center.isChecked())
+                            
+                            if m_locked and not linked:
+                                is_m_locked = True
+                        
+                        if not is_m_locked:
+                            found_near = True
+                            self.setCursor(Qt.CursorShape.SizeHorCursor if angle == 90 else Qt.CursorShape.SizeVerCursor)
+                            break
             
             # 4. Check for Grid Lines (Shadow Markers) if delta lock is off
             if not found_near and mode in ['TIME', 'FREQ']:
