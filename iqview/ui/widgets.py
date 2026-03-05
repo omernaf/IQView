@@ -233,7 +233,8 @@ class CustomViewBox(pg.ViewBox):
                         self.ui_controller.place_marker(ev.buttonDownScenePos(), drag_mode=True)
                     elif ev.isFinish():
                         self.ui_controller.active_drag_marker = None
-                        if hasattr(self.ui_controller, 'active_drag_filter_bound_idx'):
+                        if getattr(self.ui_controller, 'active_drag_filter_bound_idx', -1) != -1:
+                            self.ui_controller.on_filter_region_finished()
                             self.ui_controller.active_drag_filter_bound_idx = -1
                     else:
                         self.ui_controller.update_drag(ev.scenePos())

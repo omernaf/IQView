@@ -28,7 +28,7 @@ class MarkerManagerMixin:
 
             # 2. HIGHEST PRIORITY: Handle FILTER mode placement
             if self.interaction_mode == 'FILTER':
-                # 1. Hit-test for existing bounds if any are placed
+                # 1. Hit-test for existing bounds
                 if self.filter_bounds:
                     hit_threshold = 20 # pixels
                     vb = self.spectrogram_view.plot_item.vb
@@ -43,21 +43,26 @@ class MarkerManagerMixin:
                             best_idx = i
                     
                     if best_idx != -1:
-                        self.active_drag_filter_bound_idx = best_idx
-                        if drag_mode: return
+                        # Success: Drag existing bound
+                        self.filter_bounds[best_idx] = val # Jump to mouse
+                        self.filter_bounds.sort() # Ensure sorted
+                        self.active_drag_filter_bound_idx = self.filter_bounds.index(val)
+                        
+                        if len(self.filter_bounds) == 1:
+                            if self.filter_line: self.filter_line.setPos(val)
+                        else:
+                            if self.filter_region: self.filter_region.setRegion(self.filter_bounds)
+                        self.update_marker_info()
                         return
 
-                # 2. No hit - standard placement or clear/replace
+                # 2. No hit - Place new bound or replace oldest
                 if len(self.filter_bounds) >= 2:
-                    self.filter_bounds = []
-                    if self.filter_region: self.filter_region.hide()
-                    self.filter_placed = False
-                    self.marker_panel.filter_enable_cb.setChecked(False)
-                    self.marker_panel.filter_enable_cb.setEnabled(False)
+                    # Pop first (oldest or just lowest if sorted)
+                    self.filter_bounds.pop(0)
 
                 self.filter_bounds.append(val)
-                # Enable immediate dragging for the new bound
-                self.active_drag_filter_bound_idx = len(self.filter_bounds) - 1
+                self.filter_bounds.sort()
+                self.active_drag_filter_bound_idx = self.filter_bounds.index(val)
                 
                 if len(self.filter_bounds) == 1:
                     if not self.filter_line:
@@ -70,9 +75,11 @@ class MarkerManagerMixin:
                     if self.filter_line: self.filter_line.hide()
                     f1, f2 = self.filter_bounds
                     if not self.filter_region:
+                        # Lazily create the region
                         self.filter_region = pg.LinearRegionItem(
                             values=[f1, f2], orientation='horizontal',
-                            brush=pg.mkBrush(255, 100, 0, 40), pen=pg.mkPen('#ff6400', width=2)
+                            brush=pg.mkBrush(255, 100, 0, 40), pen=pg.mkPen('#ff6400', width=2),
+                            movable=False
                         )
                         self.filter_region.sigRegionChanged.connect(self.on_filter_region_changed)
                         self.filter_region.sigRegionChangeFinished.connect(self.on_filter_region_finished)
@@ -80,12 +87,13 @@ class MarkerManagerMixin:
                     if self.filter_region not in self.spectrogram_view.plot_item.items:
                         self.spectrogram_view.plot_item.addItem(self.filter_region)
                     else:
-                        self.filter_region.setRegion([f1, f2])
+                        self.filter_region.setRegion(self.filter_bounds)
                         self.filter_region.show()
                     
                     self.filter_placed = True
                     self.marker_panel.filter_enable_cb.setEnabled(True)
-                    self.on_filter_region_finished()
+                    if not drag_mode:
+                        self.on_filter_region_finished()
                 
                 self.update_marker_info()
                 return
@@ -175,6 +183,10 @@ class MarkerManagerMixin:
                 new_v = f_min + (bin_idx - 1.0) * rbw
                 
                 self.filter_bounds[idx] = new_v
+                if len(self.filter_bounds) == 2:
+                    self.filter_bounds.sort()
+                    # Re-find index to stay attached to the same edge
+                    self.active_drag_filter_bound_idx = self.filter_bounds.index(new_v)
                 
                 if len(self.filter_bounds) == 1:
                     if self.filter_line: self.filter_line.setPos(new_v)
@@ -196,7 +208,8 @@ class MarkerManagerMixin:
                 if not self.filter_region:
                     self.filter_region = pg.LinearRegionItem(
                         values=[f1, new_v], orientation='horizontal',
-                        brush=pg.mkBrush(255, 100, 0, 40), pen=pg.mkPen('#ff6400', width=2)
+                        brush=pg.mkBrush(255, 100, 0, 40), pen=pg.mkPen('#ff6400', width=2),
+                        movable=False
                     )
                     if self.filter_region not in self.spectrogram_view.plot_item.items:
                         self.spectrogram_view.plot_item.addItem(self.filter_region)

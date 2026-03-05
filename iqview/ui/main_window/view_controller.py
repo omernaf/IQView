@@ -60,7 +60,8 @@ class ViewControllerMixin:
         if self.filter_region:
             if mode == 'FILTER' and (getattr(self, 'filter_placed', False) or b_len == 1):
                 self.filter_region.show()
-                self.filter_region.setMovable(getattr(self, 'filter_placed', False))
+                # Use our custom hit-testing and dragging logic instead of pg regional movement
+                self.filter_region.setMovable(False)
             else:
                 self.filter_region.hide()
                 self.filter_region.setMovable(False)
