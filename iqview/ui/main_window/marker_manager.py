@@ -594,6 +594,15 @@ class MarkerManagerMixin:
             self.marker_panel.delta_sam.blockSignals(False)
             self.marker_panel.center_sec.blockSignals(False)
             self.marker_panel.center_sam.blockSignals(False)
+        
+        # Sync lock button availability
+        if is_filter:
+            m1_p, m2_p = (len(active_values) >= 1), (len(active_values) >= 2)
+            self.marker_panel.set_locks_enabled(m1_p, m2_p)
+        elif not is_endless:
+            m1_p, m2_p = (len(active_values) >= 1), (len(active_values) >= 2)
+            self.marker_panel.set_locks_enabled(m1_p, m2_p)
+
         self.update_grid('TIME')
         self.update_grid('FREQ')
 
@@ -748,6 +757,7 @@ class MarkerManagerMixin:
             # 3. Update UI
             self.marker_panel.filter_enable_cb.setChecked(False)
             self.marker_panel.filter_enable_cb.setEnabled(False)
+            self.marker_panel._clear_marker_locks(mode)
         elif mode == 'TIME_ENDLESS':
             for marker in self.markers_time_endless:
                 self.spectrogram_view.plot_item.removeItem(marker)
@@ -757,10 +767,12 @@ class MarkerManagerMixin:
                 self.spectrogram_view.plot_item.removeItem(marker)
             self.markers_freq_endless.clear()
         else:
-            markers = self.markers_time if mode == 'TIME' else self.markers_freq
+            is_time = (mode == 'TIME')
+            markers = self.markers_time if is_time else self.markers_freq
             for marker in markers:
                 self.spectrogram_view.plot_item.removeItem(marker)
             markers.clear()
+            self.marker_panel._clear_marker_locks(mode)
         self.update_marker_info()
 
     def remove_marker_item(self, marker, mode):

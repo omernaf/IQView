@@ -614,6 +614,11 @@ class TimeDomainView(QWidget):
                 self.marker_panel.delta_v2.blockSignals(False)
                 self.marker_panel.center_v2.blockSignals(False)
 
+        # Sync lock button availability
+        if not is_endless:
+            m1_p, m2_p = (len(sorted_m) >= 1), (len(sorted_m) >= 2)
+            self.marker_panel.set_locks_enabled(m1_p, m2_p)
+
     def marker_edit_finished(self):
         sender = self.sender()
         name = sender.objectName()
@@ -695,6 +700,7 @@ class TimeDomainView(QWidget):
         if mode == 'TIME':
             for m in self.markers_time: self.plot_item.removeItem(m)
             self.markers_time = []
+            self.marker_panel._clear_marker_locks('TIME')
         elif mode == 'TIME_ENDLESS':
             for m in self.markers_time_endless: self.plot_item.removeItem(m)
             self.markers_time_endless = []
@@ -704,6 +710,7 @@ class TimeDomainView(QWidget):
         else: # 'Y'
             for m in self.markers_y_dict[self.y_label_text]: self.plot_item.removeItem(m)
             self.markers_y_dict[self.y_label_text] = []
+            self.marker_panel._clear_marker_locks('MAG')
         self.update_marker_info()
 
     def remove_marker_item(self, marker, mode):

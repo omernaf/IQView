@@ -401,6 +401,8 @@ class TimeDomainMarkerPanel(QFrame):
     def _clear_marker_locks(self, mode, keep=None):
         """Uncheck all marker-position locks except the one named in `keep`."""
         base_mode = 'TIME' if 'TIME' in mode else 'MAG'
+        if base_mode not in self.lock_states: return
+
         for key, btn, label in [
             ('m1',     self.btn_lock_m1,     lambda c: f"Marker 1 {'🔒' if c else '🔓'}"),
             ('m2',     self.btn_lock_m2,     lambda c: f"Marker 2 {'🔒' if c else '🔓'}"),
@@ -413,6 +415,22 @@ class TimeDomainMarkerPanel(QFrame):
             btn.setText(label(False))
             self.lock_states[base_mode][key] = False
             btn.blockSignals(False)
+
+    def set_locks_enabled(self, m1_placed, m2_placed):
+        """Enable/disable lock buttons based on marker presence."""
+        self.btn_lock_m1.setEnabled(m1_placed)
+        self.btn_lock_m2.setEnabled(m2_placed)
+        
+        can_pair_lock = m1_placed and m2_placed
+        self.btn_lock_delta.setEnabled(can_pair_lock)
+        self.btn_lock_center.setEnabled(can_pair_lock)
+        
+        # If a marker was removed, ensure its lock is released
+        if not m1_placed and self.btn_lock_m1.isChecked(): self.on_lock_m1_toggled(False)
+        if not m2_placed and self.btn_lock_m2.isChecked(): self.on_lock_m2_toggled(False)
+        if not can_pair_lock:
+            if self.btn_lock_delta.isChecked(): self.on_lock_delta_toggled(False)
+            if self.btn_lock_center.isChecked(): self.on_lock_center_toggled(False)
 
     def on_lock_delta_toggled(self, checked):
         mode = self.controller.interaction_mode
