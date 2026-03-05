@@ -28,7 +28,8 @@ class MarkerPanel(QFrame):
         self.current_mode = 'TIME'
         self.lock_states = {
             'TIME': {'delta': False, 'center': False},
-            'FREQ': {'delta': False, 'center': False}
+            'FREQ': {'delta': False, 'center': False},
+            'FILTER': {'delta': False, 'center': False}
         }
 
         # --- Interaction Mode Buttons (Left Side) ---

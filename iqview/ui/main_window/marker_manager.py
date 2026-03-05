@@ -35,22 +35,59 @@ class MarkerManagerMixin:
                     best_idx = -1
                     min_dist = hit_threshold
                     
+                    # Sticky Lock: If 2 bounds exist and a lock is on, always hit the closest one
+                    is_locked = len(self.filter_bounds) == 2 and (
+                        self.marker_panel.btn_lock_delta.isChecked() or 
+                        self.marker_panel.btn_lock_center.isChecked()
+                    )
+                    
                     for i, b_val in enumerate(self.filter_bounds):
                         p_scene = vb.mapViewToScene(pg.Point(0, b_val))
                         dist = abs(scene_pos.y() - p_scene.y())
-                        if dist < min_dist:
+                        if is_locked:
+                            # Bypass threshold, find global nearest
+                            if best_idx == -1 or dist < min_dist:
+                                min_dist = dist
+                                best_idx = i
+                        elif dist < min_dist:
                             min_dist = dist
                             best_idx = i
                     
                     if best_idx != -1:
                         # Success: Drag existing bound
                         old_v = self.filter_bounds[best_idx]
-                        self.filter_bounds[best_idx] = val # Jump to mouse
                         
-                        # Sync the placement-order tracker
-                        if old_v in self.filter_marker_order:
-                            idx_in_order = self.filter_marker_order.index(old_v)
-                            self.filter_marker_order[idx_in_order] = val
+                        # --- LOCKED MOVEMENT SUPPORT ---
+                        if len(self.filter_bounds) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+                            shift = val - old_v
+                            other_idx = 1 - best_idx
+                            other_old_v = self.filter_bounds[other_idx]
+                            
+                            f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
+                            
+                            if self.marker_panel.btn_lock_delta.isChecked():
+                                new_other_v = other_old_v + shift
+                                if f_min <= val <= f_max and f_min <= new_other_v <= f_max:
+                                    self.filter_bounds[best_idx] = val
+                                    self.filter_bounds[other_idx] = new_other_v
+                            elif self.marker_panel.btn_lock_center.isChecked():
+                                center = (old_v + other_old_v) / 2
+                                new_other_v = 2 * center - val
+                                if f_min <= val <= f_max and f_min <= new_other_v <= f_max:
+                                    self.filter_bounds[best_idx] = val
+                                    self.filter_bounds[other_idx] = new_other_v
+                            
+                            # Sync both values in the placement-order tracker
+                            for i, v in enumerate([old_v, other_old_v]):
+                                if v in self.filter_marker_order:
+                                    oidx = self.filter_marker_order.index(v)
+                                    self.filter_marker_order[oidx] = self.filter_bounds[best_idx if i==0 else other_idx]
+                        else:
+                            # Standard single bound jump
+                            self.filter_bounds[best_idx] = val 
+                            if old_v in self.filter_marker_order:
+                                oidx = self.filter_marker_order.index(old_v)
+                                self.filter_marker_order[oidx] = val
                         
                         # Maintain sorted state for UI/Region
                         self.filter_bounds.sort()
@@ -194,17 +231,47 @@ class MarkerManagerMixin:
                 new_v = f_min + (bin_idx - 1.0) * rbw
                 
                 old_v = self.filter_bounds[idx]
-                self.filter_bounds[idx] = new_v
                 
-                # Sync placement order too
-                if hasattr(self, 'filter_marker_order') and old_v in self.filter_marker_order:
-                    order_idx = self.filter_marker_order.index(old_v)
-                    self.filter_marker_order[order_idx] = new_v
+                # --- LOCKED MOVEMENT SUPPORT ---
+                if len(self.filter_bounds) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+                    shift = new_v - old_v
+                    other_idx = 1 - idx
+                    other_old_v = self.filter_bounds[other_idx]
+                    
+                    actual_new_v = old_v
+                    actual_other_new_v = other_old_v
+                    
+                    if self.marker_panel.btn_lock_delta.isChecked():
+                        potential_other = other_old_v + shift
+                        if f_min <= new_v <= f_max and f_min <= potential_other <= f_max:
+                            actual_new_v = new_v
+                            actual_other_new_v = potential_other
+                    elif self.marker_panel.btn_lock_center.isChecked():
+                        center = (old_v + other_old_v) / 2
+                        potential_other = 2 * center - new_v
+                        if f_min <= new_v <= f_max and f_min <= potential_other <= f_max:
+                            actual_new_v = new_v
+                            actual_other_new_v = potential_other
+                            
+                    self.filter_bounds[idx] = actual_new_v
+                    self.filter_bounds[other_idx] = actual_other_new_v
+                    
+                    # Sync placement order too
+                    for v_old, v_new in [(old_v, actual_new_v), (other_old_v, actual_other_new_v)]:
+                        if hasattr(self, 'filter_marker_order') and v_old in self.filter_marker_order:
+                            oidx = self.filter_marker_order.index(v_old)
+                            self.filter_marker_order[oidx] = v_new
+                else:
+                    # Standard single bound drag
+                    self.filter_bounds[idx] = new_v
+                    if hasattr(self, 'filter_marker_order') and old_v in self.filter_marker_order:
+                        order_idx = self.filter_marker_order.index(old_v)
+                        self.filter_marker_order[order_idx] = new_v
                 
                 if len(self.filter_bounds) == 2:
                     self.filter_bounds.sort()
                     # Re-find index to stay attached to the same edge
-                    self.active_drag_filter_bound_idx = self.filter_bounds.index(new_v)
+                    self.active_drag_filter_bound_idx = self.filter_bounds.index(new_v if (not (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked())) else self.filter_bounds[idx])
                 
                 if len(self.filter_bounds) == 1:
                     if self.filter_line: self.filter_line.setPos(new_v)
@@ -406,7 +473,27 @@ class MarkerManagerMixin:
                 
                 if is_filter:
                     new_region = list(active_values)
-                    new_region[idx] = new_p
+                    old_v = new_region[idx]
+                    
+                    if len(new_region) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+                        shift = new_p - old_v
+                        other_idx = 1 - idx
+                        other_old_v = new_region[other_idx]
+                        
+                        if self.marker_panel.btn_lock_delta.isChecked():
+                            other_new = other_old_v + shift
+                            if curr_min <= new_p <= curr_max and curr_min <= other_new <= curr_max:
+                                new_region[idx] = new_p
+                                new_region[other_idx] = other_new
+                        elif self.marker_panel.btn_lock_center.isChecked():
+                            center = (old_v + other_old_v) / 2
+                            other_new = 2 * center - new_p
+                            if curr_min <= new_p <= curr_max and curr_min <= other_new <= curr_max:
+                                new_region[idx] = new_p
+                                new_region[other_idx] = other_new
+                    else:
+                        new_region[idx] = new_p
+                        
                     self.filter_region.setRegion(new_region)
                 elif len(active_values) == 2:
                     sorted_markers = sorted(active_markers, key=get_pos)
