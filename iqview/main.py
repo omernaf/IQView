@@ -21,7 +21,7 @@ def parse_args():
     src.add_argument('-f', '--file', default=None, help='Path to the binary IQ file')
     src.add_argument('--stdin', action='store_true', help='Read IQ data from stdin (binary pipe)')
     parser.add_argument('-t', '--type', default=sm.get("core/type", "complex64"), type=str, help='Data type (default: ' + sm.get("core/type", "complex64") + ')')
-    parser.add_argument('-r', '--rate', type=float, default=float(sm.get("core/fs", 0.0)), help='Sample rate in Hz')
+    parser.add_argument('-r', '--rate', type=float, default=float(sm.get("core/fs", 1e6)), help='Sample rate in Hz')
     parser.add_argument('-c', '--fc', type=float, default=float(sm.get("core/fc", 0.0)), help='Center frequency in Hz')
     parser.add_argument('-s', '--fft', type=int, default=int(sm.get("core/fft_size", 1024)), help='FFT bin size')
     parser.add_argument('--profile', action='store_true', help='Enable cProfile profiling')

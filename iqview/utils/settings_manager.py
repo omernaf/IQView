@@ -6,6 +6,7 @@ class SettingsManager:
     """
     DEFAULT_SETTINGS = {
         "core/fc": 0.0,
+        "core/fs": 1e6,
         "core/fft_size": 1024,
         "core/overlap": 99.0,
         "core/window_type": "Hamming",
