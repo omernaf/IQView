@@ -1,6 +1,8 @@
+import os
 import pyqtgraph as pg
 import numpy as np
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QFileDialog
 
 class ViewControllerMixin:
     def on_parameters_changed(self, params):
@@ -247,3 +249,74 @@ class ViewControllerMixin:
         self.spectrogram_view.plot_item.setXRange(*new_xr, padding=0)
         self.spectrogram_view.plot_item.setYRange(*new_yr, padding=0)
         self.last_move_scene_pos = scene_pos
+
+    def open_file_dialog(self):
+        """Show a native Open File dialog and load the selected IQ file."""
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open IQ File",
+            os.path.dirname(self.file_path) if isinstance(self.file_path, str) else "",
+            "IQ Files (*.32fc *.fc32 *.cs8 *.cu8 *.sc16 *.bin *.iq *.raw);;All Files (*)"
+        )
+        if path:
+            self.load_new_file(path)
+
+    def load_new_file(self, path):
+        """Swap the data source to a new file and reprocess everything."""
+        if not os.path.isfile(path):
+            return
+
+        # Update data source
+        self.data_source = path
+        self.file_path   = path
+        self.setWindowTitle(f"IQView - {path}")
+
+        # Re-resolve dtype from settings so we always use the last configured type
+        import numpy as np
+        dtype_map = {
+            'np.int8': np.int8, 'np.int16': np.int16, 'np.int32': np.int32,
+            'np.float32': np.float32, 'np.float64': np.float64,
+            'int8': np.int8, 'int16': np.int16, 'int32': np.int32,
+            'float32': np.float32, 'float64': np.float64,
+            'np.complex64': np.complex64, 'complex64': np.complex64
+        }
+        type_str = str(self.settings_mgr.get("core/type", "complex64"))
+        dtype = dtype_map.get(type_str, np.complex64)
+        self.data_type = np.float32 if dtype == np.complex64 else dtype
+
+        # Save to recent files list
+        self._add_recent_file(path)
+
+        # Clear all markers
+        for m in self.markers_time:
+            self.spectrogram_view.plot_item.removeItem(m)
+        for m in self.markers_freq:
+            self.spectrogram_view.plot_item.removeItem(m)
+        self.markers_time.clear()
+        self.markers_freq.clear()
+        if hasattr(self, 'marker_panel'):
+            self.marker_panel.update_headers(self.interaction_mode)
+
+        # Close all Time Domain tabs (keep index 0 = Spectrogram)
+        while self.tabs.count() > 1:
+            widget = self.tabs.widget(1)
+            self.tabs.removeTab(1)
+            widget.deleteLater()
+
+        # Reset zoom history and first-load flag
+        self.zoom_history.clear()
+        self.is_first_load = True
+
+        # Reset filter state
+        if self.filter_region:
+            self.filter_region.hide()
+        self.filter_enabled  = False
+        self.filter_placed   = False
+        self.filter_placing  = False
+        self.filter_bounds   = []
+        self.filter_marker_order = []
+        if hasattr(self.marker_panel, 'filter_on_btn'):
+            self.marker_panel.filter_on_btn.setChecked(False)
+
+        # Reprocess with the new file
+        self.start_processing()
