@@ -216,27 +216,28 @@ class MarkerManagerMixin:
                         if (lock_m1 and val < locked_m.value()) or (lock_m2 and val > locked_m.value()):
                             active_markers[0], active_markers[1] = active_markers[1], active_markers[0]
                             self.marker_panel.flip_m_lock()
-                    elif len(active_markers) >= 2:
-                        old_marker = active_markers.pop(0)
-                        self.spectrogram_view.plot_item.removeItem(old_marker)
-                    
-                    theme = self.settings_mgr.get("ui/theme", "Dark").lower()
-                    color = self.settings_mgr.get(f"ui/{theme}/time_marker_color") if is_time else self.settings_mgr.get(f"ui/{theme}/freq_marker_color")
-                    style_name = self.settings_mgr.get(f"ui/{theme}/time_marker_style") if is_time else self.settings_mgr.get(f"ui/{theme}/freq_marker_style")
-                    
-                    style_map = {
-                        "SolidLine": Qt.PenStyle.SolidLine,
-                        "DashLine": Qt.PenStyle.DashLine,
-                        "DotLine": Qt.PenStyle.DotLine,
-                        "DashDotLine": Qt.PenStyle.DashDotLine
-                    }
-                    style = style_map.get(str(style_name), Qt.PenStyle.DashLine)
-                    
-                    marker = pg.InfiniteLine(pos=val, angle=angle, movable=False, pen=pg.mkPen(color, width=2, style=style))
-                    marker.setZValue(10)
-                    self.spectrogram_view.plot_item.addItem(marker, ignoreBounds=True)
-                    active_markers.append(marker)
-                    if drag_mode: self.active_drag_marker = marker
+                    else:
+                        if len(active_markers) >= 2:
+                            old_marker = active_markers.pop(0)
+                            self.spectrogram_view.plot_item.removeItem(old_marker)
+                        
+                        theme = self.settings_mgr.get("ui/theme", "Dark").lower()
+                        color = self.settings_mgr.get(f"ui/{theme}/time_marker_color") if is_time else self.settings_mgr.get(f"ui/{theme}/freq_marker_color")
+                        style_name = self.settings_mgr.get(f"ui/{theme}/time_marker_style") if is_time else self.settings_mgr.get(f"ui/{theme}/freq_marker_style")
+                        
+                        style_map = {
+                            "SolidLine": Qt.PenStyle.SolidLine,
+                            "DashLine": Qt.PenStyle.DashLine,
+                            "DotLine": Qt.PenStyle.DotLine,
+                            "DashDotLine": Qt.PenStyle.DashDotLine
+                        }
+                        style = style_map.get(str(style_name), Qt.PenStyle.DashLine)
+                        
+                        marker = pg.InfiniteLine(pos=val, angle=angle, movable=False, pen=pg.mkPen(color, width=2, style=style))
+                        marker.setZValue(10)
+                        self.spectrogram_view.plot_item.addItem(marker, ignoreBounds=True)
+                        active_markers.append(marker)
+                        if drag_mode: self.active_drag_marker = marker
             
             self.update_marker_info()
 
