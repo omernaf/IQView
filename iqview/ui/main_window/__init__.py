@@ -41,6 +41,8 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
 
         self.markers_time = []
         self.markers_freq = []
+        self.markers_time_endless = []
+        self.markers_freq_endless = []
         self.time_duration = 1.0
         self.interaction_mode = 'TIME'
         self.zoom_mode = False

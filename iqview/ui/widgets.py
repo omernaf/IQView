@@ -17,8 +17,10 @@ class FormattedLineEdit(QtWidgets.QLineEdit):
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._raw_text = ""
+        self._raw_text = super().text()
         self.editingFinished.connect(self._handle_editing_finished)
+        if self._raw_text:
+            super().setText(self._format_text(self._raw_text))
 
     def setText(self, text):
         self._raw_text = str(text)
@@ -28,7 +30,9 @@ class FormattedLineEdit(QtWidgets.QLineEdit):
             super().setText(self._raw_text)
 
     def text(self):
-        # Return raw text even if displayed with spaces
+        # Return raw text. If focused, strip spaces from current display.
+        if self.hasFocus():
+            return super().text().replace(" ", "")
         return self._raw_text
 
     def _format_text(self, text):
@@ -132,6 +136,104 @@ class CustomViewBox(pg.ViewBox):
         self.ui_controller = ui_controller
         self.zoom_rect = None
         self.setMenuEnabled(False) # Disable default pg menu
+        self.setAcceptHoverEvents(True)
+
+    def hoverEvent(self, ev):
+        if ev.isExit():
+            return
+            
+        mode = getattr(self.ui_controller, 'interaction_mode', None)
+        if mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER']:
+            # Find closest marker
+            active_markers = []
+            
+            if mode == 'TIME':
+                active_markers = getattr(self.ui_controller, 'markers_time', [])
+            elif mode in ['FREQ', 'FILTER']:
+                active_markers = getattr(self.ui_controller, 'markers_freq', [])
+            elif mode in ['MAG', 'Y']:
+                if hasattr(self.ui_controller, 'markers_y_dict'):
+                    y_label = getattr(self.ui_controller, 'y_label_text', "")
+                    active_markers = self.ui_controller.markers_y_dict.get(y_label, [])
+            
+            found_near = False
+            scene_pos = ev.scenePos()
+
+            if mode == 'FILTER':
+                active_values = getattr(self.ui_controller, 'filter_bounds', [])
+                for i, b_val in enumerate(active_values):
+                    # In Spectrogram, filter bounds are horizontal frequency lines
+                    p_scene = self.mapViewToScene(pg.Point(0, b_val))
+                    dist = abs(scene_pos.y() - p_scene.y())
+                    if dist < 20:
+                        # Check lock status
+                        is_b_locked = False
+                        if len(active_values) == 2:
+                            lock_m1 = getattr(self.ui_controller.marker_panel, 'btn_lock_m1', None)
+                            lock_m2 = getattr(self.ui_controller.marker_panel, 'btn_lock_m2', None)
+                            lock_delta = getattr(self.ui_controller.marker_panel, 'btn_lock_delta', None)
+                            lock_center = getattr(self.ui_controller.marker_panel, 'btn_lock_center', None)
+                            
+                            b_locked = (i == 0 and lock_m1 and lock_m1.isChecked()) or \
+                                       (i == 1 and lock_m2 and lock_m2.isChecked())
+                            linked = (lock_delta and lock_delta.isChecked()) or \
+                                     (lock_center and lock_center.isChecked())
+                            if b_locked and not linked:
+                                is_b_locked = True
+                        
+                        if not is_b_locked:
+                            found_near = True
+                            self.setCursor(Qt.CursorShape.SizeVerCursor)
+                            break
+            
+            if not found_near:
+                for i, m in enumerate(active_markers):
+                    # markers are InfiniteLines. angle=90 is vertical, angle=0 is horizontal
+                    m_val = m.value()
+                    angle = m.angle
+                    m_pixel = self.mapViewToScene(pg.Point(m_val, 0) if angle == 90 else pg.Point(0, m_val))
+                    dist = abs(scene_pos.x() - m_pixel.x()) if angle == 90 else abs(scene_pos.y() - m_pixel.y())
+                    
+                    if dist < 20:
+                        # Check lock status
+                        is_m_locked = False
+                        if len(active_markers) == 2:
+                            lock_m1 = getattr(self.ui_controller.marker_panel, 'btn_lock_m1', None)
+                            lock_m2 = getattr(self.ui_controller.marker_panel, 'btn_lock_m2', None)
+                            lock_delta = getattr(self.ui_controller.marker_panel, 'btn_lock_delta', None)
+                            lock_center = getattr(self.ui_controller.marker_panel, 'btn_lock_center', None)
+                            
+                            m_locked = (i == 0 and lock_m1 and lock_m1.isChecked()) or \
+                                       (i == 1 and lock_m2 and lock_m2.isChecked())
+                            linked = (lock_delta and lock_delta.isChecked()) or \
+                                     (lock_center and lock_center.isChecked())
+                            
+                            if m_locked and not linked:
+                                is_m_locked = True
+                        
+                        if not is_m_locked:
+                            found_near = True
+                            self.setCursor(Qt.CursorShape.SizeHorCursor if angle == 90 else Qt.CursorShape.SizeVerCursor)
+                            break
+            
+            # 4. Check for Grid Lines (Shadow Markers) if delta lock is off
+            if not found_near and mode in ['TIME', 'FREQ']:
+                lock_delta = getattr(self.ui_controller.marker_panel, 'btn_lock_delta', None)
+                if lock_delta and not lock_delta.isChecked():
+                    grid_lines = getattr(self.ui_controller, 'grid_lines_time' if mode == 'TIME' else 'grid_lines_freq', [])
+                    for gl in grid_lines:
+                        gl_val = gl.value()
+                        angle = gl.angle
+                        gl_pixel = self.mapViewToScene(pg.Point(gl_val, 0) if angle == 90 else pg.Point(0, gl_val))
+                        dist = abs(scene_pos.x() - gl_pixel.x()) if angle == 90 else abs(scene_pos.y() - gl_pixel.y())
+                        
+                        if dist < 20:
+                            found_near = True
+                            self.setCursor(Qt.CursorShape.SizeHorCursor if angle == 90 else Qt.CursorShape.SizeVerCursor)
+                            break
+            
+            if not found_near:
+                self.setCursor(Qt.CursorShape.CrossCursor)
 
     def mouseDragEvent(self, ev, axis=None):
         if not hasattr(ev, 'isStart'):
@@ -228,11 +330,12 @@ class CustomViewBox(pg.ViewBox):
                 ev.accept()
             else:
                 # --- Marker Logic ---
-                if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER']:
+                if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS']:
                     if ev.isStart():
                         self.ui_controller.place_marker(ev.buttonDownScenePos(), drag_mode=True)
                     elif ev.isFinish():
                         self.ui_controller.active_drag_marker = None
+                        self.ui_controller.active_drag_grid_info = None
                         if getattr(self.ui_controller, 'active_drag_filter_bound_idx', -1) != -1:
                             self.ui_controller.on_filter_region_finished()
                             self.ui_controller.active_drag_filter_bound_idx = -1
@@ -244,7 +347,7 @@ class CustomViewBox(pg.ViewBox):
 
     def mouseClickEvent(self, ev):
         if ev.button() == Qt.MouseButton.LeftButton:
-            if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER']:
+            if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS']:
                 self.ui_controller.place_marker(ev.scenePos(), drag_mode=False)
             ev.accept()
         elif ev.button() == Qt.MouseButton.RightButton:
@@ -271,15 +374,21 @@ class CustomViewBox(pg.ViewBox):
         fit_act = menu.addAction("Fit to Screen")
         # Handle 'Y' mode for TimeDomainView or 'FREQ' for Spectrogram
         if is_spec:
-            active_markers = self.ui_controller.markers_freq if self.ui_controller.interaction_mode == 'FREQ' else self.ui_controller.markers_time
+            is_freq = (self.ui_controller.interaction_mode in ['FREQ', 'FREQ_ENDLESS', 'MAG', 'Y'])
+            active_markers = self.ui_controller.markers_freq_endless if self.ui_controller.interaction_mode == 'FREQ_ENDLESS' else \
+                             self.ui_controller.markers_freq if is_freq else \
+                             self.ui_controller.markers_time_endless if self.ui_controller.interaction_mode == 'TIME_ENDLESS' else \
+                             self.ui_controller.markers_time
         else:
             # TimeDomainView
-            if self.ui_controller.interaction_mode == 'MAG':
-                active_markers = self.ui_controller.markers_y_dict.get(self.ui_controller.y_label_text, [])
+            if self.ui_controller.interaction_mode in ['MAG', 'Y', 'MAG_ENDLESS']:
+                active_markers = self.ui_controller.markers_y_endless_dict.get(self.ui_controller.y_label_text, []) if 'ENDLESS' in self.ui_controller.interaction_mode else \
+                                 self.ui_controller.markers_y_dict.get(self.ui_controller.y_label_text, [])
             else:
-                active_markers = self.ui_controller.markers_time
+                active_markers = self.ui_controller.markers_time_endless if 'ENDLESS' in self.ui_controller.interaction_mode else \
+                                 self.ui_controller.markers_time
                 
-        fit_act.setEnabled(len(active_markers) == 2)
+        fit_act.setEnabled(len(active_markers) >= 2)
         fit_act.triggered.connect(self.ui_controller.fit_to_markers)
         
         if is_spec:

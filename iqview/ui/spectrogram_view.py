@@ -22,6 +22,7 @@ class SpectrogramView(QWidget):
         self.glw_plot = pg.GraphicsLayoutWidget()
         # Initial theme applied at end of __init__
         self.glw_plot.setContentsMargins(0, 0, 0, 0)
+        self.glw_plot.setMouseTracking(True)
         self.layout.addWidget(self.glw_plot, 0, 1)
         
         # Scrollbars

@@ -115,6 +115,10 @@ class ViewControllerMixin:
     def refresh_cursor(self):
         if hasattr(self, 'zoom_mode') and self.zoom_mode:
             self.spectrogram_view.setCursor(Qt.CursorShape.CrossCursor)
+        elif self.interaction_mode in ['TIME', 'FREQ', 'FILTER']:
+            self.spectrogram_view.setCursor(Qt.CursorShape.CrossCursor)
+        elif self.interaction_mode == 'MOVE':
+            self.spectrogram_view.setCursor(Qt.CursorShape.SizeAllCursor)
         else:
             self.spectrogram_view.setCursor(Qt.CursorShape.ArrowCursor)
 
@@ -147,8 +151,12 @@ class ViewControllerMixin:
         else: self.spectrogram_view.plot_item.setRange(rect, padding=0)
 
     def fit_to_markers(self):
-        is_freq = (self.interaction_mode == 'FREQ')
-        active_markers = self.markers_freq if is_freq else self.markers_time
+        is_freq = (self.interaction_mode in ['FREQ', 'FREQ_ENDLESS'])
+        is_endless = 'ENDLESS' in self.interaction_mode
+        if is_endless:
+            active_markers = self.markers_freq_endless if is_freq else self.markers_time_endless
+        else:
+            active_markers = self.markers_freq if is_freq else self.markers_time
         if len(active_markers) == 2:
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             v1, v2 = active_markers[0].value(), active_markers[1].value()
@@ -204,6 +212,8 @@ class ViewControllerMixin:
         qcolor.setAlphaF(alpha / 100.0)
         v_min = (self.fc - self.rate/2) if is_freq else 0
         v_max = (self.fc + self.rate/2) if is_freq else self.time_duration
+        
+        pen = pg.mkPen(qcolor, width=1, style=style)
         
         curr = p1
         while curr <= v_max + 1e-9:
