@@ -118,7 +118,7 @@ class SidePanel(QFrame):
         if self.parent_window:
             from .settings_dialog import SettingsDialog
             dialog = SettingsDialog(self.parent_window.settings_mgr, self.parent_window)
-            dialog.settingsApplied.connect(self.parent_window.apply_current_theme)
+            dialog.settingsApplied.connect(self.parent_window.on_settings_applied)
             if dialog.exec():
                 # Apply changes (redundant now, but keeps the dialog.exec() logic)
                 self.parent_window.apply_current_theme()

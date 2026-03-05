@@ -75,6 +75,12 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
                 if hasattr(widget, 'refresh_theme'):
                     widget.refresh_theme()
 
+    def on_settings_applied(self):
+        """Handle settings changes: refresh theme and re-process if filter is active."""
+        self.apply_current_theme()
+        if self.filter_enabled:
+            self.start_processing()
+
     def eventFilter(self, obj, event):
         """Handle middle-click and right-click on the tab bar."""
         if obj == self.tabs.tabBar() and event.type() == QEvent.Type.MouseButtonPress:
