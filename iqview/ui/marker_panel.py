@@ -179,6 +179,7 @@ class MarkerPanel(QFrame):
         self.filter_layout.addStretch()
         
         self.filter_container.setFixedWidth(80)
+        self.filter_enable_cb.setEnabled(False)
         self.filter_container.setVisible(False)
         self.grid.addWidget(self.filter_container, 1, 5, 2, 1)
         self.filter_enable_cb.toggled.connect(self.parent_window.on_filter_toggled)
@@ -232,6 +233,9 @@ class MarkerPanel(QFrame):
         elif mode == 'FILTER':
             self.row1_label.setText("Freq (Hz)")
             self.row2_label.setText("Bin")
+            # Enable checkbox only if 2 bounds are placed
+            has_bounds = getattr(self.parent_window, 'filter_placed', False)
+            self.filter_enable_cb.setEnabled(has_bounds)
             
         # Sync lock UI with saved state for this mode (if applicable)
         if mode in self.lock_states:

@@ -56,14 +56,20 @@ class ViewControllerMixin:
             self.marker_panel.filter_container.setVisible(mode == 'FILTER')
 
         # Handle Filter Region Visibility & Interaction
+        b_len = len(getattr(self, 'filter_bounds', []))
         if self.filter_region:
-            # Only show if in filter mode AND it's either currently being placed or was already placed
-            if mode == 'FILTER' and getattr(self, 'filter_placed', False):
+            if mode == 'FILTER' and (getattr(self, 'filter_placed', False) or b_len == 1):
                 self.filter_region.show()
-                self.filter_region.setMovable(True)
+                self.filter_region.setMovable(getattr(self, 'filter_placed', False))
             else:
                 self.filter_region.hide()
                 self.filter_region.setMovable(False)
+        
+        if hasattr(self, 'filter_line') and self.filter_line:
+            if mode == 'FILTER' and b_len == 1 and not self.filter_region.isVisible():
+                self.filter_line.show()
+            else:
+                self.filter_line.hide()
 
     def on_filter_toggled(self, checked):
         self.filter_enabled = checked
@@ -82,6 +88,10 @@ class ViewControllerMixin:
         self.update_marker_info()
 
     def on_filter_region_finished(self):
+        # Sync bounds if region exists
+        if self.filter_region:
+            self.filter_bounds = list(self.filter_region.getRegion())
+            
         # Trigger reprocessing when the user finishes dragging the region
         if getattr(self, 'filter_enabled', False) and hasattr(self, 'full_spectrogram_cache'):
             self.start_processing()

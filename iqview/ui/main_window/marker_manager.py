@@ -28,16 +28,34 @@ class MarkerManagerMixin:
 
             # 2. HIGHEST PRIORITY: Handle FILTER mode placement
             if self.interaction_mode == 'FILTER':
-                if not getattr(self, 'filter_placing', False):
-                    # Start placing
-                    self.filter_placing = True
+                # Clear if already have 2 and placing new one
+                if len(self.filter_bounds) >= 2:
+                    self.filter_bounds = []
+                    if self.filter_region:
+                        self.filter_region.hide()
                     self.filter_placed = False
-                    self._filter_placement_start = val
+                    self.marker_panel.filter_enable_cb.setChecked(False)
+                    self.marker_panel.filter_enable_cb.setEnabled(False)
+
+                self.filter_bounds.append(val)
+                
+                if len(self.filter_bounds) == 1:
+                    # Show a temporary indicator line
+                    if not self.filter_line:
+                        self.filter_line = pg.InfiniteLine(angle=0, pen=pg.mkPen('#ff6400', width=2, style=Qt.PenStyle.DashLine))
+                    self.filter_line.setPos(val)
+                    self.spectrogram_view.plot_item.addItem(self.filter_line)
+                    self.filter_line.show()
+                else:
+                    # Second bound placed - create/update the region
+                    if self.filter_line:
+                        self.filter_line.hide()
                     
+                    f1, f2 = sorted(self.filter_bounds)
                     if not self.filter_region:
                         # Lazily create the region
                         self.filter_region = pg.LinearRegionItem(
-                            values=[val, val], 
+                            values=[f1, f2], 
                             orientation='horizontal',
                             brush=pg.mkBrush(255, 100, 0, 40),
                             pen=pg.mkPen('#ff6400', width=2)
@@ -46,15 +64,11 @@ class MarkerManagerMixin:
                         self.filter_region.sigRegionChanged.connect(self.on_filter_region_changed)
                         self.filter_region.sigRegionChangeFinished.connect(self.on_filter_region_finished)
                     else:
-                        self.filter_region.setRegion([val, val])
+                        self.filter_region.setRegion([f1, f2])
+                        self.filter_region.show()
                     
-                    self.filter_region.show()
-                    self.filter_region.setMovable(False) # Keep fixed while placing
-                else:
-                    # Finish placing
-                    self.filter_placing = False
                     self.filter_placed = True
-                    self.filter_region.setMovable(True)
+                    self.marker_panel.filter_enable_cb.setEnabled(True)
                     # Trigger filter reprocessing
                     self.on_filter_region_finished()
                 
@@ -88,7 +102,7 @@ class MarkerManagerMixin:
                 
                 if drag_mode: self.active_drag_marker = target
 
-            # 3. SECOND PRIORITY: Hit-test for dragging a single marker
+            # 4. THIRD PRIORITY: Hit-test for dragging a single marker
             else:
                 hit_threshold = 20 # pixels
                 best_marker = None
@@ -107,7 +121,7 @@ class MarkerManagerMixin:
                     best_marker.setPos(val)
                     if drag_mode: self.active_drag_marker = best_marker
                 else:
-                    # 4. LOWEST PRIORITY: Place brand new marker (and replace oldest if needed)
+                    # 5. LOWEST PRIORITY: Place brand new marker (and replace oldest if needed)
                     if len(active_markers) >= 2:
                         old_marker = active_markers.pop(0)
                         self.spectrogram_view.plot_item.removeItem(old_marker)
@@ -137,28 +151,38 @@ class MarkerManagerMixin:
             mouse_v = self.spectrogram_view.plot_item.vb.mapSceneToView(scene_pos)
             
             # Handle BPF placement drag (while moving mouse before second click)
-            if self.interaction_mode == 'FILTER' and getattr(self, 'filter_placing', False):
+            if self.interaction_mode == 'FILTER' and len(self.filter_bounds) == 1:
                 f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
                 raw_val = float(np.clip(mouse_v.y(), f_min, f_max))
                 rbw = self.rate / self.fft_size
                 bin_idx = int(round((raw_val - f_min) / rbw)) + 1
                 new_v = f_min + (bin_idx - 1.0) * rbw
                 
-                # In placement mode, we fix the first bound and update the second
-                r1, r2 = self.filter_region.getRegion()
-                # Note: We don't know which one was the "start", but usually it's the one we set in place_marker
-                # Let's assume the first element of values in setRegion was the intended start.
-                # LinearRegionItem doesn't strictly track "first" vs "second", so we might need to store it.
-                # However, if we just set [start, new_v], it works fine.
-                if not hasattr(self, '_filter_placement_start'):
-                    self._filter_placement_start = r1
+                # Update the temporary region or line
+                f1 = self.filter_bounds[0]
+                if not self.filter_region:
+                    # Lazily create the region just for preview
+                    self.filter_region = pg.LinearRegionItem(
+                        values=[f1, new_v], 
+                        orientation='horizontal',
+                        brush=pg.mkBrush(255, 100, 0, 40),
+                        pen=pg.mkPen('#ff6400', width=2)
+                    )
+                    self.spectrogram_view.plot_item.addItem(self.filter_region)
+                    self.filter_region.sigRegionChanged.connect(self.on_filter_region_changed)
+                    self.filter_region.sigRegionChangeFinished.connect(self.on_filter_region_finished)
                 
-                self.filter_region.setRegion([self._filter_placement_start, new_v])
+                self.filter_region.setRegion([f1, new_v])
+                self.filter_region.show()
+                if self.filter_line: self.filter_line.hide()
+
                 self.update_marker_info()
                 return
 
+            is_time = (self.interaction_mode == 'TIME')
             if self.active_drag_marker:
                 is_time = self.active_drag_marker in self.markers_time
+            
             active_markers = self.markers_time if is_time else self.markers_freq
             
             if is_time:
