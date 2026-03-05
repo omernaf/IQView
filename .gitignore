@@ -1,6 +1,7 @@
 # Samples and Data
 *.32fc
 samples/
+*.asv
 
 # Python / Packaging
 .venv/

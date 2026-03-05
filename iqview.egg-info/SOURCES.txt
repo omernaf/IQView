@@ -13,8 +13,10 @@ iqview/dsp/dsp.py
 iqview/dsp/utils.py
 iqview/ui/__init__.py
 iqview/ui/marker_panel.py
+iqview/ui/settings_dialog.py
 iqview/ui/side_panel.py
 iqview/ui/spectrogram_view.py
+iqview/ui/themes.py
 iqview/ui/time_domain_marker_panel.py
 iqview/ui/time_domain_view.py
 iqview/ui/widgets.py
@@ -26,3 +28,4 @@ iqview/ui/main_window/view_controller.py
 iqview/ui/time_domain/__init__.py
 iqview/ui/time_domain/marker_panel.py
 iqview/ui/time_domain/view.py
+iqview/utils/settings_manager.py

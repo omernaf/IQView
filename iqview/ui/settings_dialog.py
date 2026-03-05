@@ -105,6 +105,7 @@ class SettingsDialog(QDialog):
         self.general_tab = QWidget()
         self.general_form = QFormLayout(self.general_tab)
         
+        self.fs_edit = QLineEdit(str(self.mgr.get("core/fs", 1e6)))
         self.fc_edit = QLineEdit(str(self.mgr.get("core/fc")))
         
         self.type_combo = QComboBox()
@@ -121,6 +122,7 @@ class SettingsDialog(QDialog):
         self.window_combo.addItems(["Hanning", "Hamming", "Blackman", "Bartlett", "Rectangular"])
         self.window_combo.setCurrentText(str(self.mgr.get("core/window_type")))
 
+        self._add_reset_row(self.general_form, "Default Sample Rate (Hz):", self.fs_edit, "core/fs")
         self._add_reset_row(self.general_form, "Default Center Freq (Hz):", self.fc_edit, "core/fc")
         self._add_reset_row(self.general_form, "Default File Type:", self.type_combo, "core/type")
         self._add_reset_row(self.general_form, "Default FFT Size:", self.fft_combo, "core/fft_size")
@@ -295,6 +297,7 @@ class SettingsDialog(QDialog):
 
     def save_settings(self):
         try:
+            self.mgr.set("core/fs", float(self.fs_edit.text()))
             self.mgr.set("core/fc", float(self.fc_edit.text()))
             self.mgr.set("core/type", self.type_combo.currentText())
             self.mgr.set("core/fft_size", int(self.fft_combo.currentText()))
