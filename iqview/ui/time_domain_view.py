@@ -32,6 +32,10 @@ class TimeDomainView(QWidget):
             "Instantaneous Frequency (Hz)": []
         }
         
+        # Endless Markers
+        self.markers_time_endless = []
+        self.markers_y_endless_dict = {k: [] for k in self.markers_y_dict.keys()}
+        
         # Mode-specific Y-zoom states (yMin, yMax)
         self.zoom_y_dict = {}
         
@@ -346,6 +350,7 @@ class TimeDomainView(QWidget):
     def place_marker(self, scene_pos, drag_mode=False):
         v_pos = self.view_box.mapSceneToView(scene_pos)
         is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
+        is_endless = 'ENDLESS' in self.interaction_mode
         
         # Clamp to bounds
         if is_time:
@@ -355,10 +360,14 @@ class TimeDomainView(QWidget):
             y_min, y_max = self._get_y_bounds()
             val = max(y_min, min(y_max, v_pos.y()))
         
-        active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
+        # Determine active collection
+        if is_endless:
+            active_markers = self.markers_time_endless if is_time else self.markers_y_endless_dict[self.y_label_text]
+        else:
+            active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
         
-        # 1. Shift pair if locked
-        if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+        # 1. Shift pair if locked (Only for non-endless)
+        if not is_endless and len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
             m1_pos, m2_pos = active_markers[0].value(), active_markers[1].value()
             target = active_markers[0] if abs(val-m1_pos) < abs(val-m2_pos) else active_markers[1]
             other = active_markers[1] if target == active_markers[0] else active_markers[0]
@@ -404,7 +413,11 @@ class TimeDomainView(QWidget):
             return
 
         # 3. Add brand new
-        if len(active_markers) >= 2:
+        if is_endless:
+            # Endless Mode: Just add more markers
+            pass
+        elif len(active_markers) >= 2:
+            # Fixed Mode: Pop the oldest
             old = active_markers.pop(0)
             self.plot_item.removeItem(old)
             
@@ -412,6 +425,12 @@ class TimeDomainView(QWidget):
         orient = 90 if is_time else 0
         new_m = pg.InfiniteLine(pos=val, angle=orient, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine), movable=False)
         new_m.setZValue(100)
+        
+        if is_endless:
+            label_text = f"M{len(active_markers)+1}"
+            new_m.label = pg.InfLineLabel(new_m, text=label_text, position=0.95, rotateAxis=(1, 0), anchor=(1, 1))
+            new_m.label.setColor(color)
+
         active_markers.append(new_m)
         self.plot_item.addItem(new_m, ignoreBounds=True)
         if drag_mode: self.active_drag_marker = new_m
@@ -420,7 +439,8 @@ class TimeDomainView(QWidget):
     def update_drag(self, scene_pos):
         if not self.active_drag_marker: return
         v_pos = self.view_box.mapSceneToView(scene_pos)
-        is_time = self.active_drag_marker in self.markers_time
+        is_time = (self.active_drag_marker in self.markers_time or self.active_drag_marker in self.markers_time_endless)
+        is_endless = 'ENDLESS' in self.interaction_mode
         
         if is_time:
             t_min, t_max = self.time_axis[0], self.time_axis[-1]
@@ -429,9 +449,12 @@ class TimeDomainView(QWidget):
             y_min, y_max = self._get_y_bounds()
             val = max(y_min, min(y_max, v_pos.y()))
         
-        active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
+        if is_endless:
+            active_markers = self.markers_time_endless if is_time else self.markers_y_endless_dict[self.y_label_text]
+        else:
+            active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
         
-        if len(active_markers) == 2:
+        if not is_endless and len(active_markers) == 2:
             other = active_markers[0] if active_markers[1] == self.active_drag_marker else active_markers[1]
             shift = val - self.active_drag_marker.value()
             if self.marker_panel.btn_lock_delta.isChecked():
@@ -473,92 +496,133 @@ class TimeDomainView(QWidget):
 
         # Update columns
         for i in range(2):
-            if i < len(sorted_m):
-                m_val = sorted_m[i].value()
-                self.marker_panel.m_widgets[i]['v1'].blockSignals(True)
-                self.marker_panel.m_widgets[i]['v2'].blockSignals(True)
-                
-                prec1 = 9 if is_time else 6
-                self.marker_panel.m_widgets[i]['v1'].setText(f"{m_val:.{prec1}f}")
-                
-                if is_time:
-                    abs_s = int(round(m_val * self.rate)) + 1
-                    self.marker_panel.m_widgets[i]['v2'].setText(f"{abs_s}")
-                
-                self.marker_panel.m_widgets[i]['v1'].blockSignals(False)
-                self.marker_panel.m_widgets[i]['v2'].blockSignals(False)
+            self.marker_panel.m_widgets[i]['v1'].setText("")
+            self.marker_panel.m_widgets[i]['v2'].setText("")
+        self.marker_panel.delta_v1.setText("")
+        self.marker_panel.delta_v2.setText("")
+        self.marker_panel.center_v1.setText("")
+        self.marker_panel.center_v2.setText("")
 
-        # Update Delta/Center
+        if not sorted_m: return
+
+        for i, m in enumerate(sorted_m):
+            v1 = m.value()
+            self.marker_panel.m_widgets[i]['v1'].setText(f"{v1:.9f}" if is_time else f"{v1:.6f}")
+            if is_time:
+                s = int(round(v1 * self.rate)) + 1
+                self.marker_panel.m_widgets[i]['v2'].setText(f"{s}")
+
         if len(sorted_m) == 2:
-            v1, v2 = sorted_m[0].value(), sorted_m[1].value()
-            prec1 = 9 if is_time else 6
+            p1, p2 = sorted_m[0].value(), sorted_m[1].value()
+            dv, cv = abs(p2-p1), (p1+p2)/2
             
-            self.marker_panel.delta_v1.blockSignals(True)
-            self.marker_panel.center_v1.blockSignals(True)
-            self.marker_panel.delta_v1.setText(f"{abs(v2-v1):.{prec1}f}")
-            self.marker_panel.center_v1.setText(f"{(v1+v2)/2:.{prec1}f}")
-            self.marker_panel.delta_v1.blockSignals(False)
-            self.marker_panel.center_v1.blockSignals(False)
+            self.marker_panel.delta_v1.setText(f"{dv:.9f}" if is_time else f"{dv:.6f}")
+            self.marker_panel.center_v1.setText(f"{cv:.9f}" if is_time else f"{cv:.6f}")
             
             if is_time:
-                s1, s2 = int(round(v1 * self.rate)) + 1, int(round(v2 * self.rate)) + 1
-                self.marker_panel.delta_v2.blockSignals(True)
-                self.marker_panel.center_v2.blockSignals(True)
-                self.marker_panel.delta_v2.setText(f"{abs(s2-s1)+1}")
-                # Center sample
-                cv = (v1+v2)/2
-                self.marker_panel.center_v2.setText(f"{int(round(cv*self.rate))+1}")
-                self.marker_panel.delta_v2.blockSignals(False)
-                self.marker_panel.center_v2.blockSignals(False)
+                ds = int(round(dv * self.rate))
+                cs = int(round(cv * self.rate)) + 1
+                self.marker_panel.delta_v2.setText(f"{ds}")
+                self.marker_panel.center_v2.setText(f"{cs}")
+
+    def handle_marker_clear(self, mode):
+        if mode == 'TIME':
+            for m in self.markers_time: self.plot_item.removeItem(m)
+            self.markers_time = []
+        elif mode == 'TIME_ENDLESS':
+            for m in self.markers_time_endless: self.plot_item.removeItem(m)
+            self.markers_time_endless = []
+        elif mode == 'MAG_ENDLESS':
+            for m in self.markers_y_endless_dict[self.y_label_text]: self.plot_item.removeItem(m)
+            self.markers_y_endless_dict[self.y_label_text] = []
+        else: # 'Y' (Fixed Mag)
+            for m in self.markers_y_dict[self.y_label_text]: self.plot_item.removeItem(m)
+            self.markers_y_dict[self.y_label_text] = []
+        self.update_marker_info()
+
+    def remove_marker_item(self, marker, mode):
+        if marker in self.plot_item.items():
+            self.plot_item.removeItem(marker)
+        
+        is_time = 'TIME' in mode
+        active_list = self.markers_time_endless if is_time else self.markers_y_endless_dict[self.y_label_text]
+        
+        if marker in active_list:
+            active_list.remove(marker)
+            # Re-label remaining
+            for i, m in enumerate(active_list):
+                if hasattr(m, 'label'):
+                    m.label.setFormat(f"M{i+1}")
+        
+        self.update_marker_info()
 
     def marker_edit_finished(self):
         sender = self.sender()
         name = sender.objectName()
         is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
-        active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
-        sorted_markers = sorted(active_markers, key=lambda m: m.value())
-
+        is_endless = 'ENDLESS' in self.interaction_mode
+        
         try:
             val = float(sender.text())
-            if name.startswith('m'):
+            if is_time:
+                t_min, t_max = self.time_axis[0], self.time_axis[-1]
+                curr_min, curr_max = t_min, t_max
+            else:
+                y_min, y_max = self._get_y_bounds()
+                curr_min, curr_max = y_min, y_max
+
+            if name.startswith('em_'):
+                # Endless edit
+                parts = name.split('_')
+                idx = int(parts[1])
+                unit = parts[2]
+                active_list = self.markers_time_endless if is_time else self.markers_y_endless_dict[self.y_label_text]
+                if idx < len(active_list):
+                    m = active_list[idx]
+                    if is_time:
+                        new_p = np.clip(val if unit == 'val' else val, curr_min, curr_max) # Handle unit conversion if needed
+                        if unit == 'sam':
+                             new_p = np.clip((val - 1) / self.rate, curr_min, curr_max)
+                    else:
+                        new_p = np.clip(val, curr_min, curr_max)
+                    m.setPos(new_p)
+                self.update_marker_info()
+                return
+
+            # Fixed marker edit logic...
+            active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
+            sorted_markers = sorted(active_markers, key=lambda m: m.value())
+            
+            if name.startswith('m') and len(sorted_markers) > int(name[1]):
                 idx = int(name[1])
-                if idx >= len(sorted_markers): return
+                unit = name[3:] # v1 or v2
+                if is_time:
+                    new_p = np.clip((val - 1)/self.rate if unit == 'v2' else val, curr_min, curr_max)
+                else:
+                    new_p = np.clip(val, curr_min, curr_max)
                 
-                new_p = val
-                if 'v2' in name and is_time:
-                    new_p = (val - 1.0) / self.rate
-                
+                # Check locks
                 if len(sorted_markers) == 2:
                     other_idx = 1 - idx
-                    shift = new_p - sorted_markers[idx].value()
+                    old_p = sorted_markers[idx].value()
+                    shift = new_p - old_p
                     if self.marker_panel.btn_lock_delta.isChecked():
-                        sorted_markers[idx].setValue(new_p); sorted_markers[other_idx].setValue(sorted_markers[other_idx].value() + shift)
+                        new_o = sorted_markers[other_idx].value() + shift
+                        if curr_min <= new_o <= curr_max:
+                            sorted_markers[idx].setPos(new_p)
+                            sorted_markers[other_idx].setPos(new_o)
                     elif self.marker_panel.btn_lock_center.isChecked():
                         ct = (sorted_markers[0].value() + sorted_markers[1].value()) / 2
-                        sorted_markers[idx].setValue(new_p); sorted_markers[other_idx].setValue(2 * ct - new_p)
-                    else: sorted_markers[idx].setValue(new_p)
-                else: sorted_markers[idx].setValue(new_p)
-                
-            elif len(sorted_markers) == 2:
-                p1, p2 = sorted_markers[0].value(), sorted_markers[1].value()
-                if 'delta' in name:
-                    dv = val
-                    if 'v2' in name and is_time: dv = (val - 1) / self.rate
-                    sorted_markers[0].setValue((p1+p2)/2 - dv/2); sorted_markers[1].setValue((p1+p2)/2 + dv/2)
-                elif 'center' in name:
-                    ct = val
-                    if 'v2' in name and is_time: ct = (val - 1) / self.rate
-                    dv = abs(p2-p1)
-                    sorted_markers[0].setValue(ct - dv/2); sorted_markers[1].setValue(ct + dv/2)
-                        
+                        new_o = 2 * ct - new_p
+                        if curr_min <= new_o <= curr_max:
+                            sorted_markers[idx].setPos(new_p)
+                            sorted_markers[other_idx].setPos(new_o)
+                    else: sorted_markers[idx].setPos(new_p)
+                else:
+                    sorted_markers[idx].setPos(new_p)
+            
             self.update_marker_info()
-        except ValueError: self.update_marker_info()
-
-    def handle_marker_clear(self, mode):
-        markers = self.markers_time if mode == 'TIME' else self.markers_y_dict[self.y_label_text]
-        for m in markers: self.plot_item.removeItem(m)
-        markers.clear()
-        self.update_marker_info()
+        except: pass
 
     def reset_zoom(self):
         self.plot_item.autoRange()

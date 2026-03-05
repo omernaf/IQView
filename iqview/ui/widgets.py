@@ -297,7 +297,7 @@ class CustomViewBox(pg.ViewBox):
                 ev.accept()
             else:
                 # --- Marker Logic ---
-                if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS']:
+                if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS']:
                     if ev.isStart():
                         self.ui_controller.place_marker(ev.buttonDownScenePos(), drag_mode=True)
                     elif ev.isFinish():
@@ -314,7 +314,7 @@ class CustomViewBox(pg.ViewBox):
 
     def mouseClickEvent(self, ev):
         if ev.button() == Qt.MouseButton.LeftButton:
-            if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS']:
+            if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS']:
                 self.ui_controller.place_marker(ev.scenePos(), drag_mode=False)
             ev.accept()
         elif ev.button() == Qt.MouseButton.RightButton:
@@ -348,12 +348,14 @@ class CustomViewBox(pg.ViewBox):
                              self.ui_controller.markers_time
         else:
             # TimeDomainView
-            if self.ui_controller.interaction_mode in ['MAG', 'Y']:
-                active_markers = self.ui_controller.markers_y_dict.get(self.ui_controller.y_label_text, [])
+            if self.ui_controller.interaction_mode in ['MAG', 'Y', 'MAG_ENDLESS']:
+                active_markers = self.ui_controller.markers_y_endless_dict.get(self.ui_controller.y_label_text, []) if 'ENDLESS' in self.ui_controller.interaction_mode else \
+                                 self.ui_controller.markers_y_dict.get(self.ui_controller.y_label_text, [])
             else:
-                active_markers = self.ui_controller.markers_time
+                active_markers = self.ui_controller.markers_time_endless if 'ENDLESS' in self.ui_controller.interaction_mode else \
+                                 self.ui_controller.markers_time
                 
-        fit_act.setEnabled(len(active_markers) == 2)
+        fit_act.setEnabled(len(active_markers) >= 2)
         fit_act.triggered.connect(self.ui_controller.fit_to_markers)
         
         if is_spec:

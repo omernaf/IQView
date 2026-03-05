@@ -27,6 +27,9 @@ class TimeDomainView(QWidget):
         self.markers_time = []
         self._block_signals = False
         
+        # Endless Markers
+        self.markers_time_endless = []
+        
         # Mode-specific Magnitude markers
         self.markers_y_dict = {
             "Amplitude (Real)": [],
@@ -36,6 +39,7 @@ class TimeDomainView(QWidget):
             "Phase (rad)": [],
             "Unwrapped Phase (rad)": []
         }
+        self.markers_y_endless_dict = {k: [] for k in self.markers_y_dict.keys()}
         
         # Mode-specific Y-zoom states (yMin, yMax)
         self.zoom_y_dict = {}
@@ -160,6 +164,10 @@ class TimeDomainView(QWidget):
         if key_name == zoom_seq:
             prev = getattr(self, '_prev_interaction_mode', 'TIME')
             self.set_interaction_mode(prev)
+        elif key_name == s.get('keybinds/endless_time', 'Shift+T'):
+            self.set_interaction_mode('TIME_ENDLESS')
+        elif key_name == s.get('keybinds/endless_mag', 'Shift+F'):
+            self.set_interaction_mode('MAG_ENDLESS')
         super().keyReleaseEvent(event)
 
     def set_interaction_mode(self, mode):
@@ -168,6 +176,7 @@ class TimeDomainView(QWidget):
         self.zoom_mode = (mode == 'ZOOM')
         if mode == 'ZOOM': self.plot_widget.setCursor(Qt.CursorShape.CrossCursor)
         elif mode == 'MOVE': self.plot_widget.setCursor(Qt.CursorShape.SizeAllCursor)
+        elif 'ENDLESS' in mode: self.plot_widget.setCursor(Qt.CursorShape.PointingHandCursor)
         else: self.plot_widget.setCursor(Qt.CursorShape.ArrowCursor)
         
         self.marker_panel.update_mode_ui(mode)
@@ -225,6 +234,17 @@ class TimeDomainView(QWidget):
         active_y = self.markers_y_dict.get(y_label, [])
         for m in active_y:
             m.setPen(pg.mkPen(p.marker_mag, width=2, style=Qt.PenStyle.DashLine))
+            self.plot_item.addItem(m)
+            m.setZValue(100)
+            
+        active_y_endless = self.markers_y_endless_dict.get(y_label, [])
+        for m in active_y_endless:
+            m.setPen(pg.mkPen(p.marker_mag, width=2, style=Qt.PenStyle.DashLine))
+            self.plot_item.addItem(m)
+            m.setZValue(100)
+
+        for m in self.markers_time_endless:
+            m.setPen(pg.mkPen(p.marker_time, width=2, style=Qt.PenStyle.DashLine))
             self.plot_item.addItem(m)
             m.setZValue(100)
         
@@ -359,7 +379,8 @@ class TimeDomainView(QWidget):
 
     def place_marker(self, scene_pos, drag_mode=False):
         v_pos = self.view_box.mapSceneToView(scene_pos)
-        is_time = (self.interaction_mode == 'TIME')
+        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
+        is_endless = 'ENDLESS' in self.interaction_mode
         
         # Clamp to bounds
         if is_time:
@@ -369,10 +390,13 @@ class TimeDomainView(QWidget):
             y_min, y_max = self._get_y_bounds()
             val = max(y_min, min(y_max, v_pos.y()))
         
-        active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
+        if is_endless:
+            active_markers = self.markers_time_endless if is_time else self.markers_y_endless_dict[self.y_label_text]
+        else:
+            active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
         
-        # 1. Shift pair if locked
-        if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+        # 1. Shift pair if locked (Only for fixed modes)
+        if not is_endless and len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
             m1_pos, m2_pos = active_markers[0].value(), active_markers[1].value()
             target = active_markers[0] if abs(val-m1_pos) < abs(val-m2_pos) else active_markers[1]
             other = active_markers[1] if target == active_markers[0] else active_markers[0]
@@ -407,8 +431,10 @@ class TimeDomainView(QWidget):
         # 2. Hit test
         found_marker = None
         for m in active_markers:
-            m_pixel = self.view_box.mapViewToScene(pg.Point(m.value(), 0) if is_time else pg.Point(0, m.value()))
-            dist = abs(scene_pos.x() - m_pixel.x()) if is_time else abs(scene_pos.y() - m_pixel.y())
+            # Check if marker is vertical (Time) or horizontal (Magnitude)
+            m_is_time = m in self.markers_time or m in self.markers_time_endless
+            m_pixel = self.view_box.mapViewToScene(pg.Point(m.value(), 0) if m_is_time else pg.Point(0, m.value()))
+            dist = abs(scene_pos.x() - m_pixel.x()) if m_is_time else abs(scene_pos.y() - m_pixel.y())
             if dist < 20: found_marker = m; break
         
         if found_marker:
@@ -417,18 +443,28 @@ class TimeDomainView(QWidget):
             self.update_marker_info()
             return
 
+        # 3. Add brand new
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
         p = get_palette(theme)
         color = p.marker_time if is_time else p.marker_mag
         orient = 90 if is_time else 0
         
-        # Recycling logic
-        if len(active_markers) >= 2:
+        if is_endless:
+            # Endless Mode: Just add more markers
+            pass
+        elif len(active_markers) >= 2:
+            # Fixed Mode: Pop the oldest
             old_m = active_markers.pop(0)
             self.plot_item.removeItem(old_m)
 
         new_m = pg.InfiniteLine(pos=val, angle=orient, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine), movable=False)
         new_m.setZValue(100)
+        
+        if is_endless:
+            label_text = f"M{len(active_markers)+1}"
+            new_m.label = pg.InfLineLabel(new_m, text=label_text, position=0.95, rotateAxis=(1, 0), anchor=(1, 1))
+            new_m.label.setColor(color)
+
         active_markers.append(new_m)
         self.plot_item.addItem(new_m, ignoreBounds=True)
         if drag_mode: self.active_drag_marker = new_m
@@ -437,7 +473,8 @@ class TimeDomainView(QWidget):
     def update_drag(self, scene_pos):
         if not self.active_drag_marker: return
         v_pos = self.view_box.mapSceneToView(scene_pos)
-        is_time = self.active_drag_marker in self.markers_time
+        is_time = (self.active_drag_marker in self.markers_time or self.active_drag_marker in self.markers_time_endless)
+        is_endless = 'ENDLESS' in self.interaction_mode
         
         if is_time:
             t_min, t_max = self.time_axis[0], self.time_axis[-1]
@@ -446,9 +483,12 @@ class TimeDomainView(QWidget):
             y_min, y_max = self._get_y_bounds()
             val = max(y_min, min(y_max, v_pos.y()))
         
-        active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
+        if is_endless:
+            active_markers = self.markers_time_endless if is_time else self.markers_y_endless_dict[self.y_label_text]
+        else:
+            active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
         
-        if len(active_markers) == 2:
+        if not is_endless and len(active_markers) == 2:
             other = active_markers[0] if active_markers[1] == self.active_drag_marker else active_markers[1]
             shift = val - self.active_drag_marker.value()
             if self.marker_panel.btn_lock_delta.isChecked():
@@ -477,9 +517,21 @@ class TimeDomainView(QWidget):
         self.update_marker_info()
 
     def update_marker_info(self):
-        is_time = (self.interaction_mode == 'TIME')
+        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
+        is_endless = 'ENDLESS' in self.interaction_mode
+        
+        if is_endless:
+            active_markers = self.markers_time_endless if is_time else self.markers_y_endless_dict[self.y_label_text]
+            self.marker_panel.update_endless_list(active_markers, self.interaction_mode)
+            # Re-label just in case
+            for i, m in enumerate(active_markers):
+                if hasattr(m, 'label'): m.label.setFormat(f"M{i+1}")
+            return
+
         active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
         sorted_m = sorted(active_markers, key=lambda m: m.value())
+        
+        self.marker_panel.update_headers(self.interaction_mode, self.y_label_text)
         
         # Clear fields
         for widget in self.marker_panel.m_widgets:
@@ -487,6 +539,8 @@ class TimeDomainView(QWidget):
         for w in [self.marker_panel.delta_v1, self.marker_panel.delta_v2,
                   self.marker_panel.center_v1, self.marker_panel.center_v2]:
             w.blockSignals(True); w.clear(); w.blockSignals(False)
+
+        if not sorted_m: return
 
         # Update columns
         for i in range(2):
@@ -531,12 +585,40 @@ class TimeDomainView(QWidget):
     def marker_edit_finished(self):
         sender = self.sender()
         name = sender.objectName()
-        is_time = (self.interaction_mode == 'TIME')
-        active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
-        sorted_markers = sorted(active_markers, key=lambda m: m.value())
-
+        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
+        is_endless = 'ENDLESS' in self.interaction_mode
+        
         try:
             val = float(sender.text())
+            if is_time:
+                t_min, t_max = self.time_axis[0], self.time_axis[-1]
+                curr_min, curr_max = t_min, t_max
+            else:
+                y_min, y_max = self._get_y_bounds()
+                curr_min, curr_max = y_min, y_max
+
+            if name.startswith('em_'):
+                # Endless edit
+                parts = name.split('_')
+                idx = int(parts[1])
+                unit = parts[2]
+                active_list = self.markers_time_endless if is_time else self.markers_y_endless_dict[self.y_label_text]
+                if idx < len(active_list):
+                    m = active_list[idx]
+                    if is_time:
+                        new_p = np.clip(val if unit == 'sec' else val, curr_min, curr_max)
+                        if unit == 'sam':
+                             new_p = np.clip((val - 1) / self.rate, curr_min, curr_max)
+                    else:
+                        new_p = np.clip(val, curr_min, curr_max)
+                    m.setPos(new_p)
+                self.update_marker_info()
+                return
+
+            # Fixed marker edit logic...
+            active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
+            sorted_markers = sorted(active_markers, key=lambda m: m.value())
+
             if name.startswith('m'):
                 idx = int(name[1])
                 if idx >= len(sorted_markers): return
@@ -545,14 +627,20 @@ class TimeDomainView(QWidget):
                 if 'v2' in name and is_time:
                     new_p = (val - 1.0) / self.rate
                 
+                new_p = np.clip(new_p, curr_min, curr_max)
+
                 if len(sorted_markers) == 2:
                     other_idx = 1 - idx
                     shift = new_p - sorted_markers[idx].value()
                     if self.marker_panel.btn_lock_delta.isChecked():
-                        sorted_markers[idx].setValue(new_p); sorted_markers[other_idx].setValue(sorted_markers[other_idx].value() + shift)
+                        new_o = sorted_markers[other_idx].value() + shift
+                        if curr_min <= new_o <= curr_max:
+                            sorted_markers[idx].setValue(new_p); sorted_markers[other_idx].setValue(new_o)
                     elif self.marker_panel.btn_lock_center.isChecked():
                         ct = (sorted_markers[0].value() + sorted_markers[1].value()) / 2
-                        sorted_markers[idx].setValue(new_p); sorted_markers[other_idx].setValue(2 * ct - new_p)
+                        new_o = 2 * ct - new_p
+                        if curr_min <= new_o <= curr_max:
+                            sorted_markers[idx].setValue(new_p); sorted_markers[other_idx].setValue(new_o)
                     else: sorted_markers[idx].setValue(new_p)
                 else: sorted_markers[idx].setValue(new_p)
                 
@@ -569,12 +657,37 @@ class TimeDomainView(QWidget):
                     sorted_markers[0].setValue(ct - dv/2); sorted_markers[1].setValue(ct + dv/2)
                         
             self.update_marker_info()
-        except ValueError: self.update_marker_info()
+        except: pass
 
     def handle_marker_clear(self, mode):
-        markers = self.markers_time if mode == 'TIME' else self.markers_y_dict[self.y_label_text]
-        for m in markers: self.plot_item.removeItem(m)
-        markers.clear()
+        if mode == 'TIME':
+            for m in self.markers_time: self.plot_item.removeItem(m)
+            self.markers_time = []
+        elif mode == 'TIME_ENDLESS':
+            for m in self.markers_time_endless: self.plot_item.removeItem(m)
+            self.markers_time_endless = []
+        elif mode == 'MAG_ENDLESS':
+            for m in self.markers_y_endless_dict[self.y_label_text]: self.plot_item.removeItem(m)
+            self.markers_y_endless_dict[self.y_label_text] = []
+        else: # 'Y'
+            for m in self.markers_y_dict[self.y_label_text]: self.plot_item.removeItem(m)
+            self.markers_y_dict[self.y_label_text] = []
+        self.update_marker_info()
+
+    def remove_marker_item(self, marker, mode):
+        if marker in self.plot_item.items():
+            self.plot_item.removeItem(marker)
+        
+        is_time = 'TIME' in mode
+        active_list = self.markers_time_endless if is_time else self.markers_y_endless_dict[self.y_label_text]
+        
+        if marker in active_list:
+            active_list.remove(marker)
+            # Re-label remaining
+            for i, m in enumerate(active_list):
+                if hasattr(m, 'label'):
+                    m.label.setFormat(f"M{i+1}")
+        
         self.update_marker_info()
 
     def reset_zoom(self):
@@ -595,14 +708,20 @@ class TimeDomainView(QWidget):
         if is_finish: self.last_move_scene_pos = None
 
     def fit_to_markers(self):
-        is_time = (self.interaction_mode == 'TIME')
-        active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
-        if len(active_markers) == 2:
-            v1, v2 = active_markers[0].value(), active_markers[1].value()
+        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
+        is_endless = 'ENDLESS' in self.interaction_mode
+        if is_endless:
+            active_markers = self.markers_time_endless if is_time else self.markers_y_endless_dict[self.y_label_text]
+        else:
+            active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
+            
+        if len(active_markers) >= 2:
+            sorted_m = sorted(active_markers, key=lambda m: m.value())
+            v1, v2 = sorted_m[0].value(), sorted_m[-1].value()
             if is_time:
-                self.plot_item.setXRange(min(v1, v2), max(v1, v2), padding=0)
+                self.plot_item.setXRange(v1, v2, padding=0.05)
             else:
-                self.plot_item.setYRange(min(v1, v2), max(v1, v2), padding=0)
+                self.plot_item.setYRange(v1, v2, padding=0.05)
 
     def refresh_theme(self):
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
