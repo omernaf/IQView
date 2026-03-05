@@ -619,6 +619,27 @@ class MarkerManagerMixin:
             curr_max = f_max if (is_freq or is_filter) else self.time_duration
             curr_min = f_min if (is_freq or is_filter) else 0
             
+            if name.startswith('em_'):
+                # Endless Marker Edit: em_{index}_{sec/sam}
+                parts = name.split('_')
+                idx = int(parts[1])
+                unit = parts[2]
+                
+                active_list = self.markers_time_endless if not is_freq else self.markers_freq_endless
+                if idx < len(active_list):
+                    marker = active_list[idx]
+                    if is_freq:
+                        bin_val = max(1, min(val, self.fft_size))
+                        new_p = np.clip(f_min + (bin_val - 1) * rbw if unit == 'sam' else val, f_min, f_max)
+                    else:
+                        max_s = getattr(self, 'total_samples_in_cache', 1e9)
+                        s_val = np.clip(val if unit == 'sam' else val * self.rate + 1.0, 1, max_s)
+                        new_p = np.clip((s_val - 1.0) / self.rate, 0.0, self.time_duration)
+                    
+                    marker.setPos(new_p)
+                    self.update_marker_info()
+                return
+
             if name.startswith('m') and len(active_values) > int(name[1]):
                 idx, unit = int(name[1]), name[3:]
                 if is_freq or is_filter:

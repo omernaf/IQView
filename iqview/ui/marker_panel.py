@@ -384,12 +384,12 @@ class MarkerPanel(QFrame):
         
         l_id = QLabel("ID"); l_id.setFixedWidth(30); l_id.setObjectName("header_label")
         l_main = QLabel(f"Pos ({unit_main})"); l_main.setObjectName("header_label")
-        l_sub = QLabel(unit_sub); l_sub.setFixedWidth(60); l_sub.setObjectName("header_label")
-        l_del = QLabel(""); l_del.setFixedWidth(20)
+        l_sub = QLabel(unit_sub); l_sub.setObjectName("header_label")
+        l_del = QLabel(""); l_del.setFixedWidth(24)
         
         h_layout.addWidget(l_id)
-        h_layout.addWidget(l_main)
-        h_layout.addWidget(l_sub)
+        h_layout.addWidget(l_main, 1) # Give position more space
+        h_layout.addWidget(l_sub, 1)  # Give sub-unit more space
         h_layout.addWidget(l_del)
         self.scroll_layout.insertWidget(self.scroll_layout.count()-1, header_widget)
 
@@ -409,8 +409,9 @@ class MarkerPanel(QFrame):
             
             # Position
             edit_pos = FormattedLineEdit(f"{val:.{prec}f}")
-            edit_pos.setStyleSheet("background: rgba(255,255,255,0.05); border: none;")
-            edit_pos.setReadOnly(True)
+            edit_pos.setObjectName(f"em_{i}_sec")
+            edit_pos.setFixedHeight(24)
+            edit_pos.returnPressed.connect(self.parent_window.marker_edit_finished)
             
             # Sub-unit (Bin or Sample)
             if is_freq:
@@ -419,10 +420,10 @@ class MarkerPanel(QFrame):
             else:
                 sub_val = int(round(val * self.parent_window.rate)) + 1
             
-            lbl_sub = QLabel(f"{sub_val}")
-            lbl_sub.setFixedWidth(60)
-            lbl_sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl_sub.setStyleSheet("color: #888;")
+            edit_sub = FormattedLineEdit(f"{sub_val}")
+            edit_sub.setObjectName(f"em_{i}_sam")
+            edit_sub.setFixedHeight(24)
+            edit_sub.returnPressed.connect(self.parent_window.marker_edit_finished)
             
             # Delete Button
             btn_del = QPushButton("×")
@@ -436,8 +437,8 @@ class MarkerPanel(QFrame):
             btn_del.clicked.connect(lambda _, m=m: self.parent_window.remove_marker_item(m, mode))
             
             row_layout.addWidget(lbl_id)
-            row_layout.addWidget(edit_pos)
-            row_layout.addWidget(lbl_sub)
+            row_layout.addWidget(edit_pos, 1)
+            row_layout.addWidget(edit_sub, 1)
             row_layout.addWidget(btn_del)
             
             self.scroll_layout.insertWidget(self.scroll_layout.count()-1, row)
