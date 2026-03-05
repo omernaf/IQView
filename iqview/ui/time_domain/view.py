@@ -383,16 +383,26 @@ class TimeDomainView(QWidget):
         
         if not is_endless and len(active_markers) == 2:
             m1_pos, m2_pos = active_markers[0].value(), active_markers[1].value()
-            target = active_markers[0] if abs(val-m1_pos) < abs(val-m2_pos) else active_markers[1]
-            other = active_markers[1] if target == active_markers[0] else active_markers[0]
-            target_idx = 0 if target == active_markers[0] else 1
-            other_idx = 1 - target_idx
-            
-            lock_target = self.marker_panel.btn_lock_m1.isChecked() if target_idx == 0 else self.marker_panel.btn_lock_m2.isChecked()
+            lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
+            lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
             lock_delta = self.marker_panel.btn_lock_delta.isChecked()
             lock_center = self.marker_panel.btn_lock_center.isChecked()
 
-            if lock_target: return # Locked marker can't be moved or teleported
+            # Decide which marker is the potential target
+            if lock_m1 and not lock_m2:
+                target, other = active_markers[1], active_markers[0]
+                target_idx = 1
+            elif lock_m2 and not lock_m1:
+                target, other = active_markers[0], active_markers[1]
+                target_idx = 0
+            else:
+                # Neither or Both locked
+                target = active_markers[0] if abs(val-m1_pos) < abs(val-m2_pos) else active_markers[1]
+                other = active_markers[1] if target == active_markers[0] else active_markers[0]
+                target_idx = 0 if target == active_markers[0] else 1
+            
+            if (target_idx == 0 and lock_m1) or (target_idx == 1 and lock_m2):
+                if not (lock_delta or lock_center): return # Locked marker can't move alone
 
             shift = val - target.value()
             if lock_delta:
@@ -418,7 +428,7 @@ class TimeDomainView(QWidget):
                         target.setValue(val); other.setValue(new_o)
             else:
                 target.setValue(val)
-                # Check for crossing - only if NOT locked or linked
+                # Check for crossing
                 if (val > other.value() and target_idx == 0) or (val < other.value() and target_idx == 1):
                     active_markers[0], active_markers[1] = active_markers[1], active_markers[0]
                     self.marker_panel.flip_m_lock(self.interaction_mode)
@@ -429,7 +439,16 @@ class TimeDomainView(QWidget):
 
         # 2. Hit test
         found_marker = None
-        for m in active_markers:
+        for i, m in enumerate(active_markers):
+            # Check if this marker is locked
+            is_m_locked = (i == 0 and self.marker_panel.btn_lock_m1.isChecked()) or \
+                          (i == 1 and self.marker_panel.btn_lock_m2.isChecked())
+            if is_m_locked and len(active_markers) == 2:
+                # If both are locked, we can't drag either.
+                # If only one is locked, we can't drag the locked one.
+                if not (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+                    continue
+
             # Check if marker is vertical (Time) or horizontal (Magnitude)
             m_is_time = m in self.markers_time or m in self.markers_time_endless
             m_pixel = self.view_box.mapViewToScene(pg.Point(m.value(), 0) if m_is_time else pg.Point(0, m.value()))
