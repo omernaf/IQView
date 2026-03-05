@@ -28,39 +28,51 @@ class MarkerManagerMixin:
 
             # 2. HIGHEST PRIORITY: Handle FILTER mode placement
             if self.interaction_mode == 'FILTER':
-                # Clear if already have 2 and placing new one
+                # 1. Hit-test for existing bounds if any are placed
+                if self.filter_bounds:
+                    hit_threshold = 20 # pixels
+                    vb = self.spectrogram_view.plot_item.vb
+                    best_idx = -1
+                    min_dist = hit_threshold
+                    
+                    for i, b_val in enumerate(self.filter_bounds):
+                        p_scene = vb.mapViewToScene(pg.Point(0, b_val))
+                        dist = abs(scene_pos.y() - p_scene.y())
+                        if dist < min_dist:
+                            min_dist = dist
+                            best_idx = i
+                    
+                    if best_idx != -1:
+                        self.active_drag_filter_bound_idx = best_idx
+                        if drag_mode: return
+                        return
+
+                # 2. No hit - standard placement or clear/replace
                 if len(self.filter_bounds) >= 2:
                     self.filter_bounds = []
-                    if self.filter_region:
-                        self.filter_region.hide()
+                    if self.filter_region: self.filter_region.hide()
                     self.filter_placed = False
                     self.marker_panel.filter_enable_cb.setChecked(False)
                     self.marker_panel.filter_enable_cb.setEnabled(False)
 
                 self.filter_bounds.append(val)
+                # Enable immediate dragging for the new bound
+                self.active_drag_filter_bound_idx = len(self.filter_bounds) - 1
                 
                 if len(self.filter_bounds) == 1:
-                    # Show a temporary indicator line
                     if not self.filter_line:
                         self.filter_line = pg.InfiniteLine(angle=0, pen=pg.mkPen('#ff6400', width=2, style=Qt.PenStyle.DashLine))
-                    
                     if self.filter_line not in self.spectrogram_view.plot_item.items:
                         self.spectrogram_view.plot_item.addItem(self.filter_line)
                     self.filter_line.setPos(val)
                     self.filter_line.show()
                 else:
-                    # Second bound placed - create/update the region
-                    if self.filter_line:
-                        self.filter_line.hide()
-                    
-                    f1, f2 = sorted(self.filter_bounds)
+                    if self.filter_line: self.filter_line.hide()
+                    f1, f2 = self.filter_bounds
                     if not self.filter_region:
-                        # Lazily create the region
                         self.filter_region = pg.LinearRegionItem(
-                            values=[f1, f2], 
-                            orientation='horizontal',
-                            brush=pg.mkBrush(255, 100, 0, 40),
-                            pen=pg.mkPen('#ff6400', width=2)
+                            values=[f1, f2], orientation='horizontal',
+                            brush=pg.mkBrush(255, 100, 0, 40), pen=pg.mkPen('#ff6400', width=2)
                         )
                         self.filter_region.sigRegionChanged.connect(self.on_filter_region_changed)
                         self.filter_region.sigRegionChangeFinished.connect(self.on_filter_region_finished)
@@ -73,7 +85,6 @@ class MarkerManagerMixin:
                     
                     self.filter_placed = True
                     self.marker_panel.filter_enable_cb.setEnabled(True)
-                    # Trigger filter reprocessing
                     self.on_filter_region_finished()
                 
                 self.update_marker_info()
@@ -154,7 +165,26 @@ class MarkerManagerMixin:
         if self.spectrogram_view.plot_item.sceneBoundingRect().contains(scene_pos):
             mouse_v = self.spectrogram_view.plot_item.vb.mapSceneToView(scene_pos)
             
-            # Handle BPF placement drag (while moving mouse before second click)
+            # 1. Handle explicit BPF bound dragging (highest priority)
+            if self.interaction_mode == 'FILTER' and getattr(self, 'active_drag_filter_bound_idx', -1) != -1:
+                idx = self.active_drag_filter_bound_idx
+                f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
+                raw_val = float(np.clip(mouse_v.y(), f_min, f_max))
+                rbw = self.rate / self.fft_size
+                bin_idx = int(round((raw_val - f_min) / rbw)) + 1
+                new_v = f_min + (bin_idx - 1.0) * rbw
+                
+                self.filter_bounds[idx] = new_v
+                
+                if len(self.filter_bounds) == 1:
+                    if self.filter_line: self.filter_line.setPos(new_v)
+                elif len(self.filter_bounds) == 2:
+                    if self.filter_region: self.filter_region.setRegion(self.filter_bounds)
+
+                self.update_marker_info()
+                return
+
+            # 2. Handle BPF placement preview (rubberband between first bound and mouse)
             if self.interaction_mode == 'FILTER' and len(self.filter_bounds) == 1:
                 f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
                 raw_val = float(np.clip(mouse_v.y(), f_min, f_max))
@@ -162,15 +192,11 @@ class MarkerManagerMixin:
                 bin_idx = int(round((raw_val - f_min) / rbw)) + 1
                 new_v = f_min + (bin_idx - 1.0) * rbw
                 
-                # Update the temporary region or line
                 f1 = self.filter_bounds[0]
                 if not self.filter_region:
-                    # Lazily create the region just for preview
                     self.filter_region = pg.LinearRegionItem(
-                        values=[f1, new_v], 
-                        orientation='horizontal',
-                        brush=pg.mkBrush(255, 100, 0, 40),
-                        pen=pg.mkPen('#ff6400', width=2)
+                        values=[f1, new_v], orientation='horizontal',
+                        brush=pg.mkBrush(255, 100, 0, 40), pen=pg.mkPen('#ff6400', width=2)
                     )
                     if self.filter_region not in self.spectrogram_view.plot_item.items:
                         self.spectrogram_view.plot_item.addItem(self.filter_region)
