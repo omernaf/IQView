@@ -228,7 +228,7 @@ class CustomViewBox(pg.ViewBox):
                 ev.accept()
             else:
                 # --- Marker Logic ---
-                if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y']:
+                if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER']:
                     if ev.isStart():
                         self.ui_controller.place_marker(ev.buttonDownScenePos(), drag_mode=True)
                     elif ev.isFinish():
@@ -241,7 +241,7 @@ class CustomViewBox(pg.ViewBox):
 
     def mouseClickEvent(self, ev):
         if ev.button() == Qt.MouseButton.LeftButton:
-            if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y']:
+            if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER']:
                 self.ui_controller.place_marker(ev.scenePos(), drag_mode=False)
             ev.accept()
         elif ev.button() == Qt.MouseButton.RightButton:

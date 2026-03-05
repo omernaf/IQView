@@ -51,36 +51,26 @@ class ViewControllerMixin:
         self.marker_panel.update_headers(mode)
         self.update_marker_info()
         
+        # Handle Filter Region Toggle Visibility
+        if hasattr(self.marker_panel, 'filter_container'):
+            self.marker_panel.filter_container.setVisible(mode == 'FILTER')
+
         # Handle Filter Region Visibility & Interaction
         if self.filter_region:
-            if mode == 'FILTER':
+            # Only show if in filter mode AND it's either currently being placed or was already placed
+            if mode == 'FILTER' and getattr(self, 'filter_placed', False):
                 self.filter_region.show()
                 self.filter_region.setMovable(True)
             else:
                 self.filter_region.hide()
                 self.filter_region.setMovable(False)
-        
-        if mode == 'FILTER' and self.filter_region is None:
-            # Create region if it doesn't exist
-            f_min, f_max = self.fc - self.rate/4, self.fc + self.rate/4
-            self.filter_region = pg.LinearRegionItem(
-                values=[f_min, f_max], 
-                orientation='horizontal',
-                brush=pg.mkBrush(255, 100, 0, 40),
-                pen=pg.mkPen('#ff6400', width=2)
-            )
-            self.spectrogram_view.plot_item.addItem(self.filter_region)
-            self.filter_region.sigRegionChanged.connect(self.on_filter_region_changed)
-            self.filter_region.sigRegionChangeFinished.connect(self.on_filter_region_finished)
-            self.filter_region.setMovable(True)
-            self.filter_region.show()
 
     def on_filter_toggled(self, checked):
         self.filter_enabled = checked
         if self.filter_region:
-            if checked and self.interaction_mode == 'FILTER':
+            if checked and self.interaction_mode == 'FILTER' and getattr(self, 'filter_placed', False):
                 self.filter_region.show()
-            elif self.interaction_mode != 'FILTER':
+            elif self.interaction_mode != 'FILTER' or not getattr(self, 'filter_placed', False):
                 self.filter_region.hide()
         
         # Trigger reprocessing if we have data
@@ -88,8 +78,8 @@ class ViewControllerMixin:
             self.start_processing()
 
     def on_filter_region_changed(self):
-        # Useful for real-time label updates if we had any
-        pass
+        # Update marker table in real-time when the region is dragged
+        self.update_marker_info()
 
     def on_filter_region_finished(self):
         # Trigger reprocessing when the user finishes dragging the region

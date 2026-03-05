@@ -49,6 +49,8 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         # Filter State
         self.filter_enabled = False
         self.filter_region = None # LinearRegionItem added in setup_ui or on demand
+        self.filter_placed = False
+        self.filter_placing = False
         
         self.setup_ui()
         self.start_processing()

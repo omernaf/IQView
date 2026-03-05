@@ -89,11 +89,7 @@ class MarkerPanel(QFrame):
         self.mode_group.addButton(self.btn_bpf)
         self.mode_group.setExclusive(True)
 
-        # Filter Activation Checkbox
-        self.filter_enable_cb = QCheckBox("Filter On")
-        self.filter_enable_cb.setToolTip("Enable Band-Pass Filter")
-        self.main_layout.insertWidget(1, self.filter_enable_cb)
-        self.filter_enable_cb.toggled.connect(self.parent_window.on_filter_toggled)
+        # Connections
 
         # Connections
         self.btn_marker_time.clicked.connect(lambda: self.interactionModeChanged.emit('TIME'))
@@ -168,6 +164,24 @@ class MarkerPanel(QFrame):
         # Connect locks to parent
         self.btn_lock_delta.toggled.connect(self.on_lock_delta_toggled)
         self.btn_lock_center.toggled.connect(self.on_lock_center_toggled)
+
+        # Filter Activation Checkbox (Moved next to table)
+        from PyQt6.QtWidgets import QVBoxLayout, QWidget
+        self.filter_container = QWidget()
+        self.filter_layout = QVBoxLayout(self.filter_container)
+        self.filter_layout.setContentsMargins(0, 0, 0, 0)
+        self.filter_layout.setSpacing(0)
+        
+        self.filter_enable_cb = QCheckBox("Filter On")
+        self.filter_enable_cb.setToolTip("Enable Band-Pass Filter")
+        self.filter_layout.addStretch()
+        self.filter_layout.addWidget(self.filter_enable_cb)
+        self.filter_layout.addStretch()
+        
+        self.filter_container.setFixedWidth(80)
+        self.filter_container.setVisible(False)
+        self.grid.addWidget(self.filter_container, 1, 5, 2, 1)
+        self.filter_enable_cb.toggled.connect(self.parent_window.on_filter_toggled)
         
         # Explicit Default Force
         self.btn_marker_time.setChecked(True)
@@ -215,6 +229,9 @@ class MarkerPanel(QFrame):
         elif mode == 'TIME':
             self.row1_label.setText("Time (sec)")
             self.row2_label.setText("Samples")
+        elif mode == 'FILTER':
+            self.row1_label.setText("Freq (Hz)")
+            self.row2_label.setText("Bin")
             
         # Sync lock UI with saved state for this mode (if applicable)
         if mode in self.lock_states:
