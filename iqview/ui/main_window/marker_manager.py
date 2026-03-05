@@ -43,8 +43,10 @@ class MarkerManagerMixin:
                     # Show a temporary indicator line
                     if not self.filter_line:
                         self.filter_line = pg.InfiniteLine(angle=0, pen=pg.mkPen('#ff6400', width=2, style=Qt.PenStyle.DashLine))
+                    
+                    if self.filter_line not in self.spectrogram_view.plot_item.items:
+                        self.spectrogram_view.plot_item.addItem(self.filter_line)
                     self.filter_line.setPos(val)
-                    self.spectrogram_view.plot_item.addItem(self.filter_line)
                     self.filter_line.show()
                 else:
                     # Second bound placed - create/update the region
@@ -60,9 +62,11 @@ class MarkerManagerMixin:
                             brush=pg.mkBrush(255, 100, 0, 40),
                             pen=pg.mkPen('#ff6400', width=2)
                         )
-                        self.spectrogram_view.plot_item.addItem(self.filter_region)
                         self.filter_region.sigRegionChanged.connect(self.on_filter_region_changed)
                         self.filter_region.sigRegionChangeFinished.connect(self.on_filter_region_finished)
+
+                    if self.filter_region not in self.spectrogram_view.plot_item.items:
+                        self.spectrogram_view.plot_item.addItem(self.filter_region)
                     else:
                         self.filter_region.setRegion([f1, f2])
                         self.filter_region.show()
@@ -168,7 +172,8 @@ class MarkerManagerMixin:
                         brush=pg.mkBrush(255, 100, 0, 40),
                         pen=pg.mkPen('#ff6400', width=2)
                     )
-                    self.spectrogram_view.plot_item.addItem(self.filter_region)
+                    if self.filter_region not in self.spectrogram_view.plot_item.items:
+                        self.spectrogram_view.plot_item.addItem(self.filter_region)
                     self.filter_region.sigRegionChanged.connect(self.on_filter_region_changed)
                     self.filter_region.sigRegionChangeFinished.connect(self.on_filter_region_finished)
                 
@@ -179,10 +184,10 @@ class MarkerManagerMixin:
                 self.update_marker_info()
                 return
 
-            is_time = (self.interaction_mode == 'TIME')
-            if self.active_drag_marker:
-                is_time = self.active_drag_marker in self.markers_time
-            
+            if not self.active_drag_marker:
+                return
+
+            is_time = self.active_drag_marker in self.markers_time
             active_markers = self.markers_time if is_time else self.markers_freq
             
             if is_time:
