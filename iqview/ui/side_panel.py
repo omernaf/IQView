@@ -1,7 +1,10 @@
 from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QLineEdit, QVBoxLayout, QComboBox, QPushButton
 from PyQt6.QtCore import pyqtSignal, Qt
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QPixmap
+from PyQt6 import QtGui
 import numpy as np
+import importlib.resources
+import os
 
 class SidePanel(QFrame):
     parametersChanged = pyqtSignal(dict)
