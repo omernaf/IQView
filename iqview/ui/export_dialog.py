@@ -167,15 +167,18 @@ class ExportDialog(QtWidgets.QDialog):
             screen = QtWidgets.QApplication.primaryScreen()
             if screen:
                 geom = self.ui_controller.frameGeometry()
-                pos = geom.topLeft()
-                # grabWindow with winId=0 captures from the desktop at given rect
-                pixmap = screen.grabWindow(0, pos.x(), pos.y(), geom.width(), geom.height())
+                # Use the window's own winId() instead of 0 (desktop) to capture only THIS window
+                # and ignore anything on top of it.
+                pixmap = screen.grabWindow(self.ui_controller.winId())
                 return pixmap.toImage()
             return self.ui_controller.grab().toImage()
 
     def export_image_file(self):
         is_window_capture = self.radio_window.isChecked()
         if is_window_capture:
+            # Ensure the window is on top and updated
+            self.ui_controller.raise_()
+            self.ui_controller.activateWindow()
             self.hide()
             # Give WM/DWM time to hide and redraw the composite buffer
             for _ in range(3):
@@ -202,6 +205,9 @@ class ExportDialog(QtWidgets.QDialog):
     def export_image_clipboard(self):
         is_window_capture = self.radio_window.isChecked()
         if is_window_capture:
+            # Ensure the window is on top and updated
+            self.ui_controller.raise_()
+            self.ui_controller.activateWindow()
             self.hide()
             # Give WM/DWM time to hide and redraw the composite buffer
             for _ in range(3):
