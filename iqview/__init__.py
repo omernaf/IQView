@@ -37,6 +37,6 @@ def view(data, fs, fc=0.0, fft_size=1024, dtype='complex64'):
     from iqview.ui import SpectrogramWindow
     pg.setConfigOptions(useOpenGL=True, enableExperimental=True, imageAxisOrder='row-major')
     app = QApplication.instance() or QApplication(sys.argv)
-    window = SpectrogramWindow(raw_bytes, np.float32, fs, fc, fft_size)
+    window = SpectrogramWindow(raw_bytes, np.float32, fs, fc, fft_size, is_complex=True)
     window.show()
     sys.exit(app.exec())
