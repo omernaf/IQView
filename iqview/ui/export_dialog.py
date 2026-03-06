@@ -79,7 +79,22 @@ class ExportDialog(QtWidgets.QDialog):
         fmt_group = QtWidgets.QGroupBox("Data Format")
         fmt_layout = QtWidgets.QVBoxLayout(fmt_group)
         self.radio_mat = QtWidgets.QRadioButton("MATLAB (.mat)")
-        self.radio_bin = QtWidgets.QRadioButton("Raw Binary IQ (Complex64)")
+        
+        # Determine dynamic extension for display
+        s = self.ui_controller
+        if not s.is_complex:
+            bin_ext = ".32f" if s.data_type == np.float32 else ".64f"
+            bin_label = f"Raw Binary (Real, {bin_ext})"
+        else:
+            if s.data_type == np.int16:
+                bin_ext = ".16tc"
+            elif s.data_type == np.float64:
+                bin_ext = ".64fc"
+            else:
+                bin_ext = ".32fc"
+            bin_label = f"Raw Binary IQ (Complex, {bin_ext})"
+            
+        self.radio_bin = QtWidgets.QRadioButton(bin_label)
         self.radio_mat.setChecked(True)
         fmt_layout.addWidget(self.radio_mat)
         fmt_layout.addWidget(self.radio_bin)
@@ -190,32 +205,56 @@ class ExportDialog(QtWidgets.QDialog):
 
         # 3. File Dialog
         is_mat = self.radio_mat.isChecked()
-        ext = "mat" if is_mat else "bin"
-        filter_str = f"MATLAB Files (*.mat)" if is_mat else "Binary IQ Files (*.bin *.dat)"
+        s = self.ui_controller
+        
+        if is_mat:
+            ext = "mat"
+            filter_str = "MATLAB Files (*.mat)"
+        else:
+            if not s.is_complex:
+                ext = "32f" if s.data_type == np.float32 else "64f"
+            else:
+                if s.data_type == np.int16:
+                    ext = "16tc"
+                elif s.data_type == np.float64:
+                    ext = "64fc"
+                else:
+                    ext = "32fc"
+            filter_str = f"Binary Files (*.{ext})"
         
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self, "Export Data", "", filter_str
         )
         if not path: return
         
-        if not path.endswith(f".{ext}"):
-            # Handle .bin/.dat mix
-            if not (not is_mat and (path.endswith(".dat") or path.endswith(".bin"))):
-                path += f".{ext}"
+        if not path.lower().endswith(f".{ext}"):
+            path += f".{ext}"
 
         try:
             if is_mat:
                 scipy.io.savemat(path, {
                     "iq_data": data,
-                    "fs": self.ui_controller.rate,
-                    "fc": self.ui_controller.fc,
+                    "fs": s.rate,
+                    "fc": s.fc,
                     "t_start": start_sec,
                     "t_end": end_sec,
-                    "source": str(self.ui_controller.data_source)
+                    "source": str(s.data_source)
                 })
             else:
-                out_dtype = np.complex128 if self.ui_controller.data_type == np.float64 else np.complex64
-                data.astype(out_dtype).tofile(path)
+                if not s.is_complex:
+                    # Save as Real
+                    data.real.astype(s.data_type).tofile(path)
+                else:
+                    if s.data_type == np.int16:
+                        # Interleave back to int16
+                        interleaved = np.empty(len(data) * 2, dtype=np.int16)
+                        interleaved[0::2] = np.round(data.real).astype(np.int16)
+                        interleaved[1::2] = np.round(data.imag).astype(np.int16)
+                        interleaved.tofile(path)
+                    else:
+                        # complex64/128 are saved as interleaved floats by numpy.tofile
+                        out_dtype = np.complex128 if s.data_type == np.float64 else np.complex64
+                        data.astype(out_dtype).tofile(path)
             
             QtWidgets.QMessageBox.information(self, "Export Successful", f"Data exported to {os.path.basename(path)}")
         except Exception as e:
