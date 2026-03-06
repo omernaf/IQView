@@ -11,7 +11,10 @@ iqview.egg-info/top_level.txt
 iqview/dsp/__init__.py
 iqview/dsp/dsp.py
 iqview/dsp/utils.py
+iqview/resources/logo.ico
+iqview/resources/logo.png
 iqview/ui/__init__.py
+iqview/ui/export_dialog.py
 iqview/ui/marker_panel.py
 iqview/ui/settings_dialog.py
 iqview/ui/side_panel.py
@@ -28,4 +31,5 @@ iqview/ui/main_window/view_controller.py
 iqview/ui/time_domain/__init__.py
 iqview/ui/time_domain/marker_panel.py
 iqview/ui/time_domain/view.py
+iqview/utils/helpers.py
 iqview/utils/settings_manager.py
