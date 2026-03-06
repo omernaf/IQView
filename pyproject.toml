@@ -20,7 +20,7 @@ dependencies = [
 iqview = "iqview.main:main"
 
 [tool.setuptools.package-data]
-iqview = ["resources/*.png"]
+iqview = ["resources/*.png", "resources/*.ico"]
 
 [tool.setuptools.packages.find]
 where = ["."]
