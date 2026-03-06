@@ -386,13 +386,5 @@ class SpectrogramView(QWidget):
 
     def capture_plot_with_axes(self):
         """Captures the entire plot area including axes and markers."""
-        from PyQt6.QtCore import QSize
-        
-        # Use the GraphicsLayoutWidget's render method or grab the specific plot area
-        # To get axes, we should grab the plot_item or the whole glw_plot
-        img = QImage(self.glw_plot.size(), QImage.Format.Format_ARGB32)
-        img.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(img)
-        self.glw_plot.render(painter)
-        painter.end()
-        return img
+        # grab() is more reliable for OpenGL-backed GraphicsLayoutWidgets
+        return self.glw_plot.grab().toImage()

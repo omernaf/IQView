@@ -162,24 +162,58 @@ class ExportDialog(QtWidgets.QDialog):
         elif self.radio_axes.isChecked():
             return self.ui_controller.spectrogram_view.capture_plot_with_axes()
         else:
-            # Entire Window
+            # Entire Window - use a global screen grab at the window's frame coordinate.
+            # frameGeometry() includes title bar and borders.
+            screen = QtWidgets.QApplication.primaryScreen()
+            if screen:
+                geom = self.ui_controller.frameGeometry()
+                pos = geom.topLeft()
+                # grabWindow with winId=0 captures from the desktop at given rect
+                pixmap = screen.grabWindow(0, pos.x(), pos.y(), geom.width(), geom.height())
+                return pixmap.toImage()
             return self.ui_controller.grab().toImage()
 
     def export_image_file(self):
+        is_window_capture = self.radio_window.isChecked()
+        if is_window_capture:
+            self.hide()
+            # Give WM/DWM time to hide and redraw the composite buffer
+            for _ in range(3):
+                QtWidgets.QApplication.processEvents()
+            QtCore.QThread.msleep(300)
+            
         img = self.get_selected_image()
+        
+        if is_window_capture:
+            self.show()
+            self.raise_()
+            self.activateWindow()
         fmt = self.combo_img_fmt.currentText().lower()
         
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self, "Save Image", "", f"{fmt.upper()} Files (*.{fmt})"
         )
         if path:
-            if not path.endswith(f".{fmt}"):
+            if not path.lower().endswith(f".{fmt}"):
                 path += f".{fmt}"
             img.save(path)
             # QtWidgets.QMessageBox.information(self, "Export Successful", f"Image saved to {path}")
 
     def export_image_clipboard(self):
+        is_window_capture = self.radio_window.isChecked()
+        if is_window_capture:
+            self.hide()
+            # Give WM/DWM time to hide and redraw the composite buffer
+            for _ in range(3):
+                QtWidgets.QApplication.processEvents()
+            QtCore.QThread.msleep(300)
+
         img = self.get_selected_image()
+        
+        if is_window_capture:
+            self.show()
+            self.raise_()
+            self.activateWindow()
         QtWidgets.QApplication.clipboard().setImage(img)
         # Maybe a small temporary tooltip or status bar message?
         self.btn_copy_img.setText("Copied!")
