@@ -232,10 +232,14 @@ class ExportDialog(QtWidgets.QDialog):
 
         try:
             if is_mat:
+                # MATLAB format updates:
+                # 1. Y = data / sqrt(10)
+                # 2. XDelta = 1 / fs
+                # 3. InputCenter = fc
                 scipy.io.savemat(path, {
-                    "iq_data": data,
-                    "fs": s.rate,
-                    "fc": s.fc,
+                    "Y": data / np.sqrt(10),
+                    "XDelta": 1.0 / s.rate,
+                    "InputCenter": s.fc,
                     "t_start": start_sec,
                     "t_end": end_sec,
                     "source": str(s.data_source)
