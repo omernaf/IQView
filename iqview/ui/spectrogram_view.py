@@ -1,9 +1,10 @@
 from PyQt6.QtCore import Qt, QRectF, pyqtSignal
-from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtGui import QAction, QKeySequence, QImage, QPainter
 from PyQt6.QtWidgets import QWidget, QGridLayout, QScrollBar, QSizePolicy
 from pyqtgraph.widgets.ColorMapMenu import ColorMapMenu
 from pyqtgraph.graphicsItems.GradientPresets import Gradients
 import pyqtgraph as pg
+from PyQt6 import QtGui
 import numpy as np
 import copy
 from .themes import get_palette, get_scrollbar_stylesheet
@@ -376,4 +377,22 @@ class SpectrogramView(QWidget):
         # Update scrollbars
         sb_style = get_scrollbar_stylesheet(p)
         self.x_scroll.setStyleSheet(sb_style)
+        sb_style = get_scrollbar_stylesheet(p)
         self.y_scroll.setStyleSheet(sb_style)
+
+    def capture_raw_image(self):
+        """Captures only the spectrogram image data as a QImage."""
+        return self.img.getPixmap().toImage()
+
+    def capture_plot_with_axes(self):
+        """Captures the entire plot area including axes and markers."""
+        from PyQt6.QtCore import QSize
+        
+        # Use the GraphicsLayoutWidget's render method or grab the specific plot area
+        # To get axes, we should grab the plot_item or the whole glw_plot
+        img = QImage(self.glw_plot.size(), QImage.Format.Format_ARGB32)
+        img.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(img)
+        self.glw_plot.render(painter)
+        painter.end()
+        return img
