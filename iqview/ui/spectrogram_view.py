@@ -381,8 +381,24 @@ class SpectrogramView(QWidget):
         self.y_scroll.setStyleSheet(sb_style)
 
     def capture_raw_image(self):
-        """Captures only the spectrogram image data as a QImage."""
-        return self.img.getPixmap().toImage()
+        """Captures only the spectrogram image data as a QImage, scaled to preserve visual aspect ratio."""
+        pix = self.img.getPixmap()
+        if pix.isNull():
+            return QtGui.QImage()
+            
+        raw_img = pix.toImage()
+        
+        # Get the visual size of the ViewBox (the actual screen area)
+        # This determines the aspect ratio the user sees.
+        view_size = self.view_box.size()
+        
+        # Rescale the raw image to match the visual proportions
+        return raw_img.scaled(
+            int(view_size.width()), 
+            int(view_size.height()), 
+            Qt.AspectRatioMode.IgnoreAspectRatio, 
+            Qt.TransformationMode.SmoothTransformation
+        )
 
     def capture_plot_with_axes(self):
         """Captures the entire plot area including axes and markers."""
