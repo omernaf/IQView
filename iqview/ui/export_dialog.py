@@ -214,7 +214,8 @@ class ExportDialog(QtWidgets.QDialog):
                     "source": str(self.ui_controller.data_source)
                 })
             else:
-                data.astype(np.complex64).tofile(path)
+                out_dtype = np.complex128 if self.ui_controller.data_type == np.float64 else np.complex64
+                data.astype(out_dtype).tofile(path)
             
             QtWidgets.QMessageBox.information(self, "Export Successful", f"Data exported to {os.path.basename(path)}")
         except Exception as e:

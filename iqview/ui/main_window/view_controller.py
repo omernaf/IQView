@@ -266,7 +266,7 @@ class ViewControllerMixin:
             self,
             "Open IQ File",
             os.path.dirname(self.file_path) if isinstance(self.file_path, str) else "",
-            "IQ Files (*.32fc *.fc32 *.cs8 *.cu8 *.sc16 *.bin *.iq *.raw);;All Files (*)"
+            "IQ Files (*.32fc *.fc32 *.64fc *.fc64 *.sc16 *.bin *.iq *.raw);;All Files (*)"
         )
         if path:
             self.load_new_file(path)
@@ -284,15 +284,19 @@ class ViewControllerMixin:
         # Re-resolve dtype from settings so we always use the last configured type
         import numpy as np
         dtype_map = {
-            'np.int8': np.int8, 'np.int16': np.int16, 'np.int32': np.int32,
-            'np.float32': np.float32, 'np.float64': np.float64,
-            'int8': np.int8, 'int16': np.int16, 'int32': np.int32,
-            'float32': np.float32, 'float64': np.float64,
-            'np.complex64': np.complex64, 'complex64': np.complex64
+            'int16': np.int16, 'float32': np.float32, 'float64': np.float64,
+            'complex64': np.complex64, 'complex128': np.complex128,
+            'np.int16': np.int16, 'np.float32': np.float32, 'np.float64': np.float64,
+            'np.complex64': np.complex64, 'np.complex128': np.complex128
         }
         type_str = str(self.settings_mgr.get("core/type", "complex64"))
         dtype = dtype_map.get(type_str, np.complex64)
-        self.data_type = np.float32 if dtype == np.complex64 else dtype
+        if dtype == np.complex64:
+            self.data_type = np.float32
+        elif dtype == np.complex128:
+            self.data_type = np.float64
+        else:
+            self.data_type = dtype
 
         # Save to recent files list
         self._add_recent_file(path)

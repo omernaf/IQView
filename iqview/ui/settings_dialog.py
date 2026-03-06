@@ -109,7 +109,7 @@ class SettingsDialog(QDialog):
         self.fc_edit = QLineEdit(str(self.mgr.get("core/fc")))
         
         self.type_combo = QComboBox()
-        self.type_combo.addItems(["int8", "int16", "int32", "float32", "float64", "complex64"])
+        self.type_combo.addItems(["int16", "float32", "float64", "complex64", "complex128"])
         self.type_combo.setCurrentText(str(self.mgr.get("core/type", "complex64")))
         
         self.fft_combo = QComboBox()

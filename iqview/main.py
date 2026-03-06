@@ -20,7 +20,7 @@ def parse_args():
     src = parser.add_mutually_exclusive_group(required=False)
     src.add_argument('-f', '--file', default=None, help='Path to the binary IQ file')
     src.add_argument('--stdin', action='store_true', help='Read IQ data from stdin (binary pipe)')
-    parser.add_argument('-t', '--type', default=sm.get("core/type", "complex64"), type=str, help='Data type (default: ' + sm.get("core/type", "complex64") + ')')
+    parser.add_argument('-t', '--type', default=sm.get("core/type", "complex64"), type=str, help='Data type (int16, float32, float64, complex64, complex128)')
     parser.add_argument('-r', '--rate', type=float, default=float(sm.get("core/fs", 1e6)), help='Sample rate in Hz')
     parser.add_argument('-c', '--fc', type=float, default=float(sm.get("core/fc", 0.0)), help='Center frequency in Hz')
     parser.add_argument('-s', '--fft', type=int, default=int(sm.get("core/fft_size", 1024)), help='FFT bin size')
@@ -31,11 +31,11 @@ def main():
     args = parse_args()
     
     dtype_map = {
-        'np.int8': np.int8, 'np.int16': np.int16, 'np.int32': np.int32,
-        'np.float32': np.float32, 'np.float64': np.float64,
-        'int8': np.int8, 'int16': np.int16, 'int32': np.int32,
-        'float32': np.float32, 'float64': np.float64,
-        'np.complex64': np.complex64, 'complex64': np.complex64
+        'int16': np.int16, 'float32': np.float32, 'float64': np.float64,
+        'complex64': np.complex64, 'complex128': np.complex128,
+        # np. prefixed aliases
+        'np.int16': np.int16, 'np.float32': np.float32, 'np.float64': np.float64,
+        'np.complex64': np.complex64, 'np.complex128': np.complex128
     }
     
     if args.type not in dtype_map:
@@ -47,6 +47,9 @@ def main():
     if dtype == np.complex64:
         # Cast to float32 internally to de-interleave properly across numpy logic
         dtype = np.float32
+    elif dtype == np.complex128:
+        # Cast to float64 internally to de-interleave properly
+        dtype = np.float64
 
     # Resolve the data source: file path (str), in-memory bytes from stdin, or None (open empty)
     if args.stdin:

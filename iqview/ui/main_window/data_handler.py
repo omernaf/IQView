@@ -78,7 +78,10 @@ class DataHandlerMixin:
                     f.seek(offset)
                     raw_data = np.fromfile(f, dtype=self.data_type, count=num_samples * 2)
                 
-            complex_data = raw_data[0::2].astype(np.float32) + 1j * raw_data[1::2].astype(np.float32)
+            if self.data_type == np.float64:
+                complex_data = raw_data[0::2] + 1j * raw_data[1::2]
+            else:
+                complex_data = raw_data[0::2].astype(np.float32) + 1j * raw_data[1::2].astype(np.float32)
             
             # Apply Filter if enabled
             if hasattr(self, 'filter_enabled') and self.filter_enabled and self.filter_region:
