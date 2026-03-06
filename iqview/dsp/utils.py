@@ -18,10 +18,11 @@ class FileReaderThread(QThread):
     
     def __init__(self, source, dtype, fft_size, overlap_percent, sample_rate, 
                  profile_enabled=False, window_type="Hanning",
-                 filter_enabled=False, f_min=None, f_max=None, **kwargs):
+                 filter_enabled=False, f_min=None, f_max=None, is_complex=True, **kwargs):
         super().__init__()
         self.source = source
         self.dtype = dtype
+        self.is_complex = is_complex
         self.fft_size = fft_size
         self.sample_rate = sample_rate
         self.profile_enabled = profile_enabled
@@ -60,7 +61,8 @@ class FileReaderThread(QThread):
         else:
             file_size = os.path.getsize(source)
         num_items = file_size // item_size
-        self.complex_samples = num_items // 2
+        self.total_samples = num_items // 2 if self.is_complex else num_items
+        self.complex_samples = self.total_samples # Alias for backwards compatibility in logic
         
         # We want to cover the whole file. 
         # Calculate how many rows would be needed with requested step_size
@@ -93,7 +95,7 @@ class FileReaderThread(QThread):
             return
 
         item_size = np.dtype(self.dtype).itemsize
-        chunk_read_size = self.fft_size * 2 # 2 because I/Q
+        # chunk_read_size = self.fft_size * (2 if self.is_complex else 1)
         
         import time
         start_time = time.time()
@@ -119,28 +121,32 @@ class FileReaderThread(QThread):
                     
                     # Seek Time
                     t_seek_start = time.time()
-                    pos = row_idx * self.step_size * 2 * item_size
+                    read_multiplier = 2 if self.is_complex else 1
+                    pos = row_idx * self.step_size * read_multiplier * item_size
                     f.seek(pos)
                     seek_time += (time.time() - t_seek_start)
                     
                     # Read Time (Batch)
-                    # For batches, we read raw bytes for the entire chunk. 
-                    # Note: This slightly over-reads if there's overlap, but it's faster than repeated seeks.
                     t_read_start = time.time()
                     total_samples_to_read = (rows_to_process - 1) * self.step_size + self.fft_size
-                    data_bytes = f.read(total_samples_to_read * 2 * item_size)
+                    data_bytes = f.read(total_samples_to_read * read_multiplier * item_size)
                     read_time += (time.time() - t_read_start)
                     
-                    if not data_bytes or len(data_bytes) < (total_samples_to_read * 2 * item_size):
+                    if not data_bytes or len(data_bytes) < (total_samples_to_read * read_multiplier * item_size):
                         # Handle end of file or incomplete read
                         if not data_bytes: break
                     
                     # DSP Time (Batch)
                     t_dsp_start = time.time()
                     # Convert raw bytes to complex array
-                    raw_array = np.frombuffer(data_bytes, dtype=self.dtype)
-                    # Real/Imag de-interleave
-                    full_complex = raw_array[0::2] + 1j * raw_array[1::2]
+                    raw_array = np.frombuffer(data_bytes, dtype=self.dtype).astype(np.float32)
+                    
+                    if self.is_complex:
+                        # Real/Imag de-interleave
+                        full_complex = raw_array[0::2] + 1j * raw_array[1::2]
+                    else:
+                        # Already real samples, just treat as complex with 0 imag
+                        full_complex = raw_array.astype(np.complex64)
                     
                     # Apply Band-Pass Filter if enabled
                     if self.filter_enabled and self.f_min is not None and self.f_max is not None:

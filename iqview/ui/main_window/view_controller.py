@@ -291,6 +291,8 @@ class ViewControllerMixin:
         }
         type_str = str(self.settings_mgr.get("core/type", "complex64"))
         dtype = dtype_map.get(type_str, np.complex64)
+        self.is_complex = dtype in [np.complex64, np.complex128, np.int16]
+        
         if dtype == np.complex64:
             self.data_type = np.float32
         elif dtype == np.complex128:

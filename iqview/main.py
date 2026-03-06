@@ -43,6 +43,7 @@ def main():
         sys.exit(1)
         
     dtype = dtype_map[args.type]
+    is_complex = dtype in [np.complex64, np.complex128, np.int16]
     
     if dtype == np.complex64:
         # Cast to float32 internally to de-interleave properly across numpy logic
@@ -62,7 +63,7 @@ def main():
     pg.setConfigOptions(useOpenGL=True, enableExperimental=True, imageAxisOrder='row-major')
     
     app = QApplication(sys.argv)
-    window = SpectrogramWindow(data_source, dtype, args.rate, args.fc, args.fft, args.profile)
+    window = SpectrogramWindow(data_source, dtype, args.rate, args.fc, args.fft, args.profile, is_complex=is_complex)
     window.show()
     
     if args.profile:

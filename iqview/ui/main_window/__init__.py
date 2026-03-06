@@ -10,7 +10,7 @@ from ...utils.settings_manager import SettingsManager
 from ..themes import get_main_stylesheet
 
 class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, ViewControllerMixin, DataHandlerMixin):
-    def __init__(self, data_source, data_type, sample_rate, center_freq, fft_size, profile_enabled=False):
+    def __init__(self, data_source, data_type, sample_rate, center_freq, fft_size, profile_enabled=False, is_complex=True):
         super().__init__()
         self.settings_mgr = SettingsManager()
         self.apply_current_theme()
@@ -34,6 +34,7 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         self.window_type = self.settings_mgr.get("core/window_type", "Hamming")
         self.overlap_percent = float(self.settings_mgr.get("core/overlap", 99.0))
         self.data_type = data_type
+        self.is_complex = is_complex
         self.profile_enabled = profile_enabled
         
         # Keep file_path as an alias for backwards-compat with any mixin that reads it
