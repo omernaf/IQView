@@ -216,26 +216,24 @@ class CustomViewBox(pg.ViewBox):
                             self.setCursor(Qt.CursorShape.SizeHorCursor if angle == 90 else Qt.CursorShape.SizeVerCursor)
                             break
             
-            # 4. Check for Grid Lines (Shadow Markers) if delta lock is off
+            # 4. Check for Grid Lines (Shadow Markers) - allowable in all lock states!
             if not found_near and mode in ['TIME', 'FREQ', 'MAG', 'Y']:
-                lock_delta = getattr(self.ui_controller.marker_panel, 'btn_lock_delta', None)
-                if lock_delta and not lock_delta.isChecked():
-                    if mode == 'TIME':
-                        grid_lines = getattr(self.ui_controller, 'grid_lines_time', [])
-                    elif mode == 'FREQ':
-                        grid_lines = getattr(self.ui_controller, 'grid_lines_freq', [])
-                    else:
-                        grid_lines = getattr(self.ui_controller, 'grid_lines_mag', [])
-                    for gl in grid_lines:
-                        gl_val = gl.value()
-                        angle = gl.angle
-                        gl_pixel = self.mapViewToScene(pg.Point(gl_val, 0) if angle == 90 else pg.Point(0, gl_val))
-                        dist = abs(scene_pos.x() - gl_pixel.x()) if angle == 90 else abs(scene_pos.y() - gl_pixel.y())
-                        
-                        if dist < 20:
-                            found_near = True
-                            self.setCursor(Qt.CursorShape.SizeHorCursor if angle == 90 else Qt.CursorShape.SizeVerCursor)
-                            break
+                if mode == 'TIME':
+                    grid_lines = getattr(self.ui_controller, 'grid_lines_time', [])
+                elif mode == 'FREQ':
+                    grid_lines = getattr(self.ui_controller, 'grid_lines_freq', [])
+                else:
+                    grid_lines = getattr(self.ui_controller, 'grid_lines_mag', [])
+                for gl in grid_lines:
+                    gl_val = gl.value()
+                    angle = gl.angle
+                    gl_pixel = self.mapViewToScene(pg.Point(gl_val, 0) if angle == 90 else pg.Point(0, gl_val))
+                    dist = abs(scene_pos.x() - gl_pixel.x()) if angle == 90 else abs(scene_pos.y() - gl_pixel.y())
+                    
+                    if dist < 20:
+                        found_near = True
+                        self.setCursor(Qt.CursorShape.SizeHorCursor if angle == 90 else Qt.CursorShape.SizeVerCursor)
+                        break
             
             if not found_near:
                 self.setCursor(Qt.CursorShape.CrossCursor)

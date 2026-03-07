@@ -211,8 +211,7 @@ class MarkerManagerMixin:
                     if drag_mode: self.active_drag_marker = best_marker
                 else:
                     # 4.5 Check for Grid Lines (Shadow Markers)
-                    lock_delta = self.marker_panel.btn_lock_delta.isChecked()
-                    if not lock_delta and (self.interaction_mode in ['TIME', 'FREQ']):
+                    if self.interaction_mode in ['TIME', 'FREQ']:
                         grid_lines = getattr(self, 'grid_lines_time' if is_time else 'grid_lines_freq', [])
                         best_gl = None
                         min_gl_dist = 20 # pixels
@@ -233,18 +232,25 @@ class MarkerManagerMixin:
                             p2 = sorted_m[1].value()
                             delta = p2 - p1
                             g_pos = best_gl.value()
-                            k = (g_pos - p1) / delta
+                            k = (g_pos - p1) / delta if delta != 0.0 else 1.0
                             
-                            # Which marker to control?
-                            # User says: "the one closer to it"
+                            lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
+                            lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
+                            lock_delta = self.marker_panel.btn_lock_delta.isChecked()
+                            lock_center = self.marker_panel.btn_lock_center.isChecked()
+                            
                             move_p1 = (k < 0.5)
+                            if lock_m1 and not lock_m2: move_p1 = False
+                            elif lock_m2 and not lock_m1: move_p1 = True
                             
                             if drag_mode:
                                 self.active_drag_grid_info = {
                                     'k': k,
                                     'move_p1': move_p1,
                                     'fixed_val': p2 if move_p1 else p1,
-                                    'is_time': is_time
+                                    'is_time': is_time,
+                                    'lock_delta': lock_delta,
+                                    'lock_center': lock_center
                                 }
                                 # We also need a marker to pass validation in update_drag, 
                                 # but we might want to handle this specially. 
@@ -406,6 +412,8 @@ class MarkerManagerMixin:
                 k = info['k']
                 move_p1 = info['move_p1']
                 fixed_val = info['fixed_val']
+                lock_delta = info.get('lock_delta', False)
+                lock_center = info.get('lock_center', False)
                 
                 if is_time:
                     f_min, f_max = 0.0, self.time_duration
@@ -423,18 +431,36 @@ class MarkerManagerMixin:
                 if len(active_markers) == 2:
                     sorted_m = sorted(active_markers, key=lambda m: m.value())
                     m1, m2 = sorted_m[0], sorted_m[1]
+                    orig_p1, orig_p2 = m1.value(), m2.value()
                     
                     try:
-                        if move_p1:
-                            if abs(1 - k) > 1e-9:
-                                new_p1 = (g_prime - k * fixed_val) / (1 - k)
-                                if f_min <= new_p1 <= f_max:
-                                    m1.setPos(new_p1)
+                        if lock_delta:
+                            delta = orig_p2 - orig_p1
+                            shift = g_prime - (orig_p1 + k * delta)
+                            new_p1 = orig_p1 + shift
+                            new_p2 = orig_p2 + shift
+                            if f_min <= new_p1 <= f_max and f_min <= new_p2 <= f_max:
+                                m1.setPos(new_p1); m2.setPos(new_p2)
+                        elif lock_center:
+                            center = (orig_p1 + orig_p2) / 2
+                            if abs(k - 0.5) > 1e-9:
+                                new_delta = (g_prime - center) / (k - 0.5)
+                                new_p1 = center - new_delta / 2
+                                new_p2 = center + new_delta / 2
+                                if f_min <= new_p1 <= f_max and f_min <= new_p2 <= f_max:
+                                    if new_p1 <= new_p2:
+                                        m1.setPos(new_p1); m2.setPos(new_p2)
                         else:
-                            if abs(k) > 1e-9:
-                                new_p2 = fixed_val + (g_prime - fixed_val) / k
-                                if f_min <= new_p2 <= f_max:
-                                    m2.setPos(new_p2)
+                            if move_p1:
+                                if abs(1 - k) > 1e-9:
+                                    new_p1 = (g_prime - k * fixed_val) / (1 - k)
+                                    if f_min <= new_p1 <= f_max and new_p1 <= orig_p2:
+                                        m1.setPos(new_p1)
+                            else:
+                                if abs(k) > 1e-9:
+                                    new_p2 = fixed_val + (g_prime - fixed_val) / k
+                                    if f_min <= new_p2 <= f_max and new_p2 >= orig_p1:
+                                        m2.setPos(new_p2)
                     except ZeroDivisionError: pass
                     
                 self.update_marker_info()
