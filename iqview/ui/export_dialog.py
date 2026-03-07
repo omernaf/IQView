@@ -9,6 +9,8 @@ class ExportDialog(QtWidgets.QDialog):
     def __init__(self, ui_controller, parent=None):
         super().__init__(parent)
         self.ui_controller = ui_controller
+        # True when opened from a TimeDomainView instead of the main SpectrogramWindow
+        self.is_time_domain = not getattr(ui_controller, 'is_spectrogram', True)
         self.setWindowTitle("Export Data & Image")
         self.resize(520, 730)
         
@@ -103,85 +105,114 @@ class ExportDialog(QtWidgets.QDialog):
     def setup_data_tab(self):
         tab = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(tab)
-        
-        # Format Group
-        fmt_group = QtWidgets.QGroupBox("Data Format")
-        fmt_layout = QtWidgets.QVBoxLayout(fmt_group)
-        self.radio_mat = QtWidgets.QRadioButton("MATLAB (.mat)")
-        
-        # Determine dynamic extension for display
-        s = self.ui_controller
-        if not s.is_complex:
-            bin_ext = ".32f" if s.data_type == np.float32 else ".64f"
-            bin_label = f"Raw Binary (Real, {bin_ext})"
+
+        if self.is_time_domain:
+            # ---- Time Domain data export ----
+            fmt_group = QtWidgets.QGroupBox("Data Format")
+            fmt_layout = QtWidgets.QVBoxLayout(fmt_group)
+            self.radio_mat = QtWidgets.QRadioButton("MATLAB (.mat)  —  complex IQ waveform")
+            self.radio_bin = QtWidgets.QRadioButton("NumPy (.npy)  —  complex64 array")
+            self.radio_mat.setChecked(True)
+            fmt_layout.addWidget(self.radio_mat)
+            fmt_layout.addWidget(self.radio_bin)
+            layout.addWidget(fmt_group)
+
+            range_group = QtWidgets.QGroupBox("Data Range")
+            range_layout = QtWidgets.QVBoxLayout(range_group)
+            self.radio_full = QtWidgets.QRadioButton("Full Segment")
+            self.radio_visible = QtWidgets.QRadioButton("Visible View")
+            self.radio_markers = QtWidgets.QRadioButton("Between Time Markers (M1/M2)")
+            self.radio_full.setChecked(True)
+            has_two_markers = len(getattr(self.ui_controller, 'markers_time', [])) == 2
+            self.radio_markers.setEnabled(has_two_markers)
+            if not has_two_markers:
+                self.radio_markers.setToolTip("Place two time markers to enable this option.")
+            range_layout.addWidget(self.radio_full)
+            range_layout.addWidget(self.radio_visible)
+            range_layout.addWidget(self.radio_markers)
+            layout.addWidget(range_group)
         else:
-            if s.data_type == np.int16:
-                bin_ext = ".16tc"
-            elif s.data_type == np.float64:
-                bin_ext = ".64fc"
+            # ---- Spectrogram / IQ data export ----
+            fmt_group = QtWidgets.QGroupBox("Data Format")
+            fmt_layout = QtWidgets.QVBoxLayout(fmt_group)
+            self.radio_mat = QtWidgets.QRadioButton("MATLAB (.mat)")
+            s = self.ui_controller
+            if not s.is_complex:
+                bin_ext = ".32f" if s.data_type == np.float32 else ".64f"
+                bin_label = f"Raw Binary (Real, {bin_ext})"
             else:
-                bin_ext = ".32fc"
-            bin_label = f"Raw Binary IQ (Complex, {bin_ext})"
-            
-        self.radio_bin = QtWidgets.QRadioButton(bin_label)
-        self.radio_mat.setChecked(True)
-        fmt_layout.addWidget(self.radio_mat)
-        fmt_layout.addWidget(self.radio_bin)
-        layout.addWidget(fmt_group)
-        
-        # Range Group
-        range_group = QtWidgets.QGroupBox("Data Range")
-        range_layout = QtWidgets.QVBoxLayout(range_group)
-        self.radio_full = QtWidgets.QRadioButton("Full Loaded Data")
-        self.radio_visible = QtWidgets.QRadioButton("Visible View")
-        self.radio_markers = QtWidgets.QRadioButton("Between Time Markers (M1/M2)")
-        self.radio_full.setChecked(True)
-        
-        # Check if markers exist to enable the option
-        has_two_markers = len(getattr(self.ui_controller, 'markers_time', [])) == 2
-        self.radio_markers.setEnabled(has_two_markers)
-        if not has_two_markers:
-            self.radio_markers.setToolTip("Place two time markers to enable this option.")
-        
-        range_layout.addWidget(self.radio_full)
-        range_layout.addWidget(self.radio_visible)
-        range_layout.addWidget(self.radio_markers)
-        layout.addWidget(range_group)
-        
-        # Export Button
+                if s.data_type == np.int16:
+                    bin_ext = ".16tc"
+                elif s.data_type == np.float64:
+                    bin_ext = ".64fc"
+                else:
+                    bin_ext = ".32fc"
+                bin_label = f"Raw Binary IQ (Complex, {bin_ext})"
+            self.radio_bin = QtWidgets.QRadioButton(bin_label)
+            self.radio_mat.setChecked(True)
+            fmt_layout.addWidget(self.radio_mat)
+            fmt_layout.addWidget(self.radio_bin)
+            layout.addWidget(fmt_group)
+
+            range_group = QtWidgets.QGroupBox("Data Range")
+            range_layout = QtWidgets.QVBoxLayout(range_group)
+            self.radio_full = QtWidgets.QRadioButton("Full Loaded Data")
+            self.radio_visible = QtWidgets.QRadioButton("Visible View")
+            self.radio_markers = QtWidgets.QRadioButton("Between Time Markers (M1/M2)")
+            self.radio_full.setChecked(True)
+            has_two_markers = len(getattr(self.ui_controller, 'markers_time', [])) == 2
+            self.radio_markers.setEnabled(has_two_markers)
+            if not has_two_markers:
+                self.radio_markers.setToolTip("Place two time markers to enable this option.")
+            range_layout.addWidget(self.radio_full)
+            range_layout.addWidget(self.radio_visible)
+            range_layout.addWidget(self.radio_markers)
+            layout.addWidget(range_group)
+
+        # Export Button (shared)
         self.btn_export_data = QtWidgets.QPushButton("Export Data...")
         self.btn_export_data.clicked.connect(self.export_data)
         layout.addWidget(self.btn_export_data)
-        
+
         layout.addStretch()
         self.tabs.addTab(tab, "Data")
 
     def setup_metadata_tab(self):
         tab = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(tab)
-        
+
         info = QtWidgets.QTextEdit()
         info.setReadOnly(True)
-        
-        # Gather info
+
         s = self.ui_controller
-        md = [
-            f"Source: {s.data_source}",
-            f"Center Freq: {s.fc / 1e6:.3f} MHz",
-            f"Sample Rate: {s.rate / 1e6:.3f} MHz",
-            f"FFT Size: {s.fft_size}",
-            f"Overlap: {s.overlap_percent}%",
-            f"Duration: {s.time_duration:.3f} s",
-            f"Data Type: {s.data_type}"
-        ]
+        if self.is_time_domain:
+            pw = s.parent_window  # SpectrogramWindow, which has full metadata
+            duration = len(s.samples) / s.rate
+            md = [
+                f"Source: {getattr(pw, 'data_source', 'N/A')}",
+                f"Sample Rate: {s.rate / 1e6:.3f} MHz",
+                f"Segment Start: {s.start_time:.6f} s",
+                f"Segment Duration: {duration:.6f} s",
+                f"Samples: {len(s.samples)}",
+            ]
+        else:
+            md = [
+                f"Source: {s.data_source}",
+                f"Center Freq: {s.fc / 1e6:.3f} MHz",
+                f"Sample Rate: {s.rate / 1e6:.3f} MHz",
+                f"FFT Size: {s.fft_size}",
+                f"Overlap: {s.overlap_percent}%",
+                f"Duration: {s.time_duration:.3f} s",
+                f"Data Type: {s.data_type}"
+            ]
         info.setText("\n".join(md))
         layout.addWidget(QtWidgets.QLabel("Signal Metadata Overview:"))
         layout.addWidget(info)
-        
-        self.btn_save_json = QtWidgets.QPushButton("Save Sidebar JSON...")
+
+        self.btn_save_json = QtWidgets.QPushButton("Save Metadata JSON...")
         self.btn_save_json.clicked.connect(self.export_metadata_json)
         layout.addWidget(self.btn_save_json)
-        
+
         layout.addStretch()
         self.tabs.addTab(tab, "Metadata")
 
@@ -204,17 +235,35 @@ class ExportDialog(QtWidgets.QDialog):
         if checked:
             self.refresh_preview()
 
+    def _capture_td_raw(self):
+        """Capture the raw waveform pixels from the TimeDomainView plot."""
+        from pyqtgraph.exporters import ImageExporter
+        exporter = ImageExporter(self.ui_controller.plot_widget.plotItem)
+        return QtGui.QPixmap.fromImage(exporter.export(toBytes=True))
+
+    def _capture_td_axes(self):
+        """Capture the TimeDomainView plot including axes and markers."""
+        from pyqtgraph.exporters import ImageExporter
+        exporter = ImageExporter(self.ui_controller.plot_widget.scene())
+        return QtGui.QPixmap.fromImage(exporter.export(toBytes=True))
+
     def refresh_preview(self):
         """Render the currently-selected export type and show a thumbnail."""
         if not hasattr(self, 'preview_label'):
             return
         try:
             if self.radio_raw.isChecked():
-                img = self.ui_controller.spectrogram_view.capture_raw_image()
-                pix = QtGui.QPixmap.fromImage(img)
+                if self.is_time_domain:
+                    pix = self._capture_td_raw()
+                else:
+                    img = self.ui_controller.spectrogram_view.capture_raw_image()
+                    pix = QtGui.QPixmap.fromImage(img)
             elif self.radio_axes.isChecked():
-                img = self.ui_controller.spectrogram_view.capture_plot_with_axes()
-                pix = QtGui.QPixmap.fromImage(img)
+                if self.is_time_domain:
+                    pix = self._capture_td_axes()
+                else:
+                    img = self.ui_controller.spectrogram_view.capture_plot_with_axes()
+                    pix = QtGui.QPixmap.fromImage(img)
             else:  # Entire Window
                 if self._window_snapshot is not None:
                     pix = self._window_snapshot
@@ -244,19 +293,20 @@ class ExportDialog(QtWidgets.QDialog):
             self.preview_size_label.setText("")
 
     def get_selected_image(self):
-
         if self.radio_raw.isChecked():
+            if self.is_time_domain:
+                return self._capture_td_raw().toImage()
             return self.ui_controller.spectrogram_view.capture_raw_image()
         elif self.radio_axes.isChecked():
+            if self.is_time_domain:
+                return self._capture_td_axes().toImage()
             return self.ui_controller.spectrogram_view.capture_plot_with_axes()
         else:
-            # Entire Window - use a global screen grab at the window's frame coordinate.
-            # frameGeometry() includes title bar and borders.
+            # Entire Window — use cached snapshot if available (avoids dialog covering the window)
+            if self._window_snapshot is not None:
+                return self._window_snapshot.toImage()
             screen = QtWidgets.QApplication.primaryScreen()
             if screen:
-                geom = self.ui_controller.frameGeometry()
-                # Use the window's own winId() instead of 0 (desktop) to capture only THIS window
-                # and ignore anything on top of it.
                 pixmap = screen.grabWindow(self.ui_controller.winId())
                 return pixmap.toImage()
             return self.ui_controller.grab().toImage()
@@ -314,27 +364,73 @@ class ExportDialog(QtWidgets.QDialog):
         QtCore.QTimer.singleShot(2000, lambda: self.btn_copy_img.setText("Copy to Clipboard"))
 
     def export_data(self):
-        # 1. Determine Range
-        start_sec, end_sec = 0, self.ui_controller.time_duration
-        
+        s = self.ui_controller
+
+        if self.is_time_domain:
+            # ---- Time Domain export ----
+            # 1. Determine sample range
+            t_start_seg = s.start_time
+            t_end_seg = s.start_time + len(s.samples) / s.rate
+
+            if self.radio_visible.isChecked():
+                xr, _ = s.view_box.viewRange()
+                t_start_seg, t_end_seg = xr[0], xr[1]
+            elif self.radio_markers.isChecked():
+                m1 = s.markers_time[0].value()
+                m2 = s.markers_time[1].value()
+                t_start_seg, t_end_seg = min(m1, m2), max(m1, m2)
+
+            # Clamp and slice
+            t0 = s.start_time
+            i_start = max(0, int((t_start_seg - t0) * s.rate))
+            i_end = min(len(s.samples), int((t_end_seg - t0) * s.rate))
+            data = s.samples[i_start:i_end]
+            if len(data) == 0:
+                QtWidgets.QMessageBox.warning(self, "Export Failed", "No samples in selected range.")
+                return
+
+            is_mat = self.radio_mat.isChecked()
+            if is_mat:
+                ext, filter_str = "mat", "MATLAB Files (*.mat)"
+            else:
+                ext, filter_str = "npy", "NumPy Files (*.npy)"
+
+            path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Export Data", "", filter_str)
+            if not path: return
+            if not path.lower().endswith(f".{ext}"): path += f".{ext}"
+
+            try:
+                if is_mat:
+                    scipy.io.savemat(path, {
+                        "Y": data.astype(np.complex64),
+                        "XDelta": 1.0 / s.rate,
+                        "t_start": t_start_seg,
+                        "t_end": t_end_seg,
+                    })
+                else:
+                    np.save(path, data.astype(np.complex64))
+                QtWidgets.QMessageBox.information(self, "Export Successful", f"Data exported to {os.path.basename(path)}")
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(self, "Export Error", f"Failed to export data: {str(e)}")
+            return
+
+        # ---- Spectrogram / IQ export ----
+        start_sec, end_sec = 0, s.time_duration
+
         if self.radio_visible.isChecked():
-            xr, _ = self.ui_controller.spectrogram_view.view_box.viewRange()
+            xr, _ = s.spectrogram_view.view_box.viewRange()
             start_sec, end_sec = xr[0], xr[1]
         elif self.radio_markers.isChecked():
-            m1 = self.ui_controller.markers_time[0].value()
-            m2 = self.ui_controller.markers_time[1].value()
+            m1 = s.markers_time[0].value()
+            m2 = s.markers_time[1].value()
             start_sec, end_sec = min(m1, m2), max(m1, m2)
-        
-        # 2. Extract Data
-        data = self.ui_controller.extract_iq_segment(start_sec, end_sec)
+
+        data = s.extract_iq_segment(start_sec, end_sec)
         if data is None:
             QtWidgets.QMessageBox.warning(self, "Export Failed", "Could not extract data for the selected range.")
             return
 
-        # 3. File Dialog
         is_mat = self.radio_mat.isChecked()
-        s = self.ui_controller
-        
         if is_mat:
             ext = "mat"
             filter_str = "MATLAB Files (*.mat)"
@@ -342,28 +438,15 @@ class ExportDialog(QtWidgets.QDialog):
             if not s.is_complex:
                 ext = "32f" if s.data_type == np.float32 else "64f"
             else:
-                if s.data_type == np.int16:
-                    ext = "16tc"
-                elif s.data_type == np.float64:
-                    ext = "64fc"
-                else:
-                    ext = "32fc"
+                ext = "16tc" if s.data_type == np.int16 else ("64fc" if s.data_type == np.float64 else "32fc")
             filter_str = f"Binary Files (*.{ext})"
-        
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Export Data", "", filter_str
-        )
+
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Export Data", "", filter_str)
         if not path: return
-        
-        if not path.lower().endswith(f".{ext}"):
-            path += f".{ext}"
+        if not path.lower().endswith(f".{ext}"): path += f".{ext}"
 
         try:
             if is_mat:
-                # MATLAB format updates:
-                # 1. Y = data / sqrt(10)
-                # 2. XDelta = 1 / fs
-                # 3. InputCenter = fc
                 scipy.io.savemat(path, {
                     "Y": data / np.sqrt(10),
                     "XDelta": 1.0 / s.rate,
@@ -374,20 +457,16 @@ class ExportDialog(QtWidgets.QDialog):
                 })
             else:
                 if not s.is_complex:
-                    # Save as Real
                     data.real.astype(s.data_type).tofile(path)
                 else:
                     if s.data_type == np.int16:
-                        # Interleave back to int16
                         interleaved = np.empty(len(data) * 2, dtype=np.int16)
                         interleaved[0::2] = np.round(data.real).astype(np.int16)
                         interleaved[1::2] = np.round(data.imag).astype(np.int16)
                         interleaved.tofile(path)
                     else:
-                        # complex64/128 are saved as interleaved floats by numpy.tofile
                         out_dtype = np.complex128 if s.data_type == np.float64 else np.complex64
                         data.astype(out_dtype).tofile(path)
-            
             QtWidgets.QMessageBox.information(self, "Export Successful", f"Data exported to {os.path.basename(path)}")
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Export Error", f"Failed to export data: {str(e)}")
@@ -398,19 +477,28 @@ class ExportDialog(QtWidgets.QDialog):
             self, "Save Metadata", "", "JSON Files (*.json)"
         )
         if not path: return
-        
         if not path.endswith(".json"): path += ".json"
-        
+
         s = self.ui_controller
-        meta = {
-            "source": str(s.data_source),
-            "center_freq_hz": s.fc,
-            "sample_rate_hz": s.rate,
-            "fft_size": s.fft_size,
-            "overlap_percent": s.overlap_percent,
-            "duration_s": s.time_duration,
-            "data_type": str(s.data_type)
-        }
+        if self.is_time_domain:
+            pw = s.parent_window
+            meta = {
+                "source": str(getattr(pw, 'data_source', 'N/A')),
+                "sample_rate_hz": s.rate,
+                "segment_start_s": s.start_time,
+                "segment_duration_s": len(s.samples) / s.rate,
+                "num_samples": len(s.samples),
+            }
+        else:
+            meta = {
+                "source": str(s.data_source),
+                "center_freq_hz": s.fc,
+                "sample_rate_hz": s.rate,
+                "fft_size": s.fft_size,
+                "overlap_percent": s.overlap_percent,
+                "duration_s": s.time_duration,
+                "data_type": str(s.data_type)
+            }
         
         try:
             with open(path, 'w') as f:
