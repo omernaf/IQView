@@ -47,6 +47,15 @@ class TimeDomainView(QWidget):
         # Mode-specific Y-zoom states (yMin, yMax)
         self.zoom_y_dict = {}
         
+        # Grid variables (added for Shadow Markers)
+        self.grid_time_enabled = False
+        self.grid_time_tracking = True
+        self.grid_lines_time = []
+        
+        self.grid_mag_enabled = False
+        self.grid_mag_tracking = True
+        self.grid_lines_mag = []
+        
         self.y_label_text = "Amplitude (Real)"
         self.current_plot_data = samples.real # Cache for marker sampling
         
@@ -384,6 +393,70 @@ class TimeDomainView(QWidget):
         else:
             active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
         
+        # 1. Hit test EXISTING MARKERS
+        found_marker = None
+        for i, m in enumerate(active_markers):
+            # Check if this marker is locked
+            is_m_locked = (i == 0 and self.marker_panel.btn_lock_m1.isChecked()) or \
+                          (i == 1 and self.marker_panel.btn_lock_m2.isChecked())
+            if is_m_locked and len(active_markers) == 2:
+                # If both are locked, we can't drag either.
+                # If only one is locked, we can't drag the locked one.
+                if not (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+                    continue
+
+            # Check if marker is vertical (Time) or horizontal (Magnitude)
+            m_is_time = m in self.markers_time or m in self.markers_time_endless
+            m_pixel = self.view_box.mapViewToScene(pg.Point(m.value(), 0) if m_is_time else pg.Point(0, m.value()))
+            dist = abs(scene_pos.x() - m_pixel.x()) if m_is_time else abs(scene_pos.y() - m_pixel.y())
+            if dist < 20: found_marker = m; break
+        
+        if found_marker:
+            found_marker.setValue(val)
+            if drag_mode: self.active_drag_marker = found_marker
+            self.update_marker_info()
+            return
+            
+        # 2. Check for Grid Lines (Shadow Markers)
+        lock_delta = self.marker_panel.btn_lock_delta.isChecked()
+        if not lock_delta and (self.interaction_mode in ['TIME', 'MAG', 'Y']):
+            grid_lines = self.grid_lines_time if is_time else self.grid_lines_mag
+            best_gl = None
+            min_gl_dist = 20 # pixels
+            
+            for gl in grid_lines:
+                gl_pos = gl.value()
+                p_scene = self.view_box.mapViewToScene(pg.Point(gl_pos, 0) if is_time else pg.Point(0, gl_pos))
+                dist = abs(scene_pos.x() - p_scene.x()) if is_time else abs(scene_pos.y() - p_scene.y())
+                
+                if dist < min_gl_dist:
+                    min_gl_dist = dist
+                    best_gl = gl
+            
+            if best_gl and len(active_markers) == 2:
+                sorted_m = sorted(active_markers, key=lambda m: m.value())
+                p1 = sorted_m[0].value()
+                p2 = sorted_m[1].value()
+                delta = p2 - p1
+                g_pos = best_gl.value()
+                if delta != 0:
+                    k = (g_pos - p1) / delta
+                else: 
+                    k = 1.0
+                
+                move_p1 = (k < 0.5)
+                
+                if drag_mode:
+                    self.active_drag_grid_info = {
+                        'k': k,
+                        'move_p1': move_p1,
+                        'fixed_val': p2 if move_p1 else p1,
+                        'is_time': is_time
+                    }
+                    self.active_drag_marker = None
+                return
+
+        # 3. Teleport existing markers if clicked outside
         if not is_endless and len(active_markers) == 2:
             m1_pos, m2_pos = active_markers[0].value(), active_markers[1].value()
             lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
@@ -446,30 +519,6 @@ class TimeDomainView(QWidget):
             self.update_marker_info()
             return
 
-        # 2. Hit test
-        found_marker = None
-        for i, m in enumerate(active_markers):
-            # Check if this marker is locked
-            is_m_locked = (i == 0 and self.marker_panel.btn_lock_m1.isChecked()) or \
-                          (i == 1 and self.marker_panel.btn_lock_m2.isChecked())
-            if is_m_locked and len(active_markers) == 2:
-                # If both are locked, we can't drag either.
-                # If only one is locked, we can't drag the locked one.
-                if not (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
-                    continue
-
-            # Check if marker is vertical (Time) or horizontal (Magnitude)
-            m_is_time = m in self.markers_time or m in self.markers_time_endless
-            m_pixel = self.view_box.mapViewToScene(pg.Point(m.value(), 0) if m_is_time else pg.Point(0, m.value()))
-            dist = abs(scene_pos.x() - m_pixel.x()) if m_is_time else abs(scene_pos.y() - m_pixel.y())
-            if dist < 20: found_marker = m; break
-        
-        if found_marker:
-            found_marker.setValue(val)
-            if drag_mode: self.active_drag_marker = found_marker
-            self.update_marker_info()
-            return
-
         # 3. Add brand new
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
         p = get_palette(theme)
@@ -501,8 +550,49 @@ class TimeDomainView(QWidget):
         self.update_marker_info()
 
     def update_drag(self, scene_pos):
-        if not self.active_drag_marker: return
         v_pos = self.view_box.mapSceneToView(scene_pos)
+        
+        # 1.5 Handle Shadow Marker (Grid Line) dragging
+        if getattr(self, 'active_drag_grid_info', None):
+            info = self.active_drag_grid_info
+            is_time = info['is_time']
+            k = info['k']
+            move_p1 = info['move_p1']
+            fixed_val = info['fixed_val']
+            
+            if is_time:
+                t_min, t_max = self.time_axis[0], self.time_axis[-1]
+                g_prime = max(t_min, min(t_max, v_pos.x()))
+            else:
+                y_min, y_max = self._get_y_bounds()
+                g_prime = max(y_min, min(y_max, v_pos.y()))
+            
+            active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
+            if len(active_markers) == 2:
+                sorted_m = sorted(active_markers, key=lambda m: m.value())
+                m1, m2 = sorted_m[0], sorted_m[1]
+                
+                try:
+                    if move_p1:
+                        if abs(1 - k) > 1e-9:
+                            new_p1 = (g_prime - k * fixed_val) / (1 - k)
+                            if is_time:
+                                if t_min <= new_p1 <= t_max: m1.setPos(new_p1)
+                            else:
+                                if y_min <= new_p1 <= y_max: m1.setPos(new_p1)
+                    else:
+                        if abs(k) > 1e-9:
+                            new_p2 = fixed_val + (g_prime - fixed_val) / k
+                            if is_time:
+                                if t_min <= new_p2 <= t_max: m2.setPos(new_p2)
+                            else:
+                                if y_min <= new_p2 <= y_max: m2.setPos(new_p2)
+                except ZeroDivisionError: pass
+                
+            self.update_marker_info()
+            return
+
+        if not self.active_drag_marker: return
         is_time = (self.active_drag_marker in self.markers_time or self.active_drag_marker in self.markers_time_endless)
         is_endless = 'ENDLESS' in self.interaction_mode
         
@@ -630,6 +720,9 @@ class TimeDomainView(QWidget):
         if not is_endless:
             m1_p, m2_p = (len(sorted_m) >= 1), (len(sorted_m) >= 2)
             self.marker_panel.set_locks_enabled(m1_p, m2_p)
+            
+        self.update_grid('TIME')
+        self.update_grid('MAG')
 
     def marker_edit_finished(self):
         sender = self.sender()
@@ -777,6 +870,76 @@ class TimeDomainView(QWidget):
                 self.plot_item.setXRange(v1, v2, padding=0.05)
             else:
                 self.plot_item.setYRange(v1, v2, padding=0.05)
+
+    def toggle_grid(self, axis, enabled):
+        if axis == 'TIME': self.grid_time_enabled = enabled
+        else: self.grid_mag_enabled = enabled
+        self.update_grid(axis, force=True)
+
+    def toggle_tracking(self, axis, enabled):
+        if axis == 'TIME': self.grid_time_tracking = enabled
+        else: self.grid_mag_tracking = enabled
+        self.update_grid(axis, force=True)
+
+    def update_grid(self, axis, force=False):
+        is_time = (axis == 'TIME')
+        enabled = self.grid_time_enabled if is_time else self.grid_mag_enabled
+        tracking = self.grid_time_tracking if is_time else self.grid_mag_tracking
+        active_markers = self.markers_time if is_time else self.markers_y_dict.get(self.y_label_text, [])
+        grid_lines = self.grid_lines_time if is_time else self.grid_lines_mag
+        
+        if not enabled:
+            for line in grid_lines: self.plot_item.removeItem(line)
+            grid_lines.clear()
+            return
+        if not tracking and not force: return
+        for line in grid_lines: self.plot_item.removeItem(line)
+        grid_lines.clear()
+        if len(active_markers) != 2: return
+        
+        sorted_m = sorted(active_markers, key=lambda m: m.value())
+        p1, p2 = sorted_m[0].value(), sorted_m[1].value()
+        delta = abs(p2 - p1)
+        if delta <= 0: return
+        
+        angle = 90 if is_time else 0
+        theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
+        color = self.parent_window.settings_mgr.get(f"ui/{theme}/grid_color", "#c8c8ff")
+        style_name = self.parent_window.settings_mgr.get(f"ui/{theme}/grid_style", "SolidLine")
+        alpha = int(self.parent_window.settings_mgr.get("ui/grid_alpha", 30))
+        
+        style_map = {
+            "SolidLine": Qt.PenStyle.SolidLine,
+            "DashLine": Qt.PenStyle.DashLine,
+            "DotLine": Qt.PenStyle.DotLine,
+            "DashDotLine": Qt.PenStyle.DashDotLine
+        }
+        style = style_map.get(str(style_name), Qt.PenStyle.SolidLine)
+        
+        from PyQt6.QtGui import QColor
+        qcolor = QColor(color)
+        qcolor.setAlphaF(alpha / 100.0)
+        
+        v_min = self.time_axis[0] if is_time else self._get_y_bounds()[0]
+        v_max = self.time_axis[-1] if is_time else self._get_y_bounds()[1]
+        
+        pen = pg.mkPen(qcolor, width=1, style=style)
+        
+        curr = p1
+        while curr <= v_max + 1e-9:
+            line = pg.InfiniteLine(pos=curr, angle=angle, pen=pen, movable=False)
+            line.setZValue(5)
+            self.plot_item.addItem(line, ignoreBounds=True)
+            grid_lines.append(line)
+            curr += delta
+            
+        curr = p1 - delta
+        while curr >= v_min - 1e-9:
+            line = pg.InfiniteLine(pos=curr, angle=angle, pen=pen, movable=False)
+            line.setZValue(5)
+            self.plot_item.addItem(line, ignoreBounds=True)
+            grid_lines.append(line)
+            curr -= delta
 
     def refresh_theme(self):
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")

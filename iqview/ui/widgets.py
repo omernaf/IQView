@@ -217,10 +217,15 @@ class CustomViewBox(pg.ViewBox):
                             break
             
             # 4. Check for Grid Lines (Shadow Markers) if delta lock is off
-            if not found_near and mode in ['TIME', 'FREQ']:
+            if not found_near and mode in ['TIME', 'FREQ', 'MAG', 'Y']:
                 lock_delta = getattr(self.ui_controller.marker_panel, 'btn_lock_delta', None)
                 if lock_delta and not lock_delta.isChecked():
-                    grid_lines = getattr(self.ui_controller, 'grid_lines_time' if mode == 'TIME' else 'grid_lines_freq', [])
+                    if mode == 'TIME':
+                        grid_lines = getattr(self.ui_controller, 'grid_lines_time', [])
+                    elif mode == 'FREQ':
+                        grid_lines = getattr(self.ui_controller, 'grid_lines_freq', [])
+                    else:
+                        grid_lines = getattr(self.ui_controller, 'grid_lines_mag', [])
                     for gl in grid_lines:
                         gl_val = gl.value()
                         angle = gl.angle
@@ -420,6 +425,36 @@ class CustomViewBox(pg.ViewBox):
             grid_freq_track_act.setCheckable(True)
             grid_freq_track_act.setChecked(self.ui_controller.grid_freq_tracking)
             grid_freq_track_act.triggered.connect(lambda checked: self.ui_controller.toggle_tracking('FREQ', checked))
+        else:
+            menu.addSeparator()
+            # Time Grid Submenu
+            grid_time_menu = menu.addMenu("Time Grid")
+            grid_time_menu.setEnabled(len(self.ui_controller.markers_time) == 2)
+            
+            grid_time_enable_act = grid_time_menu.addAction("Enabled")
+            grid_time_enable_act.setCheckable(True)
+            grid_time_enable_act.setChecked(getattr(self.ui_controller, 'grid_time_enabled', False))
+            grid_time_enable_act.triggered.connect(lambda checked: self.ui_controller.toggle_grid('TIME', checked))
+            
+            grid_time_track_act = grid_time_menu.addAction("Tracking")
+            grid_time_track_act.setCheckable(True)
+            grid_time_track_act.setChecked(getattr(self.ui_controller, 'grid_time_tracking', False))
+            grid_time_track_act.triggered.connect(lambda checked: self.ui_controller.toggle_tracking('TIME', checked))
+            
+            # Magnitude Grid Submenu
+            grid_mag_menu = menu.addMenu("Magnitude Grid")
+            active_y_markers = self.ui_controller.markers_y_dict.get(self.ui_controller.y_label_text, [])
+            grid_mag_menu.setEnabled(len(active_y_markers) == 2)
+            
+            grid_mag_enable_act = grid_mag_menu.addAction("Enabled")
+            grid_mag_enable_act.setCheckable(True)
+            grid_mag_enable_act.setChecked(getattr(self.ui_controller, 'grid_mag_enabled', False))
+            grid_mag_enable_act.triggered.connect(lambda checked: self.ui_controller.toggle_grid('MAG', checked))
+            
+            grid_mag_track_act = grid_mag_menu.addAction("Tracking")
+            grid_mag_track_act.setCheckable(True)
+            grid_mag_track_act.setChecked(getattr(self.ui_controller, 'grid_mag_tracking', False))
+            grid_mag_track_act.triggered.connect(lambda checked: self.ui_controller.toggle_tracking('MAG', checked))
         
         menu.addSeparator()
         
