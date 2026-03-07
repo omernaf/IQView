@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, 
                              QWidget, QLabel, QLineEdit, QComboBox, QPushButton, 
                              QFormLayout, QDialogButtonBox, QKeySequenceEdit, QCheckBox,
-                             QColorDialog, QSlider, QSpinBox)
+                             QColorDialog, QSlider, QSpinBox, QListWidget, QListWidgetItem, QAbstractItemView)
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QKeySequence, QIcon, QPixmap, QPainter, QLinearGradient, QColor
 from .widgets import KeyBindEdit
@@ -270,10 +270,72 @@ class SettingsDialog(QDialog):
         self._add_reset_row(self.filter_form, "Stopband Atten (dB):", self.filter_stopband_edit, "core/filter_stopband")
         self._add_reset_row(self.filter_form, "Bessel Norm:", self.filter_bessel_norm_combo, "core/filter_bessel_norm")
         
-        # Initial field visibility
         self._on_filter_type_changed(self.filter_type_combo.currentText())
         
         self.tabs.addTab(self.filter_tab, "Filter")
+
+        # --- Plots Tab ---
+        self.plots_tab = QWidget()
+        self.plots_layout = QVBoxLayout(self.plots_tab)
+        
+        help_lbl = QLabel("Drag to reorder. Checked plots appear in the Time Domain toolbar.")
+        help_lbl.setStyleSheet("color: #888; font-style: italic;")
+        self.plots_layout.addWidget(help_lbl)
+        
+        self.plots_list = QListWidget()
+        self.plots_list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.plots_list.setDefaultDropAction(Qt.DropAction.MoveAction)
+        
+        # All available plot types
+        all_plots = [
+            "Real", "Real [dB]", "Imaginary", "Imaginary [dB]", 
+            "Phase", "Unwrapped phase", "instant frequency", 
+            "magnitude", "magnitude [dB]", "magnitude sqaured", 
+            "magnitude sqaured [dB]"
+        ]
+        
+        # Load active/sorted plots from settings
+        saved_plots = self.mgr.get("core/time_plots", [])
+        
+        # 1. Add saved ones (they are 'checked' by virtue of being in the list)
+        for p in saved_plots:
+            if p in all_plots:
+                item = QListWidgetItem(p)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
+                item.setCheckState(Qt.CheckState.Checked)
+                self.plots_list.addItem(item)
+                
+        # 2. Add remaining ones not in saved_plots (unchecked)
+        for p in all_plots:
+            if p not in saved_plots:
+                item = QListWidgetItem(p)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
+                item.setCheckState(Qt.CheckState.Unchecked)
+                self.plots_list.addItem(item)
+                
+        self.plots_layout.addWidget(self.plots_list)
+        
+        # Reset to Default button
+        reset_plots_btn = QPushButton("Reset to Default")
+        def reset_plots():
+            self.plots_list.clear()
+            defaults = self.mgr.get_default("core/time_plots")
+            for p in defaults:
+                if p in all_plots:
+                    item = QListWidgetItem(p)
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
+                    item.setCheckState(Qt.CheckState.Checked)
+                    self.plots_list.addItem(item)
+            for p in all_plots:
+                if p not in defaults:
+                    item = QListWidgetItem(p)
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
+                    item.setCheckState(Qt.CheckState.Unchecked)
+                    self.plots_list.addItem(item)
+        reset_plots_btn.clicked.connect(reset_plots)
+        self.plots_layout.addWidget(reset_plots_btn)
+        
+        self.tabs.addTab(self.plots_tab, "Time Plots")
 
         # --- Buttons ---
         self.button_box = QDialogButtonBox(
@@ -336,6 +398,14 @@ class SettingsDialog(QDialog):
             self.mgr.set("core/filter_ripple", float(self.filter_ripple_edit.text()))
             self.mgr.set("core/filter_stopband", float(self.filter_stopband_edit.text()))
             self.mgr.set("core/filter_bessel_norm", self.filter_bessel_norm_combo.currentText())
+            
+            # Save Plots
+            active_plots = []
+            for i in range(self.plots_list.count()):
+                item = self.plots_list.item(i)
+                if item.checkState() == Qt.CheckState.Checked:
+                    active_plots.append(item.text())
+            self.mgr.set("core/time_plots", active_plots)
             
             return True
         except ValueError as e:

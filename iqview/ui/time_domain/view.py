@@ -35,12 +35,17 @@ class TimeDomainView(QWidget):
         
         # Mode-specific Magnitude markers
         self.markers_y_dict = {
-            "Amplitude (Real)": [],
-            "Amplitude (Imag)": [],
-            "Magnitude": [],
-            "Instantaneous Frequency (Hz)": [],
-            "Phase (rad)": [],
-            "Unwrapped Phase (rad)": []
+            "Real": [],
+            "Real [dB]": [],
+            "Imaginary": [],
+            "Imaginary [dB]": [],
+            "Phase": [],
+            "Unwrapped phase": [],
+            "instant frequency": [],
+            "magnitude": [],
+            "magnitude [dB]": [],
+            "magnitude sqaured": [],
+            "magnitude sqaured [dB]": []
         }
         self.markers_y_endless_dict = {k: [] for k in self.markers_y_dict.keys()}
         
@@ -56,7 +61,7 @@ class TimeDomainView(QWidget):
         self.grid_mag_tracking = True
         self.grid_lines_mag = []
         
-        self.y_label_text = "Amplitude (Real)"
+        self.y_label_text = list(self.available_modes.keys())[0] if hasattr(self, 'available_modes') else "Real"
         self.current_plot_data = samples.real # Cache for marker sampling
         
         self.main_layout = QVBoxLayout(self)
@@ -79,23 +84,42 @@ class TimeDomainView(QWidget):
         
         self.toolbar_layout.addWidget(QLabel("Plot Mode:"))
         
-        self.mode_group = QButtonGroup(self)
-        self.modes = [
-            ("Real (I)", self.plot_real),
-            ("Imag (Q)", self.plot_imag),
-            ("Absolute", self.plot_abs),
-            ("Inst. Freq", self.plot_inst_freq),
-            ("Phase", self.plot_phase),
-            ("Unwrapped Phase", self.plot_unwrapped_phase)
-        ]
+        # Define all available plot modes and their compute functions
+        self.available_modes = {
+            "Real": self.plot_real,
+            "Real [dB]": self.plot_real_db,
+            "Imaginary": self.plot_imaginary,
+            "Imaginary [dB]": self.plot_imaginary_db,
+            "Phase": self.plot_phase,
+            "Unwrapped phase": self.plot_unwrapped_phase,
+            "instant frequency": self.plot_inst_freq,
+            "magnitude": self.plot_magnitude,
+            "magnitude [dB]": self.plot_magnitude_db,
+            "magnitude sqaured": self.plot_magnitude_squared,
+            "magnitude sqaured [dB]": self.plot_magnitude_squared_db
+        }
         
-        for i, (name, callback) in enumerate(self.modes):
-            btn = QPushButton(name)
-            btn.setCheckable(True)
-            self.mode_group.addButton(btn, i)
-            self.toolbar_layout.addWidget(btn)
-            btn.clicked.connect(callback)
-            if i == 0: btn.setChecked(True)
+        self.mode_group = QButtonGroup(self)
+        self.plot_buttons = []
+        
+        # Load active plots from settings
+        active_plots = []
+        if self.settings_mgr:
+            active_plots = self.settings_mgr.get("core/time_plots", [])
+            
+        # Fallback to default if empty or missing
+        if not active_plots:
+            active_plots = ["instant frequency", "magnitude sqaured", "Real", "Imaginary"]
+            
+        for i, name in enumerate(active_plots):
+            if name in self.available_modes:
+                btn = QPushButton(name)
+                btn.setCheckable(True)
+                self.mode_group.addButton(btn, i)
+                self.toolbar_layout.addWidget(btn)
+                btn.clicked.connect(self.available_modes[name])
+                self.plot_buttons.append(btn)
+                if i == 0: btn.setChecked(True)
             
         self.toolbar_layout.addStretch()
         
@@ -155,7 +179,12 @@ class TimeDomainView(QWidget):
         
         self.time_axis = np.linspace(start_time, end_time, len(samples))
         # Initial call
-        self._update_plot(self.samples.real, "Amplitude (Real)")
+        if len(self.plot_buttons) > 0:
+            first_plot_name = self.plot_buttons[0].text()
+            self.available_modes[first_plot_name]()
+        else:
+            self._update_plot(self.samples.real, "Real")
+            
         self.set_interaction_mode('TIME')
 
         # Connect scrollbars
@@ -227,25 +256,48 @@ class TimeDomainView(QWidget):
         self.update_marker_info()
 
     def plot_real(self):
-        self._update_plot(self.samples.real, "Amplitude (Real)")
+        self._update_plot(self.samples.real, "Real")
 
-    def plot_imag(self):
-        self._update_plot(self.samples.imag, "Amplitude (Imag)")
+    def plot_real_db(self):
+        data = np.abs(self.samples.real)
+        data[data < 1e-12] = 1e-12
+        self._update_plot(20 * np.log10(data), "Real [dB]")
 
-    def plot_abs(self):
-        self._update_plot(np.abs(self.samples), "Magnitude")
+    def plot_imaginary(self):
+        self._update_plot(self.samples.imag, "Imaginary")
+        
+    def plot_imaginary_db(self):
+        data = np.abs(self.samples.imag)
+        data[data < 1e-12] = 1e-12
+        self._update_plot(20 * np.log10(data), "Imaginary [dB]")
+
+    def plot_magnitude(self):
+        self._update_plot(np.abs(self.samples), "magnitude")
+        
+    def plot_magnitude_db(self):
+        data = np.abs(self.samples)
+        data[data < 1e-12] = 1e-12
+        self._update_plot(20 * np.log10(data), "magnitude [dB]")
+        
+    def plot_magnitude_squared(self):
+        self._update_plot(np.abs(self.samples)**2, "magnitude sqaured")
+        
+    def plot_magnitude_squared_db(self):
+        data = np.abs(self.samples)**2
+        data[data < 1e-12] = 1e-12
+        self._update_plot(10 * np.log10(data), "magnitude sqaured [dB]")
 
     def plot_inst_freq(self):
         phase = np.unwrap(np.angle(self.samples))
         freq = np.diff(phase) / (2 * np.pi) * self.rate
         pad_freq = np.concatenate(([freq[0]], freq))
-        self._update_plot(pad_freq, "Instantaneous Frequency (Hz)")
+        self._update_plot(pad_freq, "instant frequency")
 
     def plot_phase(self):
-        self._update_plot(np.angle(self.samples), "Phase (rad)")
+        self._update_plot(np.angle(self.samples), "Phase")
 
     def plot_unwrapped_phase(self):
-        self._update_plot(np.unwrap(np.angle(self.samples)), "Unwrapped Phase (rad)")
+        self._update_plot(np.unwrap(np.angle(self.samples)), "Unwrapped phase")
 
     def update_statistics(self):
         """Calculates Min, Max, Mean, Median for the active region and updates the marker panel UI."""

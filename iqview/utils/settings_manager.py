@@ -16,6 +16,12 @@ class SettingsManager:
         "core/filter_ripple": 0.1,
         "core/filter_stopband": 60.0,
         "core/filter_bessel_norm": "phase",
+        "core/time_plots": [
+            "instant frequency", 
+            "magnitude sqaured", 
+            "Real", 
+            "Imaginary"
+        ],
         "ui/theme": "Light",
         "ui/colormap": "turbo",
         "ui/colormap_reversed": False,
