@@ -110,10 +110,12 @@ class ExportDialog(QtWidgets.QDialog):
             # ---- Time Domain data export ----
             fmt_group = QtWidgets.QGroupBox("Data Format")
             fmt_layout = QtWidgets.QVBoxLayout(fmt_group)
-            self.radio_mat = QtWidgets.QRadioButton("MATLAB (.mat)  —  complex IQ waveform")
-            self.radio_bin = QtWidgets.QRadioButton("NumPy (.npy)  —  complex64 array")
+            self.radio_mat = QtWidgets.QRadioButton("MATLAB (.mat)  —  complex IQ struct")
+            self.radio_npy = QtWidgets.QRadioButton("NumPy (.npy)  —  complex64 array")
+            self.radio_bin = QtWidgets.QRadioButton("Raw Binary (.32fc)  —  interleaved float32")
             self.radio_mat.setChecked(True)
             fmt_layout.addWidget(self.radio_mat)
+            fmt_layout.addWidget(self.radio_npy)
             fmt_layout.addWidget(self.radio_bin)
             layout.addWidget(fmt_group)
 
@@ -136,6 +138,7 @@ class ExportDialog(QtWidgets.QDialog):
             fmt_group = QtWidgets.QGroupBox("Data Format")
             fmt_layout = QtWidgets.QVBoxLayout(fmt_group)
             self.radio_mat = QtWidgets.QRadioButton("MATLAB (.mat)")
+            self.radio_npy = QtWidgets.QRadioButton("NumPy (.npy)  —  complex64 array")
             s = self.ui_controller
             if not s.is_complex:
                 bin_ext = ".32f" if s.data_type == np.float32 else ".64f"
@@ -151,6 +154,7 @@ class ExportDialog(QtWidgets.QDialog):
             self.radio_bin = QtWidgets.QRadioButton(bin_label)
             self.radio_mat.setChecked(True)
             fmt_layout.addWidget(self.radio_mat)
+            fmt_layout.addWidget(self.radio_npy)
             fmt_layout.addWidget(self.radio_bin)
             layout.addWidget(fmt_group)
 
@@ -390,10 +394,13 @@ class ExportDialog(QtWidgets.QDialog):
                 return
 
             is_mat = self.radio_mat.isChecked()
+            is_npy = self.radio_npy.isChecked()
             if is_mat:
                 ext, filter_str = "mat", "MATLAB Files (*.mat)"
-            else:
+            elif is_npy:
                 ext, filter_str = "npy", "NumPy Files (*.npy)"
+            else:
+                ext, filter_str = "32fc", "Raw Binary Files (*.32fc)"
 
             path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Export Data", "", filter_str)
             if not path: return
@@ -407,8 +414,10 @@ class ExportDialog(QtWidgets.QDialog):
                         "t_start": t_start_seg,
                         "t_end": t_end_seg,
                     })
-                else:
+                elif is_npy:
                     np.save(path, data.astype(np.complex64))
+                else:  # raw binary .32fc
+                    data.astype(np.complex64).tofile(path)
                 QtWidgets.QMessageBox.information(self, "Export Successful", f"Data exported to {os.path.basename(path)}")
             except Exception as e:
                 QtWidgets.QMessageBox.critical(self, "Export Error", f"Failed to export data: {str(e)}")
@@ -431,9 +440,13 @@ class ExportDialog(QtWidgets.QDialog):
             return
 
         is_mat = self.radio_mat.isChecked()
+        is_npy = self.radio_npy.isChecked()
         if is_mat:
             ext = "mat"
             filter_str = "MATLAB Files (*.mat)"
+        elif is_npy:
+            ext = "npy"
+            filter_str = "NumPy Files (*.npy)"
         else:
             if not s.is_complex:
                 ext = "32f" if s.data_type == np.float32 else "64f"
@@ -455,6 +468,8 @@ class ExportDialog(QtWidgets.QDialog):
                     "t_end": end_sec,
                     "source": str(s.data_source)
                 })
+            elif is_npy:
+                np.save(path, data.astype(np.complex64))
             else:
                 if not s.is_complex:
                     data.real.astype(s.data_type).tofile(path)
