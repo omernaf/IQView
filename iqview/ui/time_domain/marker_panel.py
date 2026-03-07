@@ -75,7 +75,7 @@ class TimeDomainMarkerPanel(QFrame):
         self.mode_btn_layout.addWidget(self.btn_move, 1, 2)
         
         # 5. Stats
-        self.btn_stats = QPushButton("📊")
+        self.btn_stats = QPushButton("📈")
         self.btn_stats.setObjectName("mode_btn")
         self.btn_stats.setToolTip("Region Statistics")
         self.btn_stats.setCheckable(True)
