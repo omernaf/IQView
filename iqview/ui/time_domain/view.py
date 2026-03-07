@@ -1156,9 +1156,9 @@ class TimeDomainView(QWidget):
             sorted_m = sorted(active_markers, key=lambda m: m.value())
             v1, v2 = sorted_m[0].value(), sorted_m[-1].value()
             if is_time:
-                self.plot_item.setXRange(v1, v2, padding=0.05)
+                self.plot_item.setXRange(v1, v2, padding=0)
             else:
-                self.plot_item.setYRange(v1, v2, padding=0.05)
+                self.plot_item.setYRange(v1, v2, padding=0)
 
     def toggle_grid(self, axis, enabled):
         if axis == 'TIME': self.grid_time_enabled = enabled
