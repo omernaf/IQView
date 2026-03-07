@@ -3,6 +3,7 @@ import pyqtgraph as pg
 import numpy as np
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFileDialog
+from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext
 
 class ViewControllerMixin:
     def on_parameters_changed(self, params):
@@ -266,7 +267,7 @@ class ViewControllerMixin:
             self,
             "Open IQ File",
             os.path.dirname(self.file_path) if isinstance(self.file_path, str) else "",
-            "IQ Files (*.32fc *.fc32 *.cs8 *.cu8 *.sc16 *.bin *.iq *.raw);;All Files (*)"
+            "IQ Files (*.32f *.64f *.16tc *.16sc *.64fc *.32fc *.bin *.iq *.raw);;All Files (*)"
         )
         if path:
             self.load_new_file(path)
@@ -281,18 +282,22 @@ class ViewControllerMixin:
         self.file_path   = path
         self.setWindowTitle(f"IQView - {path}")
 
-        # Re-resolve dtype from settings so we always use the last configured type
-        import numpy as np
-        dtype_map = {
-            'np.int8': np.int8, 'np.int16': np.int16, 'np.int32': np.int32,
-            'np.float32': np.float32, 'np.float64': np.float64,
-            'int8': np.int8, 'int16': np.int16, 'int32': np.int32,
-            'float32': np.float32, 'float64': np.float64,
-            'np.complex64': np.complex64, 'complex64': np.complex64
-        }
-        type_str = str(self.settings_mgr.get("core/type", "complex64"))
-        dtype = dtype_map.get(type_str, np.complex64)
-        self.data_type = np.float32 if dtype == np.complex64 else dtype
+        # Priority: 1. Auto-detection from filename, 2. App Settings
+        auto_type = detect_type_from_ext(path)
+        if auto_type:
+            type_str = auto_type
+        else:
+            type_str = str(self.settings_mgr.get("core/type", "complex64"))
+
+        dtype = DTYPE_MAP.get(type_str, np.complex64)
+        self.is_complex = dtype in [np.complex64, np.complex128, np.int16]
+        
+        if dtype == np.complex64:
+            self.data_type = np.float32
+        elif dtype == np.complex128:
+            self.data_type = np.float64
+        else:
+            self.data_type = dtype
 
         # Save to recent files list
         self._add_recent_file(path)

@@ -13,6 +13,7 @@ import pyqtgraph as pg
 from PyQt6.QtWidgets import QApplication
 from iqview.ui import SpectrogramWindow
 from iqview.utils.settings_manager import SettingsManager
+from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext
 
 def parse_args():
     sm = SettingsManager()
@@ -20,7 +21,7 @@ def parse_args():
     src = parser.add_mutually_exclusive_group(required=False)
     src.add_argument('-f', '--file', default=None, help='Path to the binary IQ file')
     src.add_argument('--stdin', action='store_true', help='Read IQ data from stdin (binary pipe)')
-    parser.add_argument('-t', '--type', default=sm.get("core/type", "complex64"), type=str, help='Data type (default: ' + sm.get("core/type", "complex64") + ')')
+    parser.add_argument('-t', '--type', default=None, type=str, help='Data type (int16, float32, float64, complex64, complex128)')
     parser.add_argument('-r', '--rate', type=float, default=float(sm.get("core/fs", 1e6)), help='Sample rate in Hz')
     parser.add_argument('-c', '--fc', type=float, default=float(sm.get("core/fc", 0.0)), help='Center frequency in Hz')
     parser.add_argument('-s', '--fft', type=int, default=int(sm.get("core/fft_size", 1024)), help='FFT bin size')
@@ -30,23 +31,32 @@ def parse_args():
 def main():
     args = parse_args()
     
-    dtype_map = {
-        'np.int8': np.int8, 'np.int16': np.int16, 'np.int32': np.int32,
-        'np.float32': np.float32, 'np.float64': np.float64,
-        'int8': np.int8, 'int16': np.int16, 'int32': np.int32,
-        'float32': np.float32, 'float64': np.float64,
-        'np.complex64': np.complex64, 'complex64': np.complex64
-    }
+    sm = SettingsManager()
     
-    if args.type not in dtype_map:
-        print(f"Error: Unsupported data type {args.type}.")
+    # Priority: 1. User Input, 2. Auto-detection from filename, 3. App Settings
+    type_str = args.type
+    if not type_str and args.file:
+        auto_type = detect_type_from_ext(args.file)
+        if auto_type:
+            type_str = auto_type
+            print(f"Auto-detected data type from file extension: {type_str}")
+            
+    if not type_str:
+        type_str = sm.get("core/type", "complex64")
+
+    if type_str not in DTYPE_MAP:
+        print(f"Error: Unsupported data type {type_str}.")
         sys.exit(1)
         
-    dtype = dtype_map[args.type]
+    dtype = DTYPE_MAP[type_str]
+    is_complex = dtype in [np.complex64, np.complex128, np.int16]
     
     if dtype == np.complex64:
         # Cast to float32 internally to de-interleave properly across numpy logic
         dtype = np.float32
+    elif dtype == np.complex128:
+        # Cast to float64 internally to de-interleave properly
+        dtype = np.float64
 
     # Resolve the data source: file path (str), in-memory bytes from stdin, or None (open empty)
     if args.stdin:
@@ -59,7 +69,7 @@ def main():
     pg.setConfigOptions(useOpenGL=True, enableExperimental=True, imageAxisOrder='row-major')
     
     app = QApplication(sys.argv)
-    window = SpectrogramWindow(data_source, dtype, args.rate, args.fc, args.fft, args.profile)
+    window = SpectrogramWindow(data_source, dtype, args.rate, args.fc, args.fft, args.profile, is_complex=is_complex)
     window.show()
     
     if args.profile:

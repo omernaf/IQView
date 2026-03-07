@@ -1,9 +1,10 @@
 from PyQt6.QtCore import Qt, QRectF, pyqtSignal
-from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtGui import QAction, QKeySequence, QImage, QPainter
 from PyQt6.QtWidgets import QWidget, QGridLayout, QScrollBar, QSizePolicy
 from pyqtgraph.widgets.ColorMapMenu import ColorMapMenu
 from pyqtgraph.graphicsItems.GradientPresets import Gradients
 import pyqtgraph as pg
+from PyQt6 import QtGui
 import numpy as np
 import copy
 from .themes import get_palette, get_scrollbar_stylesheet
@@ -376,4 +377,34 @@ class SpectrogramView(QWidget):
         # Update scrollbars
         sb_style = get_scrollbar_stylesheet(p)
         self.x_scroll.setStyleSheet(sb_style)
+        sb_style = get_scrollbar_stylesheet(p)
         self.y_scroll.setStyleSheet(sb_style)
+
+    def capture_raw_image(self):
+        """Captures only the spectrogram image data as a QImage, scaled to preserve visual aspect ratio."""
+        pix = self.img.getPixmap()
+        if pix.isNull():
+            return QtGui.QImage()
+            
+        raw_img = pix.toImage()
+        
+        # Get the visual size of the ViewBox (the actual screen area)
+        # This determines the aspect ratio the user sees.
+        view_size = self.view_box.size()
+        
+        # Rescale the raw image to match the visual proportions
+        return raw_img.scaled(
+            int(view_size.width()), 
+            int(view_size.height()), 
+            Qt.AspectRatioMode.IgnoreAspectRatio, 
+            Qt.TransformationMode.SmoothTransformation
+        )
+
+    def capture_plot_with_axes(self):
+        """Captures the entire plot area including axes and markers."""
+        # QWidget.grab() returns a blank image for OpenGL-backed GraphicsLayoutWidgets.
+        # Use pyqtgraph's ImageExporter which renders via the scene painter instead.
+        from pyqtgraph.exporters import ImageExporter
+        exporter = ImageExporter(self.glw_plot.scene())
+        # export() with no filename returns a QImage directly
+        return exporter.export(toBytes=True)

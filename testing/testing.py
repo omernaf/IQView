@@ -48,6 +48,7 @@ def main():
     args, unknown = parser.parse_known_args()
 
     filename = "samples/mavic_air_2.32fc"
+    # filename = "samples/mavic_air_2.16tc"
     # filename = "samples/long_sweep.32fc"
     sample_rate = 50e6  # 2 MHz
     duration = 10.0    # 10 seconds of simulated RF recording
@@ -68,7 +69,7 @@ def main():
     cmd = [
         sys.executable, main_py,
         "-f", filename,
-        "-r", str(sample_rate)
+        "-r", str(sample_rate),
     ]
     
     if args.profile:

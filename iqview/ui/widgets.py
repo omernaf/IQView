@@ -426,20 +426,13 @@ class CustomViewBox(pg.ViewBox):
         export_act = menu.addAction("Export...")
         def open_export():
             try:
-                try:
-                    from pyqtgraph.exportDialog import ExportDialog
-                except ImportError:
-                    try:
-                        from pyqtgraph.exporters.exportDialog import ExportDialog
-                    except ImportError:
-                        # Some versions of pyqtgraph moved it here or removed it
-                        from pyqtgraph.exporters import ExportDialog
-                self.export_dialog = ExportDialog(self.scene())
+                from .export_dialog import ExportDialog
+                self.export_dialog = ExportDialog(self.ui_controller)
                 self.export_dialog.show()
             except Exception as e:
                 from PyQt6.QtWidgets import QMessageBox
-                QMessageBox.warning(self.ui_controller.parent_window, "Export Unavailable", 
-                                  f"The pyqtgraph Export Dialog could not be loaded.\n\nError: {str(e)}")
+                QMessageBox.warning(self.ui_controller, "Export Unavailable", 
+                                  f"The custom Export Dialog could not be loaded.\n\nError: {str(e)}")
         export_act.triggered.connect(open_export)
         
         menu.exec(ev.screenPos().toPoint())

@@ -19,6 +19,9 @@ dependencies = [
 [project.scripts]
 iqview = "iqview.main:main"
 
+[tool.setuptools.package-data]
+iqview = ["resources/*.png", "resources/*.ico"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["iqview*"]
