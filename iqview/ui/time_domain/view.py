@@ -99,28 +99,13 @@ class TimeDomainView(QWidget):
             "magnitude^2 [dB]": self.plot_magnitude_squared_db
         }
         
+        self.plot_buttons_layout = QHBoxLayout()
+        self.plot_buttons_layout.setSpacing(5)
+        self.toolbar_layout.addLayout(self.plot_buttons_layout)
+        
         self.mode_group = QButtonGroup(self)
         self.plot_buttons = []
         
-        # Load active plots from settings
-        active_plots = []
-        if self.settings_mgr:
-            active_plots = self.settings_mgr.get("core/time_plots", [])
-            
-        # Fallback to default if empty or missing
-        if not active_plots:
-            active_plots = ["instant frequency", "magnitude^2", "Real", "Imaginary"]
-            
-        for i, name in enumerate(active_plots):
-            if name in self.available_modes:
-                btn = QPushButton(name)
-                btn.setCheckable(True)
-                self.mode_group.addButton(btn, i)
-                self.toolbar_layout.addWidget(btn)
-                btn.clicked.connect(self.available_modes[name])
-                self.plot_buttons.append(btn)
-                if i == 0: btn.setChecked(True)
-            
         self.toolbar_layout.addStretch()
         
         end_time = start_time + len(samples) / sample_rate
@@ -178,12 +163,8 @@ class TimeDomainView(QWidget):
         self.plot_item.addItem(self.stats_markers)
         
         self.time_axis = np.linspace(start_time, end_time, len(samples))
-        # Initial call
-        if len(self.plot_buttons) > 0:
-            first_plot_name = self.plot_buttons[0].text()
-            self.available_modes[first_plot_name]()
-        else:
-            self._update_plot(self.samples.real, "Real")
+        # Add buttons and trigger the first plot
+        self.rebuild_plot_buttons()
             
         self.set_interaction_mode('TIME')
 
@@ -191,6 +172,38 @@ class TimeDomainView(QWidget):
         self.view_box.sigRangeChanged.connect(self.update_scrollbars)
         self.x_scroll.valueChanged.connect(self.scroll_view)
         self.y_scroll.valueChanged.connect(self.scroll_view)
+
+    def rebuild_plot_buttons(self):
+        # Clear existing buttons
+        for btn in self.plot_buttons:
+            self.mode_group.removeButton(btn)
+            self.plot_buttons_layout.removeWidget(btn)
+            btn.deleteLater()
+        self.plot_buttons.clear()
+        
+        # Load active plots from settings
+        active_plots = []
+        if self.settings_mgr:
+            active_plots = self.settings_mgr.get("core/time_plots", [])
+            
+        # Fallback to default if empty or missing
+        if not active_plots:
+            active_plots = ["instant frequency", "magnitude^2", "Real", "Imaginary"]
+            
+        for i, name in enumerate(active_plots):
+            if name in self.available_modes:
+                btn = QPushButton(name)
+                btn.setCheckable(True)
+                self.mode_group.addButton(btn, i)
+                self.plot_buttons_layout.addWidget(btn)
+                btn.clicked.connect(self.available_modes[name])
+                self.plot_buttons.append(btn)
+                if i == 0: btn.setChecked(True)
+                
+        # Immediately re-trigger the first selected mode to update the plot view
+        if len(self.plot_buttons) > 0:
+            first_plot_name = self.plot_buttons[0].text()
+            self.available_modes[first_plot_name]()
 
     def keyPressEvent(self, event):
         if event.isAutoRepeat(): return
