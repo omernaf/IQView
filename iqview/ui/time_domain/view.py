@@ -337,8 +337,19 @@ class TimeDomainView(QWidget):
             
         p_max = np.max(slice_data)
         p_min = np.min(slice_data)
-        p_mean = np.mean(slice_data)
         p_median = np.median(slice_data)
+        
+        # Mean Calculation: For dB plots, average in linear domain
+        if "[dB]" in self.y_label_text:
+            # Detect if it's 10log (Magnitude^2) or 20log (Magnitude/Real/Imag)
+            factor = 10 if "magnitude^2" in self.y_label_text.lower() else 20
+            # Convert back to linear
+            lin_data = 10**(slice_data / factor)
+            lin_mean = np.mean(lin_data)
+            # Re-convert to dB, adding a small epsilon to avoid log10(0)
+            p_mean = factor * np.log10(lin_mean + 1e-15)
+        else:
+            p_mean = np.mean(slice_data)
         
         # Find exact relative position
         idx_max = i_min + np.argmax(slice_data)
