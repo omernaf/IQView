@@ -160,6 +160,9 @@ class ExportDialog(QtWidgets.QDialog):
 
             range_group = QtWidgets.QGroupBox("Data Range")
             range_layout = QtWidgets.QVBoxLayout(range_group)
+            self.radio_full = QtWidgets.QRadioButton("Full Loaded Data")
+            self.radio_visible = QtWidgets.QRadioButton("Visible View")
+            range_layout.addWidget(self.radio_full)
             range_layout.addWidget(self.radio_visible)
             
             self.radio_filter = QtWidgets.QRadioButton("Between Filter Bounds")
