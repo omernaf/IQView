@@ -10,7 +10,7 @@ class ExportDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.ui_controller = ui_controller
         self.setWindowTitle("Export Data & Image")
-        self.resize(500, 600)
+        self.resize(520, 730)
         
         self.layout = QtWidgets.QVBoxLayout(self)
         
@@ -31,10 +31,14 @@ class ExportDialog(QtWidgets.QDialog):
         self.layout.addLayout(self.btn_layout)
         
         self.refresh_theme()
+        # Cache the window snapshot once so the preview doesn't capture the dialog
+        self._window_snapshot = None
+        QtCore.QTimer.singleShot(50, self._cache_window_snapshot)
 
     def setup_image_tab(self):
         tab = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(tab)
+        layout.setSpacing(8)
         
         # Scope Group
         scope_group = QtWidgets.QGroupBox("Image Scope")
@@ -48,6 +52,31 @@ class ExportDialog(QtWidgets.QDialog):
         scope_layout.addWidget(self.radio_window)
         layout.addWidget(scope_group)
         
+        # Wire radios to update preview
+        self.radio_raw.toggled.connect(self._on_scope_changed)
+        self.radio_axes.toggled.connect(self._on_scope_changed)
+        self.radio_window.toggled.connect(self._on_scope_changed)
+
+        # Preview Group
+        preview_group = QtWidgets.QGroupBox("Preview")
+        preview_layout = QtWidgets.QVBoxLayout(preview_group)
+        preview_layout.setContentsMargins(8, 16, 8, 8)
+
+        self.preview_label = QtWidgets.QLabel()
+        self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.preview_label.setMinimumHeight(220)
+        self.preview_label.setObjectName("previewLabel")
+        self.preview_label.setText("Loading preview…")
+        preview_layout.addWidget(self.preview_label)
+
+        # Pixel-size hint label
+        self.preview_size_label = QtWidgets.QLabel()
+        self.preview_size_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.preview_size_label.setObjectName("previewSizeLabel")
+        preview_layout.addWidget(self.preview_size_label)
+
+        layout.addWidget(preview_group)
+
         # Format Group
         fmt_group = QtWidgets.QGroupBox("Format")
         fmt_layout = QtWidgets.QHBoxLayout(fmt_group)
@@ -60,14 +89,14 @@ class ExportDialog(QtWidgets.QDialog):
         # Actions
         actions_group = QtWidgets.QGroupBox("Actions")
         actions_layout = QtWidgets.QHBoxLayout(actions_group)
-        self.btn_save_img = QtWidgets.QPushButton("Save to File...")
+        self.btn_save_img = QtWidgets.QPushButton("Save to File…")
         self.btn_copy_img = QtWidgets.QPushButton("Copy to Clipboard")
         self.btn_save_img.clicked.connect(self.export_image_file)
         self.btn_copy_img.clicked.connect(self.export_image_clipboard)
         actions_layout.addWidget(self.btn_save_img)
         actions_layout.addWidget(self.btn_copy_img)
         layout.addWidget(actions_group)
-        
+
         layout.addStretch()
         self.tabs.addTab(tab, "Image")
 
@@ -156,7 +185,66 @@ class ExportDialog(QtWidgets.QDialog):
         layout.addStretch()
         self.tabs.addTab(tab, "Metadata")
 
+    # ------------------------------------------------------------------ preview
+    def _cache_window_snapshot(self):
+        """Grab a screenshot of the main window once at dialog open time.
+        We do this on a timer so the export dialog itself is visible but
+        not overlapping the main window grab."""
+        screen = QtWidgets.QApplication.primaryScreen()
+        if screen:
+            pix = screen.grabWindow(self.ui_controller.winId())
+            self._window_snapshot = pix
+        else:
+            self._window_snapshot = self.ui_controller.grab()
+        self.refresh_preview()
+
+    def _on_scope_changed(self, checked):
+        """Triggered when a radio button is toggled. Only react when a button
+        becomes checked (not when it becomes unchecked)."""
+        if checked:
+            self.refresh_preview()
+
+    def refresh_preview(self):
+        """Render the currently-selected export type and show a thumbnail."""
+        if not hasattr(self, 'preview_label'):
+            return
+        try:
+            if self.radio_raw.isChecked():
+                img = self.ui_controller.spectrogram_view.capture_raw_image()
+                pix = QtGui.QPixmap.fromImage(img)
+            elif self.radio_axes.isChecked():
+                img = self.ui_controller.spectrogram_view.capture_plot_with_axes()
+                pix = QtGui.QPixmap.fromImage(img)
+            else:  # Entire Window
+                if self._window_snapshot is not None:
+                    pix = self._window_snapshot
+                else:
+                    pix = self.ui_controller.grab()
+
+            if pix.isNull():
+                self.preview_label.setText("Preview unavailable")
+                self.preview_size_label.setText("")
+                return
+
+            # Record original pixel dims for the size hint
+            orig_w, orig_h = pix.width(), pix.height()
+
+            # Scale to fit the label, keeping aspect ratio
+            max_w = self.preview_label.width() or 480
+            max_h = self.preview_label.minimumHeight()
+            scaled = pix.scaled(
+                max_w, max_h,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            self.preview_label.setPixmap(scaled)
+            self.preview_size_label.setText(f"{orig_w} × {orig_h} px")
+        except Exception as e:
+            self.preview_label.setText(f"Preview error: {e}")
+            self.preview_size_label.setText("")
+
     def get_selected_image(self):
+
         if self.radio_raw.isChecked():
             return self.ui_controller.spectrogram_view.capture_raw_image()
         elif self.radio_axes.isChecked():
@@ -349,4 +437,19 @@ class ExportDialog(QtWidgets.QDialog):
             QComboBox, QLineEdit, QTextEdit {{ background-color: {p.bg_main}; color: {p.text_main}; border: 1px solid {p.border}; padding: 4px; border-radius: 4px; }}
             QRadioButton {{ color: {p.text_main}; spacing: 5px; }}
             QRadioButton::indicator {{ width: 14px; height: 14px; }}
+            QLabel#previewLabel {{
+                background-color: {p.bg_main};
+                border: 1px solid {p.border};
+                border-radius: 6px;
+                color: {p.text_dim};
+                padding: 4px;
+            }}
+            QLabel#previewSizeLabel {{
+                color: {p.text_dim};
+                font-size: 10px;
+                padding: 0px;
+                border: none;
+                background: transparent;
+            }}
         """)
+
