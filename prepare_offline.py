@@ -106,8 +106,9 @@ def download_for_target(target: dict, iqview_wheel: Path) -> bool:
         shutil.copy2(iqview_wheel, dest_wheel)
         print(f"  ✓ Copied {iqview_wheel.name} → {dest_wheel}")
 
-    # Write a small install bat for convenience
+    # Write install + uninstall bats for convenience
     write_install_bat(folder, iqview_wheel.name, python_version)
+    write_uninstall_bat(folder)
     return True
 
 
@@ -119,8 +120,11 @@ def write_install_bat(folder: Path, wheel_name: str, python_version: str):
 :: IQView offline installer for Python {python_version} on Windows x64
 :: Run this file on the target machine inside this folder.
 
+:: Change to this script's own directory so relative paths work correctly
+cd /d "%~dp0"
+
 echo Installing IQView (Python {python_version}) from local wheels...
-pip install --no-index --find-links="%~dp0" "{wheel_name}"
+pip install --no-index --find-links=. {wheel_name}
 if %errorlevel% neq 0 (
     echo.
     echo [ERROR] Installation failed.
@@ -131,6 +135,28 @@ if %errorlevel% neq 0 (
 echo.
 echo IQView installed successfully!
 echo Run it with:  iqview
+pause
+"""
+    bat_path.write_text(bat_content, encoding="utf-8")
+    print(f"  ✓ Wrote {bat_path.name}")
+
+
+def write_uninstall_bat(folder: Path):
+    """Write uninstall_iqview.bat into the target folder."""
+    bat_path = folder / "uninstall_iqview.bat"
+    bat_content = """\
+@echo off
+:: IQView — Uninstall script
+:: Removes iqview and all its dependencies from the current Python environment.
+:: Use this to clean up before testing the offline installer.
+
+echo Uninstalling IQView and its dependencies...
+echo.
+
+pip uninstall -y iqview numpy pyqtgraph PyOpenGL scipy PyQt6 PyQt6-Qt6 PyQt6-sip colorama
+
+echo.
+echo Done. You can now re-install from the offline kit to test it.
 pause
 """
     bat_path.write_text(bat_content, encoding="utf-8")
