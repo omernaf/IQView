@@ -220,42 +220,55 @@ class TimeDomainMarkerPanel(QFrame):
         self.stats_widget = QWidget()
         self.stacked.addWidget(self.stats_widget)
         self.stats_layout = QGridLayout(self.stats_widget)
-        self.stats_layout.setContentsMargins(0, 5, 0, 5)
-        self.stats_layout.setHorizontalSpacing(15)
-        self.stats_layout.setVerticalSpacing(8)
+        self.stats_layout.setContentsMargins(0, 0, 0, 0)
+        self.stats_layout.setHorizontalSpacing(10)
+        self.stats_layout.setVerticalSpacing(4)
         
-        # Stats Labels
-        lbl_max = QLabel("Maximum:"); lbl_max.setObjectName("header_label")
-        lbl_min = QLabel("Minimum:"); lbl_min.setObjectName("header_label")
-        lbl_mean = QLabel("Mean:"); lbl_mean.setObjectName("header_label")
-        lbl_median = QLabel("Median:"); lbl_median.setObjectName("header_label")
+        # Headers (Row 0)
+        self.stats_layout.addWidget(QLabel(""), 0, 0) 
         
-        self.stats_layout.addWidget(lbl_max, 0, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.stats_layout.addWidget(lbl_min, 1, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.stats_layout.addWidget(lbl_mean, 0, 3, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.stats_layout.addWidget(lbl_median, 1, 3, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        headers = ["Maximum", "Minimum", "Mean", "Median"]
+        for i, h in enumerate(headers):
+            lbl = QLabel(h)
+            lbl.setFont(self.header_font)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl.setStyleSheet(f"color: #888; text-transform: uppercase; font-size: 10px;")
+            self.stats_layout.addWidget(lbl, 0, i + 1)
+            
+        # Row Labels (Col 0)
+        lbl_val = QLabel("Value"); lbl_val.setObjectName("header_label")
+        lbl_time = QLabel("Time (sec)"); lbl_time.setObjectName("header_label")
+        lbl_idx = QLabel("Index"); lbl_idx.setObjectName("header_label")
         
-        # Readout Displays
-        self.stats_max_val = FormattedLineEdit(); self.stats_max_val.setReadOnly(True); self.stats_max_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_min_val = FormattedLineEdit(); self.stats_min_val.setReadOnly(True); self.stats_min_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_mean_val = FormattedLineEdit(); self.stats_mean_val.setReadOnly(True); self.stats_mean_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_median_val = FormattedLineEdit(); self.stats_median_val.setReadOnly(True); self.stats_median_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_layout.addWidget(lbl_val, 1, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.stats_layout.addWidget(lbl_time, 2, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.stats_layout.addWidget(lbl_idx, 3, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         
-        # Meta info displays (for 'at Index' info)
-        self.stats_max_meta = QLabel(""); self.stats_max_meta.setStyleSheet("color: #888; font-family: Consolas; font-size: 11px;")
-        self.stats_min_meta = QLabel(""); self.stats_min_meta.setStyleSheet("color: #888; font-family: Consolas; font-size: 11px;")
+        # Line Edits
+        self.stats_max_val = FormattedLineEdit(); self.stats_max_val.setFixedWidth(130); self.stats_max_val.setReadOnly(True); self.stats_max_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_min_val = FormattedLineEdit(); self.stats_min_val.setFixedWidth(130); self.stats_min_val.setReadOnly(True); self.stats_min_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_mean_val = FormattedLineEdit(); self.stats_mean_val.setFixedWidth(130); self.stats_mean_val.setReadOnly(True); self.stats_mean_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_median_val = FormattedLineEdit(); self.stats_median_val.setFixedWidth(130); self.stats_median_val.setReadOnly(True); self.stats_median_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        self.stats_layout.addWidget(self.stats_max_val, 0, 1)
-        self.stats_layout.addWidget(self.stats_max_meta, 0, 2, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.stats_max_time = FormattedLineEdit(); self.stats_max_time.setFixedWidth(130); self.stats_max_time.setReadOnly(True); self.stats_max_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_min_time = FormattedLineEdit(); self.stats_min_time.setFixedWidth(130); self.stats_min_time.setReadOnly(True); self.stats_min_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        self.stats_layout.addWidget(self.stats_min_val, 1, 1)
-        self.stats_layout.addWidget(self.stats_min_meta, 1, 2, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.stats_max_idx = FormattedLineEdit(); self.stats_max_idx.setFixedWidth(130); self.stats_max_idx.setReadOnly(True); self.stats_max_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_min_idx = FormattedLineEdit(); self.stats_min_idx.setFixedWidth(130); self.stats_min_idx.setReadOnly(True); self.stats_min_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        self.stats_layout.addWidget(self.stats_mean_val, 0, 4)
+        # Add to Grid (Row 1: Value)
+        self.stats_layout.addWidget(self.stats_max_val, 1, 1)
+        self.stats_layout.addWidget(self.stats_min_val, 1, 2)
+        self.stats_layout.addWidget(self.stats_mean_val, 1, 3)
         self.stats_layout.addWidget(self.stats_median_val, 1, 4)
         
-        self.stats_layout.setColumnStretch(2, 1) # Give metalabels room
-        self.stats_layout.setColumnStretch(5, 1) # Pushes mean/median left
+        # Add to Grid (Row 2: Time)
+        self.stats_layout.addWidget(self.stats_max_time, 2, 1)
+        self.stats_layout.addWidget(self.stats_min_time, 2, 2)
+        
+        # Add to Grid (Row 3: Index)
+        self.stats_layout.addWidget(self.stats_max_idx, 3, 1)
+        self.stats_layout.addWidget(self.stats_min_idx, 3, 2)
 
     def set_y_label(self, label):
         # We handle this via update_headers now

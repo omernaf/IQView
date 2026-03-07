@@ -288,8 +288,11 @@ class TimeDomainView(QWidget):
         self.marker_panel.stats_mean_val.setText(f"{p_mean:.6g}")
         self.marker_panel.stats_median_val.setText(f"{p_median:.6g}")
         
-        self.marker_panel.stats_max_meta.setText(f"@[T: {t_max:.6f} s | Idx: {idx_max}]")
-        self.marker_panel.stats_min_meta.setText(f"@[T: {t_min:.6f} s | Idx: {idx_min}]")
+        self.marker_panel.stats_max_time.setText(f"{t_max:.6f}")
+        self.marker_panel.stats_min_time.setText(f"{t_min:.6f}")
+        
+        self.marker_panel.stats_max_idx.setText(f"{idx_max}")
+        self.marker_panel.stats_min_idx.setText(f"{idx_min}")
         
         # Update graphical indicators
         self.stats_markers.setData([
