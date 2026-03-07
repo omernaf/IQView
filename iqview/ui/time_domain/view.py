@@ -137,6 +137,18 @@ class TimeDomainView(QWidget):
         
         self.main_layout.addWidget(self.grid_container)
         
+        # --- Stats Region Item ---
+        self.stats_region = pg.LinearRegionItem(orientation='vertical')
+        self.stats_region.setZValue(9) # Below markers but above plot
+        self.stats_region.hide() # Hidden by default
+        self.plot_item.addItem(self.stats_region)
+        self.stats_region.sigRegionChanged.connect(self.update_statistics)
+        
+        # --- Stats Visual Indicators (ScatterPlotItem) ---
+        self.stats_markers = pg.ScatterPlotItem(size=10, pen=pg.mkPen(None), brush=pg.mkBrush(255, 0, 0, 200))
+        self.stats_markers.hide()
+        self.plot_item.addItem(self.stats_markers)
+        
         self.time_axis = np.linspace(start_time, end_time, len(samples))
         # Initial call
         self._update_plot(self.samples.real, "Amplitude (Real)")
@@ -186,9 +198,26 @@ class TimeDomainView(QWidget):
         if mode == 'Y': mode = 'MAG'
         self.interaction_mode = mode
         self.zoom_mode = (mode == 'ZOOM')
+        
+        # Toggle Region visibility
+        if mode == 'STATS':
+            if not self.stats_region.isVisible():
+                # initialize region bounds to roughly middle 50%
+                t_min, t_max = self.time_axis[0], self.time_axis[-1]
+                mid = (t_min + t_max) / 2
+                span = (t_max - t_min) / 4
+                self.stats_region.setRegion([mid - span, mid + span])
+                self.stats_region.show()
+                self.stats_markers.show()
+                self.update_statistics()
+        else:
+            self.stats_region.hide()
+            self.stats_markers.hide()
+            
         if mode == 'ZOOM': self.plot_widget.setCursor(Qt.CursorShape.CrossCursor)
         elif mode == 'MOVE': self.plot_widget.setCursor(Qt.CursorShape.SizeAllCursor)
         elif 'ENDLESS' in mode: self.plot_widget.setCursor(Qt.CursorShape.PointingHandCursor)
+        elif mode == 'STATS': self.plot_widget.setCursor(Qt.CursorShape.ArrowCursor)
         else: self.plot_widget.setCursor(Qt.CursorShape.ArrowCursor)
         
         self.marker_panel.update_mode_ui(mode)
@@ -216,6 +245,56 @@ class TimeDomainView(QWidget):
     def plot_unwrapped_phase(self):
         self._update_plot(np.unwrap(np.angle(self.samples)), "Unwrapped Phase (rad)")
 
+    def update_statistics(self):
+        """Calculates Min, Max, Mean, Median for the active region and updates the marker panel UI."""
+        if not self.stats_region.isVisible() or len(self.current_plot_data) == 0:
+            return
+            
+        r_min, r_max = self.stats_region.getRegion()
+        
+        # Find indices
+        i_min = np.searchsorted(self.time_axis, r_min)
+        i_max = np.searchsorted(self.time_axis, r_max)
+        
+        # Safety bounds
+        i_min = max(0, min(len(self.time_axis) - 1, i_min))
+        i_max = max(0, min(len(self.time_axis), i_max))
+        
+        if i_min >= i_max:
+            return # Region is zero-width or out of bounds
+            
+        slice_data = self.current_plot_data[i_min:i_max]
+        
+        if len(slice_data) == 0:
+            return
+            
+        p_max = np.max(slice_data)
+        p_min = np.min(slice_data)
+        p_mean = np.mean(slice_data)
+        p_median = np.median(slice_data)
+        
+        # Find exact relative position
+        idx_max = i_min + np.argmax(slice_data)
+        idx_min = i_min + np.argmin(slice_data)
+        
+        t_max = self.time_axis[idx_max]
+        t_min = self.time_axis[idx_min]
+        
+        # Update Marker Panel readouts
+        self.marker_panel.stats_max_val.setText(f"{p_max:.6g}")
+        self.marker_panel.stats_min_val.setText(f"{p_min:.6g}")
+        self.marker_panel.stats_mean_val.setText(f"{p_mean:.6g}")
+        self.marker_panel.stats_median_val.setText(f"{p_median:.6g}")
+        
+        self.marker_panel.stats_max_meta.setText(f"@[T: {t_max:.6f} s | Idx: {idx_max}]")
+        self.marker_panel.stats_min_meta.setText(f"@[T: {t_min:.6f} s | Idx: {idx_min}]")
+        
+        # Update graphical indicators
+        self.stats_markers.setData([
+            {'pos': (t_max, p_max), 'brush': pg.mkBrush(255, 50, 50), 'pen': pg.mkPen('#ff3232', width=2), 'symbol': 'o'},
+            {'pos': (t_min, p_min), 'brush': pg.mkBrush(50, 255, 50), 'pen': pg.mkPen('#32ff32', width=2), 'symbol': 't'}
+        ])
+
     def _update_plot(self, data, y_label):
         # 1. Save current view ranges (if not first run)
         old_x_range = None
@@ -228,8 +307,18 @@ class TimeDomainView(QWidget):
         self.y_label_text = y_label
         self.marker_panel.update_headers(self.interaction_mode, y_label)
         
+        # Update stats if visible
+        if hasattr(self, 'stats_region') and self.stats_region.isVisible():
+            self.update_statistics()
+        
         # 3. Clear and Re-plot
         self.plot_item.clear()
+        self.stats_markers.clear() # clear previous indicators if persisting
+        
+        # Re-add region and markers back onto the plot
+        self.plot_item.addItem(self.stats_region)
+        self.plot_item.addItem(self.stats_markers)
+        
         self.plot_item.getAxis('left').setLabel(y_label)
         
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
