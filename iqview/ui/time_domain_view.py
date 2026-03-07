@@ -24,6 +24,10 @@ class TimeDomainView(QWidget):
         self.markers_time = []
         self._block_signals = False
         
+        # Age tracking for oldest-first replacement
+        self._marker_age = {}
+        self._marker_age_counter = 0
+        
         # Mode-specific Magnitude markers
         self.markers_y_dict = {
             "Amplitude (Real)": [],
@@ -417,14 +421,18 @@ class TimeDomainView(QWidget):
             # Endless Mode: Just add more markers
             pass
         elif len(active_markers) >= 2:
-            # Fixed Mode: Pop the oldest
-            old = active_markers.pop(0)
+            # Fixed Mode: Find and remove the oldest marker reliably
+            old = min(active_markers, key=lambda m: self._marker_age.get(m, 0))
+            active_markers.remove(old)
             self.plot_item.removeItem(old)
+            self._marker_age.pop(old, None)
             
         color = '#00ff00' if is_time else '#ffaa00'
         orient = 90 if is_time else 0
         new_m = pg.InfiniteLine(pos=val, angle=orient, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine), movable=False)
         new_m.setZValue(100)
+        self._marker_age[new_m] = self._marker_age_counter
+        self._marker_age_counter += 1
         
         if is_endless:
             label_text = f"M{len(active_markers)+1}"
@@ -527,7 +535,9 @@ class TimeDomainView(QWidget):
 
     def handle_marker_clear(self, mode):
         if mode == 'TIME':
-            for m in self.markers_time: self.plot_item.removeItem(m)
+            for m in self.markers_time:
+                self.plot_item.removeItem(m)
+                self._marker_age.pop(m, None)
             self.markers_time = []
         elif mode == 'TIME_ENDLESS':
             for m in self.markers_time_endless: self.plot_item.removeItem(m)
@@ -536,13 +546,16 @@ class TimeDomainView(QWidget):
             for m in self.markers_y_endless_dict[self.y_label_text]: self.plot_item.removeItem(m)
             self.markers_y_endless_dict[self.y_label_text] = []
         else: # 'Y' (Fixed Mag)
-            for m in self.markers_y_dict[self.y_label_text]: self.plot_item.removeItem(m)
+            for m in self.markers_y_dict[self.y_label_text]:
+                self.plot_item.removeItem(m)
+                self._marker_age.pop(m, None)
             self.markers_y_dict[self.y_label_text] = []
         self.update_marker_info()
 
     def remove_marker_item(self, marker, mode):
         if marker in self.plot_item.items():
             self.plot_item.removeItem(marker)
+        self._marker_age.pop(marker, None)
         
         is_time = 'TIME' in mode
         active_list = self.markers_time_endless if is_time else self.markers_y_endless_dict[self.y_label_text]

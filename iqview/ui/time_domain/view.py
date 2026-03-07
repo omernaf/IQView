@@ -26,6 +26,9 @@ class TimeDomainView(QWidget):
         self.active_drag_marker = None
         self.markers_time = []
         self._block_signals = False
+        # Age tracking: maps each InfiniteLine → insertion order (lower = older)
+        self._marker_age = {}
+        self._marker_age_counter = 0
         
         # Endless Markers
         self.markers_time_endless = []
@@ -396,10 +399,10 @@ class TimeDomainView(QWidget):
                 target, other = active_markers[0], active_markers[1]
                 target_idx = 0
             else:
-                # Neither or Both locked
-                target = active_markers[0] if abs(val-m1_pos) < abs(val-m2_pos) else active_markers[1]
-                other = active_markers[1] if target == active_markers[0] else active_markers[0]
-                target_idx = 0 if target == active_markers[0] else 1
+                # Neither or Both locked — always move the oldest marker (lowest age)
+                target = min(active_markers, key=lambda m: self._marker_age.get(m, 0))
+                other = active_markers[1] if target is active_markers[0] else active_markers[0]
+                target_idx = 0 if target is active_markers[0] else 1
             
             if (target_idx == 0 and lock_m1) or (target_idx == 1 and lock_m2):
                 if not (lock_delta or lock_center): return # Locked marker can't move alone
@@ -432,8 +435,14 @@ class TimeDomainView(QWidget):
                 if (val > other.value() and target_idx == 0) or (val < other.value() and target_idx == 1):
                     active_markers[0], active_markers[1] = active_markers[1], active_markers[0]
                     self.marker_panel.flip_m_lock(self.interaction_mode)
-            
-            if drag_mode: self.active_drag_marker = target
+
+            # Important: If it's a teleport (not a drag), the teleported marker becomes the newest
+            if not drag_mode:
+                self._marker_age[target] = self._marker_age_counter
+                self._marker_age_counter += 1
+            else:
+                self.active_drag_marker = target
+                
             self.update_marker_info()
             return
 
@@ -477,6 +486,9 @@ class TimeDomainView(QWidget):
 
         new_m = pg.InfiniteLine(pos=val, angle=orient, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine), movable=False)
         new_m.setZValue(100)
+        # Stamp age so teleport always picks the oldest
+        self._marker_age[new_m] = self._marker_age_counter
+        self._marker_age_counter += 1
         
         if is_endless:
             label_text = f"M{len(active_markers)+1}"
@@ -698,7 +710,9 @@ class TimeDomainView(QWidget):
 
     def handle_marker_clear(self, mode):
         if mode == 'TIME':
-            for m in self.markers_time: self.plot_item.removeItem(m)
+            for m in self.markers_time:
+                self.plot_item.removeItem(m)
+                self._marker_age.pop(m, None)
             self.markers_time = []
             self.marker_panel._clear_marker_locks('TIME')
         elif mode == 'TIME_ENDLESS':
@@ -708,7 +722,9 @@ class TimeDomainView(QWidget):
             for m in self.markers_y_endless_dict[self.y_label_text]: self.plot_item.removeItem(m)
             self.markers_y_endless_dict[self.y_label_text] = []
         else: # 'Y'
-            for m in self.markers_y_dict[self.y_label_text]: self.plot_item.removeItem(m)
+            for m in self.markers_y_dict[self.y_label_text]:
+                self.plot_item.removeItem(m)
+                self._marker_age.pop(m, None)
             self.markers_y_dict[self.y_label_text] = []
             self.marker_panel._clear_marker_locks('MAG')
         self.update_marker_info()
