@@ -402,5 +402,9 @@ class SpectrogramView(QWidget):
 
     def capture_plot_with_axes(self):
         """Captures the entire plot area including axes and markers."""
-        # grab() is more reliable for OpenGL-backed GraphicsLayoutWidgets
-        return self.glw_plot.grab().toImage()
+        # QWidget.grab() returns a blank image for OpenGL-backed GraphicsLayoutWidgets.
+        # Use pyqtgraph's ImageExporter which renders via the scene painter instead.
+        from pyqtgraph.exporters import ImageExporter
+        exporter = ImageExporter(self.glw_plot.scene())
+        # export() with no filename returns a QImage directly
+        return exporter.export(toBytes=True)
