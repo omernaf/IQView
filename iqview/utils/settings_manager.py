@@ -18,7 +18,7 @@ class SettingsManager:
         "core/filter_bessel_norm": "phase",
         "core/time_plots": [
             "instant frequency", 
-            "magnitude sqaured", 
+            "magnitude^2", 
             "Real", 
             "Imaginary"
         ],

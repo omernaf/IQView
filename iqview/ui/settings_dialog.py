@@ -290,8 +290,8 @@ class SettingsDialog(QDialog):
         all_plots = [
             "Real", "Real [dB]", "Imaginary", "Imaginary [dB]", 
             "Phase", "Unwrapped phase", "instant frequency", 
-            "magnitude", "magnitude [dB]", "magnitude sqaured", 
-            "magnitude sqaured [dB]"
+            "magnitude", "magnitude [dB]", "magnitude^2", 
+            "magnitude^2 [dB]"
         ]
         
         # Load active/sorted plots from settings
