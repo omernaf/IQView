@@ -444,14 +444,23 @@ class TimeDomainView(QWidget):
                 else: 
                     k = 1.0
                 
+                lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
+                lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
+                lock_delta = self.marker_panel.btn_lock_delta.isChecked()
+                lock_center = self.marker_panel.btn_lock_center.isChecked()
+                
                 move_p1 = (k < 0.5)
+                if lock_m1 and not lock_m2: move_p1 = False
+                elif lock_m2 and not lock_m1: move_p1 = True
                 
                 if drag_mode:
                     self.active_drag_grid_info = {
                         'k': k,
                         'move_p1': move_p1,
                         'fixed_val': p2 if move_p1 else p1,
-                        'is_time': is_time
+                        'is_time': is_time,
+                        'lock_delta': lock_delta,
+                        'lock_center': lock_center
                     }
                     self.active_drag_marker = None
                 return
@@ -559,6 +568,8 @@ class TimeDomainView(QWidget):
             k = info['k']
             move_p1 = info['move_p1']
             fixed_val = info['fixed_val']
+            lock_delta = info.get('lock_delta', False)
+            lock_center = info.get('lock_center', False)
             
             if is_time:
                 t_min, t_max = self.time_axis[0], self.time_axis[-1]
@@ -571,22 +582,49 @@ class TimeDomainView(QWidget):
             if len(active_markers) == 2:
                 sorted_m = sorted(active_markers, key=lambda m: m.value())
                 m1, m2 = sorted_m[0], sorted_m[1]
+                orig_p1, orig_p2 = m1.value(), m2.value()
                 
                 try:
-                    if move_p1:
-                        if abs(1 - k) > 1e-9:
-                            new_p1 = (g_prime - k * fixed_val) / (1 - k)
+                    if lock_delta:
+                        delta = orig_p2 - orig_p1
+                        shift = g_prime - (orig_p1 + k * delta)
+                        new_p1 = orig_p1 + shift
+                        new_p2 = orig_p2 + shift
+                        if is_time:
+                            if t_min <= new_p1 <= t_max and t_min <= new_p2 <= t_max:
+                                m1.setPos(new_p1); m2.setPos(new_p2)
+                        else:
+                            if y_min <= new_p1 <= y_max and y_min <= new_p2 <= y_max:
+                                m1.setPos(new_p1); m2.setPos(new_p2)
+                    elif lock_center:
+                        center = (orig_p1 + orig_p2) / 2
+                        if abs(k - 0.5) > 1e-9:
+                            new_delta = (g_prime - center) / (k - 0.5)
+                            new_p1 = center - new_delta / 2
+                            new_p2 = center + new_delta / 2
                             if is_time:
-                                if t_min <= new_p1 <= t_max: m1.setPos(new_p1)
+                                if t_min <= new_p1 <= t_max and t_min <= new_p2 <= t_max:
+                                    if new_p1 <= new_p2:
+                                        m1.setPos(new_p1); m2.setPos(new_p2)
                             else:
-                                if y_min <= new_p1 <= y_max: m1.setPos(new_p1)
+                                if y_min <= new_p1 <= y_max and y_min <= new_p2 <= y_max:
+                                    if new_p1 <= new_p2:
+                                        m1.setPos(new_p1); m2.setPos(new_p2)
                     else:
-                        if abs(k) > 1e-9:
-                            new_p2 = fixed_val + (g_prime - fixed_val) / k
-                            if is_time:
-                                if t_min <= new_p2 <= t_max: m2.setPos(new_p2)
-                            else:
-                                if y_min <= new_p2 <= y_max: m2.setPos(new_p2)
+                        if move_p1:
+                            if abs(1 - k) > 1e-9:
+                                new_p1 = (g_prime - k * fixed_val) / (1 - k)
+                                if is_time:
+                                    if t_min <= new_p1 <= t_max and new_p1 <= orig_p2: m1.setPos(new_p1)
+                                else:
+                                    if y_min <= new_p1 <= y_max and new_p1 <= orig_p2: m1.setPos(new_p1)
+                        else:
+                            if abs(k) > 1e-9:
+                                new_p2 = fixed_val + (g_prime - fixed_val) / k
+                                if is_time:
+                                    if t_min <= new_p2 <= t_max and new_p2 >= orig_p1: m2.setPos(new_p2)
+                                else:
+                                    if y_min <= new_p2 <= y_max and new_p2 >= orig_p1: m2.setPos(new_p2)
                 except ZeroDivisionError: pass
                 
             self.update_marker_info()
