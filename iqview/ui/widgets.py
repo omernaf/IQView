@@ -143,7 +143,7 @@ class CustomViewBox(pg.ViewBox):
             return
             
         mode = getattr(self.ui_controller, 'interaction_mode', None)
-        if mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER']:
+        if mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'STATS']:
             # Find closest marker
             active_markers = []
             
@@ -233,6 +233,16 @@ class CustomViewBox(pg.ViewBox):
                     if dist < 20:
                         found_near = True
                         self.setCursor(Qt.CursorShape.SizeHorCursor if angle == 90 else Qt.CursorShape.SizeVerCursor)
+                        break
+                        
+            # 5. Check for STATS Region boundaries
+            if not found_near and mode == 'STATS':
+                stats_bounds = getattr(self.ui_controller, 'stats_bounds', [])
+                for b_val in stats_bounds:
+                    pi = self.mapViewToScene(pg.Point(b_val, 0))
+                    if abs(scene_pos.x() - pi.x()) < 20:
+                        found_near = True
+                        self.setCursor(Qt.CursorShape.SizeHorCursor)
                         break
             
             if not found_near:
@@ -333,7 +343,7 @@ class CustomViewBox(pg.ViewBox):
                 ev.accept()
             else:
                 # --- Marker Logic ---
-                if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS']:
+                if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS', 'STATS']:
                     if ev.isStart():
                         self.ui_controller.place_marker(ev.buttonDownScenePos(), drag_mode=True)
                     elif ev.isFinish():
@@ -342,6 +352,8 @@ class CustomViewBox(pg.ViewBox):
                         if getattr(self.ui_controller, 'active_drag_filter_bound_idx', -1) != -1:
                             self.ui_controller.on_filter_region_finished()
                             self.ui_controller.active_drag_filter_bound_idx = -1
+                        if getattr(self.ui_controller, 'active_drag_stats_bound_idx', -1) != -1:
+                            self.ui_controller.active_drag_stats_bound_idx = -1
                     else:
                         self.ui_controller.update_drag(ev.scenePos())
                 ev.accept()
@@ -350,7 +362,7 @@ class CustomViewBox(pg.ViewBox):
 
     def mouseClickEvent(self, ev):
         if ev.button() == Qt.MouseButton.LeftButton:
-            if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS']:
+            if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS', 'STATS']:
                 self.ui_controller.place_marker(ev.scenePos(), drag_mode=False)
             ev.accept()
         elif ev.button() == Qt.MouseButton.RightButton:

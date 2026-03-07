@@ -138,6 +138,10 @@ class TimeDomainView(QWidget):
         self.main_layout.addWidget(self.grid_container)
         
         # --- Stats Region Item ---
+        self.stats_bounds = []
+        self.stats_marker_order = []
+        self.stats_line = None
+        
         self.stats_region = pg.LinearRegionItem(orientation='vertical')
         self.stats_region.setZValue(9) # Below markers but above plot
         self.stats_region.hide() # Hidden by default
@@ -201,18 +205,16 @@ class TimeDomainView(QWidget):
         
         # Toggle Region visibility
         if mode == 'STATS':
-            if not self.stats_region.isVisible():
-                # initialize region bounds to roughly middle 50%
-                t_min, t_max = self.time_axis[0], self.time_axis[-1]
-                mid = (t_min + t_max) / 2
-                span = (t_max - t_min) / 4
-                self.stats_region.setRegion([mid - span, mid + span])
+            if len(self.stats_bounds) == 1:
+                if self.stats_line: self.stats_line.show()
+            elif len(self.stats_bounds) == 2:
                 self.stats_region.show()
                 self.stats_markers.show()
                 self.update_statistics()
         else:
             self.stats_region.hide()
             self.stats_markers.hide()
+            if self.stats_line: self.stats_line.hide()
             
         if mode == 'ZOOM': self.plot_widget.setCursor(Qt.CursorShape.CrossCursor)
         elif mode == 'MOVE': self.plot_widget.setCursor(Qt.CursorShape.SizeAllCursor)
@@ -316,6 +318,8 @@ class TimeDomainView(QWidget):
         self.stats_markers.clear() # clear previous indicators if persisting
         
         # Re-add region and markers back onto the plot
+        if getattr(self, 'stats_line', None) is not None:
+            self.plot_item.addItem(self.stats_line)
         self.plot_item.addItem(self.stats_region)
         self.plot_item.addItem(self.stats_markers)
         
@@ -466,7 +470,7 @@ class TimeDomainView(QWidget):
 
     def place_marker(self, scene_pos, drag_mode=False):
         v_pos = self.view_box.mapSceneToView(scene_pos)
-        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
+        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS', 'STATS'])
         is_endless = 'ENDLESS' in self.interaction_mode
         
         # Clamp to bounds
@@ -481,6 +485,71 @@ class TimeDomainView(QWidget):
             active_markers = self.markers_time_endless if is_time else self.markers_y_endless_dict[self.y_label_text]
         else:
             active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
+        
+        # --- STATS Region Logic ---
+        if self.interaction_mode == 'STATS':
+            if self.stats_bounds:
+                best_idx = -1
+                min_dist = 20 # pixels
+                
+                # Check distance to existing bounds
+                for i, b_val in enumerate(self.stats_bounds):
+                    pi = self.view_box.mapViewToScene(pg.Point(b_val, 0))
+                    dist = abs(scene_pos.x() - pi.x())
+                    if dist < min_dist:
+                        min_dist = dist
+                        best_idx = i
+                
+                if best_idx != -1:
+                    old_v = self.stats_bounds[best_idx]
+                    self.stats_bounds[best_idx] = val
+                    if old_v in self.stats_marker_order:
+                        oidx = self.stats_marker_order.index(old_v)
+                        self.stats_marker_order[oidx] = val
+                    
+                    self.stats_bounds.sort()
+                    self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
+                    
+                    if len(self.stats_bounds) == 1:
+                        if self.stats_line: self.stats_line.setPos(val)
+                    else:
+                        self.stats_region.setRegion(self.stats_bounds)
+                    self.update_statistics()
+                    return
+
+            # No hit - Place new bound or replace oldest
+            if len(self.stats_marker_order) >= 2:
+                oldest_v = self.stats_marker_order.pop(0)
+                if oldest_v in self.stats_bounds:
+                    self.stats_bounds.remove(oldest_v)
+            
+            self.stats_marker_order.append(val)
+            self.stats_bounds.append(val)
+            self.stats_bounds.sort()
+            
+            if drag_mode:
+                self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
+                
+            if len(self.stats_bounds) == 1:
+                if getattr(self, 'stats_line', None) is None:
+                    theme = self.parent_window.settings_mgr.get("ui/theme", "Dark") if self.parent_window else "Dark"
+                    p = get_palette(theme)
+                    self.stats_line = pg.InfiniteLine(angle=90, pen=pg.mkPen(p.marker_time, width=2, style=Qt.PenStyle.DashLine), movable=False)
+                    self.stats_line.setZValue(10)
+                if self.stats_line not in self.plot_item.items:
+                    self.plot_item.addItem(self.stats_line)
+                self.stats_line.setPos(val)
+                self.stats_line.show()
+                self.stats_region.hide()
+                self.stats_markers.hide()
+            else:
+                if self.stats_line: self.stats_line.hide()
+                self.stats_region.setRegion(self.stats_bounds)
+                self.stats_region.show()
+                self.stats_markers.show()
+                
+            self.update_statistics()
+            return
         
         # 1. Hit test EXISTING MARKERS
         found_marker = None
@@ -719,7 +788,32 @@ class TimeDomainView(QWidget):
             self.update_marker_info()
             return
 
-        if not self.active_drag_marker: return
+        if self.interaction_mode == 'STATS':
+            if getattr(self, 'active_drag_stats_bound_idx', -1) != -1:
+                idx = self.active_drag_stats_bound_idx
+                t_min, t_max = self.time_axis[0], self.time_axis[-1]
+                val = max(t_min, min(t_max, v_pos.x()))
+                self.stats_bounds[idx] = val
+                
+                if len(self.stats_bounds) == 2:
+                    other_idx = 1 - idx
+                    other_v = self.stats_bounds[other_idx]
+                    
+                    self.stats_bounds.sort()
+                    self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
+                    
+                    self.stats_marker_order = [other_v, val] if self.stats_marker_order[0] == self.stats_bounds[1 - self.active_drag_stats_bound_idx] else [val, other_v]
+                    
+                    self.stats_region.setRegion(self.stats_bounds)
+                else:
+                    if self.stats_line: self.stats_line.setPos(val)
+                    if self.stats_marker_order:
+                        self.stats_marker_order[-1] = val
+                
+                self.update_statistics()
+            return
+
+        if not getattr(self, 'active_drag_marker', None): return
         is_time = (self.active_drag_marker in self.markers_time or self.active_drag_marker in self.markers_time_endless)
         is_endless = 'ENDLESS' in self.interaction_mode
         
