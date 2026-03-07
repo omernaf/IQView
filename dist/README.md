@@ -1,29 +1,59 @@
 # Distribution Folder
 
-This folder contains the build artifacts for the IQView application and its dependencies for offline installation.
+This folder contains the build artifacts for IQView.
 
-## Regeneration Instructions
+---
 
-To regenerate the application wheel and update the offline dependencies, follow these steps from the project root:
+## For Developers — Regenerating Offline Kits
 
-### 1. Build the Application Wheel
-This creates the `iqview-0.1.0-py3-none-any.whl` file based on the current source code.
+Run these steps from the **project root** when you want to update/rebuild everything.
+
+### 1. Build the IQView wheel
 ```powershell
-# Optional: Clean old builds first
+# Clean old builds (optional)
 Remove-Item -Recurse -Force dist, build, iqview.egg-info
 
-# Build the package
+# Build
 python -m build
 ```
 
-### 2. Download Dependencies for Offline Use
-This downloads all required third-party libraries (PyQt6, numpy, etc.) into this directory.
+### 2. Download offline wheels for all Python versions
 ```powershell
-python -m pip download -d dist .
+python prepare_offline.py
 ```
 
-## How to Install (Offline)
-On the target machine, navigate to the folder containing these files and run:
+This creates an `offline_dist/` folder with sub-folders for each Python version:
+```
+offline_dist/
+  py39/   ← wheels + install_offline.bat for Python 3.9
+  py310/  ← wheels + install_offline.bat for Python 3.10
+  py311/  ← ...
+  py312/
+  py313/
+```
+
+Each sub-folder is a **self-contained offline install kit** for its Python version.
+
+---
+
+## For End Users — Installing Offline
+
+1. Find out which Python version is on the target machine:
+   ```powershell
+   python --version
+   ```
+
+2. Copy the matching sub-folder from `offline_dist/` to the target machine (e.g. `py311/` for Python 3.11).
+
+3. Run the installer — either double-click `install_offline.bat` or from a terminal:
+   ```powershell
+   pip install --no-index --find-links=. iqview-0.1.0-py3-none-any.whl
+   ```
+
+---
+
+## Online Installation (standard)
+
 ```powershell
-pip install iqview-0.1.0-py3-none-any.whl
+pip install iqview
 ```

@@ -1,0 +1,171 @@
+"""
+prepare_offline.py
+==================
+Run this script on your development machine (with internet access) to pre-download
+all IQView dependency wheels for every supported Python version.
+
+Each Python version gets its own sub-folder under `offline_dist/`, e.g.:
+    offline_dist/py39/
+    offline_dist/py311/
+    ...
+
+The iqview wheel is also copied into every sub-folder so each folder is a
+self-contained, single-command install kit.
+
+Usage:
+    python prepare_offline.py
+
+Requirements:
+    - Internet access
+    - pip >= 22 (for cross-platform --platform downloads)
+    - The iqview wheel must already be built in ./dist/
+      Run `python -m build` first if needed.
+"""
+
+import glob
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+# ── Configuration ────────────────────────────────────────────────────────────
+
+# Dependencies listed in pyproject.toml (iqview itself is added separately)
+DEPENDENCIES = [
+    "numpy",
+    "PyQt6",
+    "pyqtgraph",
+    "PyOpenGL",
+    "scipy",
+]
+
+# (python_tag, abi_tag) pairs to download for.
+# python_tag  → used for --python-version (e.g. "3.11")
+# folder_name → sub-folder inside offline_dist/
+PYTHON_TARGETS = [
+    {"python_version": "3.9",  "folder": "py39"},
+    {"python_version": "3.10", "folder": "py310"},
+    {"python_version": "3.11", "folder": "py311"},
+    {"python_version": "3.12", "folder": "py312"},
+    {"python_version": "3.13", "folder": "py313"},
+]
+
+# Only targeting Windows 64-bit.  Add more if you need Linux/Mac.
+PLATFORM = "win_amd64"
+
+OUTPUT_ROOT = Path("offline_dist")
+DIST_DIR    = Path("dist")
+
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def find_iqview_wheel() -> Path:
+    """Locate the built iqview wheel in ./dist/."""
+    matches = sorted(DIST_DIR.glob("iqview-*.whl"))
+    if not matches:
+        print(
+            "\n[ERROR] No iqview wheel found in ./dist/\n"
+            "        Run `python -m build` first, then re-run this script.\n"
+        )
+        sys.exit(1)
+    if len(matches) > 1:
+        print(f"[WARN] Multiple iqview wheels found; using the newest: {matches[-1].name}")
+    return matches[-1]
+
+
+def download_for_target(target: dict, iqview_wheel: Path) -> bool:
+    """Download all deps for a single Python version target. Returns True on success."""
+    folder = OUTPUT_ROOT / target["folder"]
+    folder.mkdir(parents=True, exist_ok=True)
+
+    python_version = target["python_version"]
+    print(f"\n{'─'*60}")
+    print(f"  Downloading for Python {python_version} / {PLATFORM}")
+    print(f"  Output → {folder}")
+    print(f"{'─'*60}")
+
+    cmd = [
+        sys.executable, "-m", "pip", "download",
+        "--python-version", python_version,
+        "--platform",       PLATFORM,
+        "--only-binary",    ":all:",
+        "--dest",           str(folder),
+        *DEPENDENCIES,
+    ]
+
+    result = subprocess.run(cmd)
+
+    if result.returncode != 0:
+        print(f"\n[WARN] pip download failed for Python {python_version}. "
+              "Some wheels may not be available for this version — skipping.\n")
+        return False
+
+    # Copy the iqview wheel into this folder
+    dest_wheel = folder / iqview_wheel.name
+    if not dest_wheel.exists():
+        shutil.copy2(iqview_wheel, dest_wheel)
+        print(f"  ✓ Copied {iqview_wheel.name} → {dest_wheel}")
+
+    # Write a small install bat for convenience
+    write_install_bat(folder, iqview_wheel.name, python_version)
+    return True
+
+
+def write_install_bat(folder: Path, wheel_name: str, python_version: str):
+    """Write install_offline.bat into the target folder."""
+    bat_path = folder / "install_offline.bat"
+    bat_content = f"""\
+@echo off
+:: IQView offline installer for Python {python_version} on Windows x64
+:: Run this file on the target machine inside this folder.
+
+echo Installing IQView (Python {python_version}) from local wheels...
+pip install --no-index --find-links="%~dp0" "{wheel_name}"
+if %errorlevel% neq 0 (
+    echo.
+    echo [ERROR] Installation failed.
+    echo Make sure you are running Python {python_version} and this folder is intact.
+    pause
+    exit /b 1
+)
+echo.
+echo IQView installed successfully!
+echo Run it with:  iqview
+pause
+"""
+    bat_path.write_text(bat_content, encoding="utf-8")
+    print(f"  ✓ Wrote {bat_path.name}")
+
+
+def print_summary(results: list):
+    print(f"\n{'═'*60}")
+    print("  Summary")
+    print(f"{'═'*60}")
+    for target, ok in results:
+        status = "✓ OK" if ok else "✗ FAILED / skipped"
+        print(f"  Python {target['python_version']:5s}  →  {status}")
+    print(f"\nOffline kits are in: {OUTPUT_ROOT.resolve()}")
+    print(
+        "\nTo install on a target machine, copy the matching sub-folder\n"
+        "and double-click install_offline.bat  (or run it from a terminal).\n"
+    )
+
+
+def main():
+    print("IQView — Offline Wheel Downloader")
+    print(f"Platform : {PLATFORM}")
+    print(f"Targets  : {', '.join(t['python_version'] for t in PYTHON_TARGETS)}")
+
+    iqview_wheel = find_iqview_wheel()
+    print(f"IQView wheel: {iqview_wheel.name}")
+
+    results = []
+    for target in PYTHON_TARGETS:
+        ok = download_for_target(target, iqview_wheel)
+        results.append((target, ok))
+
+    print_summary(results)
+
+
+if __name__ == "__main__":
+    main()
