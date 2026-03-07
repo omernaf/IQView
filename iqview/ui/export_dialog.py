@@ -160,18 +160,27 @@ class ExportDialog(QtWidgets.QDialog):
 
             range_group = QtWidgets.QGroupBox("Data Range")
             range_layout = QtWidgets.QVBoxLayout(range_group)
-            self.radio_full = QtWidgets.QRadioButton("Full Loaded Data")
-            self.radio_visible = QtWidgets.QRadioButton("Visible View")
+            range_layout.addWidget(self.radio_visible)
+            
+            self.radio_filter = QtWidgets.QRadioButton("Between Filter Bounds")
+            has_filter = len(getattr(self.ui_controller, 'filter_bounds', [])) == 2
+            self.radio_filter.setEnabled(has_filter)
+            if not has_filter:
+                self.radio_filter.setToolTip("Place two filter bounds to enable this option.")
+            range_layout.addWidget(self.radio_filter)
+            
             self.radio_markers = QtWidgets.QRadioButton("Between Time Markers (M1/M2)")
             self.radio_full.setChecked(True)
             has_two_markers = len(getattr(self.ui_controller, 'markers_time', [])) == 2
             self.radio_markers.setEnabled(has_two_markers)
             if not has_two_markers:
                 self.radio_markers.setToolTip("Place two time markers to enable this option.")
-            range_layout.addWidget(self.radio_full)
-            range_layout.addWidget(self.radio_visible)
             range_layout.addWidget(self.radio_markers)
             layout.addWidget(range_group)
+
+        self.chk_auto_metadata = QtWidgets.QCheckBox("Also save metadata JSON")
+        self.chk_auto_metadata.setChecked(True)
+        layout.addWidget(self.chk_auto_metadata)
 
         # Export Button (shared)
         self.btn_export_data = QtWidgets.QPushButton("Export Data...")
@@ -181,6 +190,13 @@ class ExportDialog(QtWidgets.QDialog):
         layout.addStretch()
         self.tabs.addTab(tab, "Data")
 
+    def _get_source_name(self):
+        s = self.ui_controller
+        src = getattr(s.parent_window if self.is_time_domain else s, 'data_source', 'N/A')
+        if isinstance(src, (bytes, bytearray)):
+            return "<stdin>"
+        return str(src)
+
     def setup_metadata_tab(self):
         tab = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(tab)
@@ -189,11 +205,12 @@ class ExportDialog(QtWidgets.QDialog):
         info.setReadOnly(True)
 
         s = self.ui_controller
+        src_str = self._get_source_name()
+        
         if self.is_time_domain:
-            pw = s.parent_window  # SpectrogramWindow, which has full metadata
             duration = len(s.samples) / s.rate
             md = [
-                f"Source: {getattr(pw, 'data_source', 'N/A')}",
+                f"Source: {src_str}",
                 f"Sample Rate: {s.rate / 1e6:.3f} MHz",
                 f"Segment Start: {s.start_time:.6f} s",
                 f"Segment Duration: {duration:.6f} s",
@@ -201,7 +218,7 @@ class ExportDialog(QtWidgets.QDialog):
             ]
         else:
             md = [
-                f"Source: {s.data_source}",
+                f"Source: {src_str}",
                 f"Center Freq: {s.fc / 1e6:.3f} MHz",
                 f"Sample Rate: {s.rate / 1e6:.3f} MHz",
                 f"FFT Size: {s.fft_size}",
@@ -418,6 +435,11 @@ class ExportDialog(QtWidgets.QDialog):
                     np.save(path, data.astype(np.complex64))
                 else:  # raw binary .32fc
                     data.astype(np.complex64).tofile(path)
+                
+                if self.chk_auto_metadata.isChecked():
+                    json_path = os.path.splitext(path)[0] + '.json'
+                    self.export_metadata_json(auto_path=json_path)
+
                 QtWidgets.QMessageBox.information(self, "Export Successful", f"Data exported to {os.path.basename(path)}")
             except Exception as e:
                 QtWidgets.QMessageBox.critical(self, "Export Error", f"Failed to export data: {str(e)}")
@@ -425,10 +447,15 @@ class ExportDialog(QtWidgets.QDialog):
 
         # ---- Spectrogram / IQ export ----
         start_sec, end_sec = 0, s.time_duration
-
+        apply_filter_export = False
+        
         if self.radio_visible.isChecked():
             xr, _ = s.spectrogram_view.view_box.viewRange()
             start_sec, end_sec = xr[0], xr[1]
+        elif getattr(self, 'radio_filter', None) and self.radio_filter.isChecked():
+            # Export data for the whole segment but explicitly run the filter on it
+            start_sec, end_sec = 0, s.time_duration
+            apply_filter_export = True
         elif self.radio_markers.isChecked():
             m1 = s.markers_time[0].value()
             m2 = s.markers_time[1].value()
@@ -438,6 +465,25 @@ class ExportDialog(QtWidgets.QDialog):
         if data is None:
             QtWidgets.QMessageBox.warning(self, "Export Failed", "Could not extract data for the selected range.")
             return
+
+        if apply_filter_export:
+            from iqview.dsp.dsp import apply_bpf
+            f_low, f_high = s.filter_bounds[0], s.filter_bounds[1]
+            try:
+                filter_type = s.settings_mgr.get('dsp/filter_type', 'Elliptic')
+                filter_order = int(s.settings_mgr.get('dsp/filter_order', 8))
+                filter_ripple = float(s.settings_mgr.get('dsp/filter_ripple', 0.1))
+                filter_stopband = float(s.settings_mgr.get('dsp/filter_stopband', 60.0))
+                bessel_norm = s.settings_mgr.get('dsp/filter_bessel_norm', 'phase')
+                
+                data = apply_bpf(
+                    data, s.rate, f_low, f_high, 
+                    filter_type=filter_type, order=filter_order, 
+                    rp=filter_ripple, rs=filter_stopband, bessel_norm=bessel_norm
+                )
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(self, "Export Error", f"Filter failed: {str(e)}")
+                return
 
         is_mat = self.radio_mat.isChecked()
         is_npy = self.radio_npy.isChecked()
@@ -460,13 +506,14 @@ class ExportDialog(QtWidgets.QDialog):
 
         try:
             if is_mat:
+                source_str = self._get_source_name()
                 scipy.io.savemat(path, {
                     "Y": data / np.sqrt(10),
                     "XDelta": 1.0 / s.rate,
                     "InputCenter": s.fc,
                     "t_start": start_sec,
                     "t_end": end_sec,
-                    "source": str(s.data_source)
+                    "source": source_str
                 })
             elif is_npy:
                 np.save(path, data.astype(np.complex64))
@@ -482,31 +529,42 @@ class ExportDialog(QtWidgets.QDialog):
                     else:
                         out_dtype = np.complex128 if s.data_type == np.float64 else np.complex64
                         data.astype(out_dtype).tofile(path)
+                        
+            if self.chk_auto_metadata.isChecked():
+                json_path = os.path.splitext(path)[0] + '.json'
+                self.export_metadata_json(auto_path=json_path)
+                
             QtWidgets.QMessageBox.information(self, "Export Successful", f"Data exported to {os.path.basename(path)}")
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Export Error", f"Failed to export data: {str(e)}")
 
-    def export_metadata_json(self):
+    def export_metadata_json(self, auto_path=None):
         import json
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Save Metadata", "", "JSON Files (*.json)"
-        )
-        if not path: return
+        if auto_path is not None:
+            path = auto_path
+        else:
+            path, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self, "Save Metadata", "", "JSON Files (*.json)"
+            )
+            if not path: return
         if not path.endswith(".json"): path += ".json"
 
         s = self.ui_controller
+        src_str = self._get_source_name()
+        
         if self.is_time_domain:
-            pw = s.parent_window
             meta = {
-                "source": str(getattr(pw, 'data_source', 'N/A')),
+                "source": src_str,
                 "sample_rate_hz": s.rate,
                 "segment_start_s": s.start_time,
                 "segment_duration_s": len(s.samples) / s.rate,
                 "num_samples": len(s.samples),
             }
+            if len(s.markers_time) >= 1: meta["marker_1_s"] = s.markers_time[0].value()
+            if len(s.markers_time) >= 2: meta["marker_2_s"] = s.markers_time[1].value()
         else:
             meta = {
-                "source": str(s.data_source),
+                "source": src_str,
                 "center_freq_hz": s.fc,
                 "sample_rate_hz": s.rate,
                 "fft_size": s.fft_size,
@@ -514,11 +572,19 @@ class ExportDialog(QtWidgets.QDialog):
                 "duration_s": s.time_duration,
                 "data_type": str(s.data_type)
             }
+            if len(s.markers_time) >= 1: meta["time_marker_1_s"] = s.markers_time[0].value()
+            if len(s.markers_time) >= 2: meta["time_marker_2_s"] = s.markers_time[1].value()
+            if len(s.markers_freq) >= 1: meta["freq_marker_1_hz"] = s.markers_freq[0].value()
+            if len(s.markers_freq) >= 2: meta["freq_marker_2_hz"] = s.markers_freq[1].value()
+            if len(getattr(s, 'filter_bounds', [])) == 2:
+                meta["filter_low_hz"] = s.filter_bounds[0]
+                meta["filter_high_hz"] = s.filter_bounds[1]
         
         try:
             with open(path, 'w') as f:
                 json.dump(meta, f, indent=4)
-            QtWidgets.QMessageBox.information(self, "Export Successful", f"Metadata saved to {os.path.basename(path)}")
+            if auto_path is None:
+                QtWidgets.QMessageBox.information(self, "Export Successful", f"Metadata saved to {os.path.basename(path)}")
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Export Error", f"Failed to save metadata: {str(e)}")
 
