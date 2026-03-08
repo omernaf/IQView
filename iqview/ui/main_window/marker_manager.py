@@ -798,6 +798,8 @@ class MarkerManagerMixin:
             for marker in markers:
                 self.spectrogram_view.plot_item.removeItem(marker)
             markers.clear()
+            # Disable grid when markers are cleared
+            self.toggle_grid('TIME' if is_time else 'FREQ', False)
             self.marker_panel._clear_marker_locks(mode)
         self.update_marker_info()
 

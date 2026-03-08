@@ -1114,6 +1114,7 @@ class TimeDomainView(QWidget):
                 self._marker_age.pop(m, None)
             self.markers_time = []
             self.marker_panel._clear_marker_locks('TIME')
+            self.toggle_grid('TIME', False)
         elif mode == 'TIME_ENDLESS':
             for m in self.markers_time_endless: self.plot_item.removeItem(m)
             self.markers_time_endless = []
@@ -1126,6 +1127,7 @@ class TimeDomainView(QWidget):
                 self._marker_age.pop(m, None)
             self.markers_y_dict[self.y_label_text] = []
             self.marker_panel._clear_marker_locks('MAG')
+            self.toggle_grid('MAG', False)
         self.update_marker_info()
 
     def remove_marker_item(self, marker, mode):
