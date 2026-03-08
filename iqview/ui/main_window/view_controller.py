@@ -124,13 +124,18 @@ class ViewControllerMixin:
             self.spectrogram_view.setCursor(Qt.CursorShape.ArrowCursor)
 
     def open_time_domain_tab(self):
-        if len(self.markers_time) < 2:
-            return
+        if len(self.markers_time) == 2:
+            t1 = self.markers_time[0].value()
+            t2 = self.markers_time[1].value()
+            start_t, end_t = min(t1, t2), max(t1, t2)
+        else:
+            # Fallback to current visible range
+            vr = self.spectrogram_view.plot_item.viewRect()
+            start_t, end_t = vr.left(), vr.right()
+            # Clamp to data bounds
+            start_t = max(0, min(self.time_duration, start_t))
+            end_t = max(0, min(self.time_duration, end_t))
             
-        t1 = self.markers_time[0].value()
-        t2 = self.markers_time[1].value()
-        start_t, end_t = min(t1, t2), max(t1, t2)
-        
         samples = self.extract_iq_segment(start_t, end_t)
         if samples is not None:
             from ..time_domain.view import TimeDomainView
