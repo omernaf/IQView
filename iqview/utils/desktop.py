@@ -37,7 +37,7 @@ def get_icon_path():
     try:
         import iqview
         pkg_dir = os.path.dirname(iqview.__file__)
-        icon_path = os.path.join(pkg_dir, "resources", "icon.ico")
+        icon_path = os.path.join(pkg_dir, "resources", "logo.ico")
         if os.path.exists(icon_path):
             return icon_path
     except ImportError:
