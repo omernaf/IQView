@@ -1,7 +1,7 @@
 import os
 import pyqtgraph as pg
 import numpy as np
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QFileDialog
 from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext
 
@@ -124,13 +124,18 @@ class ViewControllerMixin:
             self.spectrogram_view.setCursor(Qt.CursorShape.ArrowCursor)
 
     def open_time_domain_tab(self):
-        if len(self.markers_time) < 2:
-            return
+        if len(self.markers_time) == 2:
+            t1 = self.markers_time[0].value()
+            t2 = self.markers_time[1].value()
+            start_t, end_t = min(t1, t2), max(t1, t2)
+        else:
+            # Fallback to current visible range
+            vr = self.spectrogram_view.plot_item.viewRect()
+            start_t, end_t = vr.left(), vr.right()
+            # Clamp to data bounds
+            start_t = max(0, min(self.time_duration, start_t))
+            end_t = max(0, min(self.time_duration, end_t))
             
-        t1 = self.markers_time[0].value()
-        t2 = self.markers_time[1].value()
-        start_t, end_t = min(t1, t2), max(t1, t2)
-        
         samples = self.extract_iq_segment(start_t, end_t)
         if samples is not None:
             from ..time_domain.view import TimeDomainView
@@ -176,6 +181,23 @@ class ViewControllerMixin:
         self.update_grid(axis, force=True)
 
     def update_grid(self, axis, force=False):
+        if not hasattr(self, '_grid_timer'):
+            self._grid_timer = QTimer()
+            self._grid_timer.setSingleShot(True)
+            self._grid_timer.timeout.connect(self._do_update_grid)
+            self._grid_pending_axis = None
+
+        if force:
+            self._do_update_grid(axis)
+        else:
+            self._grid_pending_axis = axis
+            if not self._grid_timer.isActive():
+                self._grid_timer.start(50) # 50ms throttle
+
+    def _do_update_grid(self, axis=None):
+        if axis is None:
+            axis = getattr(self, '_grid_pending_axis', 'TIME')
+        
         is_freq = (axis == 'FREQ')
         enabled = self.grid_freq_enabled if is_freq else self.grid_time_enabled
         tracking = self.grid_freq_tracking if is_freq else self.grid_time_tracking
@@ -193,6 +215,15 @@ class ViewControllerMixin:
         p1, p2 = active_markers[0].value(), active_markers[1].value()
         delta = abs(p2 - p1)
         if delta <= 0: return
+
+        # Optimization: Only plot visible lines
+        vr = self.spectrogram_view.plot_item.viewRange()
+        v_min_visible, v_max_visible = vr[1] if is_freq else vr[0]
+        
+        # Guard against too many markers
+        if (v_max_visible - v_min_visible) / delta > 500:
+            return
+
         angle = 0 if is_freq else 90
         theme = self.settings_mgr.get("ui/theme", "Dark").lower()
         color = self.settings_mgr.get(f"ui/{theme}/grid_color", "#c8c8ff")
@@ -211,25 +242,21 @@ class ViewControllerMixin:
         from PyQt6.QtGui import QColor
         qcolor = QColor(color)
         qcolor.setAlphaF(alpha / 100.0)
-        v_min = (self.fc - self.rate/2) if is_freq else 0
-        v_max = (self.fc + self.rate/2) if is_freq else self.time_duration
         
         pen = pg.mkPen(qcolor, width=1, style=style)
         
-        curr = p1
-        while curr <= v_max + 1e-9:
+        # Start from first visible multiple of delta relative to p1
+        start_count = np.ceil((v_min_visible - p1) / delta)
+        curr = p1 + start_count * delta
+        
+        count = 0
+        while curr <= v_max_visible + 1e-9 and count < 500:
             line = pg.InfiniteLine(pos=curr, angle=angle, pen=pen, movable=False)
             line.setZValue(5)
             self.spectrogram_view.plot_item.addItem(line, ignoreBounds=True)
             grid_lines.append(line)
             curr += delta
-        curr = p1 - delta
-        while curr >= v_min - 1e-9:
-            line = pg.InfiniteLine(pos=curr, angle=angle, pen=pen, movable=False)
-            line.setZValue(5)
-            self.spectrogram_view.plot_item.addItem(line, ignoreBounds=True)
-            grid_lines.append(line)
-            curr -= delta
+            count += 1
 
     def undo_zoom(self):
         if self.zoom_history:

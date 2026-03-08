@@ -119,6 +119,14 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
     def on_settings_applied(self):
         """Handle settings changes: refresh theme and re-process if filter is active."""
         self.apply_current_theme()
+        
+        # Refresh plot modes for Time Domain tabs
+        if hasattr(self, 'tabs'):
+            for i in range(1, self.tabs.count()):
+                widget = self.tabs.widget(i)
+                if hasattr(widget, 'rebuild_plot_buttons'):
+                    widget.rebuild_plot_buttons()
+                    
         if self.filter_enabled:
             self.start_processing()
 

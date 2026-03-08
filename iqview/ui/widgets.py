@@ -143,7 +143,7 @@ class CustomViewBox(pg.ViewBox):
             return
             
         mode = getattr(self.ui_controller, 'interaction_mode', None)
-        if mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER']:
+        if mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'STATS']:
             # Find closest marker
             active_markers = []
             
@@ -216,21 +216,34 @@ class CustomViewBox(pg.ViewBox):
                             self.setCursor(Qt.CursorShape.SizeHorCursor if angle == 90 else Qt.CursorShape.SizeVerCursor)
                             break
             
-            # 4. Check for Grid Lines (Shadow Markers) if delta lock is off
-            if not found_near and mode in ['TIME', 'FREQ']:
-                lock_delta = getattr(self.ui_controller.marker_panel, 'btn_lock_delta', None)
-                if lock_delta and not lock_delta.isChecked():
-                    grid_lines = getattr(self.ui_controller, 'grid_lines_time' if mode == 'TIME' else 'grid_lines_freq', [])
-                    for gl in grid_lines:
-                        gl_val = gl.value()
-                        angle = gl.angle
-                        gl_pixel = self.mapViewToScene(pg.Point(gl_val, 0) if angle == 90 else pg.Point(0, gl_val))
-                        dist = abs(scene_pos.x() - gl_pixel.x()) if angle == 90 else abs(scene_pos.y() - gl_pixel.y())
+            # 4. Check for Grid Lines (Shadow Markers) - allowable in all lock states!
+            if not found_near and mode in ['TIME', 'FREQ', 'MAG', 'Y']:
+                if mode == 'TIME':
+                    grid_lines = getattr(self.ui_controller, 'grid_lines_time', [])
+                elif mode == 'FREQ':
+                    grid_lines = getattr(self.ui_controller, 'grid_lines_freq', [])
+                else:
+                    grid_lines = getattr(self.ui_controller, 'grid_lines_mag', [])
+                for gl in grid_lines:
+                    gl_val = gl.value()
+                    angle = gl.angle
+                    gl_pixel = self.mapViewToScene(pg.Point(gl_val, 0) if angle == 90 else pg.Point(0, gl_val))
+                    dist = abs(scene_pos.x() - gl_pixel.x()) if angle == 90 else abs(scene_pos.y() - gl_pixel.y())
+                    
+                    if dist < 20:
+                        found_near = True
+                        self.setCursor(Qt.CursorShape.SizeHorCursor if angle == 90 else Qt.CursorShape.SizeVerCursor)
+                        break
                         
-                        if dist < 20:
-                            found_near = True
-                            self.setCursor(Qt.CursorShape.SizeHorCursor if angle == 90 else Qt.CursorShape.SizeVerCursor)
-                            break
+            # 5. Check for STATS Region boundaries
+            if not found_near and mode == 'STATS':
+                stats_bounds = getattr(self.ui_controller, 'stats_bounds', [])
+                for b_val in stats_bounds:
+                    pi = self.mapViewToScene(pg.Point(b_val, 0))
+                    if abs(scene_pos.x() - pi.x()) < 20:
+                        found_near = True
+                        self.setCursor(Qt.CursorShape.SizeHorCursor)
+                        break
             
             if not found_near:
                 self.setCursor(Qt.CursorShape.CrossCursor)
@@ -330,7 +343,7 @@ class CustomViewBox(pg.ViewBox):
                 ev.accept()
             else:
                 # --- Marker Logic ---
-                if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS']:
+                if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS', 'STATS']:
                     if ev.isStart():
                         self.ui_controller.place_marker(ev.buttonDownScenePos(), drag_mode=True)
                     elif ev.isFinish():
@@ -339,6 +352,8 @@ class CustomViewBox(pg.ViewBox):
                         if getattr(self.ui_controller, 'active_drag_filter_bound_idx', -1) != -1:
                             self.ui_controller.on_filter_region_finished()
                             self.ui_controller.active_drag_filter_bound_idx = -1
+                        if getattr(self.ui_controller, 'active_drag_stats_bound_idx', -1) != -1:
+                            self.ui_controller.active_drag_stats_bound_idx = -1
                     else:
                         self.ui_controller.update_drag(ev.scenePos())
                 ev.accept()
@@ -347,7 +362,7 @@ class CustomViewBox(pg.ViewBox):
 
     def mouseClickEvent(self, ev):
         if ev.button() == Qt.MouseButton.LeftButton:
-            if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS']:
+            if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS', 'STATS']:
                 self.ui_controller.place_marker(ev.scenePos(), drag_mode=False)
             ev.accept()
         elif ev.button() == Qt.MouseButton.RightButton:
@@ -367,8 +382,6 @@ class CustomViewBox(pg.ViewBox):
         
         if is_spec:
             td_popup_act = menu.addAction("Time Domain Popup")
-            time_markers_count = len(self.ui_controller.markers_time)
-            td_popup_act.setEnabled(time_markers_count == 2)
             td_popup_act.triggered.connect(self.ui_controller.open_time_domain_tab)
 
         fit_act = menu.addAction("Fit to Screen")
@@ -420,6 +433,36 @@ class CustomViewBox(pg.ViewBox):
             grid_freq_track_act.setCheckable(True)
             grid_freq_track_act.setChecked(self.ui_controller.grid_freq_tracking)
             grid_freq_track_act.triggered.connect(lambda checked: self.ui_controller.toggle_tracking('FREQ', checked))
+        else:
+            menu.addSeparator()
+            # Time Grid Submenu
+            grid_time_menu = menu.addMenu("Time Grid")
+            grid_time_menu.setEnabled(len(self.ui_controller.markers_time) == 2)
+            
+            grid_time_enable_act = grid_time_menu.addAction("Enabled")
+            grid_time_enable_act.setCheckable(True)
+            grid_time_enable_act.setChecked(getattr(self.ui_controller, 'grid_time_enabled', False))
+            grid_time_enable_act.triggered.connect(lambda checked: self.ui_controller.toggle_grid('TIME', checked))
+            
+            grid_time_track_act = grid_time_menu.addAction("Tracking")
+            grid_time_track_act.setCheckable(True)
+            grid_time_track_act.setChecked(getattr(self.ui_controller, 'grid_time_tracking', False))
+            grid_time_track_act.triggered.connect(lambda checked: self.ui_controller.toggle_tracking('TIME', checked))
+            
+            # Magnitude Grid Submenu
+            grid_mag_menu = menu.addMenu("Magnitude Grid")
+            active_y_markers = self.ui_controller.markers_y_dict.get(self.ui_controller.y_label_text, [])
+            grid_mag_menu.setEnabled(len(active_y_markers) == 2)
+            
+            grid_mag_enable_act = grid_mag_menu.addAction("Enabled")
+            grid_mag_enable_act.setCheckable(True)
+            grid_mag_enable_act.setChecked(getattr(self.ui_controller, 'grid_mag_enabled', False))
+            grid_mag_enable_act.triggered.connect(lambda checked: self.ui_controller.toggle_grid('MAG', checked))
+            
+            grid_mag_track_act = grid_mag_menu.addAction("Tracking")
+            grid_mag_track_act.setCheckable(True)
+            grid_mag_track_act.setChecked(getattr(self.ui_controller, 'grid_mag_tracking', False))
+            grid_mag_track_act.triggered.connect(lambda checked: self.ui_controller.toggle_tracking('MAG', checked))
         
         menu.addSeparator()
         

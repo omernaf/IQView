@@ -35,19 +35,35 @@ class TimeDomainView(QWidget):
         
         # Mode-specific Magnitude markers
         self.markers_y_dict = {
-            "Amplitude (Real)": [],
-            "Amplitude (Imag)": [],
-            "Magnitude": [],
-            "Instantaneous Frequency (Hz)": [],
-            "Phase (rad)": [],
-            "Unwrapped Phase (rad)": []
+            "Real": [],
+            "Real [dB]": [],
+            "Imaginary": [],
+            "Imaginary [dB]": [],
+            "Phase": [],
+            "Unwrapped phase": [],
+            "instant frequency": [],
+            "magnitude": [],
+            "magnitude [dB]": [],
+            "magnitude^2": [],
+            "magnitude^2 [dB]": []
         }
         self.markers_y_endless_dict = {k: [] for k in self.markers_y_dict.keys()}
         
         # Mode-specific Y-zoom states (yMin, yMax)
         self.zoom_y_dict = {}
         
-        self.y_label_text = "Amplitude (Real)"
+        # Grid variables (added for Shadow Markers)
+        self.grid_time_enabled = False
+        self.grid_time_tracking = True
+        self.grid_lines_time = []
+        
+        self.grid_mag_enabled = False
+        self.grid_mag_tracking = True
+        self.grid_lines_mag = []
+
+        self.zoom_history = []
+        
+        self.y_label_text = list(self.available_modes.keys())[0] if hasattr(self, 'available_modes') else "Real"
         self.current_plot_data = samples.real # Cache for marker sampling
         
         self.main_layout = QVBoxLayout(self)
@@ -70,24 +86,28 @@ class TimeDomainView(QWidget):
         
         self.toolbar_layout.addWidget(QLabel("Plot Mode:"))
         
-        self.mode_group = QButtonGroup(self)
-        self.modes = [
-            ("Real (I)", self.plot_real),
-            ("Imag (Q)", self.plot_imag),
-            ("Absolute", self.plot_abs),
-            ("Inst. Freq", self.plot_inst_freq),
-            ("Phase", self.plot_phase),
-            ("Unwrapped Phase", self.plot_unwrapped_phase)
-        ]
+        # Define all available plot modes and their compute functions
+        self.available_modes = {
+            "Real": self.plot_real,
+            "Real [dB]": self.plot_real_db,
+            "Imaginary": self.plot_imaginary,
+            "Imaginary [dB]": self.plot_imaginary_db,
+            "Phase": self.plot_phase,
+            "Unwrapped phase": self.plot_unwrapped_phase,
+            "instant frequency": self.plot_inst_freq,
+            "magnitude": self.plot_magnitude,
+            "magnitude [dB]": self.plot_magnitude_db,
+            "magnitude^2": self.plot_magnitude_squared,
+            "magnitude^2 [dB]": self.plot_magnitude_squared_db
+        }
         
-        for i, (name, callback) in enumerate(self.modes):
-            btn = QPushButton(name)
-            btn.setCheckable(True)
-            self.mode_group.addButton(btn, i)
-            self.toolbar_layout.addWidget(btn)
-            btn.clicked.connect(callback)
-            if i == 0: btn.setChecked(True)
-            
+        self.plot_buttons_layout = QHBoxLayout()
+        self.plot_buttons_layout.setSpacing(5)
+        self.toolbar_layout.addLayout(self.plot_buttons_layout)
+        
+        self.mode_group = QButtonGroup(self)
+        self.plot_buttons = []
+        
         self.toolbar_layout.addStretch()
         
         end_time = start_time + len(samples) / sample_rate
@@ -128,15 +148,66 @@ class TimeDomainView(QWidget):
         
         self.main_layout.addWidget(self.grid_container)
         
+        # --- Stats Region Item ---
+        self.stats_bounds = []
+        self.stats_marker_order = []
+        self.stats_line = None
+        
+        self.stats_region = pg.LinearRegionItem(orientation='vertical')
+        self.stats_region.setZValue(9) # Below markers but above plot
+        self.stats_region.hide() # Hidden by default
+        self.plot_item.addItem(self.stats_region)
+        self.stats_region.sigRegionChanged.connect(self.update_statistics)
+        
+        # --- Stats Visual Indicators (ScatterPlotItem) ---
+        self.stats_markers = pg.ScatterPlotItem(size=10, pen=pg.mkPen(None), brush=pg.mkBrush(255, 0, 0, 200))
+        self.stats_markers.hide()
+        self.plot_item.addItem(self.stats_markers)
+        
         self.time_axis = np.linspace(start_time, end_time, len(samples))
-        # Initial call
-        self._update_plot(self.samples.real, "Amplitude (Real)")
+        # Add buttons and trigger the first plot
+        self.rebuild_plot_buttons()
+            
         self.set_interaction_mode('TIME')
 
         # Connect scrollbars
         self.view_box.sigRangeChanged.connect(self.update_scrollbars)
+        self.view_box.sigRangeChanged.connect(lambda: self.update_grid('TIME'))
+        self.view_box.sigRangeChanged.connect(lambda: self.update_grid('MAG'))
         self.x_scroll.valueChanged.connect(self.scroll_view)
         self.y_scroll.valueChanged.connect(self.scroll_view)
+
+    def rebuild_plot_buttons(self):
+        # Clear existing buttons
+        for btn in self.plot_buttons:
+            self.mode_group.removeButton(btn)
+            self.plot_buttons_layout.removeWidget(btn)
+            btn.deleteLater()
+        self.plot_buttons.clear()
+        
+        # Load active plots from settings
+        active_plots = []
+        if self.settings_mgr:
+            active_plots = self.settings_mgr.get("core/time_plots", [])
+            
+        # Fallback to default if empty or missing
+        if not active_plots:
+            active_plots = ["instant frequency", "magnitude^2", "Real", "Imaginary"]
+            
+        for i, name in enumerate(active_plots):
+            if name in self.available_modes:
+                btn = QPushButton(name)
+                btn.setCheckable(True)
+                self.mode_group.addButton(btn, i)
+                self.plot_buttons_layout.addWidget(btn)
+                btn.clicked.connect(self.available_modes[name])
+                self.plot_buttons.append(btn)
+                if i == 0: btn.setChecked(True)
+                
+        # Immediately re-trigger the first selected mode to update the plot view
+        if len(self.plot_buttons) > 0:
+            first_plot_name = self.plot_buttons[0].text()
+            self.available_modes[first_plot_name]()
 
     def keyPressEvent(self, event):
         if event.isAutoRepeat(): return
@@ -148,7 +219,9 @@ class TimeDomainView(QWidget):
         mag_seq = s.get('keybinds/mag_markers', 'F')
         zoom_seq = s.get('keybinds/zoom_mode', 'Ctrl')
         
-        if key_name == time_seq:
+        if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Z:
+            self.undo_zoom()
+        elif key_name == time_seq:
             self.set_interaction_mode('TIME')
         elif key_name == mag_seq:
             self.set_interaction_mode('MAG')
@@ -177,9 +250,24 @@ class TimeDomainView(QWidget):
         if mode == 'Y': mode = 'MAG'
         self.interaction_mode = mode
         self.zoom_mode = (mode == 'ZOOM')
+        
+        # Toggle Region visibility
+        if mode == 'STATS':
+            if len(self.stats_bounds) == 1:
+                if self.stats_line: self.stats_line.show()
+            elif len(self.stats_bounds) == 2:
+                self.stats_region.show()
+                self.stats_markers.show()
+                self.update_statistics()
+        else:
+            self.stats_region.hide()
+            self.stats_markers.hide()
+            if self.stats_line: self.stats_line.hide()
+            
         if mode == 'ZOOM': self.plot_widget.setCursor(Qt.CursorShape.CrossCursor)
         elif mode == 'MOVE': self.plot_widget.setCursor(Qt.CursorShape.SizeAllCursor)
         elif 'ENDLESS' in mode: self.plot_widget.setCursor(Qt.CursorShape.PointingHandCursor)
+        elif mode == 'STATS': self.plot_widget.setCursor(Qt.CursorShape.ArrowCursor)
         else: self.plot_widget.setCursor(Qt.CursorShape.ArrowCursor)
         
         self.marker_panel.update_mode_ui(mode)
@@ -187,25 +275,112 @@ class TimeDomainView(QWidget):
         self.update_marker_info()
 
     def plot_real(self):
-        self._update_plot(self.samples.real, "Amplitude (Real)")
+        self._update_plot(self.samples.real, "Real")
 
-    def plot_imag(self):
-        self._update_plot(self.samples.imag, "Amplitude (Imag)")
+    def plot_real_db(self):
+        data = np.abs(self.samples.real)
+        data[data < 1e-12] = 1e-12
+        self._update_plot(20 * np.log10(data), "Real [dB]")
 
-    def plot_abs(self):
-        self._update_plot(np.abs(self.samples), "Magnitude")
+    def plot_imaginary(self):
+        self._update_plot(self.samples.imag, "Imaginary")
+        
+    def plot_imaginary_db(self):
+        data = np.abs(self.samples.imag)
+        data[data < 1e-12] = 1e-12
+        self._update_plot(20 * np.log10(data), "Imaginary [dB]")
+
+    def plot_magnitude(self):
+        self._update_plot(np.abs(self.samples), "magnitude")
+        
+    def plot_magnitude_db(self):
+        data = np.abs(self.samples)
+        data[data < 1e-12] = 1e-12
+        self._update_plot(20 * np.log10(data), "magnitude [dB]")
+        
+    def plot_magnitude_squared(self):
+        self._update_plot(np.abs(self.samples)**2, "magnitude^2")
+        
+    def plot_magnitude_squared_db(self):
+        data = np.abs(self.samples)**2
+        data[data < 1e-12] = 1e-12
+        self._update_plot(10 * np.log10(data), "magnitude^2 [dB]")
 
     def plot_inst_freq(self):
         phase = np.unwrap(np.angle(self.samples))
         freq = np.diff(phase) / (2 * np.pi) * self.rate
         pad_freq = np.concatenate(([freq[0]], freq))
-        self._update_plot(pad_freq, "Instantaneous Frequency (Hz)")
+        self._update_plot(pad_freq, "instant frequency")
 
     def plot_phase(self):
-        self._update_plot(np.angle(self.samples), "Phase (rad)")
+        self._update_plot(np.angle(self.samples), "Phase")
 
     def plot_unwrapped_phase(self):
-        self._update_plot(np.unwrap(np.angle(self.samples)), "Unwrapped Phase (rad)")
+        self._update_plot(np.unwrap(np.angle(self.samples)), "Unwrapped phase")
+
+    def update_statistics(self):
+        """Calculates Min, Max, Mean, Median for the active region and updates the marker panel UI."""
+        if not self.stats_region.isVisible() or len(self.current_plot_data) == 0:
+            return
+            
+        r_min, r_max = self.stats_region.getRegion()
+        
+        # Find indices
+        i_min = np.searchsorted(self.time_axis, r_min)
+        i_max = np.searchsorted(self.time_axis, r_max)
+        
+        # Safety bounds
+        i_min = max(0, min(len(self.time_axis) - 1, i_min))
+        i_max = max(0, min(len(self.time_axis), i_max))
+        
+        if i_min >= i_max:
+            return # Region is zero-width or out of bounds
+            
+        slice_data = self.current_plot_data[i_min:i_max]
+        
+        if len(slice_data) == 0:
+            return
+            
+        p_max = np.max(slice_data)
+        p_min = np.min(slice_data)
+        p_median = np.median(slice_data)
+        
+        # Mean Calculation: For dB plots, average in linear domain
+        if "[dB]" in self.y_label_text:
+            # Detect if it's 10log (Magnitude^2) or 20log (Magnitude/Real/Imag)
+            factor = 10 if "magnitude^2" in self.y_label_text.lower() else 20
+            # Convert back to linear
+            lin_data = 10**(slice_data / factor)
+            lin_mean = np.mean(lin_data)
+            # Re-convert to dB, adding a small epsilon to avoid log10(0)
+            p_mean = factor * np.log10(lin_mean + 1e-15)
+        else:
+            p_mean = np.mean(slice_data)
+        
+        # Find exact relative position
+        idx_max = i_min + np.argmax(slice_data)
+        idx_min = i_min + np.argmin(slice_data)
+        
+        t_max = self.time_axis[idx_max]
+        t_min = self.time_axis[idx_min]
+        
+        # Update Marker Panel readouts
+        self.marker_panel.stats_max_val.setText(f"{p_max:.6g}")
+        self.marker_panel.stats_min_val.setText(f"{p_min:.6g}")
+        self.marker_panel.stats_mean_val.setText(f"{p_mean:.6g}")
+        self.marker_panel.stats_median_val.setText(f"{p_median:.6g}")
+        
+        self.marker_panel.stats_max_time.setText(f"{t_max:.6f}")
+        self.marker_panel.stats_min_time.setText(f"{t_min:.6f}")
+        
+        self.marker_panel.stats_max_idx.setText(f"{idx_max}")
+        self.marker_panel.stats_min_idx.setText(f"{idx_min}")
+        
+        # Update graphical indicators
+        self.stats_markers.setData([
+            {'pos': (t_max, p_max), 'brush': pg.mkBrush(255, 50, 50), 'pen': pg.mkPen('#ff3232', width=2), 'symbol': 'o'},
+            {'pos': (t_min, p_min), 'brush': pg.mkBrush(50, 255, 50), 'pen': pg.mkPen('#32ff32', width=2), 'symbol': 't'}
+        ])
 
     def _update_plot(self, data, y_label):
         # 1. Save current view ranges (if not first run)
@@ -219,8 +394,20 @@ class TimeDomainView(QWidget):
         self.y_label_text = y_label
         self.marker_panel.update_headers(self.interaction_mode, y_label)
         
+        # Update stats if visible
+        if hasattr(self, 'stats_region') and self.stats_region.isVisible():
+            self.update_statistics()
+        
         # 3. Clear and Re-plot
         self.plot_item.clear()
+        self.stats_markers.clear() # clear previous indicators if persisting
+        
+        # Re-add region and markers back onto the plot
+        if getattr(self, 'stats_line', None) is not None:
+            self.plot_item.addItem(self.stats_line)
+        self.plot_item.addItem(self.stats_region)
+        self.plot_item.addItem(self.stats_markers)
+        
         self.plot_item.getAxis('left').setLabel(y_label)
         
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
@@ -368,7 +555,7 @@ class TimeDomainView(QWidget):
 
     def place_marker(self, scene_pos, drag_mode=False):
         v_pos = self.view_box.mapSceneToView(scene_pos)
-        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
+        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS', 'STATS'])
         is_endless = 'ENDLESS' in self.interaction_mode
         
         # Clamp to bounds
@@ -384,6 +571,144 @@ class TimeDomainView(QWidget):
         else:
             active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
         
+        # --- STATS Region Logic ---
+        if self.interaction_mode == 'STATS':
+            if self.stats_bounds:
+                best_idx = -1
+                min_dist = 20 # pixels
+                
+                # Check distance to existing bounds
+                for i, b_val in enumerate(self.stats_bounds):
+                    pi = self.view_box.mapViewToScene(pg.Point(b_val, 0))
+                    dist = abs(scene_pos.x() - pi.x())
+                    if dist < min_dist:
+                        min_dist = dist
+                        best_idx = i
+                
+                if best_idx != -1:
+                    old_v = self.stats_bounds[best_idx]
+                    self.stats_bounds[best_idx] = val
+                    if old_v in self.stats_marker_order:
+                        oidx = self.stats_marker_order.index(old_v)
+                        self.stats_marker_order[oidx] = val
+                    
+                    self.stats_bounds.sort()
+                    self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
+                    
+                    if len(self.stats_bounds) == 1:
+                        if self.stats_line: self.stats_line.setPos(val)
+                    else:
+                        self.stats_region.setRegion(self.stats_bounds)
+                    self.update_statistics()
+                    return
+
+            # No hit - Place new bound or replace oldest
+            if len(self.stats_marker_order) >= 2:
+                oldest_v = self.stats_marker_order.pop(0)
+                if oldest_v in self.stats_bounds:
+                    self.stats_bounds.remove(oldest_v)
+            
+            self.stats_marker_order.append(val)
+            self.stats_bounds.append(val)
+            self.stats_bounds.sort()
+            
+            if drag_mode:
+                self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
+                
+            if len(self.stats_bounds) == 1:
+                if getattr(self, 'stats_line', None) is None:
+                    theme = self.parent_window.settings_mgr.get("ui/theme", "Dark") if self.parent_window else "Dark"
+                    p = get_palette(theme)
+                    self.stats_line = pg.InfiniteLine(angle=90, pen=pg.mkPen(p.marker_time, width=2, style=Qt.PenStyle.DashLine), movable=False)
+                    self.stats_line.setZValue(10)
+                if self.stats_line not in self.plot_item.items:
+                    self.plot_item.addItem(self.stats_line)
+                self.stats_line.setPos(val)
+                self.stats_line.show()
+                self.stats_region.hide()
+                self.stats_markers.hide()
+            else:
+                if self.stats_line: self.stats_line.hide()
+                self.stats_region.setRegion(self.stats_bounds)
+                self.stats_region.show()
+                self.stats_markers.show()
+                
+            self.update_statistics()
+            return
+        
+        # 1. Hit test EXISTING MARKERS
+        found_marker = None
+        for i, m in enumerate(active_markers):
+            # Check if this marker is locked
+            is_m_locked = (i == 0 and self.marker_panel.btn_lock_m1.isChecked()) or \
+                          (i == 1 and self.marker_panel.btn_lock_m2.isChecked())
+            if is_m_locked and len(active_markers) == 2:
+                # If both are locked, we can't drag either.
+                # If only one is locked, we can't drag the locked one.
+                if not (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+                    continue
+
+            # Check if marker is vertical (Time) or horizontal (Magnitude)
+            m_is_time = m in self.markers_time or m in self.markers_time_endless
+            m_pixel = self.view_box.mapViewToScene(pg.Point(m.value(), 0) if m_is_time else pg.Point(0, m.value()))
+            dist = abs(scene_pos.x() - m_pixel.x()) if m_is_time else abs(scene_pos.y() - m_pixel.y())
+            if dist < 20: found_marker = m; break
+        
+        if found_marker:
+            found_marker.setValue(val)
+            if drag_mode: self.active_drag_marker = found_marker
+            self.update_marker_info()
+            return
+            
+        # 2. Check for Grid Lines (Shadow Markers)
+        lock_delta = self.marker_panel.btn_lock_delta.isChecked()
+        if not lock_delta and (self.interaction_mode in ['TIME', 'MAG', 'Y']):
+            grid_lines = self.grid_lines_time if is_time else self.grid_lines_mag
+            best_gl = None
+            min_gl_dist = 20 # pixels
+            
+            for gl in grid_lines:
+                gl_pos = gl.value()
+                p_scene = self.view_box.mapViewToScene(pg.Point(gl_pos, 0) if is_time else pg.Point(0, gl_pos))
+                dist = abs(scene_pos.x() - p_scene.x()) if is_time else abs(scene_pos.y() - p_scene.y())
+                
+                if dist < min_gl_dist:
+                    min_gl_dist = dist
+                    best_gl = gl
+            
+            if best_gl and len(active_markers) == 2:
+                sorted_m = sorted(active_markers, key=lambda m: m.value())
+                p1 = sorted_m[0].value()
+                p2 = sorted_m[1].value()
+                delta = p2 - p1
+                g_pos = best_gl.value()
+                if delta != 0:
+                    k = (g_pos - p1) / delta
+                else: 
+                    k = 1.0
+                
+                lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
+                lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
+                lock_delta = self.marker_panel.btn_lock_delta.isChecked()
+                lock_center = self.marker_panel.btn_lock_center.isChecked()
+                
+                move_p1 = (k < 0.5)
+                if lock_m1 and not lock_m2: move_p1 = False
+                elif lock_m2 and not lock_m1: move_p1 = True
+                
+                if drag_mode:
+                    self.active_drag_grid_info = {
+                        'k': k,
+                        'move_p1': move_p1,
+                        'fixed_val': p2 if move_p1 else p1,
+                        'is_time': is_time,
+                        'lock_delta': lock_delta,
+                        'lock_center': lock_center
+                    }
+                    self.active_drag_marker = None
+                return
+
+        # 3. Teleport existing markers if clicked outside
         if not is_endless and len(active_markers) == 2:
             m1_pos, m2_pos = active_markers[0].value(), active_markers[1].value()
             lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
@@ -446,30 +771,6 @@ class TimeDomainView(QWidget):
             self.update_marker_info()
             return
 
-        # 2. Hit test
-        found_marker = None
-        for i, m in enumerate(active_markers):
-            # Check if this marker is locked
-            is_m_locked = (i == 0 and self.marker_panel.btn_lock_m1.isChecked()) or \
-                          (i == 1 and self.marker_panel.btn_lock_m2.isChecked())
-            if is_m_locked and len(active_markers) == 2:
-                # If both are locked, we can't drag either.
-                # If only one is locked, we can't drag the locked one.
-                if not (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
-                    continue
-
-            # Check if marker is vertical (Time) or horizontal (Magnitude)
-            m_is_time = m in self.markers_time or m in self.markers_time_endless
-            m_pixel = self.view_box.mapViewToScene(pg.Point(m.value(), 0) if m_is_time else pg.Point(0, m.value()))
-            dist = abs(scene_pos.x() - m_pixel.x()) if m_is_time else abs(scene_pos.y() - m_pixel.y())
-            if dist < 20: found_marker = m; break
-        
-        if found_marker:
-            found_marker.setValue(val)
-            if drag_mode: self.active_drag_marker = found_marker
-            self.update_marker_info()
-            return
-
         # 3. Add brand new
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
         p = get_palette(theme)
@@ -501,8 +802,103 @@ class TimeDomainView(QWidget):
         self.update_marker_info()
 
     def update_drag(self, scene_pos):
-        if not self.active_drag_marker: return
         v_pos = self.view_box.mapSceneToView(scene_pos)
+        
+        # 1.5 Handle Shadow Marker (Grid Line) dragging
+        if getattr(self, 'active_drag_grid_info', None):
+            info = self.active_drag_grid_info
+            is_time = info['is_time']
+            k = info['k']
+            move_p1 = info['move_p1']
+            fixed_val = info['fixed_val']
+            lock_delta = info.get('lock_delta', False)
+            lock_center = info.get('lock_center', False)
+            
+            if is_time:
+                t_min, t_max = self.time_axis[0], self.time_axis[-1]
+                g_prime = max(t_min, min(t_max, v_pos.x()))
+            else:
+                y_min, y_max = self._get_y_bounds()
+                g_prime = max(y_min, min(y_max, v_pos.y()))
+            
+            active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
+            if len(active_markers) == 2:
+                sorted_m = sorted(active_markers, key=lambda m: m.value())
+                m1, m2 = sorted_m[0], sorted_m[1]
+                orig_p1, orig_p2 = m1.value(), m2.value()
+                
+                try:
+                    if lock_delta:
+                        delta = orig_p2 - orig_p1
+                        shift = g_prime - (orig_p1 + k * delta)
+                        new_p1 = orig_p1 + shift
+                        new_p2 = orig_p2 + shift
+                        if is_time:
+                            if t_min <= new_p1 <= t_max and t_min <= new_p2 <= t_max:
+                                m1.setPos(new_p1); m2.setPos(new_p2)
+                        else:
+                            if y_min <= new_p1 <= y_max and y_min <= new_p2 <= y_max:
+                                m1.setPos(new_p1); m2.setPos(new_p2)
+                    elif lock_center:
+                        center = (orig_p1 + orig_p2) / 2
+                        if abs(k - 0.5) > 1e-9:
+                            new_delta = (g_prime - center) / (k - 0.5)
+                            new_p1 = center - new_delta / 2
+                            new_p2 = center + new_delta / 2
+                            if is_time:
+                                if t_min <= new_p1 <= t_max and t_min <= new_p2 <= t_max:
+                                    if new_p1 <= new_p2:
+                                        m1.setPos(new_p1); m2.setPos(new_p2)
+                            else:
+                                if y_min <= new_p1 <= y_max and y_min <= new_p2 <= y_max:
+                                    if new_p1 <= new_p2:
+                                        m1.setPos(new_p1); m2.setPos(new_p2)
+                    else:
+                        if move_p1:
+                            if abs(1 - k) > 1e-9:
+                                new_p1 = (g_prime - k * fixed_val) / (1 - k)
+                                if is_time:
+                                    if t_min <= new_p1 <= t_max and new_p1 <= orig_p2: m1.setPos(new_p1)
+                                else:
+                                    if y_min <= new_p1 <= y_max and new_p1 <= orig_p2: m1.setPos(new_p1)
+                        else:
+                            if abs(k) > 1e-9:
+                                new_p2 = fixed_val + (g_prime - fixed_val) / k
+                                if is_time:
+                                    if t_min <= new_p2 <= t_max and new_p2 >= orig_p1: m2.setPos(new_p2)
+                                else:
+                                    if y_min <= new_p2 <= y_max and new_p2 >= orig_p1: m2.setPos(new_p2)
+                except ZeroDivisionError: pass
+                
+            self.update_marker_info()
+            return
+
+        if self.interaction_mode == 'STATS':
+            if getattr(self, 'active_drag_stats_bound_idx', -1) != -1:
+                idx = self.active_drag_stats_bound_idx
+                t_min, t_max = self.time_axis[0], self.time_axis[-1]
+                val = max(t_min, min(t_max, v_pos.x()))
+                self.stats_bounds[idx] = val
+                
+                if len(self.stats_bounds) == 2:
+                    other_idx = 1 - idx
+                    other_v = self.stats_bounds[other_idx]
+                    
+                    self.stats_bounds.sort()
+                    self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
+                    
+                    self.stats_marker_order = [other_v, val] if self.stats_marker_order[0] == self.stats_bounds[1 - self.active_drag_stats_bound_idx] else [val, other_v]
+                    
+                    self.stats_region.setRegion(self.stats_bounds)
+                else:
+                    if self.stats_line: self.stats_line.setPos(val)
+                    if self.stats_marker_order:
+                        self.stats_marker_order[-1] = val
+                
+                self.update_statistics()
+            return
+
+        if not getattr(self, 'active_drag_marker', None): return
         is_time = (self.active_drag_marker in self.markers_time or self.active_drag_marker in self.markers_time_endless)
         is_endless = 'ENDLESS' in self.interaction_mode
         
@@ -630,6 +1026,9 @@ class TimeDomainView(QWidget):
         if not is_endless:
             m1_p, m2_p = (len(sorted_m) >= 1), (len(sorted_m) >= 2)
             self.marker_panel.set_locks_enabled(m1_p, m2_p)
+            
+        self.update_grid('TIME')
+        self.update_grid('MAG')
 
     def marker_edit_finished(self):
         sender = self.sender()
@@ -715,6 +1114,7 @@ class TimeDomainView(QWidget):
                 self._marker_age.pop(m, None)
             self.markers_time = []
             self.marker_panel._clear_marker_locks('TIME')
+            self.toggle_grid('TIME', False)
         elif mode == 'TIME_ENDLESS':
             for m in self.markers_time_endless: self.plot_item.removeItem(m)
             self.markers_time_endless = []
@@ -727,6 +1127,7 @@ class TimeDomainView(QWidget):
                 self._marker_age.pop(m, None)
             self.markers_y_dict[self.y_label_text] = []
             self.marker_panel._clear_marker_locks('MAG')
+            self.toggle_grid('MAG', False)
         self.update_marker_info()
 
     def remove_marker_item(self, marker, mode):
@@ -746,9 +1147,16 @@ class TimeDomainView(QWidget):
         self.update_marker_info()
 
     def reset_zoom(self):
+        self.zoom_history.append(self.plot_item.viewRect())
         self.plot_item.autoRange()
 
+    def undo_zoom(self):
+        if self.zoom_history:
+            prev_rect = self.zoom_history.pop()
+            self.plot_item.setRange(rect=prev_rect, padding=0)
+
     def handle_zoom_rectangle(self, rect, zoom_type):
+        self.zoom_history.append(self.plot_item.viewRect())
         if zoom_type == 'X_ONLY': self.plot_item.setXRange(rect.left(), rect.right(), padding=0)
         elif zoom_type == 'Y_ONLY': self.plot_item.setYRange(rect.top(), rect.bottom(), padding=0)
         else: self.plot_item.setRange(rect, padding=0)
@@ -771,12 +1179,103 @@ class TimeDomainView(QWidget):
             active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
             
         if len(active_markers) >= 2:
+            self.zoom_history.append(self.plot_item.viewRect())
             sorted_m = sorted(active_markers, key=lambda m: m.value())
             v1, v2 = sorted_m[0].value(), sorted_m[-1].value()
             if is_time:
-                self.plot_item.setXRange(v1, v2, padding=0.05)
+                self.plot_item.setXRange(v1, v2, padding=0)
             else:
-                self.plot_item.setYRange(v1, v2, padding=0.05)
+                self.plot_item.setYRange(v1, v2, padding=0)
+
+    def toggle_grid(self, axis, enabled):
+        if axis == 'TIME': self.grid_time_enabled = enabled
+        else: self.grid_mag_enabled = enabled
+        self.update_grid(axis, force=True)
+
+    def toggle_tracking(self, axis, enabled):
+        if axis == 'TIME': self.grid_time_tracking = enabled
+        else: self.grid_mag_tracking = enabled
+        self.update_grid(axis, force=True)
+
+    def update_grid(self, axis, force=False):
+        if not hasattr(self, '_grid_timer'):
+            from PyQt6.QtCore import QTimer
+            self._grid_timer = QTimer()
+            self._grid_timer.setSingleShot(True)
+            self._grid_timer.timeout.connect(self._do_update_grid)
+            self._grid_pending_axis = None
+
+        if force:
+            self._do_update_grid(axis)
+        else:
+            self._grid_pending_axis = axis
+            if not self._grid_timer.isActive():
+                self._grid_timer.start(50) # 50ms throttle
+
+    def _do_update_grid(self, axis=None):
+        if axis is None:
+            axis = getattr(self, '_grid_pending_axis', 'TIME')
+        
+        is_time = (axis == 'TIME')
+        enabled = self.grid_time_enabled if is_time else self.grid_mag_enabled
+        tracking = self.grid_time_tracking if is_time else self.grid_mag_tracking
+        active_markers = self.markers_time if is_time else self.markers_y_dict.get(self.y_label_text, [])
+        grid_lines = self.grid_lines_time if is_time else self.grid_lines_mag
+        
+        if not enabled:
+            for line in grid_lines: self.plot_item.removeItem(line)
+            grid_lines.clear()
+            return
+        if not tracking and not force: return
+        for line in grid_lines: self.plot_item.removeItem(line)
+        grid_lines.clear()
+        if len(active_markers) != 2: return
+        
+        sorted_m = sorted(active_markers, key=lambda m: m.value())
+        p1, p2 = sorted_m[0].value(), sorted_m[1].value()
+        delta = abs(p2 - p1)
+        if delta <= 0: return
+
+        # Optimization: Only plot visible lines
+        vr = self.plot_item.viewRange()
+        v_min_visible, v_max_visible = vr[0] if is_time else vr[1]
+        
+        # Guard against too many markers
+        if (v_max_visible - v_min_visible) / delta > 500:
+            return
+        
+        angle = 90 if is_time else 0
+        theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
+        color = self.parent_window.settings_mgr.get(f"ui/{theme}/grid_color", "#c8c8ff")
+        style_name = self.parent_window.settings_mgr.get(f"ui/{theme}/grid_style", "SolidLine")
+        alpha = int(self.parent_window.settings_mgr.get("ui/grid_alpha", 30))
+        
+        style_map = {
+            "SolidLine": Qt.PenStyle.SolidLine,
+            "DashLine": Qt.PenStyle.DashLine,
+            "DotLine": Qt.PenStyle.DotLine,
+            "DashDotLine": Qt.PenStyle.DashDotLine
+        }
+        style = style_map.get(str(style_name), Qt.PenStyle.SolidLine)
+        
+        from PyQt6.QtGui import QColor
+        qcolor = QColor(color)
+        qcolor.setAlphaF(alpha / 100.0)
+        
+        pen = pg.mkPen(qcolor, width=1, style=style)
+        
+        # Start from first visible multiple of delta relative to p1
+        start_count = np.ceil((v_min_visible - p1) / delta)
+        curr = p1 + start_count * delta
+        
+        count = 0
+        while curr <= v_max_visible + 1e-9 and count < 500:
+            line = pg.InfiniteLine(pos=curr, angle=angle, pen=pen, movable=False)
+            line.setZValue(5)
+            self.plot_item.addItem(line, ignoreBounds=True)
+            grid_lines.append(line)
+            curr += delta
+            count += 1
 
     def refresh_theme(self):
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")

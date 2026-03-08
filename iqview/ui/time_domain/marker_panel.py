@@ -74,11 +74,18 @@ class TimeDomainMarkerPanel(QFrame):
         self.btn_move.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_move, 1, 2)
         
-        # 5. Home
+        # 5. Stats
+        self.btn_stats = QPushButton("📈")
+        self.btn_stats.setObjectName("mode_btn")
+        self.btn_stats.setToolTip("Region Statistics")
+        self.btn_stats.setCheckable(True)
+        self.mode_btn_layout.addWidget(self.btn_stats, 0, 3)
+        
+        # 6. Home
         self.btn_home = QPushButton("🏠")
         self.btn_home.setObjectName("mode_btn")
         self.btn_home.setToolTip("Reset Zoom")
-        self.mode_btn_layout.addWidget(self.btn_home, 0, 3)
+        self.mode_btn_layout.addWidget(self.btn_home, 1, 3)
         self.btn_home.clicked.connect(self.resetZoomRequested.emit)
         
         # Mutual Exclusion Group
@@ -89,6 +96,7 @@ class TimeDomainMarkerPanel(QFrame):
         self.mode_group.addButton(self.btn_marker_mag_endless)
         self.mode_group.addButton(self.btn_zoom)
         self.mode_group.addButton(self.btn_move)
+        self.mode_group.addButton(self.btn_stats)
         self.mode_group.setExclusive(True)
 
         # Connections
@@ -98,6 +106,7 @@ class TimeDomainMarkerPanel(QFrame):
         self.btn_marker_mag_endless.clicked.connect(lambda: self.interactionModeChanged.emit('MAG_ENDLESS'))
         self.btn_zoom.clicked.connect(lambda: self.interactionModeChanged.emit('ZOOM'))
         self.btn_move.clicked.connect(lambda: self.interactionModeChanged.emit('MOVE'))
+        self.btn_stats.clicked.connect(lambda: self.interactionModeChanged.emit('STATS'))
         
         self.btn_marker_time.doubleClicked.connect(lambda: self.markerClearRequested.emit('TIME'))
         self.btn_marker_time_endless.doubleClicked.connect(lambda: self.markerClearRequested.emit('TIME_ENDLESS'))
@@ -207,6 +216,60 @@ class TimeDomainMarkerPanel(QFrame):
         self.scroll.setWidget(self.scroll_content)
         self.endless_layout.addWidget(self.scroll)
 
+        # Page 3: Statistics Layout
+        self.stats_widget = QWidget()
+        self.stacked.addWidget(self.stats_widget)
+        self.stats_layout = QGridLayout(self.stats_widget)
+        self.stats_layout.setContentsMargins(0, 0, 0, 0)
+        self.stats_layout.setHorizontalSpacing(10)
+        self.stats_layout.setVerticalSpacing(4)
+        
+        # Headers (Row 0)
+        self.stats_layout.addWidget(QLabel(""), 0, 0) 
+        
+        headers = ["Maximum", "Minimum", "Mean", "Median"]
+        for i, h in enumerate(headers):
+            lbl = QLabel(h)
+            lbl.setFont(self.header_font)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl.setStyleSheet(f"color: #888; text-transform: uppercase; font-size: 10px;")
+            self.stats_layout.addWidget(lbl, 0, i + 1)
+            
+        # Row Labels (Col 0)
+        lbl_val = QLabel("Value"); lbl_val.setObjectName("header_label")
+        lbl_time = QLabel("Time (sec)"); lbl_time.setObjectName("header_label")
+        lbl_idx = QLabel("Index"); lbl_idx.setObjectName("header_label")
+        
+        self.stats_layout.addWidget(lbl_val, 1, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.stats_layout.addWidget(lbl_time, 2, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.stats_layout.addWidget(lbl_idx, 3, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        
+        # Line Edits
+        self.stats_max_val = FormattedLineEdit(); self.stats_max_val.setFixedWidth(130); self.stats_max_val.setReadOnly(True); self.stats_max_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_min_val = FormattedLineEdit(); self.stats_min_val.setFixedWidth(130); self.stats_min_val.setReadOnly(True); self.stats_min_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_mean_val = FormattedLineEdit(); self.stats_mean_val.setFixedWidth(130); self.stats_mean_val.setReadOnly(True); self.stats_mean_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_median_val = FormattedLineEdit(); self.stats_median_val.setFixedWidth(130); self.stats_median_val.setReadOnly(True); self.stats_median_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        self.stats_max_time = FormattedLineEdit(); self.stats_max_time.setFixedWidth(130); self.stats_max_time.setReadOnly(True); self.stats_max_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_min_time = FormattedLineEdit(); self.stats_min_time.setFixedWidth(130); self.stats_min_time.setReadOnly(True); self.stats_min_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        self.stats_max_idx = FormattedLineEdit(); self.stats_max_idx.setFixedWidth(130); self.stats_max_idx.setReadOnly(True); self.stats_max_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_min_idx = FormattedLineEdit(); self.stats_min_idx.setFixedWidth(130); self.stats_min_idx.setReadOnly(True); self.stats_min_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # Add to Grid (Row 1: Value)
+        self.stats_layout.addWidget(self.stats_max_val, 1, 1)
+        self.stats_layout.addWidget(self.stats_min_val, 1, 2)
+        self.stats_layout.addWidget(self.stats_mean_val, 1, 3)
+        self.stats_layout.addWidget(self.stats_median_val, 1, 4)
+        
+        # Add to Grid (Row 2: Time)
+        self.stats_layout.addWidget(self.stats_max_time, 2, 1)
+        self.stats_layout.addWidget(self.stats_min_time, 2, 2)
+        
+        # Add to Grid (Row 3: Index)
+        self.stats_layout.addWidget(self.stats_max_idx, 3, 1)
+        self.stats_layout.addWidget(self.stats_min_idx, 3, 2)
+
     def set_y_label(self, label):
         # We handle this via update_headers now
         pass
@@ -216,7 +279,9 @@ class TimeDomainMarkerPanel(QFrame):
         self.row_v2_label.blockSignals(True)
         
         # Handle Page Switching
-        if 'ENDLESS' in mode:
+        if mode == 'STATS':
+            self.stacked.setCurrentIndex(2)
+        elif 'ENDLESS' in mode:
             self.stacked.setCurrentIndex(1)
         else:
             self.stacked.setCurrentIndex(0)
@@ -262,6 +327,7 @@ class TimeDomainMarkerPanel(QFrame):
         self.btn_marker_mag_endless.blockSignals(True)
         self.btn_zoom.blockSignals(True)
         self.btn_move.blockSignals(True)
+        self.btn_stats.blockSignals(True)
         
         self.btn_marker_time.setChecked(mode == 'TIME')
         self.btn_marker_time_endless.setChecked(mode == 'TIME_ENDLESS')
@@ -269,6 +335,7 @@ class TimeDomainMarkerPanel(QFrame):
         self.btn_marker_mag_endless.setChecked(mode == 'MAG_ENDLESS')
         self.btn_zoom.setChecked(mode == 'ZOOM')
         self.btn_move.setChecked(mode == 'MOVE')
+        self.btn_stats.setChecked(mode == 'STATS')
         
         self.btn_marker_time.blockSignals(False)
         self.btn_marker_time_endless.blockSignals(False)
@@ -276,6 +343,7 @@ class TimeDomainMarkerPanel(QFrame):
         self.btn_marker_mag_endless.blockSignals(False)
         self.btn_zoom.blockSignals(False)
         self.btn_move.blockSignals(False)
+        self.btn_stats.blockSignals(False)
         
         self.btn_lock_delta.setEnabled(mode in ['TIME', 'MAG'])
         self.btn_lock_center.setEnabled(mode in ['TIME', 'MAG'])
