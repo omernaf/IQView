@@ -15,22 +15,20 @@ APP_DESC = "IQ Data File"
 
 def get_executable_path():
     """
-    Returns the path to the iqview.exe.
-    When installed via pip, an iqview.exe is placed in the Python/Scripts folder.
+    Returns the path to the executable.
+    Prefers the windowed iqview-gui.exe to avoid console windows,
+    falling back to iqview.exe if not found.
     """
     python_dir = os.path.dirname(sys.executable)
-    # Check if we are running the wrapper iqview.exe in Scripts
-    # typically sys.executable is python.exe, but in venv it might be Scripts/python.exe
-    exe_path = os.path.join(python_dir, "iqview.exe")
+    scripts_dir = os.path.join(python_dir, "Scripts")
     
-    # If not there, check Scripts folder explicitly (especially outside venv)
-    if not os.path.exists(exe_path):
-        scripts_dir = os.path.join(python_dir, "Scripts")
-        alt_exe_path = os.path.join(scripts_dir, "iqview.exe")
-        if os.path.exists(alt_exe_path):
-            exe_path = alt_exe_path
+    for name in ["iqview-gui.exe", "iqview.exe"]:
+        for d in [python_dir, scripts_dir]:
+            exe_path = os.path.join(d, name)
+            if os.path.exists(exe_path):
+                return exe_path
             
-    return exe_path
+    return os.path.join(scripts_dir, "iqview-gui.exe")
 
 def get_icon_path():
     """Returns the path to the application icon."""
