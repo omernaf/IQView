@@ -60,6 +60,8 @@ class TimeDomainView(QWidget):
         self.grid_mag_enabled = False
         self.grid_mag_tracking = True
         self.grid_lines_mag = []
+
+        self.zoom_history = []
         
         self.y_label_text = list(self.available_modes.keys())[0] if hasattr(self, 'available_modes') else "Real"
         self.current_plot_data = samples.real # Cache for marker sampling
@@ -215,7 +217,9 @@ class TimeDomainView(QWidget):
         mag_seq = s.get('keybinds/mag_markers', 'F')
         zoom_seq = s.get('keybinds/zoom_mode', 'Ctrl')
         
-        if key_name == time_seq:
+        if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Z:
+            self.undo_zoom()
+        elif key_name == time_seq:
             self.set_interaction_mode('TIME')
         elif key_name == mag_seq:
             self.set_interaction_mode('MAG')
@@ -1139,9 +1143,16 @@ class TimeDomainView(QWidget):
         self.update_marker_info()
 
     def reset_zoom(self):
+        self.zoom_history.append(self.plot_item.viewRect())
         self.plot_item.autoRange()
 
+    def undo_zoom(self):
+        if self.zoom_history:
+            prev_rect = self.zoom_history.pop()
+            self.plot_item.setRange(rect=prev_rect, padding=0)
+
     def handle_zoom_rectangle(self, rect, zoom_type):
+        self.zoom_history.append(self.plot_item.viewRect())
         if zoom_type == 'X_ONLY': self.plot_item.setXRange(rect.left(), rect.right(), padding=0)
         elif zoom_type == 'Y_ONLY': self.plot_item.setYRange(rect.top(), rect.bottom(), padding=0)
         else: self.plot_item.setRange(rect, padding=0)
@@ -1164,6 +1175,7 @@ class TimeDomainView(QWidget):
             active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
             
         if len(active_markers) >= 2:
+            self.zoom_history.append(self.plot_item.viewRect())
             sorted_m = sorted(active_markers, key=lambda m: m.value())
             v1, v2 = sorted_m[0].value(), sorted_m[-1].value()
             if is_time:
