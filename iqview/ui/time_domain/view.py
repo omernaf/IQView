@@ -172,6 +172,8 @@ class TimeDomainView(QWidget):
 
         # Connect scrollbars
         self.view_box.sigRangeChanged.connect(self.update_scrollbars)
+        self.view_box.sigRangeChanged.connect(lambda: self.update_grid('TIME'))
+        self.view_box.sigRangeChanged.connect(lambda: self.update_grid('MAG'))
         self.x_scroll.valueChanged.connect(self.scroll_view)
         self.y_scroll.valueChanged.connect(self.scroll_view)
 
@@ -1194,6 +1196,24 @@ class TimeDomainView(QWidget):
         self.update_grid(axis, force=True)
 
     def update_grid(self, axis, force=False):
+        if not hasattr(self, '_grid_timer'):
+            from PyQt6.QtCore import QTimer
+            self._grid_timer = QTimer()
+            self._grid_timer.setSingleShot(True)
+            self._grid_timer.timeout.connect(self._do_update_grid)
+            self._grid_pending_axis = None
+
+        if force:
+            self._do_update_grid(axis)
+        else:
+            self._grid_pending_axis = axis
+            if not self._grid_timer.isActive():
+                self._grid_timer.start(50) # 50ms throttle
+
+    def _do_update_grid(self, axis=None):
+        if axis is None:
+            axis = getattr(self, '_grid_pending_axis', 'TIME')
+        
         is_time = (axis == 'TIME')
         enabled = self.grid_time_enabled if is_time else self.grid_mag_enabled
         tracking = self.grid_time_tracking if is_time else self.grid_mag_tracking
@@ -1213,6 +1233,14 @@ class TimeDomainView(QWidget):
         p1, p2 = sorted_m[0].value(), sorted_m[1].value()
         delta = abs(p2 - p1)
         if delta <= 0: return
+
+        # Optimization: Only plot visible lines
+        vr = self.plot_item.viewRange()
+        v_min_visible, v_max_visible = vr[0] if is_time else vr[1]
+        
+        # Guard against too many markers
+        if (v_max_visible - v_min_visible) / delta > 500:
+            return
         
         angle = 90 if is_time else 0
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
@@ -1232,26 +1260,20 @@ class TimeDomainView(QWidget):
         qcolor = QColor(color)
         qcolor.setAlphaF(alpha / 100.0)
         
-        v_min = self.time_axis[0] if is_time else self._get_y_bounds()[0]
-        v_max = self.time_axis[-1] if is_time else self._get_y_bounds()[1]
-        
         pen = pg.mkPen(qcolor, width=1, style=style)
         
-        curr = p1
-        while curr <= v_max + 1e-9:
+        # Start from first visible multiple of delta relative to p1
+        start_count = np.ceil((v_min_visible - p1) / delta)
+        curr = p1 + start_count * delta
+        
+        count = 0
+        while curr <= v_max_visible + 1e-9 and count < 500:
             line = pg.InfiniteLine(pos=curr, angle=angle, pen=pen, movable=False)
             line.setZValue(5)
             self.plot_item.addItem(line, ignoreBounds=True)
             grid_lines.append(line)
             curr += delta
-            
-        curr = p1 - delta
-        while curr >= v_min - 1e-9:
-            line = pg.InfiniteLine(pos=curr, angle=angle, pen=pen, movable=False)
-            line.setZValue(5)
-            self.plot_item.addItem(line, ignoreBounds=True)
-            grid_lines.append(line)
-            curr -= delta
+            count += 1
 
     def refresh_theme(self):
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")

@@ -124,6 +124,8 @@ class SpectrogramView(QWidget):
 
         # Connect signals
         self.view_box.sigRangeChanged.connect(self.update_scrollbars)
+        self.view_box.sigRangeChanged.connect(lambda: self.parent_window.update_grid('TIME'))
+        self.view_box.sigRangeChanged.connect(lambda: self.parent_window.update_grid('FREQ'))
         self.x_scroll.valueChanged.connect(self.scroll_view)
         self.y_scroll.valueChanged.connect(self.scroll_view)
 
