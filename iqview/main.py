@@ -13,7 +13,7 @@ import pyqtgraph as pg
 from PyQt6.QtWidgets import QApplication
 from iqview.ui import SpectrogramWindow
 from iqview.utils.settings_manager import SettingsManager
-from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext
+from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext, detect_params_from_filename
 
 def parse_args():
     sm = SettingsManager()
@@ -58,12 +58,36 @@ def main():
     
     # Priority: 1. User Input, 2. Auto-detection from filename, 3. App Settings
     type_str = args.type
-    if not type_str and file_path:
-        auto_type = detect_type_from_ext(file_path)
-        if auto_type:
-            type_str = auto_type
-            print(f"Auto-detected data type from file extension: {type_str}")
+    fs = args.rate
+    fc = args.fc
+    
+    # We will check if rate or fc are still at their default values by reading the settings
+    # because argparse doesn't natively tell us if default was used if we used `default=` parameter
+    # A cleaner way is using `sys.argv`, but this is fine.
+    
+    # Identify if user explicitly set them 
+    user_rate = '-r' in sys.argv or '--rate' in sys.argv
+    user_fc = '-c' in sys.argv or '--fc' in sys.argv
+
+    if file_path:
+        if not type_str:
+            auto_type = detect_type_from_ext(file_path)
+            if auto_type:
+                type_str = auto_type
+                print(f"Auto-detected data type from file extension: {type_str}")
+        
+        # Detect fs and fc
+        if not user_rate or not user_fc:
+            params = detect_params_from_filename(file_path)
             
+            if not user_rate and params.get('fs') is not None:
+                fs = params['fs']
+                print(f"Auto-detected sample rate from filename: {fs/1e6:g} MHz")
+                
+            if not user_fc and params.get('fc') is not None:
+                fc = params['fc']
+                print(f"Auto-detected center frequency from filename: {fc/1e6:g} MHz")
+                
     if not type_str:
         type_str = sm.get("core/type", "complex64")
 
@@ -92,7 +116,7 @@ def main():
     pg.setConfigOptions(useOpenGL=True, enableExperimental=True, imageAxisOrder='row-major')
     
     app = QApplication(sys.argv)
-    window = SpectrogramWindow(data_source, dtype, args.rate, args.fc, args.fft, args.profile, is_complex=is_complex)
+    window = SpectrogramWindow(data_source, dtype, fs, fc, args.fft, args.profile, is_complex=is_complex)
     window.show()
     
     if args.profile:
