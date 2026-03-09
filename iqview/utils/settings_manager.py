@@ -16,6 +16,16 @@ class SettingsManager:
         "core/filter_ripple": 0.1,
         "core/filter_stopband": 60.0,
         "core/filter_bessel_norm": "phase",
+        "core/extension_mapping": {
+            '.32f': 'float32',
+            '.64f': 'float64',
+            '.16tc': 'int16',
+            '.16sc': 'int16',
+            '.64fc': 'complex128',
+            '.32fc': 'complex64',
+            '.bin': 'complex64',
+            '.iq': 'complex64'
+        },
         "core/time_plots": [
             "instant frequency", 
             "magnitude^2", 

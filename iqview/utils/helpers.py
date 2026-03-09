@@ -25,17 +25,10 @@ def detect_type_from_ext(path):
         
     ext = os.path.splitext(path)[1].lower()
     
-    # Mapping based on user request
-    mapping = {
-        '.32f': 'float32',
-        '.64f': 'float64',
-        '.16tc': 'int16',
-        '.16sc': 'int16',
-        '.64fc': 'complex128',
-        '.32fc': 'complex64',
-        '.bin': 'complex64',
-        '.iq': 'complex64'
-    }
+    # Load mapping from settings manager dynamically
+    from iqview.utils.settings_manager import SettingsManager
+    sm = SettingsManager()
+    mapping = sm.get("core/extension_mapping", {})
     
     return mapping.get(ext)
 
