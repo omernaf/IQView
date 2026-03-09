@@ -1,11 +1,20 @@
 import os
 import sys
 import subprocess
-# The file extensions we want to associate with IQView
-SUPPORTED_EXTENSIONS = [
-    ".32f", ".64f", ".16tc", ".16sc", ".64fc", ".32fc", 
-    ".bin", ".iq", ".sigmf", ".sigmf-data"
-]
+def _get_supported_extensions():
+    try:
+        from iqview.utils.settings_manager import SettingsManager
+        sm = SettingsManager()
+        mapping = sm.get("core/extension_mapping", {})
+        if mapping:
+            return list(mapping.keys())
+    except Exception:
+        pass
+    
+    return [
+        ".32f", ".64f", ".16tc", ".16sc", ".64fc", ".32fc", 
+        ".bin", ".iq", ".sigmf", ".sigmf-data"
+    ]
 
 APP_NAME = "IQView"
 APP_PROG_ID = "IQView.File"
@@ -80,7 +89,7 @@ def _register_file_associations(exe_path, icon_path):
             winreg.SetValue(key, "", winreg.REG_SZ, command)
             
         # 2. Register all file extensions to the ProgID
-        for ext in SUPPORTED_EXTENSIONS:
+        for ext in _get_supported_extensions():
             with winreg.CreateKey(winreg.HKEY_CURRENT_USER, fr"Software\Classes\{ext}") as key:
                 winreg.SetValue(key, "", winreg.REG_SZ, APP_PROG_ID)
                 print(f"  \u2713 Associated {ext}")
@@ -136,7 +145,7 @@ def _unregister_file_associations():
     print("Unregistering file associations...")
     try:
         # 1. Unregister all file extensions (if they pointed to our ProgID)
-        for ext in SUPPORTED_EXTENSIONS:
+        for ext in _get_supported_extensions():
             try:
                 # We do not want to delete the .ext key entirely, just the default association if it matches us
                 with winreg.OpenKey(winreg.HKEY_CURRENT_USER, fr"Software\Classes\{ext}", 0, winreg.KEY_ALL_ACCESS) as key:
@@ -181,7 +190,7 @@ Icon={icon_path}
 Terminal=false
 Type=Application
 Categories=Science;Utility;
-MimeType={''.join(f'application/x-extension-{ext[1:]};' for ext in SUPPORTED_EXTENSIONS)}
+MimeType={''.join(f'application/x-extension-{ext[1:]};' for ext in _get_supported_extensions())}
 """
     try:
         with open(desktop_file, "w") as f:
