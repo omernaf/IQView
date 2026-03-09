@@ -50,8 +50,12 @@ PYTHON_TARGETS = [
     {"python_version": "3.13", "folder": "py313"},
 ]
 
-# Only targeting Windows 64-bit.  Add more if you need Linux/Mac.
-PLATFORM = "win_amd64"
+# Dynamic platform targeting based on current OS
+if sys.platform.startswith("linux"):
+    PLATFORM = "manylinux2014_x86_64"
+else:
+    # Default to Windows 64-bit.
+    PLATFORM = "win_amd64"
 
 OUTPUT_ROOT = Path("offline_dist")
 DIST_DIR    = Path("dist")
@@ -109,6 +113,10 @@ def download_for_target(target: dict, iqview_wheel: Path) -> bool:
     # Write install + uninstall bats for convenience
     write_install_bat(folder, iqview_wheel.name, python_version)
     write_uninstall_bat(folder)
+    
+    # Write install + uninstall shell scripts for Linux
+    write_install_sh(folder, iqview_wheel.name, python_version)
+    write_uninstall_sh(folder)
     return True
 
 
@@ -163,6 +171,54 @@ pause
     print(f"  ✓ Wrote {bat_path.name}")
 
 
+def write_install_sh(folder: Path, wheel_name: str, python_version: str):
+    """Write install_offline.sh into the target folder."""
+    sh_path = folder / "install_offline.sh"
+    sh_content = f"""#!/bin/bash
+# IQView offline installer for Python {python_version} on Linux x64
+# Run this file on the target machine inside this folder.
+
+# Change to this script's own directory so relative paths work correctly
+cd "$(dirname "$0")"
+
+echo "Installing IQView (Python {python_version}) from local wheels..."
+pip install --no-index --find-links=. {wheel_name}
+if [ $? -ne 0 ]; then
+    echo
+    echo "[ERROR] Installation failed."
+    echo "Make sure you are running Python {python_version} and this folder is intact."
+    exit 1
+fi
+echo
+echo "IQView installed successfully!"
+echo "Run it with: iqview"
+"""
+    sh_path.write_text(sh_content, encoding="utf-8")
+    sh_path.chmod(0o755)
+    print(f"  ✓ Wrote {sh_path.name}")
+
+
+def write_uninstall_sh(folder: Path):
+    """Write uninstall_iqview.sh into the target folder."""
+    sh_path = folder / "uninstall_iqview.sh"
+    sh_content = """#!/bin/bash
+# IQView — Uninstall script
+# Removes iqview and all its dependencies from the current Python environment.
+# Use this to clean up before testing the offline installer.
+
+echo "Uninstalling IQView and its dependencies..."
+echo
+
+pip uninstall -y iqview numpy pyqtgraph PyOpenGL scipy PyQt6 PyQt6-Qt6 PyQt6-sip colorama
+
+echo
+echo "Done. You can now re-install from the offline kit to test it."
+"""
+    sh_path.write_text(sh_content, encoding="utf-8")
+    sh_path.chmod(0o755)
+    print(f"  ✓ Wrote {sh_path.name}")
+
+
 def print_summary(results: list):
     print(f"\n{'═'*60}")
     print("  Summary")
@@ -173,7 +229,7 @@ def print_summary(results: list):
     print(f"\nOffline kits are in: {OUTPUT_ROOT.resolve()}")
     print(
         "\nTo install on a target machine, copy the matching sub-folder\n"
-        "and double-click install_offline.bat  (or run it from a terminal).\n"
+        "and double-click install_offline.bat (Windows) or install_offline.sh (Linux).\n"
     )
 
 
