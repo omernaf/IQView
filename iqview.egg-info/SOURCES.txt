@@ -29,5 +29,6 @@ iqview/ui/main_window/view_controller.py
 iqview/ui/time_domain/__init__.py
 iqview/ui/time_domain/marker_panel.py
 iqview/ui/time_domain/view.py
+iqview/utils/desktop.py
 iqview/utils/helpers.py
 iqview/utils/settings_manager.py

@@ -1,2 +1,5 @@
 [console_scripts]
 iqview = iqview.main:main
+
+[gui_scripts]
+iqview-gui = iqview.main:main

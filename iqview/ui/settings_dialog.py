@@ -1,7 +1,8 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, 
                              QWidget, QLabel, QLineEdit, QComboBox, QPushButton, 
                              QFormLayout, QDialogButtonBox, QKeySequenceEdit, QCheckBox,
-                             QColorDialog, QSlider, QSpinBox, QListWidget, QListWidgetItem, QAbstractItemView)
+                             QColorDialog, QSlider, QSpinBox, QListWidget, QListWidgetItem,
+                             QAbstractItemView, QTableWidget, QTableWidgetItem, QHeaderView)
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QKeySequence, QIcon, QPixmap, QPainter, QLinearGradient, QColor
 from .widgets import KeyBindEdit
@@ -337,6 +338,41 @@ class SettingsDialog(QDialog):
         
         self.tabs.addTab(self.plots_tab, "Time Plots")
 
+        # --- File Types Tab ---
+        self.file_types_tab = QWidget()
+        self.file_types_layout = QVBoxLayout(self.file_types_tab)
+        
+        ft_help = QLabel("Map file extensions (e.g. '.32f') to a data type. These are used when auto-detecting the data type of an opened file.")
+        ft_help.setWordWrap(True)
+        ft_help.setStyleSheet("color: #888; font-style: italic;")
+        self.file_types_layout.addWidget(ft_help)
+        
+        self.ext_table = QTableWidget()
+        self.ext_table.setColumnCount(2)
+        self.ext_table.setHorizontalHeaderLabels(["Extension", "Data Type"])
+        self.ext_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.ext_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.ext_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.file_types_layout.addWidget(self.ext_table)
+        
+        btn_layout = QHBoxLayout()
+        add_btn = QPushButton("Add")
+        remove_btn = QPushButton("Remove Selected")
+        reset_ft_btn = QPushButton("Reset to Default")
+        btn_layout.addWidget(add_btn)
+        btn_layout.addWidget(remove_btn)
+        btn_layout.addStretch()
+        btn_layout.addWidget(reset_ft_btn)
+        self.file_types_layout.addLayout(btn_layout)
+        
+        self._load_extension_mappings()
+        
+        add_btn.clicked.connect(self._add_ext_mapping_row)
+        remove_btn.clicked.connect(self._remove_ext_mapping_row)
+        reset_ft_btn.clicked.connect(self._reset_ext_mappings)
+
+        self.tabs.addTab(self.file_types_tab, "File Types")
+
         # --- Buttons ---
         self.button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | 
@@ -407,6 +443,21 @@ class SettingsDialog(QDialog):
                     active_plots.append(item.text())
             self.mgr.set("core/time_plots", active_plots)
             
+            # Save Extension Mappings
+            ext_map = {}
+            for row in range(self.ext_table.rowCount()):
+                ext_item = self.ext_table.item(row, 0)
+                type_widget = self.ext_table.cellWidget(row, 1)
+                
+                if ext_item and type_widget:
+                    ext_text = ext_item.text().strip().lower()
+                    if ext_text and not ext_text.startswith('.'):
+                        ext_text = '.' + ext_text
+                    
+                    if ext_text:
+                        ext_map[ext_text] = type_widget.currentText()
+            self.mgr.set("core/extension_mapping", ext_map)
+            
             return True
         except ValueError as e:
             from PyQt6.QtWidgets import QMessageBox
@@ -448,3 +499,38 @@ class SettingsDialog(QDialog):
         self.filter_form.setRowVisible(2, is_ripple_valid)
         self.filter_form.setRowVisible(3, is_stopband_valid)
         self.filter_form.setRowVisible(4, is_bessel)
+
+    def _load_extension_mappings(self):
+        self.ext_table.setRowCount(0)
+        mappings = self.mgr.get("core/extension_mapping", self.mgr.get_default("core/extension_mapping"))
+        for ext, dtype in mappings.items():
+            self._add_ext_mapping_row(ext, dtype)
+
+    def _add_ext_mapping_row(self, ext="", dtype="complex64"):
+        row = self.ext_table.rowCount()
+        self.ext_table.insertRow(row)
+        
+        ext_item = QTableWidgetItem(ext)
+        self.ext_table.setItem(row, 0, ext_item)
+        
+        dtype_combo = QComboBox()
+        valid_types = ["int16", "float32", "float64", "complex64", "complex128"]
+        dtype_combo.addItems(valid_types)
+        
+        # In case an invalid type somehow got saved, default to complex64
+        if dtype not in valid_types:
+            dtype = "complex64"
+        dtype_combo.setCurrentText(dtype)
+        
+        self.ext_table.setCellWidget(row, 1, dtype_combo)
+
+    def _remove_ext_mapping_row(self):
+        selected_rows = set(index.row() for index in self.ext_table.selectedIndexes())
+        for row in sorted(selected_rows, reverse=True):
+            self.ext_table.removeRow(row)
+            
+    def _reset_ext_mappings(self):
+        self.ext_table.setRowCount(0)
+        defaults = self.mgr.get_default("core/extension_mapping")
+        for ext, dtype in defaults.items():
+            self._add_ext_mapping_row(ext, dtype)

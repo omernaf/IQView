@@ -141,6 +141,9 @@ class FileReaderThread(QThread):
                     # Convert raw bytes to complex array
                     raw_array = np.frombuffer(data_bytes, dtype=self.dtype).astype(np.float32)
                     
+                    if self.dtype == np.int16:
+                        raw_array /= 32768.0
+                    
                     if self.is_complex:
                         # Real/Imag de-interleave
                         full_complex = raw_array[0::2] + 1j * raw_array[1::2]

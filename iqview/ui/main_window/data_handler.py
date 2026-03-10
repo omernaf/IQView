@@ -79,6 +79,9 @@ class DataHandlerMixin:
                 with open(self.data_source, 'rb') as f:
                     f.seek(offset)
                     raw_data = np.fromfile(f, dtype=self.data_type, count=num_samples * read_multiplier).astype(np.float32)
+            
+            if self.data_type == np.int16:
+                raw_data /= 32768.0
                 
             if self.is_complex:
                 if self.data_type == np.float64:

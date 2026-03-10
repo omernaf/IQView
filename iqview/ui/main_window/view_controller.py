@@ -290,11 +290,16 @@ class ViewControllerMixin:
 
     def open_file_dialog(self):
         """Show a native Open File dialog and load the selected IQ file."""
+        mapping = self.settings_mgr.get("core/extension_mapping", {})
+        exts = " ".join([f"*{ext}" for ext in mapping.keys()])
+        if not exts:
+            exts = "*.32f *.64f *.16tc *.16sc *.64fc *.32fc *.bin *.iq *.raw"
+            
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Open IQ File",
             os.path.dirname(self.file_path) if isinstance(self.file_path, str) else "",
-            "IQ Files (*.32f *.64f *.16tc *.16sc *.64fc *.32fc *.bin *.iq *.raw);;All Files (*)"
+            f"IQ Files ({exts});;All Files (*)"
         )
         if path:
             self.load_new_file(path)
