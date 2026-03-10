@@ -265,7 +265,19 @@ class CustomViewBox(pg.ViewBox):
                     # We'll use a QGraphicsPathItem for the dynamic 1D/2D visual
                     self.zoom_rect = QtWidgets.QGraphicsPathItem()
                     self.addItem(self.zoom_rect)
-                    self.zoom_start_v = self.mapSceneToView(ev.buttonDownScenePos())
+                    
+                    start_v = self.mapSceneToView(ev.buttonDownScenePos())
+                    xr, yr = self.viewRange()
+                    if xr is not None and yr is not None:
+                        x_min, x_max = min(xr), max(xr)
+                        y_min, y_max = min(yr), max(yr)
+                        self.zoom_start_v = pg.QtCore.QPointF(
+                            max(x_min, min(x_max, start_v.x())),
+                            max(y_min, min(y_max, start_v.y()))
+                        )
+                    else:
+                        self.zoom_start_v = start_v
+                        
                     self.zoom_type = 'BOTH'
                 
                 elif ev.isFinish():
@@ -277,10 +289,19 @@ class CustomViewBox(pg.ViewBox):
                 else:
                     if self.zoom_rect:
                         curr_v = self.mapSceneToView(ev.scenePos())
+                        
+                        xr, yr = self.viewRange()
+                        if xr is not None and yr is not None:
+                            x_min, x_max = min(xr), max(xr)
+                            y_min, y_max = min(yr), max(yr)
+                            curr_v = pg.QtCore.QPointF(
+                                max(x_min, min(x_max, curr_v.x())),
+                                max(y_min, min(y_max, curr_v.y()))
+                            )
+                            
                         p1, p2 = self.zoom_start_v, curr_v
                         
                         # Detect Zoom Type
-                        xr, yr = self.viewRange()
                         dx, dy = abs(p2.x() - p1.x()), abs(p2.y() - p1.y())
                         ndx, ndy = dx / (xr[1]-xr[0]), dy / (yr[1]-yr[0])
                         
