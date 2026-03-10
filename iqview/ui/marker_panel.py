@@ -26,6 +26,7 @@ class MarkerPanel(QFrame):
 
         # State
         self.current_mode = 'TIME'
+        self.last_marker_mode = 'TIME'
         self.lock_states = {
             'TIME':   {'delta': False, 'center': False, 'm1': False, 'm2': False},
             'FREQ':   {'delta': False, 'center': False, 'm1': False, 'm2': False},
@@ -350,12 +351,18 @@ class MarkerPanel(QFrame):
 
         self.current_mode = mode
         
-        if mode in ['TIME_ENDLESS', 'FREQ_ENDLESS']:
+        # Track the last valid marker mode to display in the table
+        if mode in ['TIME', 'FREQ', 'TIME_ENDLESS', 'FREQ_ENDLESS']:
+            self.last_marker_mode = mode
+            
+        display_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE', 'FILTER'] else mode
+
+        if display_mode in ['TIME_ENDLESS', 'FREQ_ENDLESS']:
             self.stack.setCurrentIndex(1)
         else:
             self.stack.setCurrentIndex(0)
 
-        if mode in ['FREQ', 'FREQ_ENDLESS']:
+        if display_mode in ['FREQ', 'FREQ_ENDLESS']:
             self.row1_label.setText("Freq (Hz)")
             self.row2_label.setText("Bin")
         elif mode in ['TIME', 'TIME_ENDLESS']:
@@ -365,15 +372,15 @@ class MarkerPanel(QFrame):
             has_bounds = getattr(self.parent_window, 'filter_placed', False)
             self.filter_enable_cb.setEnabled(has_bounds)
             
-        # Sync lock UI with saved state for this mode (if applicable)
-        if mode in self.lock_states:
+        # Sync lock UI with saved state for this display mode
+        if display_mode in self.lock_states:
             for key, btn, label_fn in [
                 ('m1',     self.btn_lock_m1,     lambda c: f"Marker 1 {'🔒' if c else '🔓'}"),
                 ('m2',     self.btn_lock_m2,     lambda c: f"Marker 2 {'🔒' if c else '🔓'}"),
                 ('delta',  self.btn_lock_delta,  lambda c: f"Delta (Δ) {'🔒' if c else '🔓'}"),
                 ('center', self.btn_lock_center, lambda c: f"Center {'🔒' if c else '🔓'}"),
             ]:
-                locked = self.lock_states[mode].get(key, False)
+                locked = self.lock_states[display_mode].get(key, False)
                 btn.blockSignals(True)
                 btn.setChecked(locked)
                 btn.setText(label_fn(locked))

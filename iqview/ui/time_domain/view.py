@@ -957,21 +957,27 @@ class TimeDomainView(QWidget):
         self.update_marker_info()
 
     def update_marker_info(self):
-        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
-        is_endless = 'ENDLESS' in self.interaction_mode
+        # Always use the cached marker mode for displaying values in the table
+        display_mode = self.interaction_mode
+        if display_mode in ['ZOOM', 'MOVE', 'STATS']:
+            display_mode = getattr(self.marker_panel, 'last_marker_mode', 'TIME')
+            
+        is_time = (display_mode in ['TIME', 'TIME_ENDLESS'])
+        is_endless = 'ENDLESS' in display_mode
         
         if is_endless:
             active_markers = self.markers_time_endless if is_time else self.markers_y_endless_dict[self.y_label_text]
-            self.marker_panel.update_endless_list(active_markers, self.interaction_mode)
+            self.marker_panel.update_endless_list(active_markers, display_mode)
             # Re-label just in case
             for i, m in enumerate(active_markers):
                 if hasattr(m, 'label'): m.label.setFormat(f"M{i+1}")
-            return
-
-        active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
+            if self.interaction_mode not in ['ZOOM', 'MOVE', 'STATS']: return
+        else:
+            active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
+        
         sorted_m = sorted(active_markers, key=lambda m: m.value())
         
-        self.marker_panel.update_headers(self.interaction_mode, self.y_label_text)
+        self.marker_panel.update_headers(display_mode, self.y_label_text)
         
         # Clear fields
         for widget in self.marker_panel.m_widgets:
@@ -1022,8 +1028,10 @@ class TimeDomainView(QWidget):
                 self.marker_panel.delta_v2.blockSignals(False)
                 self.marker_panel.center_v2.blockSignals(False)
 
-        # Sync lock button availability
-        if not is_endless:
+        # Sync lock button availability (Keep locked if we are Zooming or Panning)
+        if self.interaction_mode in ['ZOOM', 'MOVE', 'STATS']:
+            pass
+        elif not is_endless:
             m1_p, m2_p = (len(sorted_m) >= 1), (len(sorted_m) >= 2)
             self.marker_panel.set_locks_enabled(m1_p, m2_p)
             

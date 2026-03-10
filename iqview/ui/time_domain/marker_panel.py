@@ -16,6 +16,7 @@ class TimeDomainMarkerPanel(QFrame):
             'TIME': {'delta': False, 'center': False, 'm1': False, 'm2': False},
             'MAG':  {'delta': False, 'center': False, 'm1': False, 'm2': False}
         }
+        self.last_marker_mode = 'TIME'
         self.setup_ui()
 
     def setup_ui(self):
@@ -278,15 +279,21 @@ class TimeDomainMarkerPanel(QFrame):
         self.row_v1_label.blockSignals(True)
         self.row_v2_label.blockSignals(True)
         
+        # Track the last valid marker mode
+        if mode in ['TIME', 'MAG', 'TIME_ENDLESS', 'MAG_ENDLESS']:
+            self.last_marker_mode = mode
+            
+        display_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE', 'STATS'] else mode
+        
         # Handle Page Switching
         if mode == 'STATS':
             self.stacked.setCurrentIndex(2)
-        elif 'ENDLESS' in mode:
+        elif 'ENDLESS' in display_mode:
             self.stacked.setCurrentIndex(1)
         else:
             self.stacked.setCurrentIndex(0)
 
-        if mode in ['TIME', 'TIME_ENDLESS']:
+        if display_mode in ['TIME', 'TIME_ENDLESS']:
             self.row_v1_label.setText("Time (sec)")
             self.row_v2_label.setText("Samples")
             self.row_v2_label.show()
@@ -304,8 +311,8 @@ class TimeDomainMarkerPanel(QFrame):
         self.row_v1_label.blockSignals(False)
         self.row_v2_label.blockSignals(False)
 
-        # Sync lock UI with saved state for this mode
-        base_mode = 'TIME' if 'TIME' in mode else 'MAG'
+        # Sync lock UI with saved state for this display mode
+        base_mode = 'TIME' if 'TIME' in display_mode else 'MAG'
         if base_mode in self.lock_states:
             for key, btn, label_fn in [
                 ('m1',     self.btn_lock_m1,     lambda c: f"Marker 1 {'🔒' if c else '🔓'}"),
@@ -317,7 +324,7 @@ class TimeDomainMarkerPanel(QFrame):
                 btn.blockSignals(True)
                 btn.setChecked(locked)
                 btn.setText(label_fn(locked))
-                btn.setEnabled('ENDLESS' not in mode)
+                btn.setEnabled('ENDLESS' not in display_mode)
                 btn.blockSignals(False)
 
     def update_mode_ui(self, mode):

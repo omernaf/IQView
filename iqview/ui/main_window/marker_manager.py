@@ -526,15 +526,20 @@ class MarkerManagerMixin:
             self.update_marker_info()
 
     def update_marker_info(self):
-        is_freq = (self.interaction_mode in ['FREQ', 'FREQ_ENDLESS'])
-        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
-        is_endless = 'ENDLESS' in self.interaction_mode
-        is_filter = (self.interaction_mode == 'FILTER')
+        # Determine the display mode for the table (e.g. if we are panning/zooming, we still want to see the last marker mode's info)
+        display_mode = self.interaction_mode
+        if display_mode in ['ZOOM', 'MOVE']:
+            display_mode = getattr(self.marker_panel, 'last_marker_mode', 'TIME')
+            
+        is_freq = (display_mode in ['FREQ', 'FREQ_ENDLESS'])
+        is_time = (display_mode in ['TIME', 'TIME_ENDLESS'])
+        is_endless = 'ENDLESS' in display_mode
+        is_filter = (display_mode == 'FILTER')
         
         if is_endless:
             markers = self.markers_time_endless if is_time else self.markers_freq_endless
-            self.marker_panel.update_endless_list(markers, self.interaction_mode)
-            return
+            self.marker_panel.update_endless_list(markers, display_mode)
+            if self.interaction_mode not in ['ZOOM', 'MOVE']: return
 
         if is_filter:
             if not getattr(self, 'filter_placed', False) and not getattr(self, 'filter_placing', False):
@@ -621,8 +626,10 @@ class MarkerManagerMixin:
             self.marker_panel.center_sec.blockSignals(False)
             self.marker_panel.center_sam.blockSignals(False)
         
-        # Sync lock button availability
-        if is_filter:
+        # Sync lock button availability conditionally (we shouldn't disable all locks just because we entered ZOOM)
+        if self.interaction_mode in ['ZOOM', 'MOVE']:
+            pass # Keep them as they are
+        elif is_filter:
             m1_p, m2_p = (len(active_values) >= 1), (len(active_values) >= 2)
             self.marker_panel.set_locks_enabled(m1_p, m2_p)
         elif not is_endless:
