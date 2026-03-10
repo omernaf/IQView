@@ -292,8 +292,27 @@ class SpectrogramView(QWidget):
         self._block_signals = False
         
     def update_spectrogram(self, full_spectrogram, fc, rate, time_duration, auto_range=True):
-        min_v = float(np.min(full_spectrogram))
-        max_v = float(np.max(full_spectrogram))
+        # Ignore digital silence (values near -200 dB created by maximum(..., 1e-10))
+        valid_data = full_spectrogram[full_spectrogram > -190.0]
+        
+        if len(valid_data) > 0:
+            max_v = float(np.max(valid_data))
+            
+            # Use a low percentile of the non-silent data to find the noise floor
+            # 5th percentile handles most signals well
+            p5 = float(np.percentile(valid_data, 5))
+            
+            # If the calculated floor is too close to the peak (e.g. pure CW tone, low noise), default to 80dB range
+            if max_v - p5 < 20.0:
+                min_v = max_v - 80.0
+            else:
+                min_v = p5
+            
+            # Prevent the dynamic range from automatically stretching beyond 120dB
+            min_v = max(min_v, max_v - 120.0)
+        else:
+            max_v = 0.0
+            min_v = -100.0
         
         # Current levels
         if not auto_range:
