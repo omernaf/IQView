@@ -346,7 +346,11 @@ class SpectrogramView(QWidget):
         
         if auto_range:
             # Only auto-range the Y-axis (Signal Level)
+            pad = (max_v - min_v) * 0.1
+            y_min = min_v - pad
+            y_max = max_v + pad
             self.spectrum_plot.setYRange(min_v, max_v, padding=0.1)
+            self.level_region.setBounds([y_min, y_max])
 
     def refresh_theme(self):
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
