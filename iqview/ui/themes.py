@@ -49,7 +49,7 @@ def get_palette(theme_name):
 def get_main_stylesheet(theme_name):
     p = get_palette(theme_name)
     return f"""
-        QMainWindow, QWidget#central {{ 
+        QMainWindow, QWidget#central, QDialog {{ 
             background-color: {p.bg_main}; 
             color: {p.text_main}; 
             font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif; 

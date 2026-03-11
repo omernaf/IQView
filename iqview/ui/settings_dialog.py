@@ -43,6 +43,11 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("Settings")
         self.resize(650, 450)
         self.setup_ui()
+        self._update_dialog_style(self.mgr.get("ui/theme", "Dark"))
+
+    def _update_dialog_style(self, theme_text):
+        from .themes import get_main_stylesheet
+        self.setStyleSheet(get_main_stylesheet(theme_text))
 
     def _make_colormap_icon(self, cmap_name):
         from pyqtgraph.graphicsItems.GradientPresets import Gradients
@@ -487,6 +492,7 @@ class SettingsDialog(QDialog):
     def _on_theme_changed(self, theme_text):
         self._load_theme_specific_settings(theme_text)
         self._update_sidebar_style(theme_text)
+        self._update_dialog_style(theme_text)
 
     def _update_sidebar_style(self, theme_text):
         theme = theme_text.lower()
