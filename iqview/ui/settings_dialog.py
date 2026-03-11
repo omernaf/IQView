@@ -78,8 +78,11 @@ class SettingsDialog(QDialog):
         
         reset_btn = QPushButton("🔄")
         reset_btn.setToolTip("Reset to default")
-        reset_btn.setFixedWidth(30)
-        reset_btn.setStyleSheet("padding: 2px; font-size: 14px;")
+        reset_btn.setFixedWidth(28)
+        reset_btn.setFixedHeight(28)
+        # Use a property for specific styling if needed, but let it inherit from QPushButton global style
+        reset_btn.setProperty("is_reset", True)
+        reset_btn.setFlat(True) # Make it subtly integrate better into the row layout
         
         def reset_clicked():
             key = key_or_func() if callable(key_or_func) else key_or_func
@@ -153,9 +156,11 @@ class SettingsDialog(QDialog):
         self._add_reset_row(self.general_form, "Default Window:", self.window_combo, "core/window_type")
         
         self.general_form.addRow(QLabel(" "))
-        self.show_inv_cb = QCheckBox("Enabled")
-        self.show_inv_cb.setChecked(bool(self.mgr.get("ui/show_inv_time", False)))
-        self._add_reset_row(self.general_form, "Show 1/T (Hz) Row in Markers:", self.show_inv_cb, "ui/show_inv_time")
+        self.show_inv_combo = QComboBox()
+        self.show_inv_combo.addItems(["Off", "On"])
+        show_inv_val = self.mgr.get("ui/show_inv_time", False)
+        self.show_inv_combo.setCurrentText("On" if show_inv_val else "Off")
+        self._add_reset_row(self.general_form, "Show 1/T (Hz) Row in Markers:", self.show_inv_combo, "ui/show_inv_time")
         
         self.add_side_tab(self.general_tab, "General")
 
@@ -453,7 +458,7 @@ class SettingsDialog(QDialog):
             # Font & Scaling
             self.mgr.set("ui/axis_font_size", self.axis_font_spin.value())
             self.mgr.set("ui/label_precision", self.precision_spin.value())
-            self.mgr.set("ui/show_inv_time", self.show_inv_cb.isChecked())
+            self.mgr.set("ui/show_inv_time", (self.show_inv_combo.currentText() == "On"))
 
             self.mgr.set("keybinds/time_markers", self.time_key.text())
             self.mgr.set("keybinds/mag_markers", self.mag_key.text())

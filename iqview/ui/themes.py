@@ -12,7 +12,7 @@ DARK_PALETTE = Palette(
     bg_input="#1a1a1a",
     bg_tab_inactive="#1a1a1a",
     text_main="#e0e0e0",
-    text_dim="#888888",
+    text_dim="#9e9e9e",
     text_header="#ffffff",
     accent="#00aaff",
     accent_dim="#004488",
@@ -31,7 +31,7 @@ LIGHT_PALETTE = Palette(
     bg_input="#ffffff",
     bg_tab_inactive="#e0e0e0",
     text_main="#222222",
-    text_dim="#666666",
+    text_dim="#555555",
     text_header="#000000",
     accent="#0077cc",
     accent_dim="#cceeff",
@@ -100,6 +100,25 @@ def get_main_stylesheet(theme_name):
         QTabBar::tab:selected {{ 
             background-color: {p.bg_main}; color: {p.accent}; 
             border-bottom: 2px solid {p.accent}; 
+        }}
+
+        QCheckBox {{ 
+            color: {p.text_main};
+            spacing: 8px;
+        }}
+        QCheckBox::indicator {{
+            width: 16px;
+            height: 16px;
+            background-color: {p.bg_input};
+            border: 1px solid {p.border};
+            border-radius: 3px;
+        }}
+        QCheckBox::indicator:checked {{
+            background-color: {p.accent};
+            border-color: {p.accent};
+        }}
+        QCheckBox::indicator:hover {{
+            border-color: {p.accent};
         }}
     """
 
