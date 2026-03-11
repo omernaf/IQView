@@ -315,7 +315,7 @@ class MarkerManagerMixin:
             self.update_marker_info()
 
     def update_drag(self, scene_pos):
-        if self.spectrogram_view.plot_item.sceneBoundingRect().contains(scene_pos):
+        if True: # Let mapSceneToView and np.clip handle out-of-bounds coordinates
             mouse_v = self.spectrogram_view.plot_item.vb.mapSceneToView(scene_pos)
             
             # 1. Handle explicit BPF bound dragging (highest priority)
