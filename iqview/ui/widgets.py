@@ -19,6 +19,7 @@ class FormattedLineEdit(QtWidgets.QLineEdit):
         super().__init__(*args, **kwargs)
         self._raw_text = super().text()
         self.editingFinished.connect(self._handle_editing_finished)
+        self.setCursor(Qt.CursorShape.IBeamCursor)
         if self._raw_text:
             super().setText(self._format_text(self._raw_text))
 
@@ -140,6 +141,7 @@ class CustomViewBox(pg.ViewBox):
 
     def hoverEvent(self, ev):
         if ev.isExit():
+            self.unsetCursor()
             return
             
         mode = getattr(self.ui_controller, 'interaction_mode', None)

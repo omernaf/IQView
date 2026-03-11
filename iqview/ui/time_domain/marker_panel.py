@@ -279,16 +279,20 @@ class TimeDomainMarkerPanel(QFrame):
         self.row_v1_label.blockSignals(True)
         self.row_v2_label.blockSignals(True)
         
-        # Track the last valid marker mode
-        if mode in ['TIME', 'MAG', 'TIME_ENDLESS', 'MAG_ENDLESS']:
+        # Track the last valid marker mode OR stats mode so we can return to it when zooming
+        if mode in ['TIME', 'MAG', 'TIME_ENDLESS', 'MAG_ENDLESS', 'STATS']:
             self.last_marker_mode = mode
             
-        display_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE', 'STATS'] else mode
+        display_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE'] else mode
         
         # Handle Page Switching
-        if mode == 'STATS':
+        # We must use the cached last_marker_mode if we are currently panning/zooming, 
+        # because we want to preserve the UI of the last thing the user was doing.
+        actual_ui_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE'] else mode
+        
+        if actual_ui_mode == 'STATS':
             self.stacked.setCurrentIndex(2)
-        elif 'ENDLESS' in display_mode:
+        elif 'ENDLESS' in actual_ui_mode:
             self.stacked.setCurrentIndex(1)
         else:
             self.stacked.setCurrentIndex(0)

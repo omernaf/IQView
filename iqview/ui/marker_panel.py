@@ -365,7 +365,7 @@ class MarkerPanel(QFrame):
         if display_mode in ['FREQ', 'FREQ_ENDLESS']:
             self.row1_label.setText("Freq (Hz)")
             self.row2_label.setText("Bin")
-        elif mode in ['TIME', 'TIME_ENDLESS']:
+        elif display_mode in ['TIME', 'TIME_ENDLESS']:
             self.row1_label.setText("Time (sec)")
             self.row2_label.setText("Samples")
             # Enable checkbox only if 2 bounds are placed
