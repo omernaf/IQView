@@ -2,7 +2,8 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QStackedWidget,
                              QWidget, QLabel, QLineEdit, QComboBox, QPushButton, 
                              QFormLayout, QDialogButtonBox, QKeySequenceEdit, QCheckBox,
                              QColorDialog, QSlider, QSpinBox, QListWidget, QListWidgetItem,
-                             QAbstractItemView, QTableWidget, QTableWidgetItem, QHeaderView)
+                             QAbstractItemView, QTableWidget, QTableWidgetItem, QHeaderView,
+                             QScrollArea, QFrame)
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QKeySequence, QIcon, QPixmap, QPainter, QLinearGradient, QColor
 from .widgets import KeyBindEdit
@@ -41,7 +42,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.mgr = settings_manager
         self.setWindowTitle("Settings")
-        self.resize(650, 450)
+        self.setMinimumSize(730, 560)
         self.setup_ui()
         self._update_dialog_style(self.mgr.get("ui/theme", "Dark"))
 
@@ -87,10 +88,23 @@ class SettingsDialog(QDialog):
         def reset_clicked():
             key = key_or_func() if callable(key_or_func) else key_or_func
             default_val = self.mgr.get_default(key)
+            
             if isinstance(widget, QLineEdit):
                 widget.setText(str(default_val))
             elif isinstance(widget, QComboBox):
-                widget.setCurrentText(str(default_val))
+                if isinstance(default_val, bool):
+                    target_text = "On" if default_val else "Off"
+                else:
+                    target_text = str(default_val)
+                
+                # Find best match in combo
+                index = widget.findText(target_text)
+                if index >= 0:
+                    widget.setCurrentIndex(index)
+                else:
+                    widget.setCurrentText(target_text)
+            elif isinstance(widget, QSpinBox) or isinstance(widget, QDoubleSpinBox):
+                widget.setValue(default_val)
             elif isinstance(widget, KeyBindEdit):
                 widget.setText(str(default_val))
             elif isinstance(widget, QKeySequenceEdit):
@@ -101,9 +115,12 @@ class SettingsDialog(QDialog):
                 widget.setColor(str(default_val))
         
         reset_btn.clicked.connect(reset_clicked)
+        row_layout.addSpacing(10)
         row_layout.addWidget(reset_btn)
         
-        form.addRow(label, row_layout)
+        label_widget = QLabel(label)
+        label_widget.setMinimumWidth(180)
+        form.addRow(label_widget, row_layout)
 
     def add_side_tab(self, widget, title):
         self.stacked_widget.addWidget(widget)
@@ -127,10 +144,38 @@ class SettingsDialog(QDialog):
         
         self.side_menu.currentRowChanged.connect(self.stacked_widget.setCurrentIndex)
 
-        # --- General Tab ---
-        self.general_tab = QWidget()
-        self.general_form = QFormLayout(self.general_tab)
+        # Initialize all tabs and forms first so we can style them uniformly
+        tabs_info = [
+            ('general', 'General'),
+            ('appearance', 'Appearance'),
+            ('keyboard', 'Keyboard'),
+            ('filter', 'Filter')
+        ]
         
+        for name, _ in tabs_info:
+            content_widget = QWidget()
+            form_layout = QFormLayout(content_widget)
+            
+            # Use generous spacing and margins for an airy, premium feel
+            form_layout.setSpacing(22)
+            form_layout.setContentsMargins(40, 35, 40, 35)
+            form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+            form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+            
+            # Wrap in scroll area to prevent "squeezing"
+            scroll = QScrollArea()
+            scroll.setWidget(content_widget)
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.Shape.NoFrame)
+            scroll.setObjectName(f"scroll_{name}")
+            # Ensure the background is transparent/matches the theme
+            scroll.setStyleSheet("background: transparent;")
+            
+            setattr(self, f"{name}_tab", scroll)
+            setattr(self, f"{name}_form", form_layout)
+            setattr(self, f"{name}_content", content_widget)
+
+        # --- General Tab Population ---
         self.fs_edit = QLineEdit(str(self.mgr.get("core/fs", 1e6)))
         self.fc_edit = QLineEdit(str(self.mgr.get("core/fc")))
         
@@ -165,9 +210,6 @@ class SettingsDialog(QDialog):
         self.add_side_tab(self.general_tab, "General")
 
         # --- Appearance Tab ---
-        self.appearance_tab = QWidget()
-        self.appearance_form = QFormLayout(self.appearance_tab)
-        
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["Dark", "Light"])
         self.theme_combo.setCurrentText(str(self.mgr.get("ui/theme")))
@@ -260,9 +302,6 @@ class SettingsDialog(QDialog):
         self.add_side_tab(self.appearance_tab, "Appearance")
 
         # --- Keyboard Tab ---
-        self.keyboard_tab = QWidget()
-        self.keyboard_form = QFormLayout(self.keyboard_tab)
-        
         self.time_key = KeyBindEdit()
         self.time_key.setText(str(self.mgr.get("keybinds/time_markers")))
         
@@ -279,9 +318,6 @@ class SettingsDialog(QDialog):
         self.add_side_tab(self.keyboard_tab, "Keyboard")
 
         # --- Filter Tab ---
-        self.filter_tab = QWidget()
-        self.filter_form = QFormLayout(self.filter_tab)
-        
         self.filter_type_combo = QComboBox()
         self.filter_type_combo.addItems(["Butterworth", "Chebyshev I", "Chebyshev II", "Elliptic", "Bessel"])
         self.filter_type_combo.setCurrentText(str(self.mgr.get("core/filter_type", "Elliptic")))
