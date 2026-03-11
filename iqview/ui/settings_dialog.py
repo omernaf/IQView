@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, 
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QStackedWidget, 
                              QWidget, QLabel, QLineEdit, QComboBox, QPushButton, 
                              QFormLayout, QDialogButtonBox, QKeySequenceEdit, QCheckBox,
                              QColorDialog, QSlider, QSpinBox, QListWidget, QListWidgetItem,
@@ -41,7 +41,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.mgr = settings_manager
         self.setWindowTitle("Settings")
-        self.resize(500, 400)
+        self.resize(650, 450)
         self.setup_ui()
 
     def _make_colormap_icon(self, cmap_name):
@@ -97,10 +97,27 @@ class SettingsDialog(QDialog):
         
         form.addRow(label, row_layout)
 
+    def add_side_tab(self, widget, title):
+        self.stacked_widget.addWidget(widget)
+        item = QListWidgetItem(title)
+        item.setSizeHint(QSize(110, 30))
+        self.side_menu.addItem(item)
+
     def setup_ui(self):
         self.layout = QVBoxLayout(self)
-        self.tabs = QTabWidget()
-        self.layout.addWidget(self.tabs)
+        
+        self.main_content = QHBoxLayout()
+        self.side_menu = QListWidget()
+        self.side_menu.setFixedWidth(130)
+        
+        # Style applied dynamically in _update_sidebar_style
+        
+        self.stacked_widget = QStackedWidget()
+        self.main_content.addWidget(self.side_menu)
+        self.main_content.addWidget(self.stacked_widget, 1)
+        self.layout.addLayout(self.main_content)
+        
+        self.side_menu.currentRowChanged.connect(self.stacked_widget.setCurrentIndex)
 
         # --- General Tab ---
         self.general_tab = QWidget()
@@ -130,7 +147,7 @@ class SettingsDialog(QDialog):
         self._add_reset_row(self.general_form, "Default Overlap (%):", self.overlap_edit, "core/overlap")
         self._add_reset_row(self.general_form, "Default Window:", self.window_combo, "core/window_type")
         
-        self.tabs.addTab(self.general_tab, "General")
+        self.add_side_tab(self.general_tab, "General")
 
         # --- Appearance Tab ---
         self.appearance_tab = QWidget()
@@ -223,8 +240,9 @@ class SettingsDialog(QDialog):
 
         # Initial load based on current theme
         self._load_theme_specific_settings(self.theme_combo.currentText())
+        self._update_sidebar_style(self.theme_combo.currentText())
         
-        self.tabs.addTab(self.appearance_tab, "Appearance")
+        self.add_side_tab(self.appearance_tab, "Appearance")
 
         # --- Keyboard Tab ---
         self.keyboard_tab = QWidget()
@@ -243,7 +261,7 @@ class SettingsDialog(QDialog):
         self._add_reset_row(self.keyboard_form, "Magnitude/Freq Markers Key:", self.mag_key, "keybinds/mag_markers")
         self._add_reset_row(self.keyboard_form, "Zoom Pulse Key (Hold):", self.zoom_key, "keybinds/zoom_mode")
         
-        self.tabs.addTab(self.keyboard_tab, "Keyboard")
+        self.add_side_tab(self.keyboard_tab, "Keyboard")
 
         # --- Filter Tab ---
         self.filter_tab = QWidget()
@@ -273,7 +291,7 @@ class SettingsDialog(QDialog):
         
         self._on_filter_type_changed(self.filter_type_combo.currentText())
         
-        self.tabs.addTab(self.filter_tab, "Filter")
+        self.add_side_tab(self.filter_tab, "Filter")
 
         # --- Plots Tab ---
         self.plots_tab = QWidget()
@@ -336,7 +354,7 @@ class SettingsDialog(QDialog):
         reset_plots_btn.clicked.connect(reset_plots)
         self.plots_layout.addWidget(reset_plots_btn)
         
-        self.tabs.addTab(self.plots_tab, "Time Plots")
+        self.add_side_tab(self.plots_tab, "Time Plots")
 
         # --- File Types Tab ---
         self.file_types_tab = QWidget()
@@ -371,7 +389,9 @@ class SettingsDialog(QDialog):
         remove_btn.clicked.connect(self._remove_ext_mapping_row)
         reset_ft_btn.clicked.connect(self._reset_ext_mappings)
 
-        self.tabs.addTab(self.file_types_tab, "File Types")
+        self.add_side_tab(self.file_types_tab, "File Types")
+        if self.side_menu.count() > 0:
+            self.side_menu.setCurrentRow(0)
 
         # --- Buttons ---
         self.button_box = QDialogButtonBox(
@@ -466,6 +486,42 @@ class SettingsDialog(QDialog):
 
     def _on_theme_changed(self, theme_text):
         self._load_theme_specific_settings(theme_text)
+        self._update_sidebar_style(theme_text)
+
+    def _update_sidebar_style(self, theme_text):
+        theme = theme_text.lower()
+        if theme == "dark":
+            bg = "#1e1e1e"
+            text = "#d4d4d4"
+            sel_bg = "#007acc"
+            sel_text = "#ffffff"
+        else:
+            bg = "#f3f3f3"
+            text = "#000000"
+            sel_bg = "#007acc"
+            sel_text = "#ffffff"
+            
+        self.side_menu.setStyleSheet(f"""
+            QListWidget {{ 
+                border: none; 
+                outline: none; 
+                background-color: {bg};
+            }}
+            QListWidget::item {{ 
+                padding: 8px 5px; 
+                border-radius: 4px; 
+                color: {text};
+                margin-bottom: 2px;
+            }}
+            QListWidget::item:hover {{
+                background-color: rgba(128, 128, 128, 0.1);
+            }}
+            QListWidget::item:selected {{ 
+                background-color: {sel_bg};
+                color: {sel_text};
+                font-weight: bold; 
+            }}
+        """)
 
     def _load_theme_specific_settings(self, theme_text):
         theme = theme_text.lower()
