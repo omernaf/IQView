@@ -79,8 +79,8 @@ class SettingsDialog(QDialog):
         
         reset_btn = QPushButton("🔄")
         reset_btn.setToolTip("Reset to default")
-        reset_btn.setFixedWidth(28)
-        reset_btn.setFixedHeight(28)
+        reset_btn.setFixedWidth(30)
+        reset_btn.setFixedHeight(30)
         # Use a property for specific styling if needed, but let it inherit from QPushButton global style
         reset_btn.setProperty("is_reset", True)
         reset_btn.setFlat(True) # Make it subtly integrate better into the row layout

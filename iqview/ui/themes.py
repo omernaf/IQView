@@ -67,6 +67,10 @@ def get_main_stylesheet(theme_name):
             border-color: {p.accent}; 
             color: {p.accent}; 
         }}
+        QPushButton[is_reset="true"] {{
+            padding: 4px;
+            font-size: 14px;
+        }}
         QLineEdit {{ 
             background-color: {p.bg_input}; 
             color: {p.text_main}; 
