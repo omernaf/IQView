@@ -46,10 +46,18 @@ pb.redirectErrorStream(true);
 fprintf('Launching IQView and streaming %d samples (%.2f MB)...\n', numel(data_single), total_bytes / 1024^2);
 proc = pb.start();
 stdin_stream = proc.getOutputStream();
-stdin_stream.write(byte_data, 0, total_bytes);
+
+chunk_size = 64 * 1024 * 1024;
+total_bytes = numel(byte_data);
+for i = 1:chunk_size:total_bytes
+    end_idx = min(i + chunk_size - 1, total_bytes);
+    current_chunk = byte_data(i:end_idx);
+    stdin_stream.write(current_chunk); 
+end
 
 stdin_stream.flush();
-stdin_stream.close(); % EOF - signals Python's sys.stdin.buffer.read() to return
+stdin_stream.close();
+% EOF - signals Python's sys.stdin.buffer.read() to return
 
 fprintf('Data sent (%.2f MB). IQView is loading...\n', total_bytes / 1024^2);
 % IQView runs independently; we do not wait for it to exit.
