@@ -349,7 +349,7 @@ class SettingsDialog(QDialog):
         self.plots_layout = QVBoxLayout(self.plots_tab)
         
         help_lbl = QLabel("Drag to reorder. Checked plots appear in the Time Domain toolbar.")
-        help_lbl.setStyleSheet("color: #888; font-style: italic;")
+        help_lbl.setStyleSheet("font-style: italic;")
         self.plots_layout.addWidget(help_lbl)
         
         self.plots_list = QListWidget()
@@ -413,7 +413,7 @@ class SettingsDialog(QDialog):
         
         ft_help = QLabel("Map file extensions (e.g. '.32f') to a data type. These are used when auto-detecting the data type of an opened file.")
         ft_help.setWordWrap(True)
-        ft_help.setStyleSheet("color: #888; font-style: italic;")
+        ft_help.setStyleSheet("font-style: italic;")
         self.file_types_layout.addWidget(ft_help)
         
         self.ext_table = QTableWidget()

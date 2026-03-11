@@ -124,6 +124,30 @@ def get_main_stylesheet(theme_name):
         QCheckBox::indicator:hover {{
             border-color: {p.accent};
         }}
+
+        QListWidget, QTableWidget {{
+            background-color: {p.bg_input};
+            border: 1px solid {p.border};
+            color: {p.text_main};
+            gridline-color: {p.border};
+            border-radius: 4px;
+        }}
+        QListWidget::item {{ padding: 4px 8px; }}
+        QListWidget::item:selected {{ background-color: {p.accent_dim}; color: {p.accent}; }}
+        
+        QHeaderView::section {{
+            background-color: {p.bg_widget};
+            color: {p.text_main};
+            padding: 6px;
+            border: 1px solid {p.border};
+            font-weight: bold;
+        }}
+        QTableCornerButton::section {{
+            background-color: {p.bg_widget};
+            border: 1px solid {p.border};
+        }}
+
+        {get_scrollbar_stylesheet(p)}
     """
 
 def get_scrollbar_stylesheet(p):
