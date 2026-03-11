@@ -15,7 +15,7 @@ class MarkerPanel(QFrame):
         self.setup_ui()
 
     def setup_ui(self):
-        self.setFixedHeight(115)
+        self.setFixedHeight(140)
         self.header_font = QFont("Segoe UI", 9, QFont.Weight.Bold)
         self.mono_font = QFont("Consolas", 10)
         self.refresh_theme()
@@ -164,35 +164,48 @@ class MarkerPanel(QFrame):
         # Side labels (Row names)
         self.row1_label = QLabel("Time (sec)")
         self.row2_label = QLabel("Samples")
+        self.row3_label = QLabel("1/T (Hz)")
         self.row1_label.setObjectName("header_label")
         self.row2_label.setObjectName("header_label")
+        self.row3_label.setObjectName("header_label")
         self.grid.addWidget(self.row1_label, 1, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(self.row2_label, 2, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.grid.addWidget(self.row3_label, 3, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         # Edit Widgets
         self.widgets = []
         for i in range(2):
             sec_edit = FormattedLineEdit(); sec_edit.setFixedWidth(130); sec_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
             sam_edit = FormattedLineEdit(); sam_edit.setFixedWidth(130); sam_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            inv_edit = FormattedLineEdit(); inv_edit.setFixedWidth(130); inv_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            
             sec_edit.setObjectName(f"m{i}_sec")
             sam_edit.setObjectName(f"m{i}_sam")
+            inv_edit.setObjectName(f"m{i}_inv")
+            
             sec_edit.returnPressed.connect(self.parent_window.marker_edit_finished)
             sam_edit.returnPressed.connect(self.parent_window.marker_edit_finished)
+            inv_edit.setReadOnly(True)  # Generally 1/T is informational, but we could make it editable later if desired
+            
             self.grid.addWidget(sec_edit, 1, i + 1)
             self.grid.addWidget(sam_edit, 2, i + 1)
-            self.widgets.append({'sec': sec_edit, 'sam': sam_edit})
+            self.grid.addWidget(inv_edit, 3, i + 1)
+            self.widgets.append({'sec': sec_edit, 'sam': sam_edit, 'inv': inv_edit})
 
         # Delta/Center Edits
         self.delta_sec = FormattedLineEdit(); self.delta_sec.setFixedWidth(130); self.delta_sec.setObjectName("delta_sec"); self.delta_sec.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.delta_sam = FormattedLineEdit(); self.delta_sam.setFixedWidth(130); self.delta_sam.setObjectName("delta_sam"); self.delta_sam.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.delta_inv = FormattedLineEdit(); self.delta_inv.setFixedWidth(130); self.delta_inv.setObjectName("delta_inv"); self.delta_inv.setAlignment(Qt.AlignmentFlag.AlignCenter); self.delta_inv.setReadOnly(True)
+        
         self.center_sec = FormattedLineEdit(); self.center_sec.setFixedWidth(130); self.center_sec.setObjectName("center_sec"); self.center_sec.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.center_sam = FormattedLineEdit(); self.center_sam.setFixedWidth(130); self.center_sam.setObjectName("center_sam"); self.center_sam.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.center_inv = FormattedLineEdit(); self.center_inv.setFixedWidth(130); self.center_inv.setObjectName("center_inv"); self.center_inv.setAlignment(Qt.AlignmentFlag.AlignCenter); self.center_inv.setReadOnly(True)
         
         for w in [self.delta_sec, self.delta_sam, self.center_sec, self.center_sam]:
             w.returnPressed.connect(self.parent_window.marker_edit_finished)
             
-        self.grid.addWidget(self.delta_sec, 1, 3); self.grid.addWidget(self.delta_sam, 2, 3)
-        self.grid.addWidget(self.center_sec, 1, 4); self.grid.addWidget(self.center_sam, 2, 4)
+        self.grid.addWidget(self.delta_sec, 1, 3); self.grid.addWidget(self.delta_sam, 2, 3); self.grid.addWidget(self.delta_inv, 3, 3)
+        self.grid.addWidget(self.center_sec, 1, 4); self.grid.addWidget(self.center_sam, 2, 4); self.grid.addWidget(self.center_inv, 3, 4)
 
         # Connect locks to parent
         self.btn_lock_m1.toggled.connect(self.on_lock_m1_toggled)
@@ -365,9 +378,11 @@ class MarkerPanel(QFrame):
         if display_mode in ['FREQ', 'FREQ_ENDLESS']:
             self.row1_label.setText("Freq (Hz)")
             self.row2_label.setText("Bin")
+            self.row3_label.setText("1/F (sec)")
         elif display_mode in ['TIME', 'TIME_ENDLESS']:
             self.row1_label.setText("Time (sec)")
             self.row2_label.setText("Samples")
+            self.row3_label.setText("1/T (Hz)")
             # Enable checkbox only if 2 bounds are placed
             has_bounds = getattr(self.parent_window, 'filter_placed', False)
             self.filter_enable_cb.setEnabled(has_bounds)

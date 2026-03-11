@@ -986,8 +986,8 @@ class TimeDomainView(QWidget):
         # Clear fields
         for widget in self.marker_panel.m_widgets:
             for k in widget: widget[k].blockSignals(True); widget[k].clear(); widget[k].blockSignals(False)
-        for w in [self.marker_panel.delta_v1, self.marker_panel.delta_v2,
-                  self.marker_panel.center_v1, self.marker_panel.center_v2]:
+        for w in [self.marker_panel.delta_v1, self.marker_panel.delta_v2, self.marker_panel.delta_v3,
+                  self.marker_panel.center_v1, self.marker_panel.center_v2, self.marker_panel.center_v3]:
             w.blockSignals(True); w.clear(); w.blockSignals(False)
 
         if not sorted_m: return
@@ -1005,6 +1005,9 @@ class TimeDomainView(QWidget):
                 if is_time:
                     abs_s = int(round(m_val * self.rate)) + 1
                     self.marker_panel.m_widgets[i]['v2'].setText(f"{abs_s}")
+                    inv_val = (1.0 / m_val) if abs(m_val) > 1e-12 else float('inf')
+                    if inv_val == float('inf'): self.marker_panel.m_widgets[i]['v3'].setText("∞")
+                    else: self.marker_panel.m_widgets[i]['v3'].setText(f"{inv_val:.{prec1}f}")
                 
                 self.marker_panel.m_widgets[i]['v1'].blockSignals(False)
                 self.marker_panel.m_widgets[i]['v2'].blockSignals(False)
@@ -1024,13 +1027,25 @@ class TimeDomainView(QWidget):
             if is_time:
                 s1, s2 = int(round(v1 * self.rate)) + 1, int(round(v2 * self.rate)) + 1
                 self.marker_panel.delta_v2.blockSignals(True)
+                self.marker_panel.delta_v3.blockSignals(True)
                 self.marker_panel.center_v2.blockSignals(True)
+                self.marker_panel.center_v3.blockSignals(True)
+                
                 self.marker_panel.delta_v2.setText(f"{abs(s2-s1)+1}")
+                dt = abs(v2 - v1)
+                if dt > 1e-12: self.marker_panel.delta_v3.setText(f"{1.0/dt:.{prec1}f}")
+                else: self.marker_panel.delta_v3.setText("∞")
+                
                 # Center sample
                 cv = (v1+v2)/2
                 self.marker_panel.center_v2.setText(f"{int(round(cv*self.rate))+1}")
+                if abs(cv) > 1e-12: self.marker_panel.center_v3.setText(f"{1.0/cv:.{prec1}f}")
+                else: self.marker_panel.center_v3.setText("∞")
+                
                 self.marker_panel.delta_v2.blockSignals(False)
+                self.marker_panel.delta_v3.blockSignals(False)
                 self.marker_panel.center_v2.blockSignals(False)
+                self.marker_panel.center_v3.blockSignals(False)
 
         # Sync lock button availability (Keep locked if we are Zooming or Panning)
         if self.interaction_mode in ['ZOOM', 'MOVE', 'STATS']:
