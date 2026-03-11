@@ -190,13 +190,9 @@ class CustomViewBox(pg.ViewBox):
             
             if not found_near:
                 for i, m in enumerate(active_markers):
-                    # markers are InfiniteLines. angle=90 is vertical, angle=0 is horizontal
-                    m_val = m.value()
-                    angle = m.angle
-                    m_pixel = self.mapViewToScene(pg.Point(m_val, 0) if angle == 90 else pg.Point(0, m_val))
-                    dist = abs(scene_pos.x() - m_pixel.x()) if angle == 90 else abs(scene_pos.y() - m_pixel.y())
-                    
-                    if dist < 20:
+                    if getattr(m, 'mouseHovering', False):
+                        angle = getattr(m, 'angle', 90)
+                        
                         # Check lock status
                         is_m_locked = False
                         if len(active_markers) == 2:
@@ -227,25 +223,29 @@ class CustomViewBox(pg.ViewBox):
                 else:
                     grid_lines = getattr(self.ui_controller, 'grid_lines_mag', [])
                 for gl in grid_lines:
-                    gl_val = gl.value()
-                    angle = gl.angle
-                    gl_pixel = self.mapViewToScene(pg.Point(gl_val, 0) if angle == 90 else pg.Point(0, gl_val))
-                    dist = abs(scene_pos.x() - gl_pixel.x()) if angle == 90 else abs(scene_pos.y() - gl_pixel.y())
-                    
-                    if dist < 20:
+                    if getattr(gl, 'mouseHovering', False):
+                        angle = getattr(gl, 'angle', 90)
                         found_near = True
                         self.setCursor(Qt.CursorShape.SizeHorCursor if angle == 90 else Qt.CursorShape.SizeVerCursor)
                         break
                         
             # 5. Check for STATS Region boundaries
             if not found_near and mode == 'STATS':
-                stats_bounds = getattr(self.ui_controller, 'stats_bounds', [])
-                for b_val in stats_bounds:
-                    pi = self.mapViewToScene(pg.Point(b_val, 0))
-                    if abs(scene_pos.x() - pi.x()) < 20:
-                        found_near = True
-                        self.setCursor(Qt.CursorShape.SizeHorCursor)
-                        break
+                stats_region = getattr(self.ui_controller, 'stats_region', None)
+                if stats_region and stats_region.isVisible():
+                    for line in stats_region.lines:
+                        if getattr(line, 'mouseHovering', False):
+                            found_near = True
+                            self.setCursor(Qt.CursorShape.SizeHorCursor)
+                            break
+                
+                if not found_near:
+                    stats_line = getattr(self.ui_controller, 'stats_line', None)
+                    if stats_line and stats_line.isVisible():
+                        if getattr(stats_line, 'mouseHovering', False):
+                            found_near = True
+                            self.setCursor(Qt.CursorShape.SizeHorCursor)
+
             
             if not found_near:
                 self.setCursor(Qt.CursorShape.CrossCursor)

@@ -620,6 +620,8 @@ class TimeDomainView(QWidget):
                     theme = self.parent_window.settings_mgr.get("ui/theme", "Dark") if self.parent_window else "Dark"
                     p = get_palette(theme)
                     self.stats_line = pg.InfiniteLine(angle=90, pen=pg.mkPen(p.marker_time, width=2, style=Qt.PenStyle.DashLine), movable=False)
+                    self.stats_line.setHoverPen(pg.mkPen(255, 0, 0, width=2))
+                    self.stats_line.setAcceptHoverEvents(True)
                     self.stats_line.setZValue(10)
                 if self.stats_line not in self.plot_item.items:
                     self.plot_item.addItem(self.stats_line)
@@ -786,6 +788,8 @@ class TimeDomainView(QWidget):
             self.plot_item.removeItem(old_m)
 
         new_m = pg.InfiniteLine(pos=val, angle=orient, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine), movable=False)
+        new_m.setHoverPen(pg.mkPen(255, 0, 0, width=2))
+        new_m.setAcceptHoverEvents(True)
         new_m.setZValue(100)
         # Stamp age so teleport always picks the oldest
         self._marker_age[new_m] = self._marker_age_counter
@@ -1279,6 +1283,8 @@ class TimeDomainView(QWidget):
         count = 0
         while curr <= v_max_visible + 1e-9 and count < 500:
             line = pg.InfiniteLine(pos=curr, angle=angle, pen=pen, movable=False)
+            line.setHoverPen(pg.mkPen(255, 0, 0, width=2))
+            line.setAcceptHoverEvents(True)
             line.setZValue(5)
             self.plot_item.addItem(line, ignoreBounds=True)
             grid_lines.append(line)
