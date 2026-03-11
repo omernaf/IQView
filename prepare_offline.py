@@ -26,6 +26,7 @@ import glob
 import shutil
 import subprocess
 import sys
+import argparse
 from pathlib import Path
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -50,15 +51,14 @@ PYTHON_TARGETS = [
     {"python_version": "3.13", "folder": "py313"},
 ]
 
-# Dynamic platform targeting based on current OS
-if sys.platform.startswith("linux"):
-    PLATFORM = "manylinux2014_x86_64"
-else:
-    # Default to Windows 64-bit.
-    PLATFORM = "win_amd64"
+# # Dynamic platform targeting based on current OS
+# if sys.platform.startswith("linux"):
+#     PLATFORM = "manylinux2014_x86_64"
+# else:
+#     # Default to Windows 64-bit.
+#     PLATFORM = "win_amd64"
 
-OUTPUT_ROOT = Path("offline_dist")
-DIST_DIR    = Path("dist")
+DIST_DIR    = Path("offline_dist")
 
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -77,25 +77,26 @@ def find_iqview_wheel() -> Path:
     return matches[-1]
 
 
-def download_for_target(target: dict, iqview_wheel: Path) -> bool:
+def download_for_target(target: dict, iqview_wheel: Path, platforms: list, output_root: Path, os_name: str) -> bool:
     """Download all deps for a single Python version target. Returns True on success."""
-    folder = OUTPUT_ROOT / target["folder"]
+    folder = output_root / target["folder"]
     folder.mkdir(parents=True, exist_ok=True)
 
     python_version = target["python_version"]
     print(f"\n{'─'*60}")
-    print(f"  Downloading for Python {python_version} / {PLATFORM}")
+    print(f"  Downloading for Python {python_version} / {', '.join(platforms)}")
     print(f"  Output → {folder}")
     print(f"{'─'*60}")
 
     cmd = [
         sys.executable, "-m", "pip", "download",
         "--python-version", python_version,
-        "--platform",       PLATFORM,
         "--only-binary",    ":all:",
         "--dest",           str(folder),
-        *DEPENDENCIES,
     ]
+    for p in platforms:
+        cmd.extend(["--platform", p])
+    cmd.extend(DEPENDENCIES)
 
     result = subprocess.run(cmd)
 
@@ -110,13 +111,14 @@ def download_for_target(target: dict, iqview_wheel: Path) -> bool:
         shutil.copy2(iqview_wheel, dest_wheel)
         print(f"  ✓ Copied {iqview_wheel.name} → {dest_wheel}")
 
-    # Write install + uninstall bats for convenience
-    write_install_bat(folder, iqview_wheel.name, python_version)
-    write_uninstall_bat(folder)
-    
-    # Write install + uninstall shell scripts for Linux
-    write_install_sh(folder, iqview_wheel.name, python_version)
-    write_uninstall_sh(folder)
+    if os_name == "windows":
+        # Write install + uninstall bats for convenience
+        write_install_bat(folder, iqview_wheel.name, python_version)
+        write_uninstall_bat(folder)
+    else:
+        # Write install + uninstall shell scripts for Linux
+        write_install_sh(folder, iqview_wheel.name, python_version)
+        write_uninstall_sh(folder)
     return True
 
 
@@ -219,23 +221,40 @@ echo "Done. You can now re-install from the offline kit to test it."
     print(f"  ✓ Wrote {sh_path.name}")
 
 
-def print_summary(results: list):
+def print_summary(results: list, output_root: Path, os_name: str):
     print(f"\n{'═'*60}")
     print("  Summary")
     print(f"{'═'*60}")
     for target, ok in results:
         status = "✓ OK" if ok else "✗ FAILED / skipped"
         print(f"  Python {target['python_version']:5s}  →  {status}")
-    print(f"\nOffline kits are in: {OUTPUT_ROOT.resolve()}")
+    print(f"\nOffline kits are in: {output_root.resolve()}")
+    
+    script_name = "install_offline.bat" if os_name == "windows" else "install_offline.sh"
     print(
         "\nTo install on a target machine, copy the matching sub-folder\n"
-        "and double-click install_offline.bat (Windows) or install_offline.sh (Linux).\n"
+        f"and double-click {script_name}.\n"
     )
 
 
 def main():
+    parser = argparse.ArgumentParser(description="IQView Offline Wheel Downloader")
+    default_os = "linux" if sys.platform.startswith("linux") else "windows"
+    parser.add_argument("--os", choices=["windows", "linux"], default=default_os,
+                        help="Target OS to download wheels for (determines platform tags).")
+    args = parser.parse_args()
+
+    os_name = args.os
+    if os_name == "windows":
+        platforms = ["win_amd64"]
+        output_root = Path("offline_dist") / "windows"
+    else:
+        platforms = ["manylinux_2_28_x86_64", "manylinux2014_x86_64", "manylinux_2_17_x86_64"]
+        output_root = Path("offline_dist") / "linux"
+
     print("IQView — Offline Wheel Downloader")
-    print(f"Platform : {PLATFORM}")
+    print(f"Target OS: {os_name}")
+    print(f"Platform : {', '.join(platforms)}")
     print(f"Targets  : {', '.join(t['python_version'] for t in PYTHON_TARGETS)}")
 
     iqview_wheel = find_iqview_wheel()
@@ -243,10 +262,10 @@ def main():
 
     results = []
     for target in PYTHON_TARGETS:
-        ok = download_for_target(target, iqview_wheel)
+        ok = download_for_target(target, iqview_wheel, platforms, output_root, os_name)
         results.append((target, ok))
 
-    print_summary(results)
+    print_summary(results, output_root, os_name)
 
 
 if __name__ == "__main__":
