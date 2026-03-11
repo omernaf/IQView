@@ -152,6 +152,11 @@ class SettingsDialog(QDialog):
         self._add_reset_row(self.general_form, "Default Overlap (%):", self.overlap_edit, "core/overlap")
         self._add_reset_row(self.general_form, "Default Window:", self.window_combo, "core/window_type")
         
+        self.general_form.addRow(QLabel(" "))
+        self.show_inv_cb = QCheckBox("Enabled")
+        self.show_inv_cb.setChecked(bool(self.mgr.get("ui/show_inv_time", False)))
+        self._add_reset_row(self.general_form, "Show 1/T (Hz) Row in Markers:", self.show_inv_cb, "ui/show_inv_time")
+        
         self.add_side_tab(self.general_tab, "General")
 
         # --- Appearance Tab ---
@@ -448,6 +453,7 @@ class SettingsDialog(QDialog):
             # Font & Scaling
             self.mgr.set("ui/axis_font_size", self.axis_font_spin.value())
             self.mgr.set("ui/label_precision", self.precision_spin.value())
+            self.mgr.set("ui/show_inv_time", self.show_inv_cb.isChecked())
 
             self.mgr.set("keybinds/time_markers", self.time_key.text())
             self.mgr.set("keybinds/mag_markers", self.mag_key.text())

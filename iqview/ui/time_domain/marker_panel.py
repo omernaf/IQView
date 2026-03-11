@@ -307,16 +307,17 @@ class TimeDomainMarkerPanel(QFrame):
             self.stacked.setCurrentIndex(0)
 
         if display_mode in ['TIME', 'TIME_ENDLESS']:
+            show_inv = self.controller.settings_mgr.get("ui/show_inv_time", False)
             self.row_v1_label.setText("Time (sec)")
             self.row_v2_label.setText("Samples")
             self.row_v3_label.setText("1/T (Hz)")
             self.row_v2_label.show()
-            self.row_v3_label.show()
+            self.row_v3_label.setVisible(show_inv)
             for i in range(2): 
                 self.m_widgets[i]['v2'].show()
-                self.m_widgets[i]['v3'].show()
-            self.delta_v2.show(); self.delta_v3.show()
-            self.center_v2.show(); self.center_v3.show()
+                self.m_widgets[i]['v3'].setVisible(show_inv)
+            self.delta_v2.show(); self.delta_v3.setVisible(show_inv)
+            self.center_v2.show(); self.center_v3.setVisible(show_inv)
         else: # MAG
             self.row_v1_label.setText(y_axis_label)
             self.row_v2_label.setText("")

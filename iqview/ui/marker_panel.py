@@ -387,6 +387,14 @@ class MarkerPanel(QFrame):
             has_bounds = getattr(self.parent_window, 'filter_placed', False)
             self.filter_enable_cb.setEnabled(has_bounds)
             
+        show_inv = self.parent_window.settings_mgr.get("ui/show_inv_time", False)
+        is_time_mode = display_mode in ['TIME', 'TIME_ENDLESS']
+        should_show = show_inv and is_time_mode
+        self.row3_label.setVisible(should_show)
+        for i in range(2): self.widgets[i]['inv'].setVisible(should_show)
+        self.delta_inv.setVisible(should_show)
+        self.center_inv.setVisible(should_show)
+            
         # Sync lock UI with saved state for this display mode
         if display_mode in self.lock_states:
             for key, btn, label_fn in [
