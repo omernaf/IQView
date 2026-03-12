@@ -6,7 +6,7 @@ High-performance Static RF Spectrogram Viewer.
 
 For users:
 ```bash
-pip install iqview-0.1.0-py3-none-any.whl
+pip install iqview-0.1.1-py3-none-any.whl
 ```
 
 For developers (Setup):

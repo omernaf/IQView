@@ -47,7 +47,7 @@ Each sub-folder is a **self-contained offline install kit** for its Python versi
 
 3. Run the installer — either double-click `install_offline.bat` or from a terminal:
    ```powershell
-   pip install --no-index --find-links=. iqview-0.1.0-py3-none-any.whl
+   pip install --no-index --find-links=. iqview-0.1.1-py3-none-any.whl
    ```
 
 ---

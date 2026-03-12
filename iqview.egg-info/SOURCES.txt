@@ -21,6 +21,8 @@ iqview/ui/side_panel.py
 iqview/ui/spectrogram_view.py
 iqview/ui/themes.py
 iqview/ui/widgets.py
+iqview/ui/frequency_domain/marker_panel.py
+iqview/ui/frequency_domain/view.py
 iqview/ui/main_window/__init__.py
 iqview/ui/main_window/component_setup.py
 iqview/ui/main_window/data_handler.py
