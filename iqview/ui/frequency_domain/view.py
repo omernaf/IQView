@@ -33,6 +33,8 @@ class FrequencyDomainView(QWidget):
         
         # Endless Markers
         self.markers_freq_endless = []
+        self._first_plot = True
+        self.last_move_scene_pos = None
         
         # Mode-specific Magnitude markers
         self.markers_y_dict = {
@@ -295,9 +297,11 @@ class FrequencyDomainView(QWidget):
 
     def _update_plot(self, data, y_label):
         old_x_range = None
-        if self.view_box.viewRect() is not None:
+        if not self._first_plot and self.view_box.viewRect() is not None:
             old_x_range, old_y_range = self.view_box.viewRange()
             self.zoom_y_dict[self.y_label_text] = old_y_range
+
+        self._first_plot = False
 
         self.current_plot_data = data
         self.y_label_text = y_label
@@ -642,6 +646,15 @@ class FrequencyDomainView(QWidget):
             prev_xr, prev_yr = self.zoom_history.pop()
             self.plot_item.setXRange(*prev_xr, padding=0)
             self.plot_item.setYRange(*prev_yr, padding=0)
+
+    def handle_move_drag(self, pos, is_start=False, is_finish=False):
+        if is_start: self.last_move_scene_pos = pos; return
+        if self.last_move_scene_pos is None: return
+        delta = pos - self.last_move_scene_pos
+        self.view_box.translateBy(x=-self.view_box.mapSceneToView(delta).x() + self.view_box.mapSceneToView(pg.Point(0,0)).x(),
+                                  y=-self.view_box.mapSceneToView(delta).y() + self.view_box.mapSceneToView(pg.Point(0,0)).y())
+        self.last_move_scene_pos = pos
+        if is_finish: self.last_move_scene_pos = None
 
     def fit_to_markers(self):
         is_freq = (self.interaction_mode in ['FREQ', 'FREQ_ENDLESS'])
