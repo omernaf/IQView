@@ -214,10 +214,16 @@ class FrequencyDomainView(QWidget):
             if len(self.stats_bounds) == 2:
                 self.stats_region.show()
                 self.stats_markers.show()
+                if self.stats_line: self.stats_line.hide()
                 self.update_statistics()
+            elif len(self.stats_bounds) == 1:
+                if self.stats_line: self.stats_line.show()
+                self.stats_region.hide()
+                self.stats_markers.hide()
         else:
             self.stats_region.hide()
             self.stats_markers.hide()
+            if self.stats_line: self.stats_line.hide()
             
         cursor = Qt.CursorShape.ArrowCursor
         if mode == 'ZOOM': cursor = Qt.CursorShape.CrossCursor
@@ -337,8 +343,9 @@ class FrequencyDomainView(QWidget):
         
         panel = self.marker_panel
         panel.stats_max_val.setText(f"{p_max:.4g}"); panel.stats_min_val.setText(f"{p_min:.4g}")
+        panel.stats_mean_val.setText(f"{p_mean:.4g}"); panel.stats_median_val.setText(f"{p_median:.4g}")
         panel.stats_max_freq.setText(f"{f_max:,.0f}"); panel.stats_min_freq.setText(f"{f_min:,.0f}")
-        panel.stats_max_idx.setText(f"{idx_max}"); panel.stats_min_idx.setText(f"{idx_max}")
+        panel.stats_max_idx.setText(f"{idx_max}"); panel.stats_min_idx.setText(f"{idx_min}")
         
         self.stats_markers.setData([
             {'pos': (f_max, p_max), 'brush': pg.mkBrush(255, 50, 50), 'pen': pg.mkPen('#ff3232', width=2), 'symbol': 'o'},
@@ -347,6 +354,105 @@ class FrequencyDomainView(QWidget):
 
     def freq_to_index(self, freq):
         return np.searchsorted(self.freq_axis, freq)
+
+    def place_marker(self, scene_pos, drag_mode=False):
+        v_pos = self.view_box.mapSceneToView(scene_pos)
+        is_freq = (self.interaction_mode in ['FREQ', 'FREQ_ENDLESS', 'STATS'])
+        is_endless = 'ENDLESS' in self.interaction_mode
+        
+        # Clamp to bounds
+        if is_freq:
+            f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+            val = max(f_min, min(f_max, v_pos.x()))
+        else:
+            y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
+            val = max(y_min, min(y_max, v_pos.y()))
+            
+        if is_endless:
+            active_markers = self.markers_freq_endless if is_freq else self.markers_y_endless_dict[self.y_label_text]
+        else:
+            active_markers = self.markers_freq if is_freq else self.markers_y_dict[self.y_label_text]
+
+        # --- STATS Region Logic ---
+        if self.interaction_mode == 'STATS':
+            if self.stats_bounds:
+                best_idx = -1
+                min_dist = 20 # pixels
+                for i, b_val in enumerate(self.stats_bounds):
+                    pi = self.view_box.mapViewToScene(pg.Point(b_val, 0))
+                    dist = abs(scene_pos.x() - pi.x())
+                    if dist < min_dist:
+                        min_dist = dist; best_idx = i
+                
+                if best_idx != -1:
+                    old_v = self.stats_bounds[best_idx]
+                    self.stats_bounds[best_idx] = val
+                    if old_v in self.stats_marker_order:
+                        oidx = self.stats_marker_order.index(old_v)
+                        self.stats_marker_order[oidx] = val
+                    self.stats_bounds.sort()
+                    if len(self.stats_bounds) == 1:
+                        if self.stats_line: self.stats_line.setPos(val)
+                    else:
+                        self.stats_region.setRegion(self.stats_bounds)
+                    self.update_statistics()
+                    return
+
+            # No hit - Place new bound or replace oldest
+            if len(self.stats_marker_order) >= 2:
+                oldest_v = self.stats_marker_order.pop(0)
+                if oldest_v in self.stats_bounds: self.stats_bounds.remove(oldest_v)
+            
+            self.stats_marker_order.append(val)
+            self.stats_bounds.append(val)
+            self.stats_bounds.sort()
+            
+            if len(self.stats_bounds) == 1:
+                if self.stats_line is None:
+                    p = get_palette(self.settings_mgr.get("ui/theme", "Dark"))
+                    self.stats_line = pg.InfiniteLine(angle=90, pen=pg.mkPen(p.marker_freq if hasattr(p, 'marker_freq') else p.marker_time, width=2, style=Qt.PenStyle.DashLine), movable=False)
+                    self.plot_item.addItem(self.stats_line)
+                self.stats_line.setPos(val)
+                self.stats_line.show()
+                self.stats_region.hide()
+                self.stats_markers.hide()
+            else:
+                if self.stats_line: self.stats_line.hide()
+                self.stats_region.setRegion(self.stats_bounds)
+                self.stats_region.show()
+                self.stats_markers.show()
+                
+            self.update_statistics()
+            return
+
+        # 1. Hit test EXISTING MARKERS
+        found_marker = None
+        for i, m in enumerate(active_markers):
+            pi = self.view_box.mapViewToScene(pg.Point(m.value(), 0) if is_freq else pg.Point(0, m.value()))
+            dist = abs(scene_pos.x() - pi.x()) if is_freq else abs(scene_pos.y() - pi.y())
+            if dist < 10:
+                found_marker = m
+                break
+        
+        if found_marker:
+            self.active_drag_marker = found_marker
+            return
+
+        # 2. Add NEW Marker
+        if len(active_markers) < (100 if is_endless else 2):
+            p = get_palette(self.settings_mgr.get("ui/theme", "Dark"))
+            color = p.marker_freq if (is_freq and hasattr(p, 'marker_freq')) else \
+                    p.marker_mag if not is_freq else p.marker_time
+            
+            m = pg.InfiniteLine(pos=val, angle=90 if is_freq else 0, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine), movable=False)
+            if is_endless:
+                from PyQt6.QtWidgets import QGraphicsTextItem
+                label = pg.InfLineLabel(m, text=f"M{len(active_markers)+1}", position=0.9, color=color)
+                m.label = label
+            
+            self.plot_item.addItem(m)
+            active_markers.append(m)
+            self.update_marker_info()
 
     def handle_lock_change(self, lock_type, checked):
         # View just needs to react if necessary (e.g. for grid sync)

@@ -231,11 +231,13 @@ class FrequencyDomainMarkerPanel(QFrame):
             self.stats_layout.addWidget(lbl, 0, i + 1)
             
         # Row Labels (Col 0)
+        lbl_val = QLabel("Value"); lbl_val.setObjectName("header_label")
         lbl_freq = QLabel("Frequency (Hz)"); lbl_freq.setObjectName("header_label")
         lbl_idx = QLabel("Index"); lbl_idx.setObjectName("header_label")
         
-        self.stats_layout.addWidget(lbl_freq, 1, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.stats_layout.addWidget(lbl_idx, 2, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.stats_layout.addWidget(lbl_val, 1, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.stats_layout.addWidget(lbl_freq, 2, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.stats_layout.addWidget(lbl_idx, 3, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         
         # Line Edits
         self.stats_max_val = FormattedLineEdit(); self.stats_max_val.setFixedWidth(130); self.stats_max_val.setReadOnly(True); self.stats_max_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -249,13 +251,19 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.stats_max_idx = FormattedLineEdit(); self.stats_max_idx.setFixedWidth(130); self.stats_max_idx.setReadOnly(True); self.stats_max_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stats_min_idx = FormattedLineEdit(); self.stats_min_idx.setFixedWidth(130); self.stats_min_idx.setReadOnly(True); self.stats_min_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        # Add to Grid (Row 1: Frequency)
-        self.stats_layout.addWidget(self.stats_max_freq, 1, 1)
-        self.stats_layout.addWidget(self.stats_min_freq, 1, 2)
+        # Add to Grid (Row 1: Value)
+        self.stats_layout.addWidget(self.stats_max_val, 1, 1)
+        self.stats_layout.addWidget(self.stats_min_val, 1, 2)
+        self.stats_layout.addWidget(self.stats_mean_val, 1, 3)
+        self.stats_layout.addWidget(self.stats_median_val, 1, 4)
         
-        # Add to Grid (Row 2: Index)
-        self.stats_layout.addWidget(self.stats_max_idx, 2, 1)
-        self.stats_layout.addWidget(self.stats_min_idx, 2, 2)
+        # Add to Grid (Row 2: Frequency)
+        self.stats_layout.addWidget(self.stats_max_freq, 2, 1)
+        self.stats_layout.addWidget(self.stats_min_freq, 2, 2)
+        
+        # Add to Grid (Row 3: Index)
+        self.stats_layout.addWidget(self.stats_max_idx, 3, 1)
+        self.stats_layout.addWidget(self.stats_min_idx, 3, 2)
 
     def update_headers(self, mode, y_axis_label="Magnitude"):
         self.row_v1_label.blockSignals(True)
