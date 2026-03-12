@@ -668,8 +668,23 @@ class FrequencyDomainView(QWidget):
                 self.marker_panel.center_v1.blockSignals(True)
                 self.marker_panel.center_v1.setText(f"{(v1+v2)/2:.1f}" if is_freq else f"{(v1+v2)/2:.6g}")
                 self.marker_panel.center_v1.blockSignals(False)
+
+                if is_freq:
+                    idx1 = self.freq_to_index(v1)
+                    idx2 = self.freq_to_index(v2)
+                    self.marker_panel.delta_v2.blockSignals(True)
+                    self.marker_panel.delta_v2.setText(f"{abs(idx2-idx1)+1}")
+                    self.marker_panel.delta_v2.blockSignals(False)
+                    
+                    cv = (v1+v2)/2
+                    self.marker_panel.center_v2.blockSignals(True)
+                    self.marker_panel.center_v2.setText(f"{self.freq_to_index(cv)}")
+                    self.marker_panel.center_v2.blockSignals(False)
             else:
-                self.marker_panel.delta_v1.setText(""); self.marker_panel.center_v1.setText("")
+                self.marker_panel.delta_v1.setText("")
+                self.marker_panel.delta_v2.setText("")
+                self.marker_panel.center_v1.setText("")
+                self.marker_panel.center_v2.setText("")
         
         if not 'ENDLESS' in self.interaction_mode:
             m1_p, m2_p = (len(active_markers) >= 1), (len(active_markers) >= 2)
