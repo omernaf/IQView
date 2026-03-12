@@ -57,6 +57,7 @@ class SettingsManager:
         "ui/grid_alpha": 30,
         "ui/axis_font_size": 10,
         "ui/label_precision": 6,
+        "ui/show_inv_time": False,
         
         # Dark Grid
         "ui/dark/grid_color": "#c8c8ff",

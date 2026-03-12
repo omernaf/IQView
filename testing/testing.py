@@ -47,7 +47,7 @@ def main():
     parser.add_argument('--generate', action='store_true', default=GENERATE_ENABLED, help='Force regenerate test file')
     args, unknown = parser.parse_known_args()
 
-    # filename = "samples/mavic_air_2.32fc"
+    # filename = "samples/temp_10Msps_433MHz.32fc"
     filename = "samples/mavic_air_2.16tc"
     # filename = "samples/long_sweep.32fc"
     sample_rate = 50e6  # 2 MHz

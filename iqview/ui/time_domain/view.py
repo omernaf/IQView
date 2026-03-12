@@ -620,6 +620,8 @@ class TimeDomainView(QWidget):
                     theme = self.parent_window.settings_mgr.get("ui/theme", "Dark") if self.parent_window else "Dark"
                     p = get_palette(theme)
                     self.stats_line = pg.InfiniteLine(angle=90, pen=pg.mkPen(p.marker_time, width=2, style=Qt.PenStyle.DashLine), movable=False)
+                    self.stats_line.setHoverPen(pg.mkPen(255, 0, 0, width=2))
+                    self.stats_line.setAcceptHoverEvents(True)
                     self.stats_line.setZValue(10)
                 if self.stats_line not in self.plot_item.items:
                     self.plot_item.addItem(self.stats_line)
@@ -786,6 +788,8 @@ class TimeDomainView(QWidget):
             self.plot_item.removeItem(old_m)
 
         new_m = pg.InfiniteLine(pos=val, angle=orient, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine), movable=False)
+        new_m.setHoverPen(pg.mkPen(255, 0, 0, width=2))
+        new_m.setAcceptHoverEvents(True)
         new_m.setZValue(100)
         # Stamp age so teleport always picks the oldest
         self._marker_age[new_m] = self._marker_age_counter
@@ -957,27 +961,33 @@ class TimeDomainView(QWidget):
         self.update_marker_info()
 
     def update_marker_info(self):
-        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
-        is_endless = 'ENDLESS' in self.interaction_mode
+        # Always use the cached marker mode for displaying values in the table
+        display_mode = self.interaction_mode
+        if display_mode in ['ZOOM', 'MOVE', 'STATS']:
+            display_mode = getattr(self.marker_panel, 'last_marker_mode', 'TIME')
+            
+        is_time = (display_mode in ['TIME', 'TIME_ENDLESS'])
+        is_endless = 'ENDLESS' in display_mode
         
         if is_endless:
             active_markers = self.markers_time_endless if is_time else self.markers_y_endless_dict[self.y_label_text]
-            self.marker_panel.update_endless_list(active_markers, self.interaction_mode)
+            self.marker_panel.update_endless_list(active_markers, display_mode)
             # Re-label just in case
             for i, m in enumerate(active_markers):
                 if hasattr(m, 'label'): m.label.setFormat(f"M{i+1}")
-            return
-
-        active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
+            if self.interaction_mode not in ['ZOOM', 'MOVE', 'STATS']: return
+        else:
+            active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
+        
         sorted_m = sorted(active_markers, key=lambda m: m.value())
         
-        self.marker_panel.update_headers(self.interaction_mode, self.y_label_text)
+        self.marker_panel.update_headers(display_mode, self.y_label_text)
         
         # Clear fields
         for widget in self.marker_panel.m_widgets:
             for k in widget: widget[k].blockSignals(True); widget[k].clear(); widget[k].blockSignals(False)
-        for w in [self.marker_panel.delta_v1, self.marker_panel.delta_v2,
-                  self.marker_panel.center_v1, self.marker_panel.center_v2]:
+        for w in [self.marker_panel.delta_v1, self.marker_panel.delta_v2, self.marker_panel.delta_v3,
+                  self.marker_panel.center_v1, self.marker_panel.center_v2, self.marker_panel.center_v3]:
             w.blockSignals(True); w.clear(); w.blockSignals(False)
 
         if not sorted_m: return
@@ -995,6 +1005,9 @@ class TimeDomainView(QWidget):
                 if is_time:
                     abs_s = int(round(m_val * self.rate)) + 1
                     self.marker_panel.m_widgets[i]['v2'].setText(f"{abs_s}")
+                    inv_val = (1.0 / m_val) if abs(m_val) > 1e-12 else float('inf')
+                    if inv_val == float('inf'): self.marker_panel.m_widgets[i]['v3'].setText("∞")
+                    else: self.marker_panel.m_widgets[i]['v3'].setText(f"{inv_val:.{prec1}f}")
                 
                 self.marker_panel.m_widgets[i]['v1'].blockSignals(False)
                 self.marker_panel.m_widgets[i]['v2'].blockSignals(False)
@@ -1014,16 +1027,30 @@ class TimeDomainView(QWidget):
             if is_time:
                 s1, s2 = int(round(v1 * self.rate)) + 1, int(round(v2 * self.rate)) + 1
                 self.marker_panel.delta_v2.blockSignals(True)
+                self.marker_panel.delta_v3.blockSignals(True)
                 self.marker_panel.center_v2.blockSignals(True)
+                self.marker_panel.center_v3.blockSignals(True)
+                
                 self.marker_panel.delta_v2.setText(f"{abs(s2-s1)+1}")
+                dt = abs(v2 - v1)
+                if dt > 1e-12: self.marker_panel.delta_v3.setText(f"{1.0/dt:.{prec1}f}")
+                else: self.marker_panel.delta_v3.setText("∞")
+                
                 # Center sample
                 cv = (v1+v2)/2
                 self.marker_panel.center_v2.setText(f"{int(round(cv*self.rate))+1}")
+                if abs(cv) > 1e-12: self.marker_panel.center_v3.setText(f"{1.0/cv:.{prec1}f}")
+                else: self.marker_panel.center_v3.setText("∞")
+                
                 self.marker_panel.delta_v2.blockSignals(False)
+                self.marker_panel.delta_v3.blockSignals(False)
                 self.marker_panel.center_v2.blockSignals(False)
+                self.marker_panel.center_v3.blockSignals(False)
 
-        # Sync lock button availability
-        if not is_endless:
+        # Sync lock button availability (Keep locked if we are Zooming or Panning)
+        if self.interaction_mode in ['ZOOM', 'MOVE', 'STATS']:
+            pass
+        elif not is_endless:
             m1_p, m2_p = (len(sorted_m) >= 1), (len(sorted_m) >= 2)
             self.marker_panel.set_locks_enabled(m1_p, m2_p)
             
@@ -1271,6 +1298,8 @@ class TimeDomainView(QWidget):
         count = 0
         while curr <= v_max_visible + 1e-9 and count < 500:
             line = pg.InfiniteLine(pos=curr, angle=angle, pen=pen, movable=False)
+            line.setHoverPen(pg.mkPen(255, 0, 0, width=2))
+            line.setAcceptHoverEvents(True)
             line.setZValue(5)
             self.plot_item.addItem(line, ignoreBounds=True)
             grid_lines.append(line)

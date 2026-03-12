@@ -315,7 +315,7 @@ class MarkerManagerMixin:
             self.update_marker_info()
 
     def update_drag(self, scene_pos):
-        if self.spectrogram_view.plot_item.sceneBoundingRect().contains(scene_pos):
+        if True: # Let mapSceneToView and np.clip handle out-of-bounds coordinates
             mouse_v = self.spectrogram_view.plot_item.vb.mapSceneToView(scene_pos)
             
             # 1. Handle explicit BPF bound dragging (highest priority)
@@ -526,15 +526,20 @@ class MarkerManagerMixin:
             self.update_marker_info()
 
     def update_marker_info(self):
-        is_freq = (self.interaction_mode in ['FREQ', 'FREQ_ENDLESS'])
-        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
-        is_endless = 'ENDLESS' in self.interaction_mode
-        is_filter = (self.interaction_mode == 'FILTER')
+        # Determine the display mode for the table (e.g. if we are panning/zooming, we still want to see the last marker mode's info)
+        display_mode = self.interaction_mode
+        if display_mode in ['ZOOM', 'MOVE']:
+            display_mode = getattr(self.marker_panel, 'last_marker_mode', 'TIME')
+            
+        is_freq = (display_mode in ['FREQ', 'FREQ_ENDLESS'])
+        is_time = (display_mode in ['TIME', 'TIME_ENDLESS'])
+        is_endless = 'ENDLESS' in display_mode
+        is_filter = (display_mode == 'FILTER')
         
         if is_endless:
             markers = self.markers_time_endless if is_time else self.markers_freq_endless
-            self.marker_panel.update_endless_list(markers, self.interaction_mode)
-            return
+            self.marker_panel.update_endless_list(markers, display_mode)
+            if self.interaction_mode not in ['ZOOM', 'MOVE']: return
 
         if is_filter:
             if not getattr(self, 'filter_placed', False) and not getattr(self, 'filter_placing', False):
@@ -558,10 +563,13 @@ class MarkerManagerMixin:
         for widgets in self.marker_panel.widgets:
             widgets['sec'].clear()
             widgets['sam'].clear()
+            widgets['inv'].clear()
         self.marker_panel.delta_sec.clear()
         self.marker_panel.delta_sam.clear()
+        self.marker_panel.delta_inv.clear()
         self.marker_panel.center_sec.clear()
         self.marker_panel.center_sam.clear()
+        self.marker_panel.center_inv.clear()
 
         if not active_values: return
 
@@ -573,13 +581,17 @@ class MarkerManagerMixin:
                 rbw = self.rate / self.fft_size
                 label_val = int(round((val - (self.fc - self.rate/2)) / rbw)) + 1
                 label_val = max(1, min(label_val, self.fft_size))
+                inv_val = (1.0 / val) if abs(val) > 1e-12 else float('inf')
             else:
                 sample = int(round(val * self.rate)) + 1
                 label_val = max(1, min(sample, getattr(self, 'total_samples_in_cache', 1e9)))
+                inv_val = (1.0 / val) if abs(val) > 1e-12 else float('inf')
                 
             prec = int(self.settings_mgr.get("ui/label_precision", 6 if (is_freq or is_filter) else 9))
             self.marker_panel.widgets[i]['sec'].setText(f"{val:.{prec}f}")
             self.marker_panel.widgets[i]['sam'].setText(f"{label_val}")
+            if inv_val == float('inf'): self.marker_panel.widgets[i]['inv'].setText("∞")
+            else: self.marker_panel.widgets[i]['inv'].setText(f"{inv_val:.{prec}f}")
             self.marker_panel.widgets[i]['sec'].blockSignals(False)
             self.marker_panel.widgets[i]['sam'].blockSignals(False)
 
@@ -591,9 +603,15 @@ class MarkerManagerMixin:
             self.marker_panel.center_sam.blockSignals(True)
 
             prec = int(self.settings_mgr.get("ui/label_precision", 6 if (is_freq or is_filter) else 9))
-            self.marker_panel.delta_sec.setText(f"{abs(p2 - p1):.{prec}f}")
+            dt = abs(p2 - p1)
+            self.marker_panel.delta_sec.setText(f"{dt:.{prec}f}")
+            if dt > 1e-12: self.marker_panel.delta_inv.setText(f"{1.0/dt:.{prec}f}")
+            else: self.marker_panel.delta_inv.setText("∞")
+                
             cp = (p1 + p2) / 2
             self.marker_panel.center_sec.setText(f"{cp:.{prec}f}")
+            if abs(cp) > 1e-12: self.marker_panel.center_inv.setText(f"{1.0/cp:.{prec}f}")
+            else: self.marker_panel.center_inv.setText("∞")
 
             if is_freq or is_filter:
                 f_min = self.fc - self.rate/2
@@ -621,8 +639,10 @@ class MarkerManagerMixin:
             self.marker_panel.center_sec.blockSignals(False)
             self.marker_panel.center_sam.blockSignals(False)
         
-        # Sync lock button availability
-        if is_filter:
+        # Sync lock button availability conditionally (we shouldn't disable all locks just because we entered ZOOM)
+        if self.interaction_mode in ['ZOOM', 'MOVE']:
+            pass # Keep them as they are
+        elif is_filter:
             m1_p, m2_p = (len(active_values) >= 1), (len(active_values) >= 2)
             self.marker_panel.set_locks_enabled(m1_p, m2_p)
         elif not is_endless:

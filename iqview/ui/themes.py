@@ -12,7 +12,7 @@ DARK_PALETTE = Palette(
     bg_input="#1a1a1a",
     bg_tab_inactive="#1a1a1a",
     text_main="#e0e0e0",
-    text_dim="#888888",
+    text_dim="#9e9e9e",
     text_header="#ffffff",
     accent="#00aaff",
     accent_dim="#004488",
@@ -31,7 +31,7 @@ LIGHT_PALETTE = Palette(
     bg_input="#ffffff",
     bg_tab_inactive="#e0e0e0",
     text_main="#222222",
-    text_dim="#666666",
+    text_dim="#555555",
     text_header="#000000",
     accent="#0077cc",
     accent_dim="#cceeff",
@@ -49,7 +49,7 @@ def get_palette(theme_name):
 def get_main_stylesheet(theme_name):
     p = get_palette(theme_name)
     return f"""
-        QMainWindow, QWidget#central {{ 
+        QMainWindow, QWidget#central, QDialog {{ 
             background-color: {p.bg_main}; 
             color: {p.text_main}; 
             font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif; 
@@ -66,6 +66,10 @@ def get_main_stylesheet(theme_name):
             background-color: {p.accent_dim}; 
             border-color: {p.accent}; 
             color: {p.accent}; 
+        }}
+        QPushButton[is_reset="true"] {{
+            padding: 4px;
+            font-size: 14px;
         }}
         QLineEdit {{ 
             background-color: {p.bg_input}; 
@@ -101,6 +105,49 @@ def get_main_stylesheet(theme_name):
             background-color: {p.bg_main}; color: {p.accent}; 
             border-bottom: 2px solid {p.accent}; 
         }}
+
+        QCheckBox {{ 
+            color: {p.text_main};
+            spacing: 8px;
+        }}
+        QCheckBox::indicator {{
+            width: 16px;
+            height: 16px;
+            background-color: {p.bg_input};
+            border: 1px solid {p.border};
+            border-radius: 3px;
+        }}
+        QCheckBox::indicator:checked {{
+            background-color: {p.accent};
+            border-color: {p.accent};
+        }}
+        QCheckBox::indicator:hover {{
+            border-color: {p.accent};
+        }}
+
+        QListWidget, QTableWidget {{
+            background-color: {p.bg_input};
+            border: 1px solid {p.border};
+            color: {p.text_main};
+            gridline-color: {p.border};
+            border-radius: 4px;
+        }}
+        QListWidget::item {{ padding: 4px 8px; }}
+        QListWidget::item:selected {{ background-color: {p.accent_dim}; color: {p.accent}; }}
+        
+        QHeaderView::section {{
+            background-color: {p.bg_widget};
+            color: {p.text_main};
+            padding: 6px;
+            border: 1px solid {p.border};
+            font-weight: bold;
+        }}
+        QTableCornerButton::section {{
+            background-color: {p.bg_widget};
+            border: 1px solid {p.border};
+        }}
+
+        {get_scrollbar_stylesheet(p)}
     """
 
 def get_scrollbar_stylesheet(p):

@@ -16,10 +16,11 @@ class TimeDomainMarkerPanel(QFrame):
             'TIME': {'delta': False, 'center': False, 'm1': False, 'm2': False},
             'MAG':  {'delta': False, 'center': False, 'm1': False, 'm2': False}
         }
+        self.last_marker_mode = 'TIME'
         self.setup_ui()
 
     def setup_ui(self):
-        self.setFixedHeight(95) # Reduced height for 2 rows
+        self.setFixedHeight(120) # Increased height for 3 rows
         self.header_font = QFont("Segoe UI", 9, QFont.Weight.Bold)
         self.refresh_theme()
         
@@ -157,39 +158,48 @@ class TimeDomainMarkerPanel(QFrame):
         # Side labels (Row names)
         self.row_v1_label = QLabel("Time (sec)")
         self.row_v2_label = QLabel("Samples")
+        self.row_v3_label = QLabel("1/T (Hz)")
         self.row_v1_label.setObjectName("header_label")
         self.row_v2_label.setObjectName("header_label")
+        self.row_v3_label.setObjectName("header_label")
         self.grid.addWidget(self.row_v1_label, 1, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(self.row_v2_label, 2, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.grid.addWidget(self.row_v3_label, 3, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-        # Edit Widgets (2 Rows)
+        # Edit Widgets (3 Rows)
         self.m_widgets = []
         for i in range(2):
             v1_edit = FormattedLineEdit(); v1_edit.setFixedWidth(130); v1_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
             v2_edit = FormattedLineEdit(); v2_edit.setFixedWidth(130); v2_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            v3_edit = FormattedLineEdit(); v3_edit.setFixedWidth(130); v3_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
             
             v1_edit.setObjectName(f"m{i}_v1")
             v2_edit.setObjectName(f"m{i}_v2")
+            v3_edit.setObjectName(f"m{i}_v3")
             
             for w in [v1_edit, v2_edit]:
                 w.returnPressed.connect(self.controller.marker_edit_finished)
+            v3_edit.setReadOnly(True)
                 
             self.grid.addWidget(v1_edit, 1, i + 1)
             self.grid.addWidget(v2_edit, 2, i + 1)
-            self.m_widgets.append({'v1': v1_edit, 'v2': v2_edit})
+            self.grid.addWidget(v3_edit, 3, i + 1)
+            self.m_widgets.append({'v1': v1_edit, 'v2': v2_edit, 'v3': v3_edit})
 
         # Delta/Center Edits
         self.delta_v1 = FormattedLineEdit(); self.delta_v1.setFixedWidth(130); self.delta_v1.setObjectName("delta_v1"); self.delta_v1.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.delta_v2 = FormattedLineEdit(); self.delta_v2.setFixedWidth(130); self.delta_v2.setObjectName("delta_v2"); self.delta_v2.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.delta_v3 = FormattedLineEdit(); self.delta_v3.setFixedWidth(130); self.delta_v3.setObjectName("delta_v3"); self.delta_v3.setAlignment(Qt.AlignmentFlag.AlignCenter); self.delta_v3.setReadOnly(True)
         
         self.center_v1 = FormattedLineEdit(); self.center_v1.setFixedWidth(130); self.center_v1.setObjectName("center_v1"); self.center_v1.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.center_v2 = FormattedLineEdit(); self.center_v2.setFixedWidth(130); self.center_v2.setObjectName("center_v2"); self.center_v2.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.center_v3 = FormattedLineEdit(); self.center_v3.setFixedWidth(130); self.center_v3.setObjectName("center_v3"); self.center_v3.setAlignment(Qt.AlignmentFlag.AlignCenter); self.center_v3.setReadOnly(True)
         
         for w in [self.delta_v1, self.delta_v2, self.center_v1, self.center_v2]:
             w.returnPressed.connect(self.controller.marker_edit_finished)
             
-        self.grid.addWidget(self.delta_v1, 1, 3); self.grid.addWidget(self.delta_v2, 2, 3)
-        self.grid.addWidget(self.center_v1, 1, 4); self.grid.addWidget(self.center_v2, 2, 4)
+        self.grid.addWidget(self.delta_v1, 1, 3); self.grid.addWidget(self.delta_v2, 2, 3); self.grid.addWidget(self.delta_v3, 3, 3)
+        self.grid.addWidget(self.center_v1, 1, 4); self.grid.addWidget(self.center_v2, 2, 4); self.grid.addWidget(self.center_v3, 3, 4)
         
         # Connect locks
         self.btn_lock_m1.toggled.connect(self.on_lock_m1_toggled)
@@ -278,34 +288,53 @@ class TimeDomainMarkerPanel(QFrame):
         self.row_v1_label.blockSignals(True)
         self.row_v2_label.blockSignals(True)
         
+        # Track the last valid marker mode OR stats mode so we can return to it when zooming
+        if mode in ['TIME', 'MAG', 'TIME_ENDLESS', 'MAG_ENDLESS', 'STATS']:
+            self.last_marker_mode = mode
+            
+        display_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE'] else mode
+        
         # Handle Page Switching
-        if mode == 'STATS':
+        # We must use the cached last_marker_mode if we are currently panning/zooming, 
+        # because we want to preserve the UI of the last thing the user was doing.
+        actual_ui_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE'] else mode
+        
+        if actual_ui_mode == 'STATS':
             self.stacked.setCurrentIndex(2)
-        elif 'ENDLESS' in mode:
+        elif 'ENDLESS' in actual_ui_mode:
             self.stacked.setCurrentIndex(1)
         else:
             self.stacked.setCurrentIndex(0)
 
-        if mode in ['TIME', 'TIME_ENDLESS']:
+        if display_mode in ['TIME', 'TIME_ENDLESS']:
+            show_inv = self.controller.settings_mgr.get("ui/show_inv_time", False)
             self.row_v1_label.setText("Time (sec)")
             self.row_v2_label.setText("Samples")
+            self.row_v3_label.setText("1/T (Hz)")
             self.row_v2_label.show()
-            for i in range(2): self.m_widgets[i]['v2'].show()
-            self.delta_v2.show()
-            self.center_v2.show()
+            self.row_v3_label.setVisible(show_inv)
+            for i in range(2): 
+                self.m_widgets[i]['v2'].show()
+                self.m_widgets[i]['v3'].setVisible(show_inv)
+            self.delta_v2.show(); self.delta_v3.setVisible(show_inv)
+            self.center_v2.show(); self.center_v3.setVisible(show_inv)
         else: # MAG
             self.row_v1_label.setText(y_axis_label)
             self.row_v2_label.setText("")
+            self.row_v3_label.setText("")
             self.row_v2_label.hide()
-            for i in range(2): self.m_widgets[i]['v2'].hide()
-            self.delta_v2.hide()
-            self.center_v2.hide()
+            self.row_v3_label.hide()
+            for i in range(2): 
+                self.m_widgets[i]['v2'].hide()
+                self.m_widgets[i]['v3'].hide()
+            self.delta_v2.hide(); self.delta_v3.hide()
+            self.center_v2.hide(); self.center_v3.hide()
             
         self.row_v1_label.blockSignals(False)
         self.row_v2_label.blockSignals(False)
 
-        # Sync lock UI with saved state for this mode
-        base_mode = 'TIME' if 'TIME' in mode else 'MAG'
+        # Sync lock UI with saved state for this display mode
+        base_mode = 'TIME' if 'TIME' in display_mode else 'MAG'
         if base_mode in self.lock_states:
             for key, btn, label_fn in [
                 ('m1',     self.btn_lock_m1,     lambda c: f"Marker 1 {'🔒' if c else '🔓'}"),
@@ -317,7 +346,7 @@ class TimeDomainMarkerPanel(QFrame):
                 btn.blockSignals(True)
                 btn.setChecked(locked)
                 btn.setText(label_fn(locked))
-                btn.setEnabled('ENDLESS' not in mode)
+                btn.setEnabled('ENDLESS' not in display_mode)
                 btn.blockSignals(False)
 
     def update_mode_ui(self, mode):

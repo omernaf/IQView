@@ -19,6 +19,7 @@ class FormattedLineEdit(QtWidgets.QLineEdit):
         super().__init__(*args, **kwargs)
         self._raw_text = super().text()
         self.editingFinished.connect(self._handle_editing_finished)
+        self.setCursor(Qt.CursorShape.IBeamCursor)
         if self._raw_text:
             super().setText(self._format_text(self._raw_text))
 
@@ -140,6 +141,7 @@ class CustomViewBox(pg.ViewBox):
 
     def hoverEvent(self, ev):
         if ev.isExit():
+            self.unsetCursor()
             return
             
         mode = getattr(self.ui_controller, 'interaction_mode', None)
@@ -188,13 +190,9 @@ class CustomViewBox(pg.ViewBox):
             
             if not found_near:
                 for i, m in enumerate(active_markers):
-                    # markers are InfiniteLines. angle=90 is vertical, angle=0 is horizontal
-                    m_val = m.value()
-                    angle = m.angle
-                    m_pixel = self.mapViewToScene(pg.Point(m_val, 0) if angle == 90 else pg.Point(0, m_val))
-                    dist = abs(scene_pos.x() - m_pixel.x()) if angle == 90 else abs(scene_pos.y() - m_pixel.y())
-                    
-                    if dist < 20:
+                    if getattr(m, 'mouseHovering', False):
+                        angle = getattr(m, 'angle', 90)
+                        
                         # Check lock status
                         is_m_locked = False
                         if len(active_markers) == 2:
@@ -225,25 +223,29 @@ class CustomViewBox(pg.ViewBox):
                 else:
                     grid_lines = getattr(self.ui_controller, 'grid_lines_mag', [])
                 for gl in grid_lines:
-                    gl_val = gl.value()
-                    angle = gl.angle
-                    gl_pixel = self.mapViewToScene(pg.Point(gl_val, 0) if angle == 90 else pg.Point(0, gl_val))
-                    dist = abs(scene_pos.x() - gl_pixel.x()) if angle == 90 else abs(scene_pos.y() - gl_pixel.y())
-                    
-                    if dist < 20:
+                    if getattr(gl, 'mouseHovering', False):
+                        angle = getattr(gl, 'angle', 90)
                         found_near = True
                         self.setCursor(Qt.CursorShape.SizeHorCursor if angle == 90 else Qt.CursorShape.SizeVerCursor)
                         break
                         
             # 5. Check for STATS Region boundaries
             if not found_near and mode == 'STATS':
-                stats_bounds = getattr(self.ui_controller, 'stats_bounds', [])
-                for b_val in stats_bounds:
-                    pi = self.mapViewToScene(pg.Point(b_val, 0))
-                    if abs(scene_pos.x() - pi.x()) < 20:
-                        found_near = True
-                        self.setCursor(Qt.CursorShape.SizeHorCursor)
-                        break
+                stats_region = getattr(self.ui_controller, 'stats_region', None)
+                if stats_region and stats_region.isVisible():
+                    for line in stats_region.lines:
+                        if getattr(line, 'mouseHovering', False):
+                            found_near = True
+                            self.setCursor(Qt.CursorShape.SizeHorCursor)
+                            break
+                
+                if not found_near:
+                    stats_line = getattr(self.ui_controller, 'stats_line', None)
+                    if stats_line and stats_line.isVisible():
+                        if getattr(stats_line, 'mouseHovering', False):
+                            found_near = True
+                            self.setCursor(Qt.CursorShape.SizeHorCursor)
+
             
             if not found_near:
                 self.setCursor(Qt.CursorShape.CrossCursor)
@@ -265,7 +267,19 @@ class CustomViewBox(pg.ViewBox):
                     # We'll use a QGraphicsPathItem for the dynamic 1D/2D visual
                     self.zoom_rect = QtWidgets.QGraphicsPathItem()
                     self.addItem(self.zoom_rect)
-                    self.zoom_start_v = self.mapSceneToView(ev.buttonDownScenePos())
+                    
+                    start_v = self.mapSceneToView(ev.buttonDownScenePos())
+                    xr, yr = self.viewRange()
+                    if xr is not None and yr is not None:
+                        x_min, x_max = min(xr), max(xr)
+                        y_min, y_max = min(yr), max(yr)
+                        self.zoom_start_v = pg.QtCore.QPointF(
+                            max(x_min, min(x_max, start_v.x())),
+                            max(y_min, min(y_max, start_v.y()))
+                        )
+                    else:
+                        self.zoom_start_v = start_v
+                        
                     self.zoom_type = 'BOTH'
                 
                 elif ev.isFinish():
@@ -277,10 +291,19 @@ class CustomViewBox(pg.ViewBox):
                 else:
                     if self.zoom_rect:
                         curr_v = self.mapSceneToView(ev.scenePos())
+                        
+                        xr, yr = self.viewRange()
+                        if xr is not None and yr is not None:
+                            x_min, x_max = min(xr), max(xr)
+                            y_min, y_max = min(yr), max(yr)
+                            curr_v = pg.QtCore.QPointF(
+                                max(x_min, min(x_max, curr_v.x())),
+                                max(y_min, min(y_max, curr_v.y()))
+                            )
+                            
                         p1, p2 = self.zoom_start_v, curr_v
                         
                         # Detect Zoom Type
-                        xr, yr = self.viewRange()
                         dx, dy = abs(p2.x() - p1.x()), abs(p2.y() - p1.y())
                         ndx, ndy = dx / (xr[1]-xr[0]), dy / (yr[1]-yr[0])
                         

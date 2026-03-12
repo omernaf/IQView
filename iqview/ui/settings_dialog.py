@@ -1,8 +1,9 @@
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, 
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QStackedWidget, 
                              QWidget, QLabel, QLineEdit, QComboBox, QPushButton, 
                              QFormLayout, QDialogButtonBox, QKeySequenceEdit, QCheckBox,
                              QColorDialog, QSlider, QSpinBox, QListWidget, QListWidgetItem,
-                             QAbstractItemView, QTableWidget, QTableWidgetItem, QHeaderView)
+                             QAbstractItemView, QTableWidget, QTableWidgetItem, QHeaderView,
+                             QScrollArea, QFrame)
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QKeySequence, QIcon, QPixmap, QPainter, QLinearGradient, QColor
 from .widgets import KeyBindEdit
@@ -41,8 +42,13 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.mgr = settings_manager
         self.setWindowTitle("Settings")
-        self.resize(500, 400)
+        self.setMinimumSize(730, 560)
         self.setup_ui()
+        self._update_dialog_style(self.mgr.get("ui/theme", "Dark"))
+
+    def _update_dialog_style(self, theme_text):
+        from .themes import get_main_stylesheet
+        self.setStyleSheet(get_main_stylesheet(theme_text))
 
     def _make_colormap_icon(self, cmap_name):
         from pyqtgraph.graphicsItems.GradientPresets import Gradients
@@ -74,15 +80,31 @@ class SettingsDialog(QDialog):
         reset_btn = QPushButton("🔄")
         reset_btn.setToolTip("Reset to default")
         reset_btn.setFixedWidth(30)
-        reset_btn.setStyleSheet("padding: 2px; font-size: 14px;")
+        reset_btn.setFixedHeight(30)
+        # Use a property for specific styling if needed, but let it inherit from QPushButton global style
+        reset_btn.setProperty("is_reset", True)
+        reset_btn.setFlat(True) # Make it subtly integrate better into the row layout
         
         def reset_clicked():
             key = key_or_func() if callable(key_or_func) else key_or_func
             default_val = self.mgr.get_default(key)
+            
             if isinstance(widget, QLineEdit):
                 widget.setText(str(default_val))
             elif isinstance(widget, QComboBox):
-                widget.setCurrentText(str(default_val))
+                if isinstance(default_val, bool):
+                    target_text = "On" if default_val else "Off"
+                else:
+                    target_text = str(default_val)
+                
+                # Find best match in combo
+                index = widget.findText(target_text)
+                if index >= 0:
+                    widget.setCurrentIndex(index)
+                else:
+                    widget.setCurrentText(target_text)
+            elif isinstance(widget, QSpinBox) or isinstance(widget, QDoubleSpinBox):
+                widget.setValue(default_val)
             elif isinstance(widget, KeyBindEdit):
                 widget.setText(str(default_val))
             elif isinstance(widget, QKeySequenceEdit):
@@ -93,19 +115,67 @@ class SettingsDialog(QDialog):
                 widget.setColor(str(default_val))
         
         reset_btn.clicked.connect(reset_clicked)
+        row_layout.addSpacing(10)
         row_layout.addWidget(reset_btn)
         
-        form.addRow(label, row_layout)
+        label_widget = QLabel(label)
+        label_widget.setMinimumWidth(180)
+        form.addRow(label_widget, row_layout)
+
+    def add_side_tab(self, widget, title):
+        self.stacked_widget.addWidget(widget)
+        item = QListWidgetItem(title)
+        item.setSizeHint(QSize(110, 30))
+        self.side_menu.addItem(item)
 
     def setup_ui(self):
         self.layout = QVBoxLayout(self)
-        self.tabs = QTabWidget()
-        self.layout.addWidget(self.tabs)
-
-        # --- General Tab ---
-        self.general_tab = QWidget()
-        self.general_form = QFormLayout(self.general_tab)
         
+        self.main_content = QHBoxLayout()
+        self.side_menu = QListWidget()
+        self.side_menu.setFixedWidth(130)
+        
+        # Style applied dynamically in _update_sidebar_style
+        
+        self.stacked_widget = QStackedWidget()
+        self.main_content.addWidget(self.side_menu)
+        self.main_content.addWidget(self.stacked_widget, 1)
+        self.layout.addLayout(self.main_content)
+        
+        self.side_menu.currentRowChanged.connect(self.stacked_widget.setCurrentIndex)
+
+        # Initialize all tabs and forms first so we can style them uniformly
+        tabs_info = [
+            ('general', 'General'),
+            ('appearance', 'Appearance'),
+            ('keyboard', 'Keyboard'),
+            ('filter', 'Filter')
+        ]
+        
+        for name, _ in tabs_info:
+            content_widget = QWidget()
+            form_layout = QFormLayout(content_widget)
+            
+            # Use generous spacing and margins for an airy, premium feel
+            form_layout.setSpacing(22)
+            form_layout.setContentsMargins(40, 35, 40, 35)
+            form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+            form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+            
+            # Wrap in scroll area to prevent "squeezing"
+            scroll = QScrollArea()
+            scroll.setWidget(content_widget)
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.Shape.NoFrame)
+            scroll.setObjectName(f"scroll_{name}")
+            # Ensure the background is transparent/matches the theme
+            scroll.setStyleSheet("background: transparent;")
+            
+            setattr(self, f"{name}_tab", scroll)
+            setattr(self, f"{name}_form", form_layout)
+            setattr(self, f"{name}_content", content_widget)
+
+        # --- General Tab Population ---
         self.fs_edit = QLineEdit(str(self.mgr.get("core/fs", 1e6)))
         self.fc_edit = QLineEdit(str(self.mgr.get("core/fc")))
         
@@ -130,12 +200,16 @@ class SettingsDialog(QDialog):
         self._add_reset_row(self.general_form, "Default Overlap (%):", self.overlap_edit, "core/overlap")
         self._add_reset_row(self.general_form, "Default Window:", self.window_combo, "core/window_type")
         
-        self.tabs.addTab(self.general_tab, "General")
+        self.general_form.addRow(QLabel(" "))
+        self.show_inv_combo = QComboBox()
+        self.show_inv_combo.addItems(["Off", "On"])
+        show_inv_val = self.mgr.get("ui/show_inv_time", False)
+        self.show_inv_combo.setCurrentText("On" if show_inv_val else "Off")
+        self._add_reset_row(self.general_form, "Show 1/T (Hz) Row in Markers:", self.show_inv_combo, "ui/show_inv_time")
+        
+        self.add_side_tab(self.general_tab, "General")
 
         # --- Appearance Tab ---
-        self.appearance_tab = QWidget()
-        self.appearance_form = QFormLayout(self.appearance_tab)
-        
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["Dark", "Light"])
         self.theme_combo.setCurrentText(str(self.mgr.get("ui/theme")))
@@ -223,13 +297,11 @@ class SettingsDialog(QDialog):
 
         # Initial load based on current theme
         self._load_theme_specific_settings(self.theme_combo.currentText())
+        self._update_sidebar_style(self.theme_combo.currentText())
         
-        self.tabs.addTab(self.appearance_tab, "Appearance")
+        self.add_side_tab(self.appearance_tab, "Appearance")
 
         # --- Keyboard Tab ---
-        self.keyboard_tab = QWidget()
-        self.keyboard_form = QFormLayout(self.keyboard_tab)
-        
         self.time_key = KeyBindEdit()
         self.time_key.setText(str(self.mgr.get("keybinds/time_markers")))
         
@@ -243,12 +315,9 @@ class SettingsDialog(QDialog):
         self._add_reset_row(self.keyboard_form, "Magnitude/Freq Markers Key:", self.mag_key, "keybinds/mag_markers")
         self._add_reset_row(self.keyboard_form, "Zoom Pulse Key (Hold):", self.zoom_key, "keybinds/zoom_mode")
         
-        self.tabs.addTab(self.keyboard_tab, "Keyboard")
+        self.add_side_tab(self.keyboard_tab, "Keyboard")
 
         # --- Filter Tab ---
-        self.filter_tab = QWidget()
-        self.filter_form = QFormLayout(self.filter_tab)
-        
         self.filter_type_combo = QComboBox()
         self.filter_type_combo.addItems(["Butterworth", "Chebyshev I", "Chebyshev II", "Elliptic", "Bessel"])
         self.filter_type_combo.setCurrentText(str(self.mgr.get("core/filter_type", "Elliptic")))
@@ -273,14 +342,14 @@ class SettingsDialog(QDialog):
         
         self._on_filter_type_changed(self.filter_type_combo.currentText())
         
-        self.tabs.addTab(self.filter_tab, "Filter")
+        self.add_side_tab(self.filter_tab, "Filter")
 
         # --- Plots Tab ---
         self.plots_tab = QWidget()
         self.plots_layout = QVBoxLayout(self.plots_tab)
         
         help_lbl = QLabel("Drag to reorder. Checked plots appear in the Time Domain toolbar.")
-        help_lbl.setStyleSheet("color: #888; font-style: italic;")
+        help_lbl.setStyleSheet("font-style: italic;")
         self.plots_layout.addWidget(help_lbl)
         
         self.plots_list = QListWidget()
@@ -336,7 +405,7 @@ class SettingsDialog(QDialog):
         reset_plots_btn.clicked.connect(reset_plots)
         self.plots_layout.addWidget(reset_plots_btn)
         
-        self.tabs.addTab(self.plots_tab, "Time Plots")
+        self.add_side_tab(self.plots_tab, "Time Plots")
 
         # --- File Types Tab ---
         self.file_types_tab = QWidget()
@@ -344,7 +413,7 @@ class SettingsDialog(QDialog):
         
         ft_help = QLabel("Map file extensions (e.g. '.32f') to a data type. These are used when auto-detecting the data type of an opened file.")
         ft_help.setWordWrap(True)
-        ft_help.setStyleSheet("color: #888; font-style: italic;")
+        ft_help.setStyleSheet("font-style: italic;")
         self.file_types_layout.addWidget(ft_help)
         
         self.ext_table = QTableWidget()
@@ -371,7 +440,9 @@ class SettingsDialog(QDialog):
         remove_btn.clicked.connect(self._remove_ext_mapping_row)
         reset_ft_btn.clicked.connect(self._reset_ext_mappings)
 
-        self.tabs.addTab(self.file_types_tab, "File Types")
+        self.add_side_tab(self.file_types_tab, "File Types")
+        if self.side_menu.count() > 0:
+            self.side_menu.setCurrentRow(0)
 
         # --- Buttons ---
         self.button_box = QDialogButtonBox(
@@ -423,6 +494,7 @@ class SettingsDialog(QDialog):
             # Font & Scaling
             self.mgr.set("ui/axis_font_size", self.axis_font_spin.value())
             self.mgr.set("ui/label_precision", self.precision_spin.value())
+            self.mgr.set("ui/show_inv_time", (self.show_inv_combo.currentText() == "On"))
 
             self.mgr.set("keybinds/time_markers", self.time_key.text())
             self.mgr.set("keybinds/mag_markers", self.mag_key.text())
@@ -466,6 +538,43 @@ class SettingsDialog(QDialog):
 
     def _on_theme_changed(self, theme_text):
         self._load_theme_specific_settings(theme_text)
+        self._update_sidebar_style(theme_text)
+        self._update_dialog_style(theme_text)
+
+    def _update_sidebar_style(self, theme_text):
+        theme = theme_text.lower()
+        if theme == "dark":
+            bg = "#1e1e1e"
+            text = "#d4d4d4"
+            sel_bg = "#007acc"
+            sel_text = "#ffffff"
+        else:
+            bg = "#f3f3f3"
+            text = "#000000"
+            sel_bg = "#007acc"
+            sel_text = "#ffffff"
+            
+        self.side_menu.setStyleSheet(f"""
+            QListWidget {{ 
+                border: none; 
+                outline: none; 
+                background-color: {bg};
+            }}
+            QListWidget::item {{ 
+                padding: 8px 5px; 
+                border-radius: 4px; 
+                color: {text};
+                margin-bottom: 2px;
+            }}
+            QListWidget::item:hover {{
+                background-color: rgba(128, 128, 128, 0.1);
+            }}
+            QListWidget::item:selected {{ 
+                background-color: {sel_bg};
+                color: {sel_text};
+                font-weight: bold; 
+            }}
+        """)
 
     def _load_theme_specific_settings(self, theme_text):
         theme = theme_text.lower()
