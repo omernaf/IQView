@@ -571,6 +571,14 @@ class FrequencyDomainView(QWidget):
         elif mode == 'FREQ_ENDLESS':
             for m in self.markers_freq_endless: self.plot_item.removeItem(m)
             self.markers_freq_endless.clear()
+        elif mode == 'Y':
+            active_list = self.markers_y_dict.get(self.y_label_text, [])
+            for m in active_list: self.plot_item.removeItem(m)
+            active_list.clear()
+        elif mode == 'MAG_ENDLESS':
+            active_list = self.markers_y_endless_dict.get(self.y_label_text, [])
+            for m in active_list: self.plot_item.removeItem(m)
+            active_list.clear()
         self.update_marker_info()
 
     def update_scrollbars(self): pass # Simplified for now
