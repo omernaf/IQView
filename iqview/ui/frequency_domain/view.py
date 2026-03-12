@@ -133,6 +133,7 @@ class FrequencyDomainView(QWidget):
         self.stats_region.sigRegionChanged.connect(self.update_statistics)
         
         self.stats_markers = pg.ScatterPlotItem(size=10, pen=pg.mkPen(None), brush=pg.mkBrush(255, 0, 0, 200))
+        self.stats_markers.setZValue(10)
         self.stats_markers.hide()
         self.plot_item.addItem(self.stats_markers)
         
@@ -274,24 +275,35 @@ class FrequencyDomainView(QWidget):
         
         self.plot_item.clear()
         self.plot_item.addItem(self.stats_region)
+        self.stats_region.setZValue(50)
         self.plot_item.addItem(self.stats_markers)
+        self.stats_markers.setZValue(100)
         self.plot_item.getAxis('left').setLabel(y_label)
         
         theme = self.settings_mgr.get("ui/theme", "Dark")
         p = get_palette(theme)
         pen = pg.mkPen(p.accent, width=1.5)
-        self.plot_item.plot(self.freq_axis, data, pen=pen)
+        curve = self.plot_item.plot(self.freq_axis, data, pen=pen)
+        curve.setZValue(0)
+        
+        if hasattr(self, 'stats_line') and self.stats_line:
+            if self.stats_line not in self.plot_item.items:
+                self.plot_item.addItem(self.stats_line)
+            self.stats_line.setZValue(100)
         
         for m in self.markers_freq: 
             m.setPen(pg.mkPen(p.marker_freq if hasattr(p, 'marker_freq') else p.marker_time, width=2, style=Qt.PenStyle.DashLine))
+            m.setZValue(20)
             self.plot_item.addItem(m)
         for m in self.markers_freq_endless: 
             m.setPen(pg.mkPen(p.marker_freq if hasattr(p, 'marker_freq') else p.marker_time, width=2, style=Qt.PenStyle.DashLine))
+            m.setZValue(20)
             self.plot_item.addItem(m)
         
         active_y = self.markers_y_dict.get(y_label, [])
         for m in active_y:
             m.setPen(pg.mkPen(p.marker_mag, width=2, style=Qt.PenStyle.DashLine))
+            m.setZValue(20)
             self.plot_item.addItem(m)
 
         # Defensive check for y_min, y_max
@@ -411,6 +423,9 @@ class FrequencyDomainView(QWidget):
                 if self.stats_line is None:
                     p = get_palette(self.settings_mgr.get("ui/theme", "Dark"))
                     self.stats_line = pg.InfiniteLine(angle=90, pen=pg.mkPen(p.marker_freq if hasattr(p, 'marker_freq') else p.marker_time, width=2, style=Qt.PenStyle.DashLine), movable=False)
+                    self.stats_line.setZValue(100)
+                
+                if self.stats_line not in self.plot_item.items:
                     self.plot_item.addItem(self.stats_line)
                 self.stats_line.setPos(val)
                 self.stats_line.show()
@@ -445,6 +460,7 @@ class FrequencyDomainView(QWidget):
                     p.marker_mag if not is_freq else p.marker_time
             
             m = pg.InfiniteLine(pos=val, angle=90 if is_freq else 0, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine), movable=False)
+            m.setZValue(20)
             if is_endless:
                 from PyQt6.QtWidgets import QGraphicsTextItem
                 label = pg.InfLineLabel(m, text=f"M{len(active_markers)+1}", position=0.9, color=color)
@@ -459,7 +475,7 @@ class FrequencyDomainView(QWidget):
         self.update_marker_info()
 
     def remove_marker_item(self, marker, mode):
-        if marker in self.plot_item.items():
+        if marker in self.plot_item.items:
             self.plot_item.removeItem(marker)
         
         is_freq = 'FREQ' in mode
@@ -756,66 +772,6 @@ class FrequencyDomainView(QWidget):
         if hasattr(self, 'y_label_text') and self.y_label_text in self.available_modes:
             self.available_modes[self.y_label_text]()
 
-    def place_marker(self, scene_pos, drag_mode=False):
-        v_pos = self.view_box.mapSceneToView(scene_pos)
-        is_freq = (self.interaction_mode in ['FREQ', 'FREQ_ENDLESS', 'STATS'])
-        is_endless = 'ENDLESS' in self.interaction_mode
-        
-        if is_freq:
-            f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
-            val = max(f_min, min(f_max, v_pos.x()))
-        else:
-            y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
-            val = max(y_min, min(y_max, v_pos.y()))
-        
-        if self.interaction_mode == 'STATS':
-            if len(self.stats_bounds) >= 2: self.stats_bounds.clear()
-            self.stats_bounds.append(val)
-            self.stats_bounds.sort()
-            if len(self.stats_bounds) == 2:
-                self.stats_region.setRegion(self.stats_bounds)
-                self.stats_region.show()
-                self.update_statistics()
-            return
-
-        active_markers = self.markers_freq if is_freq else self.markers_y_dict[self.y_label_text]
-        if is_endless: active_markers = self.markers_freq_endless if is_freq else self.markers_y_endless_dict[self.y_label_text]
-        
-        # Hit test
-        found_marker = None
-        for m in active_markers:
-            m_scene = self.view_box.mapViewToScene(pg.Point(m.value(), 0) if is_freq else pg.Point(0, m.value()))
-            dist = abs(scene_pos.x() - m_scene.x()) if is_freq else abs(scene_pos.y() - m_scene.y())
-            if dist < 15:
-                found_marker = m
-                break
-
-        if found_marker:
-            found_marker.setValue(val)
-            if drag_mode: self.active_drag_marker = found_marker
-            self.update_marker_info()
-            return
-
-        if not is_endless and len(active_markers) >= 2:
-            target = min(active_markers, key=lambda mrk: self._marker_age.get(mrk, 0))
-            target.setValue(val)
-            self._marker_age[target] = self._marker_age_counter
-            self._marker_age_counter += 1
-            if drag_mode: self.active_drag_marker = target
-        else:
-            theme = self.settings_mgr.get("ui/theme", "Dark")
-            p = get_palette(theme)
-            color = p.marker_time if is_freq else p.marker_mag
-            new_m = pg.InfiniteLine(pos=val, angle=90 if is_freq else 0, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine))
-            new_m.setHoverPen(pg.mkPen(255, 0, 0, width=2))
-            new_m.setAcceptHoverEvents(True)
-            self.plot_item.addItem(new_m)
-            active_markers.append(new_m)
-            self._marker_age[new_m] = self._marker_age_counter
-            self._marker_age_counter += 1
-            if drag_mode: self.active_drag_marker = new_m
-        
-        self.update_marker_info()
 
     def keyPressEvent(self, event):
         if event.isAutoRepeat(): return

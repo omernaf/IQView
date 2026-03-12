@@ -1166,7 +1166,7 @@ class TimeDomainView(QWidget):
         self.update_marker_info()
 
     def remove_marker_item(self, marker, mode):
-        if marker in self.plot_item.items():
+        if marker in self.plot_item.items:
             self.plot_item.removeItem(marker)
         
         is_time = 'TIME' in mode
