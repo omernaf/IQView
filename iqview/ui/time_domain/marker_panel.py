@@ -76,9 +76,9 @@ class TimeDomainMarkerPanel(QFrame):
         self.mode_btn_layout.addWidget(self.btn_move, 1, 2)
         
         # 5. Stats
-        self.btn_stats = QPushButton("📈")
+        self.btn_stats = DoubleClickButton("📈")
         self.btn_stats.setObjectName("mode_btn")
-        self.btn_stats.setToolTip("Region Statistics")
+        self.btn_stats.setToolTip("Region Statistics (Double-click to clear)")
         self.btn_stats.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_stats, 0, 3)
         
@@ -113,6 +113,7 @@ class TimeDomainMarkerPanel(QFrame):
         self.btn_marker_time_endless.doubleClicked.connect(lambda: self.markerClearRequested.emit('TIME_ENDLESS'))
         self.btn_marker_mag.doubleClicked.connect(lambda: self.markerClearRequested.emit('Y')) 
         self.btn_marker_mag_endless.doubleClicked.connect(lambda: self.markerClearRequested.emit('MAG_ENDLESS'))
+        self.btn_stats.doubleClicked.connect(lambda: self.markerClearRequested.emit('STATS'))
 
         # --- Stacked Widget for Marker Data ---
         self.stacked = QStackedWidget()

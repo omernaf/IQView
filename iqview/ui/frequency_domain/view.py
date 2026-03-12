@@ -685,6 +685,14 @@ class FrequencyDomainView(QWidget):
             active_list = self.markers_y_endless_dict.get(self.y_label_text, [])
             for m in active_list: self.plot_item.removeItem(m)
             active_list.clear()
+        elif mode == 'STATS':
+            self.stats_bounds.clear()
+            self.stats_marker_order.clear()
+            if self.stats_line:
+                self.plot_item.removeItem(self.stats_line)
+                self.stats_line = None
+            self.stats_region.hide()
+            self.stats_markers.hide()
         self.update_marker_info()
 
     def update_scrollbars(self): pass # Simplified for now

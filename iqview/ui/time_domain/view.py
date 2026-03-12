@@ -1148,6 +1148,14 @@ class TimeDomainView(QWidget):
         elif mode == 'MAG_ENDLESS':
             for m in self.markers_y_endless_dict[self.y_label_text]: self.plot_item.removeItem(m)
             self.markers_y_endless_dict[self.y_label_text] = []
+        elif mode == 'STATS':
+            self.stats_bounds.clear()
+            self.stats_marker_order.clear()
+            if hasattr(self, 'stats_line') and self.stats_line:
+                self.plot_item.removeItem(self.stats_line)
+                self.stats_line = None
+            self.stats_region.hide()
+            self.stats_markers.hide()
         else: # 'Y'
             for m in self.markers_y_dict[self.y_label_text]:
                 self.plot_item.removeItem(m)
