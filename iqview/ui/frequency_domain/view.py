@@ -160,35 +160,16 @@ class FrequencyDomainView(QWidget):
         self.y_scroll.valueChanged.connect(self.scroll_view)
 
     def compute_fft(self):
-        """Perform FFT processing on the sample segment."""
+        """Perform FFT processing on the sample segment using signal length N."""
         n = len(self.samples)
         if n == 0: return
 
-        # Target FFT size: next power of 2, up to 4096 for small segments, 
-        # or fixed 2048 for long segments with averaging.
-        if n <= 4096:
-            fft_size = 2**int(np.ceil(np.log2(n)))
-            window = np.hanning(n)
-            padded = np.zeros(fft_size, dtype=np.complex64)
-            padded[:n] = self.samples * window
-            fft_res = np.fft.fft(padded) / n
-            self.fft_data = np.fft.fftshift(fft_res)
-        else:
-            fft_size = 2048
-            num_frames = n // fft_size
-            window = np.hanning(fft_size)
-            
-            # Default to standard average for long segments if needed, 
-            # but user wants "fft values". We'll do a simple average PSD.
-            all_ffts = []
-            for i in range(num_frames):
-                chunk = self.samples[i*fft_size : (i+1)*fft_size] * window
-                all_ffts.append(np.abs(np.fft.fft(chunk) / fft_size)**2)
-            
-            res_mag_sq = np.mean(all_ffts, axis=0) if all_ffts else np.zeros(fft_size)
-            self.fft_data = np.fft.fftshift(np.sqrt(res_mag_sq).astype(np.complex64))
+        # Standard FFT with signal length N
+        window = np.hanning(n)
+        fft_res = np.fft.fft(self.samples * window) / n
+        self.fft_data = np.fft.fftshift(fft_res)
 
-        self.freq_axis = np.fft.fftshift(np.fft.fftfreq(len(self.fft_data), 1/self.rate)) + self.center_freq
+        self.freq_axis = np.fft.fftshift(np.fft.fftfreq(n, 1/self.rate)) + self.center_freq
         self.current_plot_data = np.nan_to_num(np.abs(self.fft_data), nan=0.0, posinf=1e-15, neginf=0.0)
         self.y_label_text = "magnitude"
 
@@ -356,9 +337,8 @@ class FrequencyDomainView(QWidget):
         
         panel = self.marker_panel
         panel.stats_max_val.setText(f"{p_max:.4g}"); panel.stats_min_val.setText(f"{p_min:.4g}")
-        panel.stats_mean_val.setText(f"{p_mean:.4g}"); panel.stats_median_val.setText(f"{p_median:.4g}")
         panel.stats_max_freq.setText(f"{f_max:,.0f}"); panel.stats_min_freq.setText(f"{f_min:,.0f}")
-        panel.stats_max_idx.setText(f"{idx_max}"); panel.stats_min_idx.setText(f"{idx_min}")
+        panel.stats_max_idx.setText(f"{idx_max}"); panel.stats_min_idx.setText(f"{idx_max}")
         
         self.stats_markers.setData([
             {'pos': (f_max, p_max), 'brush': pg.mkBrush(255, 50, 50), 'pen': pg.mkPen('#ff3232', width=2), 'symbol': 'o'},
@@ -551,10 +531,8 @@ class FrequencyDomainView(QWidget):
                         self.marker_panel.m_widgets[i]['v2'].blockSignals(True)
                         self.marker_panel.m_widgets[i]['v2'].setText(str(idx))
                         self.marker_panel.m_widgets[i]['v2'].blockSignals(False)
-                        mag_val = self.current_plot_data[max(0, min(len(self.current_plot_data)-1, idx))]
-                        self.marker_panel.m_widgets[i]['v3'].setText(f"{mag_val:.4g}")
                 else:
-                    for k in ['v1', 'v2', 'v3']: 
+                    for k in ['v1', 'v2']: 
                         self.marker_panel.m_widgets[i][k].blockSignals(True)
                         self.marker_panel.m_widgets[i][k].setText("")
                         self.marker_panel.m_widgets[i][k].blockSignals(False)
@@ -568,15 +546,8 @@ class FrequencyDomainView(QWidget):
                 self.marker_panel.center_v1.blockSignals(True)
                 self.marker_panel.center_v1.setText(f"{(v1+v2)/2:.1f}" if is_freq else f"{(v1+v2)/2:.6g}")
                 self.marker_panel.center_v1.blockSignals(False)
-                
-                if is_freq:
-                    idx1, idx2 = self.freq_to_index(v1), self.freq_to_index(v2)
-                    idx1, idx2 = max(0, min(len(self.current_plot_data)-1, idx1)), max(0, min(len(self.current_plot_data)-1, idx2))
-                    p1, p2 = self.current_plot_data[idx1], self.current_plot_data[idx2]
-                    self.marker_panel.delta_v3.setText(f"{abs(p2-p1):.3g}")
             else:
                 self.marker_panel.delta_v1.setText(""); self.marker_panel.center_v1.setText("")
-                self.marker_panel.delta_v3.setText(""); self.marker_panel.center_v3.setText("")
         
         if not 'ENDLESS' in self.interaction_mode:
             m1_p, m2_p = (len(active_markers) >= 1), (len(active_markers) >= 2)
