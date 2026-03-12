@@ -139,10 +139,30 @@ class UIComponentsMixin:
             self.update_tab_names()
 
     def update_tab_names(self):
-        """Update tab names dynamically: 'Time Domain' or 'Time Domain (1)', '(2)', etc."""
-        td_indices = [i for i in range(self.tabs.count()) if i > 0]
+        """Update tab names dynamically: 'Time Domain' or 'Freq Domain'."""
+        from ..time_domain.view import TimeDomainView
+        from ..frequency_domain.view import FrequencyDomainView
+        
+        td_indices = []
+        fd_indices = []
+        
+        for i in range(1, self.tabs.count()):
+            widget = self.tabs.widget(i)
+            if isinstance(widget, TimeDomainView):
+                td_indices.append(i)
+            elif isinstance(widget, FrequencyDomainView):
+                fd_indices.append(i)
+        
+        # Update Time Domain tabs
         if len(td_indices) == 1:
             self.tabs.setTabText(td_indices[0], "Time Domain")
         elif len(td_indices) > 1:
             for i, idx in enumerate(td_indices):
                 self.tabs.setTabText(idx, f"Time Domain ({i+1})")
+                
+        # Update Freq Domain tabs
+        if len(fd_indices) == 1:
+            self.tabs.setTabText(fd_indices[0], "Freq Domain")
+        elif len(fd_indices) > 1:
+            for i, idx in enumerate(fd_indices):
+                self.tabs.setTabText(idx, f"Freq Domain ({i+1})")
