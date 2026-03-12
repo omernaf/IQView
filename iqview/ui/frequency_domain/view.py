@@ -58,7 +58,7 @@ class FrequencyDomainView(QWidget):
         self.zoom_history = []
         
         # Spectral Settings
-        self.spectral_mode = "Average" # Average, Max Hold, Min Hold
+        # Removed spectral_mode toggle per user request
         
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(10, 10, 10, 10)
@@ -86,13 +86,6 @@ class FrequencyDomainView(QWidget):
         self.mode_group = QButtonGroup(self)
         self.plot_buttons = []
         
-        self.toolbar_layout.addSpacing(20)
-        self.toolbar_layout.addWidget(QLabel("Spectral:"))
-        self.spectral_combo = QComboBox()
-        self.spectral_combo.addItems(["Average", "Max Hold", "Min Hold"])
-        self.spectral_combo.currentTextChanged.connect(self.set_spectral_mode)
-        self.toolbar_layout.addWidget(self.spectral_combo)
-
         self.toolbar_layout.addStretch()
         
         range_label = QLabel(f"Samples: {len(samples)}")
@@ -182,40 +175,23 @@ class FrequencyDomainView(QWidget):
             self.fft_data = np.fft.fftshift(fft_res)
         else:
             fft_size = 2048
-            hop = fft_size // 2
-            num_frames = (n - fft_size) // hop + 1
+            num_frames = n // fft_size
             window = np.hanning(fft_size)
             
+            # Default to standard average for long segments if needed, 
+            # but user wants "fft values". We'll do a simple average PSD.
             all_ffts = []
             for i in range(num_frames):
-                chunk = self.samples[i*hop : i*hop + fft_size] * window
+                chunk = self.samples[i*fft_size : (i+1)*fft_size] * window
                 all_ffts.append(np.abs(np.fft.fft(chunk) / fft_size)**2)
             
-            all_ffts = np.array(all_ffts)
-            
-            if self.spectral_mode == "Average":
-                res_mag_sq = np.mean(all_ffts, axis=0)
-            elif self.spectral_mode == "Max Hold":
-                res_mag_sq = np.max(all_ffts, axis=0)
-            else: # Min Hold
-                res_mag_sq = np.min(all_ffts, axis=0)
-            
-            # Since we lost phase in averaging power, we treat complex res as sqrt(power)
-            # This is a simplification but works for magnitude-based plots.
-            # For phase/real/imag, we'll just use the first frame or middle frame if needed,
-            # but usually users want PSD (magnitude) in this view.
+            res_mag_sq = np.mean(all_ffts, axis=0) if all_ffts else np.zeros(fft_size)
             self.fft_data = np.fft.fftshift(np.sqrt(res_mag_sq).astype(np.complex64))
 
         self.freq_axis = np.fft.fftshift(np.fft.fftfreq(len(self.fft_data), 1/self.rate)) + self.center_freq
         self.current_plot_data = np.nan_to_num(np.abs(self.fft_data), nan=0.0, posinf=1e-15, neginf=0.0)
         self.y_label_text = "magnitude"
 
-    def set_spectral_mode(self, mode):
-        self.spectral_mode = mode
-        self.compute_fft()
-        # Re-trigger current plot mode
-        if hasattr(self, 'y_label_text') and self.y_label_text in self.available_modes:
-            self.available_modes[self.y_label_text]()
 
     def rebuild_plot_buttons(self):
         for btn in self.plot_buttons:
