@@ -590,9 +590,14 @@ class FrequencyDomainView(QWidget):
 
     def undo_zoom(self):
         if self.zoom_history:
-            prev_xr, prev_yr = self.zoom_history.pop()
-            self.plot_item.setXRange(*prev_xr, padding=0)
-            self.plot_item.setYRange(*prev_yr, padding=0)
+            prev_rect = self.zoom_history.pop()
+            self.plot_item.setRange(rect=prev_rect, padding=0)
+
+    def handle_zoom_rectangle(self, rect, zoom_type):
+        self.zoom_history.append(self.plot_item.viewRect())
+        if zoom_type == 'X_ONLY': self.plot_item.setXRange(rect.left(), rect.right(), padding=0)
+        elif zoom_type == 'Y_ONLY': self.plot_item.setYRange(rect.top(), rect.bottom(), padding=0)
+        else: self.plot_item.setRange(rect, padding=0)
 
     def handle_move_drag(self, pos, is_start=False, is_finish=False):
         if is_start: self.last_move_scene_pos = pos; return
@@ -612,7 +617,7 @@ class FrequencyDomainView(QWidget):
             active_markers = self.markers_freq if is_freq else self.markers_y_dict[self.y_label_text]
             
         if len(active_markers) >= 2:
-            self.zoom_history.append((self.view_box.viewRange()[0], self.view_box.viewRange()[1]))
+            self.zoom_history.append(self.plot_item.viewRect())
             sorted_m = sorted(active_markers, key=lambda m: m.value())
             v1, v2 = sorted_m[0].value(), sorted_m[-1].value()
             if is_freq:
