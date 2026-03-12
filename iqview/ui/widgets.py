@@ -406,6 +406,9 @@ class CustomViewBox(pg.ViewBox):
         if is_spec:
             td_popup_act = menu.addAction("Time Domain Popup")
             td_popup_act.triggered.connect(self.ui_controller.open_time_domain_tab)
+            
+            fd_popup_act = menu.addAction("Frequency Domain Popup")
+            fd_popup_act.triggered.connect(self.ui_controller.open_frequency_domain_tab)
 
         fit_act = menu.addAction("Fit to Screen")
         # Handle 'Y' mode for TimeDomainView or 'FREQ' for Spectrogram

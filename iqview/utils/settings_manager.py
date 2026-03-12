@@ -32,6 +32,10 @@ class SettingsManager:
             "Real", 
             "Imaginary"
         ],
+        "core/frequency_plots": [
+            "magnitude",
+            "magnitude [dB]"
+        ],
         "ui/theme": "Light",
         "ui/colormap": "turbo",
         "ui/colormap_reversed": False,

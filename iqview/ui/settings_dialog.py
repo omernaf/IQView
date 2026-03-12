@@ -407,6 +407,66 @@ class SettingsDialog(QDialog):
         
         self.add_side_tab(self.plots_tab, "Time Plots")
 
+        # --- Frequency Plots Tab ---
+        self.freq_plots_tab = QWidget()
+        self.freq_plots_layout = QVBoxLayout(self.freq_plots_tab)
+        
+        freq_help_lbl = QLabel("Drag to reorder. Checked plots appear in the Frequency Domain toolbar.")
+        freq_help_lbl.setStyleSheet("font-style: italic;")
+        self.freq_plots_layout.addWidget(freq_help_lbl)
+        
+        self.freq_plots_list = QListWidget()
+        self.freq_plots_list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.freq_plots_list.setDefaultDropAction(Qt.DropAction.MoveAction)
+        
+        all_freq_plots = [
+            "magnitude", "magnitude [dB]", "magnitude^2", 
+            "magnitude^2 [dB]", "real", "real [dB]", 
+            "imag", "imag [dB]", "phase", "unwrapped phase"
+        ]
+        
+        saved_freq_plots = self.mgr.get("core/frequency_plots", [])
+        
+        # 1. Add saved ones
+        for p in saved_freq_plots:
+            if p in all_freq_plots:
+                item = QListWidgetItem(p)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
+                item.setCheckState(Qt.CheckState.Checked)
+                self.freq_plots_list.addItem(item)
+                
+        # 2. Add remaining
+        for p in all_freq_plots:
+            if p not in saved_freq_plots:
+                item = QListWidgetItem(p)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
+                item.setCheckState(Qt.CheckState.Unchecked)
+                self.freq_plots_list.addItem(item)
+                
+        self.freq_plots_layout.addWidget(self.freq_plots_list)
+        
+        reset_freq_plots_btn = QPushButton("Reset to Default")
+        def reset_freq_plots():
+            self.freq_plots_list.clear()
+            defaults = self.mgr.get_default("core/frequency_plots")
+            if not defaults: defaults = ["magnitude", "magnitude [dB]"]
+            for p in defaults:
+                if p in all_freq_plots:
+                    item = QListWidgetItem(p)
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
+                    item.setCheckState(Qt.CheckState.Checked)
+                    self.freq_plots_list.addItem(item)
+            for p in all_freq_plots:
+                if p not in defaults:
+                    item = QListWidgetItem(p)
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
+                    item.setCheckState(Qt.CheckState.Unchecked)
+                    self.freq_plots_list.addItem(item)
+        reset_freq_plots_btn.clicked.connect(reset_freq_plots)
+        self.freq_plots_layout.addWidget(reset_freq_plots_btn)
+        
+        self.add_side_tab(self.freq_plots_tab, "Frequency Plots")
+
         # --- File Types Tab ---
         self.file_types_tab = QWidget()
         self.file_types_layout = QVBoxLayout(self.file_types_tab)
@@ -514,6 +574,13 @@ class SettingsDialog(QDialog):
                 if item.checkState() == Qt.CheckState.Checked:
                     active_plots.append(item.text())
             self.mgr.set("core/time_plots", active_plots)
+
+            active_freq_plots = []
+            for i in range(self.freq_plots_list.count()):
+                item = self.freq_plots_list.item(i)
+                if item.checkState() == Qt.CheckState.Checked:
+                    active_freq_plots.append(item.text())
+            self.mgr.set("core/frequency_plots", active_freq_plots)
             
             # Save Extension Mappings
             ext_map = {}

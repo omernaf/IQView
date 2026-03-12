@@ -124,24 +124,43 @@ class ViewControllerMixin:
             self.spectrogram_view.setCursor(Qt.CursorShape.ArrowCursor)
 
     def open_time_domain_tab(self):
-        if len(self.markers_time) == 2:
-            t1 = self.markers_time[0].value()
-            t2 = self.markers_time[1].value()
-            start_t, end_t = min(t1, t2), max(t1, t2)
+        """Extracts the IQ data between the two time markers (or full range) and opens it in a new tab."""
+        # Find time markers in spectrogram
+        markers = self.markers_time
+        if len(markers) < 2:
+            # Fallback to current view range if < 2 markers
+            xr, _ = self.spectrogram_view.view_box.viewRange()
+            start_t, end_t = xr
         else:
-            # Fallback to current visible range
-            vr = self.spectrogram_view.plot_item.viewRect()
-            start_t, end_t = vr.left(), vr.right()
-            # Clamp to data bounds
-            start_t = max(0, min(self.time_duration, start_t))
-            end_t = max(0, min(self.time_duration, end_t))
-            
-        samples = self.extract_iq_segment(start_t, end_t)
-        if samples is not None:
+            sorted_m = sorted(markers, key=lambda m: m.value())
+            start_t, end_t = sorted_m[0].value(), sorted_m[1].value()
+        
+        # Extract IQ segment
+        segment = self.extract_iq_segment(start_t, end_t)
+        if segment is not None:
             from ..time_domain.view import TimeDomainView
-            td_view = TimeDomainView(samples, start_t, self.rate, parent_window=self)
-            idx = self.tabs.addTab(td_view, "Time Domain")
-            self.tabs.setCurrentIndex(idx)
+            view = TimeDomainView(segment, start_t, self.rate, parent_window=self)
+            self.tabs.addTab(view, "Time Domain")
+            self.tabs.setCurrentWidget(view)
+            self.update_tab_names()
+
+    def open_frequency_domain_tab(self):
+        """Extracts IQ data for the selected time range and opens a Frequency Domain analysis tab."""
+        markers = self.markers_time
+        if len(markers) < 2:
+            xr, _ = self.spectrogram_view.view_box.viewRange()
+            start_t, end_t = xr
+        else:
+            sorted_m = sorted(markers, key=lambda m: m.value())
+            start_t, end_t = sorted_m[0].value(), sorted_m[1].value()
+            
+        segment = self.extract_iq_segment(start_t, end_t)
+        if segment is not None:
+            from ..frequency_domain.view import FrequencyDomainView
+            # Use center frequency from current state
+            view = FrequencyDomainView(segment, self.fc, self.rate, parent_window=self)
+            self.tabs.addTab(view, "Freq Domain")
+            self.tabs.setCurrentWidget(view)
             self.update_tab_names()
 
     def reset_zoom(self):

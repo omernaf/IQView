@@ -21,6 +21,7 @@ DARK_PALETTE = Palette(
     plot_bg="#121212",
     plot_grid="#333333",
     marker_time="#00ff00",
+    marker_freq="#ffaa00",
     marker_mag="#ffaa00"
 )
 
@@ -40,6 +41,7 @@ LIGHT_PALETTE = Palette(
     plot_bg="#ffffff",
     plot_grid="#eeeeee",
     marker_time="#008800",
+    marker_freq="#cc6600",
     marker_mag="#cc6600"
 )
 
