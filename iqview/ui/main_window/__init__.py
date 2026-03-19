@@ -99,6 +99,7 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         
         self.setup_ui()
         if data_source is not None:
+            self.update_sidebar_file_info(data_source)
             self.start_processing()
 
     def apply_current_theme(self):

@@ -323,6 +323,31 @@ class ViewControllerMixin:
         if path:
             self.load_new_file(path)
 
+    def update_sidebar_file_info(self, source, type_str=None):
+        if not hasattr(self, 'sidebar'): return
+        
+        # Determine type string if not provided
+        if type_str is None:
+            if isinstance(source, str):
+                auto_type = detect_type_from_ext(source)
+                type_str = auto_type if auto_type else str(self.settings_mgr.get("core/type", "complex64"))
+            elif isinstance(source, (bytes, bytearray)):
+                type_str = "stdin (pipe)"
+            else:
+                type_str = "N/A"
+
+        # Determine size
+        try:
+            if isinstance(source, str) and os.path.isfile(source):
+                file_size = os.path.getsize(source)
+            elif isinstance(source, (bytes, bytearray)):
+                file_size = len(source)
+            else:
+                file_size = None
+            self.sidebar.set_file_info(type_str, file_size)
+        except Exception:
+            self.sidebar.set_file_info(type_str, None)
+
     def load_new_file(self, path):
         """Swap the data source to a new file and reprocess everything."""
         if not os.path.isfile(path):
@@ -383,6 +408,9 @@ class ViewControllerMixin:
         self.filter_marker_order = []
         if hasattr(self.marker_panel, 'filter_on_btn'):
             self.marker_panel.filter_on_btn.setChecked(False)
+
+        # Update sidebar file info
+        self.update_sidebar_file_info(path, type_str)
 
         # Reprocess with the new file
         self.start_processing()

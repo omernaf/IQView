@@ -110,6 +110,21 @@ class SidePanel(QFrame):
         self.rbw_display.setReadOnly(True)
         self.layout.addWidget(self.rbw_display)
 
+        # --- FILE INFORMATION ---
+        file_header = QLabel("ℹ️ File Information")
+        file_header.setObjectName("section_header")
+        self.layout.addWidget(file_header)
+
+        self.layout.addWidget(QLabel("File Type"))
+        self.type_display = QLineEdit("N/A")
+        self.type_display.setReadOnly(True)
+        self.layout.addWidget(self.type_display)
+
+        self.layout.addWidget(QLabel("File Size"))
+        self.size_display = QLineEdit("N/A")
+        self.size_display.setReadOnly(True)
+        self.layout.addWidget(self.size_display)
+
         self.layout.addStretch()
 
         # --- SETTINGS BUTTON ---
@@ -126,6 +141,21 @@ class SidePanel(QFrame):
                 # Apply changes (redundant now, but keeps the dialog.exec() logic)
                 self.parent_window.apply_current_theme()
                 # We could update other things here too
+
+    def set_file_info(self, file_type, size_bytes):
+        self.type_display.setText(str(file_type))
+        if size_bytes is None:
+            self.size_display.setText("N/A")
+            return
+            
+        # Format size bytes to human readable
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size_bytes < 1024.0:
+                self.size_display.setText(f"{size_bytes:.2f} {unit}")
+                break
+            size_bytes /= 1024.0
+        else:
+            self.size_display.setText(f"{size_bytes:.2f} PB")
 
     def update_derived_values(self):
         # RBW = Fs / FFT
