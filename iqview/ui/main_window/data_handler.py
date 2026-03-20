@@ -64,11 +64,20 @@ class DataHandlerMixin:
             num_samples = end_sample - start_sample
             if num_samples <= 0: return None
             
-            # Cap extraction for performance
-            MAX_EXTRACT_SAMPLES = 1_000_000
-            if num_samples > MAX_EXTRACT_SAMPLES:
-                num_samples = MAX_EXTRACT_SAMPLES
-                end_sample = start_sample + num_samples
+            # Safety Check: Warn if selection is exceptionally large (> 500 million samples)
+            # 500M complex64 samples ≈ 4GB RAM.
+            if num_samples > 500_000_000:
+                from PyQt6.QtWidgets import QMessageBox
+                reply = QMessageBox.question(
+                    self, "Large Data Extraction",
+                    f"The selected range contains {num_samples:,} samples.\n\n"
+                    "Extracting this many samples may consume significant memory and make the UI unresponsive.\n\n"
+                    "Do you want to proceed?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No
+                )
+                if reply == QMessageBox.StandardButton.No:
+                    return None
 
             item_size = np.dtype(self.data_type).itemsize
             read_multiplier = 2 if self.is_complex else 1
