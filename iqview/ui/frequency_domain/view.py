@@ -358,6 +358,31 @@ class FrequencyDomainView(QWidget):
         panel = self.marker_panel
         panel.stats_max_val.setText(f"{p_max:.4g}"); panel.stats_min_val.setText(f"{p_min:.4g}")
         panel.stats_mean_val.setText(f"{p_mean:.4g}"); panel.stats_median_val.setText(f"{p_median:.4g}")
+        
+        # Calculate Integrated Power
+        if "[dB]" in self.y_label_text:
+            # 10log for power regardless of amplitude scaling
+            lin_pow_slice = 10**(slice_data / 10.0)
+        else:
+            if "magnitude^2" in self.y_label_text.lower():
+                lin_pow_slice = slice_data
+            else:
+                lin_pow_slice = slice_data**2
+        
+        # Compute Total linear power
+        total_p_lin = np.sum(lin_pow_slice)
+        
+        # Window Incoherent Gain (IG) compensation (S2/N)
+        # We always use Rectangular currently (IG=1), but for future-proofing:
+        # IG = np.sum(window**2) / n. Since window is forced ones(n), IG = 1.0.
+        total_p_lin /= 1.0 # Placeholder for IG compensation if windowing is added back
+        
+        if "[dB]" in self.y_label_text:
+            total_p_db = 10 * np.log10(total_p_lin + 1e-15)
+            panel.stats_total_power.setText(f"{total_p_db:.2f} dB")
+        else:
+            panel.stats_total_power.setText(f"{total_p_lin:.4g}")
+
         panel.stats_max_freq.setText(f"{f_max:,.0f}"); panel.stats_min_freq.setText(f"{f_min:,.0f}")
         panel.stats_max_idx.setText(f"{idx_max}"); panel.stats_min_idx.setText(f"{idx_min}")
         

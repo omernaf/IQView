@@ -223,7 +223,7 @@ class FrequencyDomainMarkerPanel(QFrame):
         # Headers (Row 0)
         self.stats_layout.addWidget(QLabel(""), 0, 0) 
         
-        headers = ["Maximum", "Minimum", "Mean", "Median"]
+        headers = ["Maximum", "Minimum", "Mean", "Median", "Integrated Power"]
         for i, h in enumerate(headers):
             lbl = QLabel(h)
             lbl.setFont(self.header_font)
@@ -245,6 +245,7 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.stats_min_val = FormattedLineEdit(); self.stats_min_val.setFixedWidth(130); self.stats_min_val.setReadOnly(True); self.stats_min_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stats_mean_val = FormattedLineEdit(); self.stats_mean_val.setFixedWidth(130); self.stats_mean_val.setReadOnly(True); self.stats_mean_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stats_median_val = FormattedLineEdit(); self.stats_median_val.setFixedWidth(130); self.stats_median_val.setReadOnly(True); self.stats_median_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_total_power = FormattedLineEdit(); self.stats_total_power.setFixedWidth(130); self.stats_total_power.setReadOnly(True); self.stats_total_power.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         self.stats_max_freq = FormattedLineEdit(); self.stats_max_freq.setFixedWidth(130); self.stats_max_freq.setReadOnly(True); self.stats_max_freq.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stats_min_freq = FormattedLineEdit(); self.stats_min_freq.setFixedWidth(130); self.stats_min_freq.setReadOnly(True); self.stats_min_freq.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -257,6 +258,7 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.stats_layout.addWidget(self.stats_min_val, 1, 2)
         self.stats_layout.addWidget(self.stats_mean_val, 1, 3)
         self.stats_layout.addWidget(self.stats_median_val, 1, 4)
+        self.stats_layout.addWidget(self.stats_total_power, 1, 5)
         
         # Add to Grid (Row 2: Frequency)
         self.stats_layout.addWidget(self.stats_max_freq, 2, 1)
