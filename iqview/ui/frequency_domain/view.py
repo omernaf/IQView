@@ -165,8 +165,9 @@ class FrequencyDomainView(QWidget):
         n = len(self.samples)
         if n == 0: return
 
-        # Standard FFT with signal length N
-        window = np.hanning(n)
+        # Rectangular window (no window at all)
+        window = np.ones(n)
+
         fft_res = np.fft.fft(self.samples * window) / n
         self.fft_data = np.fft.fftshift(fft_res)
 

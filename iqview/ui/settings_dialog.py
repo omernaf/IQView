@@ -445,7 +445,6 @@ class SettingsDialog(QDialog):
         self.freq_plots_tab = QWidget()
         self.freq_plots_layout = QVBoxLayout(self.freq_plots_tab)
         
-        freq_help_lbl = QLabel("Drag to reorder. Checked plots appear in the Frequency Domain toolbar.")
         freq_help_lbl.setStyleSheet("font-style: italic;")
         self.freq_plots_layout.addWidget(freq_help_lbl)
         
