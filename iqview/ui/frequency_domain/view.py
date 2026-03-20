@@ -3,7 +3,7 @@ import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                              QButtonGroup, QLabel, QFrame, QScrollBar, QGridLayout,
                              QComboBox)
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QKeySequence
 from ..widgets import CustomViewBox
 from .marker_panel import FrequencyDomainMarkerPanel
@@ -572,8 +572,90 @@ class FrequencyDomainView(QWidget):
         else: self.grid_mag_enabled = enabled
         self.update_grid(axis)
 
-    def update_grid(self, axis):
-        pass # Grid implementation not strictly requested for spectral view yet but stubbing for compat
+    def update_grid(self, axis, force=False):
+        if not hasattr(self, '_grid_timer'):
+            self._grid_timer = QTimer()
+            self._grid_timer.setSingleShot(True)
+            self._grid_timer.timeout.connect(self._do_update_grid)
+            self._grid_pending_axes = set()
+
+        if force:
+            self._do_update_grid(axis, force=True)
+        else:
+            self._grid_pending_axes.add(axis)
+            if not self._grid_timer.isActive():
+                self._grid_timer.start(50) # 50ms throttle
+
+    def _do_update_grid(self, axis=None, force=False):
+        if axis is None:
+            axes_to_update = list(self._grid_pending_axes)
+            self._grid_pending_axes.clear()
+            for a in axes_to_update:
+                self._do_update_grid(a, force=force)
+            return
+        
+        is_freq = (axis == 'FREQ')
+        enabled = self.grid_freq_enabled if is_freq else self.grid_mag_enabled
+        tracking = self.grid_freq_tracking if is_freq else self.grid_mag_tracking
+        active_markers = self.markers_freq if is_freq else self.markers_y_dict.get(self.y_label_text, [])
+        grid_lines = self.grid_lines_freq if is_freq else self.grid_lines_mag
+        
+        if not enabled:
+            for line in grid_lines: self.plot_item.removeItem(line)
+            grid_lines.clear()
+            return
+        if not tracking and not force: return
+        for line in grid_lines: self.plot_item.removeItem(line)
+        grid_lines.clear()
+        if len(active_markers) != 2: return
+        
+        sorted_m = sorted(active_markers, key=lambda m: m.value())
+        p1, p2 = sorted_m[0].value(), sorted_m[1].value()
+        delta = abs(p2 - p1)
+        if delta <= 0: return
+
+        # Optimization: Only plot visible lines
+        vr = self.plot_item.viewRange()
+        v_min_visible, v_max_visible = vr[0] if is_freq else vr[1]
+        
+        # Guard against too many markers
+        if (v_max_visible - v_min_visible) / delta > 500:
+            return
+        
+        angle = 90 if is_freq else 0
+        theme = self.settings_mgr.get("ui/theme", "Dark")
+        color = self.settings_mgr.get(f"ui/{theme}/grid_color", "#c8c8ff")
+        style_name = self.settings_mgr.get(f"ui/{theme}/grid_style", "SolidLine")
+        alpha = int(self.settings_mgr.get("ui/grid_alpha", 30))
+        
+        style_map = {
+            "SolidLine": Qt.PenStyle.SolidLine,
+            "DashLine": Qt.PenStyle.DashLine,
+            "DotLine": Qt.PenStyle.DotLine,
+            "DashDotLine": Qt.PenStyle.DashDotLine
+        }
+        style = style_map.get(str(style_name), Qt.PenStyle.SolidLine)
+        
+        from PyQt6.QtGui import QColor
+        qcolor = QColor(color)
+        qcolor.setAlphaF(alpha / 100.0)
+        
+        pen = pg.mkPen(qcolor, width=1, style=style)
+        
+        # Start from first visible multiple of delta relative to p1
+        start_count = np.ceil((v_min_visible - p1) / delta)
+        curr = p1 + start_count * delta
+        
+        count = 0
+        while curr <= v_max_visible + 1e-9 and count < 500:
+            line = pg.InfiniteLine(pos=curr, angle=angle, pen=pen, movable=False)
+            line.setHoverPen(pg.mkPen(255, 0, 0, width=2))
+            line.setAcceptHoverEvents(True)
+            line.setZValue(5)
+            self.plot_item.addItem(line, ignoreBounds=True)
+            grid_lines.append(line)
+            curr += delta
+            count += 1
 
     def update_drag(self, scene_pos):
         v_pos = self.view_box.mapSceneToView(scene_pos)
@@ -689,6 +771,9 @@ class FrequencyDomainView(QWidget):
         if not 'ENDLESS' in self.interaction_mode:
             m1_p, m2_p = (len(active_markers) >= 1), (len(active_markers) >= 2)
             self.marker_panel.set_locks_enabled(m1_p, m2_p)
+            
+        self.update_grid('FREQ')
+        self.update_grid('MAG')
 
     def reset_zoom(self):
         f_start, f_end = float(self.freq_axis[0]), float(self.freq_axis[-1])

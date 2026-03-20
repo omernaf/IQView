@@ -1238,18 +1238,22 @@ class TimeDomainView(QWidget):
             self._grid_timer = QTimer()
             self._grid_timer.setSingleShot(True)
             self._grid_timer.timeout.connect(self._do_update_grid)
-            self._grid_pending_axis = None
+            self._grid_pending_axes = set()
 
         if force:
-            self._do_update_grid(axis)
+            self._do_update_grid(axis, force=True)
         else:
-            self._grid_pending_axis = axis
+            self._grid_pending_axes.add(axis)
             if not self._grid_timer.isActive():
                 self._grid_timer.start(50) # 50ms throttle
 
-    def _do_update_grid(self, axis=None):
+    def _do_update_grid(self, axis=None, force=False):
         if axis is None:
-            axis = getattr(self, '_grid_pending_axis', 'TIME')
+            axes_to_update = list(self._grid_pending_axes)
+            self._grid_pending_axes.clear()
+            for a in axes_to_update:
+                self._do_update_grid(a, force=force)
+            return
         
         is_time = (axis == 'TIME')
         enabled = self.grid_time_enabled if is_time else self.grid_mag_enabled
