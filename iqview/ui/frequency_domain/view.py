@@ -453,6 +453,47 @@ class FrequencyDomainView(QWidget):
             self.active_drag_marker = found_marker
             return
 
+        # 1.5 Hit test GRID LINES (Shadow Markers)
+        if not is_endless and len(active_markers) == 2:
+            grid_lines = self.grid_lines_freq if is_freq else self.grid_lines_mag
+            best_gl = None
+            min_gl_dist = 20 # pixels
+            
+            for gl in grid_lines:
+                gl_pos = gl.value()
+                pi = self.view_box.mapViewToScene(pg.Point(gl_pos, 0) if is_freq else pg.Point(0, gl_pos))
+                dist = abs(scene_pos.x() - pi.x()) if is_freq else abs(scene_pos.y() - pi.y())
+                if dist < min_gl_dist:
+                    min_gl_dist = dist; best_gl = gl
+            
+            if best_gl:
+                sorted_m = sorted(active_markers, key=lambda m: m.value())
+                p1, p2 = sorted_m[0].value(), sorted_m[1].value()
+                delta = p2 - p1
+                k = (best_gl.value() - p1) / delta if delta != 0 else 0.5
+                
+                lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
+                lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
+                lock_delta = self.marker_panel.btn_lock_delta.isChecked()
+                lock_center = self.marker_panel.btn_lock_center.isChecked()
+                
+                move_p1 = (k < 0.5)
+                if lock_m1 and not lock_m2: move_p1 = False
+                elif lock_m2 and not lock_m1: move_p1 = True
+                
+                if drag_mode:
+                    self.active_drag_grid_info = {
+                        'k': k,
+                        'moving_marker': sorted_m[0] if move_p1 else sorted_m[1],
+                        'fixed_marker': sorted_m[1] if move_p1 else sorted_m[0],
+                        'is_p1': move_p1,
+                        'is_freq': is_freq,
+                        'lock_delta': lock_delta,
+                        'lock_center': lock_center
+                    }
+                    self.active_drag_marker = None
+                return
+
         # 2. Add NEW Marker
         if len(active_markers) < (100 if is_endless else 2):
             p = get_palette(self.settings_mgr.get("ui/theme", "Dark"))
@@ -657,8 +698,93 @@ class FrequencyDomainView(QWidget):
             curr += delta
             count += 1
 
+
     def update_drag(self, scene_pos):
-        v_pos = self.view_box.mapSceneToView(scene_pos)
+        v_pos = self.plot_item.vb.mapSceneToView(scene_pos)
+        
+        # 1.5 Handle Shadow Marker (Grid Line) dragging
+        if getattr(self, 'active_drag_grid_info', None):
+            info = self.active_drag_grid_info
+            is_freq = info['is_freq']
+            k = info['k']
+            m_move = info['moving_marker']
+            m_fixed = info['fixed_marker']
+            is_p1 = info['is_p1']
+            p_fixed = m_fixed.value()
+            lock_delta = info.get('lock_delta', False)
+            lock_center = info.get('lock_center', False)
+            
+            if is_freq:
+                f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+                g_prime = max(f_min, min(f_max, v_pos.x()))
+            else:
+                y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
+                g_prime = max(y_min, min(y_max, v_pos.y()))
+            
+            active_markers = self.markers_freq if is_freq else self.markers_y_dict[self.y_label_text]
+            if len(active_markers) == 2:
+                try:
+                    if lock_delta:
+                        sorted_m = sorted(active_markers, key=lambda m: m.value())
+                        p1_orig, p2_orig = sorted_m[0].value(), sorted_m[1].value()
+                        delta_orig = p2_orig - p1_orig
+                        shift = g_prime - (p1_orig + k * delta_orig)
+                        new_p1, new_p2 = p1_orig + shift, p2_orig + shift
+                        if is_freq:
+                            f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+                            if f_min <= new_p1 <= f_max and f_min <= new_p2 <= f_max:
+                                sorted_m[0].setValue(new_p1); sorted_m[1].setValue(new_p2)
+                        else:
+                            y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
+                            if y_min <= new_p1 <= y_max and y_min <= new_p2 <= y_max:
+                                sorted_m[0].setValue(new_p1); sorted_m[1].setValue(new_p2)
+                    elif lock_center:
+                        sorted_m = sorted(active_markers, key=lambda m: m.value())
+                        p1_orig, p2_orig = sorted_m[0].value(), sorted_m[1].value()
+                        center = (p1_orig + p2_orig) / 2
+                        if abs(k - 0.5) > 1e-9:
+                            new_delta = (g_prime - center) / (k - 0.5)
+                            new_p1 = center - new_delta / 2
+                            new_p2 = center + new_delta / 2
+                            if is_freq:
+                                f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+                                if f_min <= new_p1 <= f_max and f_min <= new_p2 <= f_max:
+                                    if new_p1 <= new_p2:
+                                        sorted_m[0].setValue(new_p1); sorted_m[1].setValue(new_p2)
+                            else:
+                                y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
+                                if y_min <= new_p1 <= y_max and y_min <= new_p2 <= y_max:
+                                    if new_p1 <= new_p2:
+                                        sorted_m[0].setValue(new_p1); sorted_m[1].setValue(new_p2)
+                    else:
+                        if is_p1:
+                            if abs(1 - k) > 1e-9:
+                                new_v = (g_prime - k * p_fixed) / (1 - k)
+                                if is_freq:
+                                    f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+                                    if f_min <= new_v <= f_max: m_move.setValue(new_v)
+                                else:
+                                    y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
+                                    if y_min <= new_v <= y_max: m_move.setValue(new_v)
+                        else:
+                            if abs(k) > 1e-9:
+                                new_v = p_fixed + (g_prime - p_fixed) / k
+                                if is_freq:
+                                    f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+                                    if f_min <= new_v <= f_max: m_move.setValue(new_v)
+                                else:
+                                    y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
+                                    if y_min <= new_v <= y_max: m_move.setValue(new_v)
+                    
+                    # Crossing detection
+                    if (active_markers[0].value() > active_markers[1].value()):
+                        active_markers[0], active_markers[1] = active_markers[1], active_markers[0]
+                        self.marker_panel.flip_m_lock(self.interaction_mode)
+                except ZeroDivisionError: pass
+            
+            self.update_marker_info()
+            return
+            
         if not getattr(self, 'active_drag_marker', None): return
         
         is_freq = (self.active_drag_marker in self.markers_freq or self.active_drag_marker in self.markers_freq_endless)

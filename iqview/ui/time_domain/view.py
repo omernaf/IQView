@@ -699,10 +699,12 @@ class TimeDomainView(QWidget):
                 elif lock_m2 and not lock_m1: move_p1 = True
                 
                 if drag_mode:
+                    sorted_m = sorted(active_markers, key=lambda m: m.value())
                     self.active_drag_grid_info = {
                         'k': k,
-                        'move_p1': move_p1,
-                        'fixed_val': p2 if move_p1 else p1,
+                        'moving_marker': sorted_m[0] if move_p1 else sorted_m[1],
+                        'fixed_marker': sorted_m[1] if move_p1 else sorted_m[0],
+                        'is_p1': move_p1,
                         'is_time': is_time,
                         'lock_delta': lock_delta,
                         'lock_center': lock_center
@@ -813,8 +815,10 @@ class TimeDomainView(QWidget):
             info = self.active_drag_grid_info
             is_time = info['is_time']
             k = info['k']
-            move_p1 = info['move_p1']
-            fixed_val = info['fixed_val']
+            m_move = info['moving_marker']
+            m_fixed = info['fixed_marker']
+            is_p1 = info['is_p1']
+            p_fixed = m_fixed.value()
             lock_delta = info.get('lock_delta', False)
             lock_center = info.get('lock_center', False)
             
@@ -827,24 +831,23 @@ class TimeDomainView(QWidget):
             
             active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
             if len(active_markers) == 2:
-                sorted_m = sorted(active_markers, key=lambda m: m.value())
-                m1, m2 = sorted_m[0], sorted_m[1]
-                orig_p1, orig_p2 = m1.value(), m2.value()
-                
                 try:
                     if lock_delta:
-                        delta = orig_p2 - orig_p1
-                        shift = g_prime - (orig_p1 + k * delta)
-                        new_p1 = orig_p1 + shift
-                        new_p2 = orig_p2 + shift
+                        sorted_m = sorted(active_markers, key=lambda m: m.value())
+                        p1_orig, p2_orig = sorted_m[0].value(), sorted_m[1].value()
+                        delta_orig = p2_orig - p1_orig
+                        shift = g_prime - (p1_orig + k * delta_orig)
+                        new_p1, new_p2 = p1_orig + shift, p2_orig + shift
                         if is_time:
                             if t_min <= new_p1 <= t_max and t_min <= new_p2 <= t_max:
-                                m1.setPos(new_p1); m2.setPos(new_p2)
+                                sorted_m[0].setPos(new_p1); sorted_m[1].setPos(new_p2)
                         else:
                             if y_min <= new_p1 <= y_max and y_min <= new_p2 <= y_max:
-                                m1.setPos(new_p1); m2.setPos(new_p2)
+                                sorted_m[0].setPos(new_p1); sorted_m[1].setPos(new_p2)
                     elif lock_center:
-                        center = (orig_p1 + orig_p2) / 2
+                        sorted_m = sorted(active_markers, key=lambda m: m.value())
+                        p1_orig, p2_orig = sorted_m[0].value(), sorted_m[1].value()
+                        center = (p1_orig + p2_orig) / 2
                         if abs(k - 0.5) > 1e-9:
                             new_delta = (g_prime - center) / (k - 0.5)
                             new_p1 = center - new_delta / 2
@@ -852,26 +855,31 @@ class TimeDomainView(QWidget):
                             if is_time:
                                 if t_min <= new_p1 <= t_max and t_min <= new_p2 <= t_max:
                                     if new_p1 <= new_p2:
-                                        m1.setPos(new_p1); m2.setPos(new_p2)
+                                        sorted_m[0].setPos(new_p1); sorted_m[1].setPos(new_p2)
                             else:
                                 if y_min <= new_p1 <= y_max and y_min <= new_p2 <= y_max:
                                     if new_p1 <= new_p2:
-                                        m1.setPos(new_p1); m2.setPos(new_p2)
+                                        sorted_m[0].setPos(new_p1); sorted_m[1].setPos(new_p2)
                     else:
-                        if move_p1:
+                        if is_p1:
                             if abs(1 - k) > 1e-9:
-                                new_p1 = (g_prime - k * fixed_val) / (1 - k)
+                                new_v = (g_prime - k * p_fixed) / (1 - k)
                                 if is_time:
-                                    if t_min <= new_p1 <= t_max and new_p1 <= orig_p2: m1.setPos(new_p1)
+                                    if t_min <= new_v <= t_max: m_move.setPos(new_v)
                                 else:
-                                    if y_min <= new_p1 <= y_max and new_p1 <= orig_p2: m1.setPos(new_p1)
+                                    if y_min <= new_v <= y_max: m_move.setPos(new_v)
                         else:
                             if abs(k) > 1e-9:
-                                new_p2 = fixed_val + (g_prime - fixed_val) / k
+                                new_v = p_fixed + (g_prime - p_fixed) / k
                                 if is_time:
-                                    if t_min <= new_p2 <= t_max and new_p2 >= orig_p1: m2.setPos(new_p2)
+                                    if t_min <= new_v <= t_max: m_move.setPos(new_v)
                                 else:
-                                    if y_min <= new_p2 <= y_max and new_p2 >= orig_p1: m2.setPos(new_p2)
+                                    if y_min <= new_v <= y_max: m_move.setPos(new_v)
+                                    
+                    # Crossing detection and swap
+                    if (active_markers[0].value() > active_markers[1].value()):
+                        active_markers[0], active_markers[1] = active_markers[1], active_markers[0]
+                        self.marker_panel.flip_m_lock(self.interaction_mode)
                 except ZeroDivisionError: pass
                 
             self.update_marker_info()
