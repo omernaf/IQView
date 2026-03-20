@@ -5,6 +5,9 @@ from ..themes import get_palette
 
 class MarkerManagerMixin:
     def place_marker(self, scene_pos, drag_mode=False):
+        if self.interaction_mode in ['ZOOM', 'MOVE']:
+            return
+            
         if self.spectrogram_view.plot_item.sceneBoundingRect().contains(scene_pos):
             vb = self.spectrogram_view.plot_item.vb
             mouse_v = vb.mapSceneToView(scene_pos)

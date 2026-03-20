@@ -440,6 +440,9 @@ class FrequencyDomainView(QWidget):
             self.update_statistics()
             return
 
+        if self.interaction_mode in ['ZOOM', 'MOVE']:
+            return
+
         # 1. Hit test EXISTING MARKERS
         found_marker = None
         for i, m in enumerate(active_markers):
@@ -451,6 +454,62 @@ class FrequencyDomainView(QWidget):
         
         if found_marker:
             self.active_drag_marker = found_marker
+            return
+
+        # 2. Add or RE-PLACE Marker
+        if not is_endless and len(active_markers) == 2:
+            # Teleport/Swap logic (like in Time Domain)
+            lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
+            lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
+            lock_delta = self.marker_panel.btn_lock_delta.isChecked()
+            lock_center = self.marker_panel.btn_lock_center.isChecked()
+
+            # Decide which marker to move
+            if lock_m1 and not lock_m2:
+                target, other = active_markers[1], active_markers[0]
+            elif lock_m2 and not lock_m1:
+                target, other = active_markers[0], active_markers[1]
+            else:
+                # Move oldest
+                target = min(active_markers, key=lambda m: self._marker_age.get(m, 0))
+                other = active_markers[1] if target == active_markers[0] else active_markers[0]
+            
+            # If target is locked, verify if we can move it via delta/center
+            is_m1 = (target == active_markers[0])
+            if (is_m1 and lock_m1) or (not is_m1 and lock_m2):
+                if not (lock_delta or lock_center): return
+
+            shift = val - target.value()
+            if lock_delta:
+                new_t, new_o = val, other.value() + shift
+                if is_freq:
+                    f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+                    if f_min <= new_t <= f_max and f_min <= new_o <= f_max:
+                        target.setValue(new_t); other.setValue(new_o)
+                else:
+                    y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
+                    if y_min <= new_t <= y_max and y_min <= new_o <= y_max:
+                        target.setValue(new_t); other.setValue(new_o)
+            elif lock_center:
+                ct = (active_markers[0].value() + active_markers[1].value()) / 2
+                new_o = 2 * ct - val
+                if is_freq:
+                    f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+                    if f_min <= val <= f_max and f_min <= new_o <= f_max:
+                        target.setValue(val); other.setValue(new_o)
+                else:
+                    y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
+                    if y_min <= val <= y_max and y_min <= new_o <= y_max:
+                        target.setValue(val); other.setValue(new_o)
+            else:
+                target.setValue(val)
+                self._marker_age_counter += 1
+                self._marker_age[target] = self._marker_age_counter
+
+            if drag_mode:
+                self.active_drag_marker = target
+
+            self.update_marker_info()
             return
 
         # 1.5 Hit test GRID LINES (Shadow Markers)
@@ -509,6 +568,8 @@ class FrequencyDomainView(QWidget):
             
             self.plot_item.addItem(m)
             active_markers.append(m)
+            if drag_mode:
+                self.active_drag_marker = m
             self.update_marker_info()
 
     def handle_lock_change(self, lock_type, checked):
