@@ -30,6 +30,7 @@ class FrequencyDomainView(QWidget):
         self._block_signals = False
         self._marker_age = {}
         self._marker_age_counter = 0
+        self.active_drag_stats_bound_idx = -1
         
         # Endless Markers
         self.markers_freq_endless = []
@@ -404,6 +405,9 @@ class FrequencyDomainView(QWidget):
                         oidx = self.stats_marker_order.index(old_v)
                         self.stats_marker_order[oidx] = val
                     self.stats_bounds.sort()
+                    if drag_mode:
+                        self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
+                    
                     if len(self.stats_bounds) == 1:
                         if self.stats_line: self.stats_line.setPos(val)
                     else:
@@ -419,6 +423,9 @@ class FrequencyDomainView(QWidget):
             self.stats_marker_order.append(val)
             self.stats_bounds.append(val)
             self.stats_bounds.sort()
+            
+            if drag_mode:
+                self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
             
             if len(self.stats_bounds) == 1:
                 if self.stats_line is None:
@@ -764,6 +771,35 @@ class FrequencyDomainView(QWidget):
     def update_drag(self, scene_pos):
         v_pos = self.plot_item.vb.mapSceneToView(scene_pos)
         
+        # 1. Handle STATS Region dragging (Boundaries)
+        if getattr(self, 'active_drag_stats_bound_idx', -1) != -1:
+            idx = self.active_drag_stats_bound_idx
+            f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+            val = max(f_min, min(f_max, v_pos.x()))
+            self.stats_bounds[idx] = val
+            
+            if len(self.stats_bounds) == 2:
+                other_idx = 1 - idx
+                other_v = self.stats_bounds[other_idx]
+                
+                self.stats_bounds.sort()
+                self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
+                
+                # Update order to track which one is 'oldest' for future replacements
+                if self.stats_marker_order[0] == self.stats_bounds[1 - self.active_drag_stats_bound_idx]:
+                    self.stats_marker_order = [other_v, val]
+                else:
+                    self.stats_marker_order = [val, other_v]
+                
+                self.stats_region.setRegion(self.stats_bounds)
+            else:
+                if self.stats_line: self.stats_line.setPos(val)
+                if self.stats_marker_order:
+                    self.stats_marker_order[-1] = val
+            
+            self.update_statistics()
+            return
+
         # 1.5 Handle Shadow Marker (Grid Line) dragging
         if getattr(self, 'active_drag_grid_info', None):
             info = self.active_drag_grid_info
