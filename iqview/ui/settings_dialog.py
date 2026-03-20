@@ -385,6 +385,23 @@ class SettingsDialog(QDialog):
                 
         self.plots_layout.addWidget(self.plots_list)
         
+        # --- Instant Frequency Filter Setting ---
+        self.inst_freq_group = QFrame()
+        self.inst_freq_group.setObjectName("inst_freq_group")
+        self.inst_freq_group.setStyleSheet("QFrame#inst_freq_group { border-top: 1px solid #444; margin-top: 10px; padding-top: 10px; }")
+        group_layout = QHBoxLayout(self.inst_freq_group)
+        group_layout.setContentsMargins(0, 5, 0, 5)
+        
+        group_layout.addWidget(QLabel("Instant Frequency Median Filter Length:"))
+        self.inst_freq_filter_spin = QSpinBox()
+        self.inst_freq_filter_spin.setRange(1, 101)
+        self.inst_freq_filter_spin.setSingleStep(2)
+        self.inst_freq_filter_spin.setValue(int(self.mgr.get("core/inst_freq_filter_len", 7)))
+        group_layout.addWidget(self.inst_freq_filter_spin)
+        group_layout.addStretch()
+        
+        self.plots_layout.addWidget(self.inst_freq_group)
+        
         # Reset to Default button
         reset_plots_btn = QPushButton("Reset to Default")
         def reset_plots():
@@ -581,6 +598,9 @@ class SettingsDialog(QDialog):
                 if item.checkState() == Qt.CheckState.Checked:
                     active_freq_plots.append(item.text())
             self.mgr.set("core/frequency_plots", active_freq_plots)
+            
+            # Save IF Filter
+            self.mgr.set("core/inst_freq_filter_len", self.inst_freq_filter_spin.value())
             
             # Save Extension Mappings
             ext_map = {}

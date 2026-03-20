@@ -32,6 +32,7 @@ class SettingsManager:
             "Real", 
             "Imaginary"
         ],
+        "core/inst_freq_filter_len": 7,
         "core/frequency_plots": [
             "magnitude",
             "magnitude [dB]"

@@ -311,6 +311,16 @@ class TimeDomainView(QWidget):
         # Wrap dphi to [-pi, pi]
         wrapped_dphi = (dphi + np.pi) % (2 * np.pi) - np.pi
         freq = wrapped_dphi / (2 * np.pi) * self.rate
+        
+        # Apply Moving Median Filter to reduce noise
+        filter_len = int(self.settings_mgr.get("core/inst_freq_filter_len", 7))
+        if filter_len > 1:
+            from scipy.signal import medfilt
+            # medfilt kernel_size must be positive odd integer
+            if filter_len % 2 == 0:
+                filter_len += 1
+            freq = medfilt(freq, kernel_size=filter_len)
+            
         pad_freq = np.concatenate(([freq[0]], freq))
         self._update_plot(pad_freq, "instant frequency")
 
