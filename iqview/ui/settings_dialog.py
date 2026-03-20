@@ -35,6 +35,32 @@ class ColorButton(QPushButton):
             self._update_style()
             self.colorChanged.emit(self._color)
 
+class PlotItemWidget(QWidget):
+    def __init__(self, text, checked, filter_len=None, parent=None):
+        super().__init__(parent)
+        self.text = text
+        self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(10, 2, 10, 2)
+        
+        self.cb = QCheckBox(text)
+        self.cb.setChecked(checked)
+        self.layout.addWidget(self.cb)
+        
+        self.layout.addStretch()
+        
+        self.spin = None
+        if filter_len is not None:
+            self.label = QLabel("Median Filter:")
+            self.layout.addWidget(self.label)
+            self.spin = QSpinBox()
+            self.spin.setRange(1, 101)
+            self.spin.setSingleStep(2)
+            self.spin.setValue(filter_len)
+            self.spin.setFixedWidth(60)
+            self.layout.addWidget(self.spin)
+        
+        self.setStyleSheet("background: transparent; color: inherit;")
+
 class SettingsDialog(QDialog):
     settingsApplied = pyqtSignal()
 
@@ -118,9 +144,7 @@ class SettingsDialog(QDialog):
         row_layout.addSpacing(10)
         row_layout.addWidget(reset_btn)
         
-        label_widget = QLabel(label)
-        label_widget.setMinimumWidth(180)
-        form.addRow(label_widget, row_layout)
+        form.addRow(label, row_layout)
 
     def add_side_tab(self, widget, title):
         self.stacked_widget.addWidget(widget)
@@ -143,6 +167,36 @@ class SettingsDialog(QDialog):
         self.layout.addLayout(self.main_content)
         
         self.side_menu.currentRowChanged.connect(self.stacked_widget.setCurrentIndex)
+        
+        # --- Helper for Plot Lists ---
+        def add_plot_item(list_widget, text, checked, filter_len=None):
+            # Keep item empty so QListWidget doesn't render text/checkbox over our widget
+            item = QListWidgetItem()
+            item.setSizeHint(QSize(0, 36))
+            
+            # Store serializable data in UserRole for drag-drop persistence
+            # QVariant can handle dictionaries (QMap) fine without recursion errors
+            data = {"text": text, "checked": checked, "filter_len": filter_len}
+            item.setData(Qt.ItemDataRole.UserRole, data)
+            
+            list_widget.addItem(item)
+            widget = PlotItemWidget(text, checked, filter_len)
+            list_widget.setItemWidget(item, widget)
+            
+            # Sync widget changes back to item data dictionary
+            def update_data():
+                d = item.data(Qt.ItemDataRole.UserRole)
+                if isinstance(d, dict):
+                    d["checked"] = widget.cb.isChecked()
+                    if widget.spin:
+                        d["filter_len"] = widget.spin.value()
+                    item.setData(Qt.ItemDataRole.UserRole, d)
+                    
+            widget.cb.toggled.connect(update_data)
+            if widget.spin:
+                widget.spin.valueChanged.connect(update_data)
+            
+            return item
 
         # Initialize all tabs and forms first so we can style them uniformly
         tabs_info = [
@@ -162,16 +216,7 @@ class SettingsDialog(QDialog):
             form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
             form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
             
-            # Wrap in scroll area to prevent "squeezing"
-            scroll = QScrollArea()
-            scroll.setWidget(content_widget)
-            scroll.setWidgetResizable(True)
-            scroll.setFrameShape(QFrame.Shape.NoFrame)
-            scroll.setObjectName(f"scroll_{name}")
-            # Ensure the background is transparent/matches the theme
-            scroll.setStyleSheet("background: transparent;")
-            
-            setattr(self, f"{name}_tab", scroll)
+            setattr(self, f"{name}_tab", content_widget)
             setattr(self, f"{name}_form", form_layout)
             setattr(self, f"{name}_content", content_widget)
 
@@ -367,40 +412,18 @@ class SettingsDialog(QDialog):
         # Load active/sorted plots from settings
         saved_plots = self.mgr.get("core/time_plots", [])
         
-        # 1. Add saved ones (they are 'checked' by virtue of being in the list)
+        # 1. Add saved ones
+        filter_len = int(self.mgr.get("core/inst_freq_filter_len", 7))
         for p in saved_plots:
             if p in all_plots:
-                item = QListWidgetItem(p)
-                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
-                item.setCheckState(Qt.CheckState.Checked)
-                self.plots_list.addItem(item)
+                add_plot_item(self.plots_list, p, True, filter_len if p == "instant frequency" else None)
                 
-        # 2. Add remaining ones not in saved_plots (unchecked)
+        # 2. Add remaining
         for p in all_plots:
             if p not in saved_plots:
-                item = QListWidgetItem(p)
-                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
-                item.setCheckState(Qt.CheckState.Unchecked)
-                self.plots_list.addItem(item)
+                add_plot_item(self.plots_list, p, False, filter_len if p == "instant frequency" else None)
                 
         self.plots_layout.addWidget(self.plots_list)
-        
-        # --- Instant Frequency Filter Setting ---
-        self.inst_freq_group = QFrame()
-        self.inst_freq_group.setObjectName("inst_freq_group")
-        self.inst_freq_group.setStyleSheet("QFrame#inst_freq_group { border-top: 1px solid #444; margin-top: 10px; padding-top: 10px; }")
-        group_layout = QHBoxLayout(self.inst_freq_group)
-        group_layout.setContentsMargins(0, 5, 0, 5)
-        
-        group_layout.addWidget(QLabel("Instant Frequency Median Filter Length:"))
-        self.inst_freq_filter_spin = QSpinBox()
-        self.inst_freq_filter_spin.setRange(1, 101)
-        self.inst_freq_filter_spin.setSingleStep(2)
-        self.inst_freq_filter_spin.setValue(int(self.mgr.get("core/inst_freq_filter_len", 7)))
-        group_layout.addWidget(self.inst_freq_filter_spin)
-        group_layout.addStretch()
-        
-        self.plots_layout.addWidget(self.inst_freq_group)
         
         # Reset to Default button
         reset_plots_btn = QPushButton("Reset to Default")
@@ -409,16 +432,10 @@ class SettingsDialog(QDialog):
             defaults = self.mgr.get_default("core/time_plots")
             for p in defaults:
                 if p in all_plots:
-                    item = QListWidgetItem(p)
-                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
-                    item.setCheckState(Qt.CheckState.Checked)
-                    self.plots_list.addItem(item)
+                    add_plot_item(self.plots_list, p, True, filter_len if p == "instant frequency" else None)
             for p in all_plots:
                 if p not in defaults:
-                    item = QListWidgetItem(p)
-                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
-                    item.setCheckState(Qt.CheckState.Unchecked)
-                    self.plots_list.addItem(item)
+                    add_plot_item(self.plots_list, p, False, filter_len if p == "instant frequency" else None)
         reset_plots_btn.clicked.connect(reset_plots)
         self.plots_layout.addWidget(reset_plots_btn)
         
@@ -447,18 +464,12 @@ class SettingsDialog(QDialog):
         # 1. Add saved ones
         for p in saved_freq_plots:
             if p in all_freq_plots:
-                item = QListWidgetItem(p)
-                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
-                item.setCheckState(Qt.CheckState.Checked)
-                self.freq_plots_list.addItem(item)
+                add_plot_item(self.freq_plots_list, p, True)
                 
         # 2. Add remaining
         for p in all_freq_plots:
             if p not in saved_freq_plots:
-                item = QListWidgetItem(p)
-                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
-                item.setCheckState(Qt.CheckState.Unchecked)
-                self.freq_plots_list.addItem(item)
+                add_plot_item(self.freq_plots_list, p, False)
                 
         self.freq_plots_layout.addWidget(self.freq_plots_list)
         
@@ -469,16 +480,10 @@ class SettingsDialog(QDialog):
             if not defaults: defaults = ["magnitude", "magnitude [dB]"]
             for p in defaults:
                 if p in all_freq_plots:
-                    item = QListWidgetItem(p)
-                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
-                    item.setCheckState(Qt.CheckState.Checked)
-                    self.freq_plots_list.addItem(item)
+                    add_plot_item(self.freq_plots_list, p, True)
             for p in all_freq_plots:
                 if p not in defaults:
-                    item = QListWidgetItem(p)
-                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
-                    item.setCheckState(Qt.CheckState.Unchecked)
-                    self.freq_plots_list.addItem(item)
+                    add_plot_item(self.freq_plots_list, p, False)
         reset_freq_plots_btn.clicked.connect(reset_freq_plots)
         self.freq_plots_layout.addWidget(reset_freq_plots_btn)
         
@@ -588,19 +593,37 @@ class SettingsDialog(QDialog):
             active_plots = []
             for i in range(self.plots_list.count()):
                 item = self.plots_list.item(i)
-                if item.checkState() == Qt.CheckState.Checked:
-                    active_plots.append(item.text())
+                widget = self.plots_list.itemWidget(item)
+                data = item.data(Qt.ItemDataRole.UserRole)
+                
+                # Preferred: read from widget
+                if widget:
+                    if widget.cb.isChecked():
+                        active_plots.append(widget.text)
+                        if widget.spin:
+                            self.mgr.set("core/inst_freq_filter_len", widget.spin.value())
+                # Fallback: read from persistent dictionary
+                elif isinstance(data, dict):
+                    if data.get("checked"):
+                        plot_name = data.get("text")
+                        active_plots.append(plot_name)
+                        if plot_name == "instant frequency":
+                            self.mgr.set("core/inst_freq_filter_len", data.get("filter_len", 7))
             self.mgr.set("core/time_plots", active_plots)
 
             active_freq_plots = []
             for i in range(self.freq_plots_list.count()):
                 item = self.freq_plots_list.item(i)
-                if item.checkState() == Qt.CheckState.Checked:
-                    active_freq_plots.append(item.text())
+                widget = self.freq_plots_list.itemWidget(item)
+                data = item.data(Qt.ItemDataRole.UserRole)
+                
+                if widget:
+                    if widget.cb.isChecked():
+                        active_freq_plots.append(widget.text)
+                elif isinstance(data, dict):
+                    if data.get("checked"):
+                        active_freq_plots.append(data.get("text"))
             self.mgr.set("core/frequency_plots", active_freq_plots)
-            
-            # Save IF Filter
-            self.mgr.set("core/inst_freq_filter_len", self.inst_freq_filter_spin.value())
             
             # Save Extension Mappings
             ext_map = {}
