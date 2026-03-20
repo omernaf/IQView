@@ -307,8 +307,10 @@ class TimeDomainView(QWidget):
         self._update_plot(10 * np.log10(data), "magnitude^2 [dB]")
 
     def plot_inst_freq(self):
-        phase = np.unwrap(np.angle(self.samples))
-        freq = np.diff(phase) / (2 * np.pi) * self.rate
+        dphi = np.diff(np.angle(self.samples))
+        # Wrap dphi to [-pi, pi]
+        wrapped_dphi = (dphi + np.pi) % (2 * np.pi) - np.pi
+        freq = wrapped_dphi / (2 * np.pi) * self.rate
         pad_freq = np.concatenate(([freq[0]], freq))
         self._update_plot(pad_freq, "instant frequency")
 
