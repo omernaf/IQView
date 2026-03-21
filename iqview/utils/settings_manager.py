@@ -28,7 +28,7 @@ class SettingsManager:
         },
         "core/time_plots": [
             "instant frequency", 
-            "magnitude^2", 
+            "magnitude [dB]", 
             "Real", 
             "Imaginary"
         ],

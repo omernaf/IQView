@@ -191,7 +191,7 @@ class TimeDomainView(QWidget):
             
         # Fallback to default if empty or missing
         if not active_plots:
-            active_plots = ["instant frequency", "magnitude^2", "Real", "Imaginary"]
+            active_plots = ["instant frequency", "magnitude [dB]", "Real", "Imaginary"]
             
         for i, name in enumerate(active_plots):
             if name in self.available_modes:
