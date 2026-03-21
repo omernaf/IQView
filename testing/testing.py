@@ -74,7 +74,7 @@ def main():
         sys.executable, main_py,
         "-f", filename,
         "-r", str(sample_rate),
-        "--full",
+        "--lazy",
     ]
     
     if args.profile:

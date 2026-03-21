@@ -234,10 +234,7 @@ class SpectrogramView(QWidget):
     # ---- Lazy render helpers ----
 
     def _on_range_changed_lazy(self):
-        """Forward viewport changes to the data handler for lazy re-rendering.
-        Suppressed while scrollbar-driven panning to avoid double-triggers."""
-        if self._block_signals:
-            return
+        """Forward viewport changes to the data handler for lazy re-rendering."""
         if hasattr(self.parent_window, 'on_viewport_changed'):
             self.parent_window.on_viewport_changed()
 
