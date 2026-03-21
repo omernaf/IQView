@@ -173,7 +173,8 @@ class FrequencyDomainView(QWidget):
         fft_res = np.fft.fft(self.samples * window) / n
         self.fft_data = np.fft.fftshift(fft_res)
 
-        self.freq_axis = np.fft.fftshift(np.fft.fftfreq(n, 1/self.rate)) + self.center_freq
+        self.fft_freq_axis = np.fft.fftshift(np.fft.fftfreq(n, 1/self.rate)) + self.center_freq
+        self.freq_axis = self.fft_freq_axis
         self.current_plot_data = np.nan_to_num(np.abs(self.fft_data), nan=0.0, posinf=1e-15, neginf=0.0)
         self.y_label_text = "magnitude"
 
@@ -404,6 +405,7 @@ class FrequencyDomainView(QWidget):
 
         self.current_plot_data = data
         self.y_label_text = y_label
+        self.freq_axis = self.fft_freq_axis
         self.marker_panel.update_headers(self.interaction_mode, y_label)
         
         if self.stats_region.isVisible(): self.update_statistics()
@@ -418,7 +420,7 @@ class FrequencyDomainView(QWidget):
         theme = self.settings_mgr.get("ui/theme", "Dark")
         p = get_palette(theme)
         pen = pg.mkPen(p.accent, width=1.5)
-        curve = self.plot_item.plot(self.freq_axis, data, pen=pen)
+        curve = self.plot_item.plot(self.fft_freq_axis, data, pen=pen)
         curve.setZValue(0)
         
         if hasattr(self, 'stats_line') and self.stats_line:
