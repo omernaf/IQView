@@ -151,8 +151,8 @@ class SettingsDialog(QDialog):
         scroll.setWidgetResizable(True)
         scroll.setWidget(widget)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        # Inherit styling but ensure transparency
-        scroll.setStyleSheet("background: transparent; border: none;")
+        # Use a more specific selector to avoid inheritance issues with popups
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; } QScrollArea > QWidget { background: transparent; }")
         
         self.stacked_widget.addWidget(scroll)
         item = QListWidgetItem(title)

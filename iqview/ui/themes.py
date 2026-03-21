@@ -89,11 +89,20 @@ def get_main_stylesheet(theme_name):
             border-radius: 4px; padding: 4px 8px; 
         }}
         QComboBox::drop-down {{ border: none; width: 20px; }}
-        QComboBox QAbstractItemView {{ 
+        
+        /* Force the popup dropdown list to be fully opaque and hide background */
+        QComboBox QAbstractItemView, QComboBox QListView, QComboBox QAbstractItemView::viewport {{ 
             background-color: {p.bg_input}; 
+            qproperty-autoFillBackground: true;
             color: {p.text_main}; 
-            selection-background-color: {p.bg_widget}; 
-            border: 1px solid {p.border}; 
+            selection-background-color: {p.accent_dim}; 
+            selection-color: {p.accent};
+            border: 1px solid {p.border};
+            outline: none;
+        }}
+        QComboBox::item {{
+            background-color: {p.bg_input};
+            color: {p.text_main};
         }}
         
         QTabWidget::pane {{ border: 1px solid {p.border}; top: -1px; background-color: {p.bg_main}; }}
