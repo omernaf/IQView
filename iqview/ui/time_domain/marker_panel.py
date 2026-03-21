@@ -662,7 +662,7 @@ class TimeDomainMarkerPanel(QFrame):
             }}
             QPushButton#mode_btn {{
                 background-color: transparent; 
-                border: none;
+                border: 2px solid transparent;
                 border-radius: 4px;
                 min-width: 32px;
                 min-height: 32px;
@@ -672,6 +672,7 @@ class TimeDomainMarkerPanel(QFrame):
             QPushButton#mode_btn:hover {{ background-color: {p.border_light}; }}
             QPushButton#mode_btn:checked {{ 
                 background-color: {p.accent_dim}; 
+                border-color: {p.accent};
                 color: {p.accent};
             }}
             QLineEdit {{
