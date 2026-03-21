@@ -44,8 +44,7 @@ class TimeDomainView(QWidget):
             "instant frequency": [],
             "magnitude": [],
             "magnitude [dB]": [],
-            "magnitude^2": [],
-            "magnitude^2 [dB]": []
+            "magnitude^2": []
         }
         self.markers_y_endless_dict = {k: [] for k in self.markers_y_dict.keys()}
         
@@ -340,11 +339,6 @@ class TimeDomainView(QWidget):
         
     def plot_magnitude_squared(self):
         self._update_plot(np.abs(self.samples)**2, "magnitude^2")
-        
-    def plot_magnitude_squared_db(self):
-        data = np.abs(self.samples)**2
-        data[data < 1e-12] = 1e-12
-        self._update_plot(10 * np.log10(data), "magnitude^2 [dB]")
 
     def plot_inst_freq(self):
         dphi = np.diff(np.angle(self.samples))

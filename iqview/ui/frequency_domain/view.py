@@ -40,7 +40,7 @@ class FrequencyDomainView(QWidget):
         # Mode-specific Magnitude markers
         self.markers_y_dict = {
             "magnitude": [], "magnitude [dB]": [], 
-            "magnitude^2": [], "magnitude^2 [dB]": [],
+            "magnitude^2": [],
             "real": [], "real [dB]": [], 
             "imag": [], "imag [dB]": [],
             "phase": [], "unwrapped phase": []
@@ -145,7 +145,6 @@ class FrequencyDomainView(QWidget):
             "magnitude": self.plot_magnitude,
             "magnitude [dB]": self.plot_magnitude_db,
             "magnitude^2": self.plot_magnitude_squared,
-            "magnitude^2 [dB]": self.plot_magnitude_squared_db,
             "real": self.plot_real,
             "real [dB]": self.plot_real_db,
             "imag": self.plot_imag,
@@ -286,10 +285,6 @@ class FrequencyDomainView(QWidget):
         data[data < 1e-15] = 1e-15
         self._update_plot(20 * np.log10(data), "magnitude [dB]")
     def plot_magnitude_squared(self): self._update_plot(np.abs(self.fft_data)**2, "magnitude^2")
-    def plot_magnitude_squared_db(self):
-        data = np.abs(self.fft_data)**2
-        data[data < 1e-15] = 1e-15
-        self._update_plot(10 * np.log10(data), "magnitude^2 [dB]")
     def plot_real(self): self._update_plot(self.fft_data.real, "real")
     def plot_real_db(self):
         data = np.abs(self.fft_data.real)
