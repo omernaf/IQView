@@ -147,9 +147,16 @@ class SettingsDialog(QDialog):
         form.addRow(label, row_layout)
 
     def add_side_tab(self, widget, title):
-        self.stacked_widget.addWidget(widget)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(widget)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        # Inherit styling but ensure transparency
+        scroll.setStyleSheet("background: transparent; border: none;")
+        
+        self.stacked_widget.addWidget(scroll)
         item = QListWidgetItem(title)
-        item.setSizeHint(QSize(110, 30))
+        item.setSizeHint(QSize(110, 32))
         self.side_menu.addItem(item)
 
     def setup_ui(self):
@@ -210,9 +217,9 @@ class SettingsDialog(QDialog):
             content_widget = QWidget()
             form_layout = QFormLayout(content_widget)
             
-            # Use generous spacing and margins for an airy, premium feel
-            form_layout.setSpacing(22)
-            form_layout.setContentsMargins(40, 35, 40, 35)
+            # Use refined spacing for better density while maintaining an airy feel
+            form_layout.setSpacing(18)
+            form_layout.setContentsMargins(30, 25, 30, 25)
             form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
             form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
             
