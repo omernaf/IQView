@@ -29,15 +29,17 @@ class FileReaderThread(QThread):
         self.profile_enabled = profile_enabled
         self.running = True
         
-        # Filter settings
-        self.filter_enabled = filter_enabled
-        self.f_min = f_min
-        self.f_max = f_max
-        self.filter_type = kwargs.get('filter_type', 'Elliptic')
-        self.filter_order = kwargs.get('filter_order', 8)
-        self.filter_ripple = kwargs.get('filter_ripple', 0.1)
-        self.filter_stopband = kwargs.get('filter_stopband', 60.0)
         self.filter_bessel_norm = kwargs.get('filter_bessel_norm', 'phase')
+        
+        # Precompute frequency-domain BPF response for consistent visuals and performance
+        self.freq_mask = None
+        if filter_enabled and f_min is not None and f_max is not None:
+            sos, f_center = design_filter(sample_rate, f_min, f_max, **kwargs)
+            if sos is not None:
+                bin_freqs = np.fft.fftshift(np.fft.fftfreq(fft_size, 1.0 / sample_rate))
+                f_eval = bin_freqs - f_center
+                _, h = signal.sosfreqz(sos, f_eval, fs=sample_rate)
+                self.freq_mask = np.abs(h).astype(np.float32)
         
         # Select Window Function
         if window_type == "Hanning":
@@ -152,14 +154,8 @@ class FileReaderThread(QThread):
                         # Already real samples, just treat as complex with 0 imag
                         full_complex = raw_array.astype(np.complex64)
                     
-                    # Apply Band-Pass Filter if enabled
-                    if self.filter_enabled and self.f_min is not None and self.f_max is not None:
-                        full_complex = apply_bpf(
-                            full_complex, self.sample_rate, self.f_min, self.f_max,
-                            filter_type=self.filter_type, order=self.filter_order,
-                            rp=self.filter_ripple, rs=self.filter_stopband,
-                            bessel_norm=self.filter_bessel_norm
-                        )
+                    # No time-domain filtering — BPF is applied in the frequency domain
+                    # below (after fftshift) for maximum performance and visual consistency.
 
                     # Extract windows into a 2D array for vectorized processing
                     # We use stride_tricks to avoid copying data where possible
@@ -190,6 +186,11 @@ class FileReaderThread(QThread):
                     
                     # Post-process (vectorized)
                     shifted_batch = np.fft.fftshift(fft_batch, axes=1)
+                    
+                    # Apply frequency-domain BPF response mask
+                    if self.freq_mask is not None:
+                        shifted_batch *= self.freq_mask # broadcast across batch, zero-cost
+                        
                     mag_batch = np.abs(shifted_batch)
                     epsilon = np.float32(1e-10)
                     mag_batch = np.maximum(mag_batch, epsilon)
