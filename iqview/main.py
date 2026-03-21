@@ -72,6 +72,8 @@ def parse_args():
     # Desktop integration flags
     parser.add_argument('--install-desktop', action='store_true', help='Install Start Menu shortcut and File associations')
     parser.add_argument('--uninstall-desktop', action='store_true', help='Remove Start Menu shortcut and File associations')
+    parser.add_argument('--install-mat', action='store_true', help='Associate .mat files with IQView')
+    parser.add_argument('--uninstall-mat', action='store_true', help='Remove .mat file association')
     
     return parser.parse_args()
 
@@ -86,6 +88,16 @@ def main():
     if args.uninstall_desktop:
         from iqview.utils.desktop import uninstall_desktop_integration
         uninstall_desktop_integration()
+        sys.exit(0)
+
+    if args.install_mat:
+        from iqview.utils.desktop import install_mat_integration
+        install_mat_integration()
+        sys.exit(0)
+
+    if args.uninstall_mat:
+        from iqview.utils.desktop import uninstall_mat_integration
+        uninstall_mat_integration()
         sys.exit(0)
         
     sm = SettingsManager()

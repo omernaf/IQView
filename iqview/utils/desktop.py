@@ -72,10 +72,13 @@ def _create_shortcut(exe_path, icon_path):
     else:
         print(f"  \u2717 Failed to create shortcut: {result.stderr}")
 
-def _register_file_associations(exe_path, icon_path):
+def _register_file_associations(exe_path, icon_path, extensions=None):
     import winreg
     print("Registering file associations...")
     command = f'"{exe_path}" "%1"'
+    
+    if extensions is None:
+        extensions = _get_supported_extensions()
     
     try:
         # 1. Register the ProgID
@@ -83,16 +86,25 @@ def _register_file_associations(exe_path, icon_path):
             winreg.SetValue(key, "", winreg.REG_SZ, APP_DESC)
             
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, fr"Software\Classes\{APP_PROG_ID}\DefaultIcon") as key:
-            winreg.SetValue(key, "", winreg.REG_SZ, icon_path)
+            # Append ,0 to the icon path (standard for DefaultIcon)
+            winreg.SetValue(key, "", winreg.REG_SZ, f"{icon_path},0")
             
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, fr"Software\Classes\{APP_PROG_ID}\shell\open\command") as key:
             winreg.SetValue(key, "", winreg.REG_SZ, command)
             
-        # 2. Register all file extensions to the ProgID
-        for ext in _get_supported_extensions():
+        # 2. Register specified file extensions to the ProgID
+        for ext in extensions:
             with winreg.CreateKey(winreg.HKEY_CURRENT_USER, fr"Software\Classes\{ext}") as key:
                 winreg.SetValue(key, "", winreg.REG_SZ, APP_PROG_ID)
-                print(f"  \u2713 Associated {ext}")
+            
+            # Also set the icon directly for the extension (can help with immediate refresh)
+            try:
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, fr"Software\Classes\{ext}\DefaultIcon") as key:
+                    winreg.SetValue(key, "", winreg.REG_SZ, f"{icon_path},0")
+            except Exception:
+                pass
+                
+            print(f"  \u2713 Associated {ext}")
                 
         # 3. Notify Windows shell to update icons/associations
         # Using PowerShell to call SHChangeNotify
@@ -140,12 +152,16 @@ def _delete_reg_key(key_root, sub_key):
     except OSError:
         pass # Key doesn't exist
 
-def _unregister_file_associations():
+def _unregister_file_associations(extensions=None):
     import winreg
     print("Unregistering file associations...")
+    
+    if extensions is None:
+        extensions = _get_supported_extensions()
+        
     try:
-        # 1. Unregister all file extensions (if they pointed to our ProgID)
-        for ext in _get_supported_extensions():
+        # 1. Unregister specified file extensions (if they pointed to our ProgID)
+        for ext in extensions:
             try:
                 # We do not want to delete the .ext key entirely, just the default association if it matches us
                 with winreg.OpenKey(winreg.HKEY_CURRENT_USER, fr"Software\Classes\{ext}", 0, winreg.KEY_ALL_ACCESS) as key:
@@ -156,9 +172,10 @@ def _unregister_file_associations():
             except OSError:
                 pass # Doesn't exist or not set as default
                 
-        # 2. Delete the ProgID
-        _delete_reg_key(winreg.HKEY_CURRENT_USER, fr"Software\Classes\{APP_PROG_ID}")
-        print("  \u2713 Unregistered ProgID")
+        # 2. Delete the ProgID if it's a full unregister (no extensions specified)
+        if extensions == _get_supported_extensions():
+            _delete_reg_key(winreg.HKEY_CURRENT_USER, fr"Software\Classes\{APP_PROG_ID}")
+            print("  \u2713 Unregistered ProgID")
         
         # 3. Notify Windows shell to update icons/associations
         ps_notify = (
@@ -248,3 +265,28 @@ def uninstall_desktop_integration():
         print(f"Desktop integration is not yet supported for your platform ({sys.platform}).")
         
     print("Desktop integration uninstallation complete.")
+
+def install_mat_integration():
+    """Register ONLY the .mat file association."""
+    print(f"Registering .mat file association for {APP_NAME}...")
+    exe_path = get_executable_path()
+    icon_path = get_icon_path()
+    
+    if os.name == "nt":
+        _register_file_associations(exe_path, icon_path, extensions=[".mat"])
+    else:
+        # On Linux, .desktop file already lists mime types, but we'd need to update it 
+        # specifically if we wanted independent control. For now, focus on Windows.
+        print(f".mat association is currently only independently supported on Windows.")
+        
+    print(".mat association registration complete.")
+
+def uninstall_mat_integration():
+    """Unregister ONLY the .mat file association."""
+    print(f"Unregistering .mat file association for {APP_NAME}...")
+    if os.name == "nt":
+        _unregister_file_associations(extensions=[".mat"])
+    else:
+        print(f".mat association is currently only independently supported on Windows.")
+        
+    print(".mat association unregistration complete.")
