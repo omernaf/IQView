@@ -23,7 +23,7 @@ iqview = "iqview.main:main"
 iqview-gui = "iqview.main:main"
 
 [tool.setuptools.package-data]
-iqview = ["resources/*.png", "resources/*.ico"]
+iqview = ["resources/*.png", "resources/*.ico", "resources/assets/*"]
 
 [tool.setuptools.packages.find]
 where = ["."]
