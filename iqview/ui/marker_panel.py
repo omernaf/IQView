@@ -20,7 +20,6 @@ class MarkerPanel(QFrame):
         self.setFixedHeight(140)
         self.header_font = QFont("Segoe UI", 9, QFont.Weight.Bold)
         self.mono_font = QFont("Consolas", 10)
-        self.refresh_theme()
         
         self.main_layout = QHBoxLayout(self)
         self.main_layout.setContentsMargins(15, 8, 15, 8)
@@ -272,11 +271,16 @@ class MarkerPanel(QFrame):
         self.btn_marker_time.setChecked(True)
         self.interactionModeChanged.emit('TIME')
 
-    def _get_icon(self, name):
+        # Apply theme (must be done AFTER buttons are initialized)
+        self.refresh_theme()
+
+    def _get_icon(self, name, theme="Light"):
         """Helper to load icons from resources/assets."""
+        suffix = "_dark" if theme == "Dark" else ""
+        icon_name = f"{name}{suffix}"
         try:
             from importlib.resources import files
-            icon_resource = files("iqview.resources.assets").joinpath(f"{name}.png")
+            icon_resource = files("iqview.resources.assets").joinpath(f"{icon_name}.png")
             with icon_resource.open("rb") as f:
                 pixmap = QPixmap()
                 pixmap.loadFromData(f.read())
@@ -284,7 +288,10 @@ class MarkerPanel(QFrame):
         except Exception:
             # Fallback for local dev if package structure isn't perfect
             base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            local_path = os.path.join(base_path, "iqview", "resources", "assets", f"{name}.png")
+            local_path = os.path.join(base_path, "iqview", "resources", "assets", f"{icon_name}.png")
+            if not os.path.exists(local_path) and suffix:
+                # Fallback to light version if dark doesn't exist
+                local_path = os.path.join(base_path, "iqview", "resources", "assets", f"{name}.png")
             return QIcon(local_path)
 
     def _clear_marker_locks(self, mode=None, keep=None):
@@ -576,6 +583,16 @@ class MarkerPanel(QFrame):
     def refresh_theme(self):
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
         p = get_palette(theme)
+        
+        # Update Icons based on theme
+        self.btn_marker_time.setIcon(self._get_icon("vertical_markers", theme))
+        self.btn_marker_freq.setIcon(self._get_icon("horizontal_markers", theme))
+        self.btn_zoom.setIcon(self._get_icon("zoom_mode", theme))
+        self.btn_move.setIcon(self._get_icon("free_move_mode", theme))
+        self.btn_home.setIcon(self._get_icon("reset_zoom", theme))
+        self.btn_bpf.setIcon(self._get_icon("bpf_selection_mode", theme))
+        self.btn_marker_time_endless.setIcon(self._get_icon("endless_vertical_markers", theme))
+        self.btn_marker_freq_endless.setIcon(self._get_icon("endless_horizontal_markers", theme))
         
         self.setStyleSheet(f"""
             MarkerPanel {{ 

@@ -24,7 +24,6 @@ class FrequencyDomainMarkerPanel(QFrame):
     def setup_ui(self):
         self.setFixedHeight(100) 
         self.header_font = QFont("Segoe UI", 9, QFont.Weight.Bold)
-        self.refresh_theme()
         
         self.main_layout = QHBoxLayout(self)
         self.main_layout.setContentsMargins(15, 6, 15, 6)
@@ -311,11 +310,16 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.stats_layout.addWidget(self.stats_min_idx, 3, 2)
         self.stats_layout.addWidget(self.stats_diff_val, 3, 7)
 
-    def _get_icon(self, name):
+        # Apply theme (must be done AFTER buttons are initialized)
+        self.refresh_theme()
+
+    def _get_icon(self, name, theme="Light"):
         """Helper to load icons from resources/assets."""
+        suffix = "_dark" if theme == "Dark" else ""
+        icon_name = f"{name}{suffix}"
         try:
             from importlib.resources import files
-            icon_resource = files("iqview.resources.assets").joinpath(f"{name}.png")
+            icon_resource = files("iqview.resources.assets").joinpath(f"{icon_name}.png")
             with icon_resource.open("rb") as f:
                 pixmap = QPixmap()
                 pixmap.loadFromData(f.read())
@@ -323,7 +327,9 @@ class FrequencyDomainMarkerPanel(QFrame):
         except Exception:
             # Fallback for local dev
             base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-            local_path = os.path.join(base_path, "iqview", "resources", "assets", f"{name}.png")
+            local_path = os.path.join(base_path, "iqview", "resources", "assets", f"{icon_name}.png")
+            if not os.path.exists(local_path) and suffix:
+                local_path = os.path.join(base_path, "iqview", "resources", "assets", f"{name}.png")
             return QIcon(local_path)
 
     def update_headers(self, mode, y_axis_label="Magnitude"):
@@ -598,6 +604,17 @@ class FrequencyDomainMarkerPanel(QFrame):
     def refresh_theme(self):
         theme = self.controller.parent_window.settings_mgr.get("ui/theme", "Dark")
         p = get_palette(theme)
+        
+        # Update Icons based on theme
+        self.btn_marker_freq.setIcon(self._get_icon("vertical_markers", theme))
+        self.btn_marker_freq_endless.setIcon(self._get_icon("endless_vertical_markers", theme))
+        self.btn_marker_mag.setIcon(self._get_icon("horizontal_markers", theme))
+        self.btn_marker_mag_endless.setIcon(self._get_icon("endless_horizontal_markers", theme))
+        self.btn_zoom.setIcon(self._get_icon("zoom_mode", theme))
+        self.btn_move.setIcon(self._get_icon("free_move_mode", theme))
+        self.btn_stats.setIcon(self._get_icon("region_statistics", theme))
+        self.btn_home.setIcon(self._get_icon("reset_zoom", theme))
+        
         self.setStyleSheet(f"""
             FrequencyDomainMarkerPanel {{ 
                 background-color: {p.bg_widget}; 
