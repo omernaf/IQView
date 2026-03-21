@@ -2,7 +2,8 @@ import io
 import os
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
-from .dsp import preprocess_chunk, postprocess_fft, apply_bpf
+from scipy import signal
+from .dsp import preprocess_chunk, postprocess_fft, apply_bpf, design_filter
 
 class FileReaderThread(QThread):
     """
@@ -353,15 +354,20 @@ class ViewportAwareReader(QThread):
         else:
             self.step_size = view_samples
 
-        # Precompute frequency-domain BPF mask (much faster than time-domain IIR).
-        # After fftshift, bin i corresponds to frequency:
-        #   f_i = (i - fft_size/2) * sample_rate / fft_size
-        # We zero out bins outside [f_min, f_max] (both relative to fc, i.e. baseband).
+        # Precompute frequency-domain BPF response (much better than binary mask).
+        # We use the same filter design as the time-domain path, then evaluate
+        # its frequency response (roll-off) at each FFT bin.
         self.freq_mask = None
         if filter_enabled and f_min is not None and f_max is not None:
-            bin_freqs = np.fft.fftshift(np.fft.fftfreq(fft_size, 1.0 / sample_rate))
-            mask = (bin_freqs >= f_min) & (bin_freqs <= f_max)
-            self.freq_mask = mask.astype(np.float32)  # shape: (fft_size,)
+            sos, f_center = design_filter(sample_rate, f_min, f_max, **kwargs)
+            if sos is not None:
+                # Get bins relative to fc (baseband)
+                bin_freqs = np.fft.fftshift(np.fft.fftfreq(fft_size, 1.0 / sample_rate))
+                # Evaluate at (bin_freq - f_center) because the filter is designed as a low-pass 
+                # on a signals that was shifted by -f_center in the time domain.
+                f_eval = bin_freqs - f_center
+                _, h = signal.sosfreqz(sos, f_eval, fs=sample_rate)
+                self.freq_mask = np.abs(h).astype(np.float32)
 
         # No guard region needed — we no longer filter in time-domain
         self.s_read_start = self.s_start

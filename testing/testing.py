@@ -48,8 +48,8 @@ def main():
     args, unknown = parser.parse_known_args()
 
     # filename = "samples/temp_10Msps_433MHz.32fc"
-    # filename = "samples/mavic_air_2.16tc"
-    filename = "samples/long_sweep.32fc"
+    filename = "samples/mavic_air_2.16tc"
+    # filename = "samples/long_sweep.32fc"
     # filename = "samples/chirp_rate_3MHz.32fc";
     # filename = "samples/noise.32fc"
     # filename = "samples/saved/iq1.mat"
@@ -73,7 +73,7 @@ def main():
         sys.executable, main_py,
         "-f", filename,
         "-r", str(sample_rate),
-        "--lazy",
+        "--full",
     ]
     
     if args.profile:
