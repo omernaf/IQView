@@ -71,11 +71,12 @@ def apply_bpf(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, r
     # 4. Shift back to original frequency band
     return data_filtered * np.conj(shift_vector)
 
-def compute_psd(samples, fs, method='Welch', **kwargs):
+def compute_psd(samples, fs=1.0, method='Welch', **kwargs):
     """
     Computes the Power Spectrum Density (PSD) of the samples.
     Methods supported: 'Periodogram' and 'Welch'.
     Returns (freqs, psd)
+    NOTE: If fs=1.0 (default), returns normalized density.
     """
     if len(samples) == 0:
         return np.array([]), np.array([])

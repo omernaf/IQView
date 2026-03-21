@@ -306,9 +306,14 @@ class FrequencyDomainView(QWidget):
         if self.settings_mgr:
             method = self.settings_mgr.get("core/psd_algorithm", "Welch")
         
-        freqs, psd = compute_psd(self.samples, self.rate, method=method)
-        # scipy shifted freqs are relative to 0, we need to add center_freq
-        freqs += self.center_freq
+        # Use a reasonable segment length for Welch based on samples
+        # Default to 4096 or segments of ~1/4 size
+        nperseg = 4096 if len(self.samples) > 4096 else 1024
+        
+        # Fix: Use fs=1.0 to get normalized density (independent of actual sample rate)
+        freqs, psd = compute_psd(self.samples, fs=1.0, method=method, nperseg=nperseg)
+        # Scale frequencies only for display
+        freqs = freqs * self.rate + self.center_freq
         
         # PSD is usually viewed in dB/Hz
         # Reference level: 1.0 (density)
@@ -483,7 +488,9 @@ class FrequencyDomainView(QWidget):
         p_max, p_min, p_median = np.max(slice_data), np.min(slice_data), np.median(slice_data)
         
         if "[dB]" in self.y_label_text:
-            factor = 10 if "magnitude^2" in self.y_label_text.lower() else 20
+            # Use 10log10 for power-related plots (PSD, magnitude^2), 20log10 for amplitude (magnitude, real, imag)
+            is_power_plot = any(x in self.y_label_text.lower() for x in ["psd", "magnitude^2"])
+            factor = 10 if is_power_plot else 20
             p_mean = factor * np.log10(np.mean(10**(slice_data/factor)) + 1e-18)
         else: p_mean = np.mean(slice_data)
         
@@ -506,6 +513,12 @@ class FrequencyDomainView(QWidget):
         
         # Compute Total linear power
         total_p_lin = np.sum(lin_pow_slice)
+        
+        # If PSD, we integrate over normalized frequency (-0.5 to 0.5)
+        # This makes the integrated power independent of the physical sample rate.
+        if "PSD" in self.y_label_text:
+            df_norm = 1.0 / len(self.freq_axis)
+            total_p_lin *= df_norm
         
         # Window Incoherent Gain (IG) compensation (S2/N)
         # We always use Rectangular currently (IG=1), but for future-proofing:
