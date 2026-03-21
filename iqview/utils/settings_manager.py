@@ -34,8 +34,9 @@ class SettingsManager:
         ],
         "core/inst_freq_filter_len": 7,
         "core/frequency_plots": [
-            "magnitude",
-            "magnitude [dB]"
+            "power spectrum density (PSD)",
+            "magnitude [dB]",
+            "magnitude"
         ],
         "core/psd_algorithm": "Welch",
         "ui/theme": "Light",
