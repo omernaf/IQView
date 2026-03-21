@@ -50,6 +50,13 @@ class ViewControllerMixin:
     def set_interaction_mode(self, mode):
         self.interaction_mode = mode
         self.zoom_mode = (mode == 'ZOOM')
+        
+        # Delegate to active tab if it's not the spectrogram
+        active_tab = self.tabs.currentWidget()
+        if active_tab and active_tab != self.spectrogram_view:
+            if hasattr(active_tab, 'set_interaction_mode'):
+                active_tab.set_interaction_mode(mode)
+        
         self.refresh_cursor()
         self.marker_panel.update_headers(mode)
         self.update_marker_info()
@@ -114,6 +121,12 @@ class ViewControllerMixin:
             self.start_processing()
 
     def refresh_cursor(self):
+        active_tab = self.tabs.currentWidget()
+        if active_tab and active_tab != self.spectrogram_view:
+            if hasattr(active_tab, 'refresh_cursor'):
+                active_tab.refresh_cursor()
+                return # Active tab handles its own cursor
+        
         if hasattr(self, 'zoom_mode') and self.zoom_mode:
             self.spectrogram_view.setCursor(Qt.CursorShape.CrossCursor)
         elif self.interaction_mode in ['TIME', 'FREQ', 'FILTER']:
@@ -164,18 +177,31 @@ class ViewControllerMixin:
             self.update_tab_names()
 
     def reset_zoom(self):
-        self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
-        self.spectrogram_view.plot_item.autoRange()
+        active_tab = self.tabs.currentWidget()
+        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'reset_zoom'):
+            active_tab.reset_zoom()
+        else:
+            self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
+            self.spectrogram_view.plot_item.autoRange()
 
     def handle_zoom_rectangle(self, rect, zoom_type='BOTH'):
-        self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
-        if rect.width() <= 0 and zoom_type != 'Y_ONLY': return
-        if rect.height() <= 0 and zoom_type != 'X_ONLY': return
-        if zoom_type == 'Y_ONLY': self.spectrogram_view.plot_item.setYRange(rect.top(), rect.bottom(), padding=0)
-        elif zoom_type == 'X_ONLY': self.spectrogram_view.plot_item.setXRange(rect.left(), rect.right(), padding=0)
-        else: self.spectrogram_view.plot_item.setRange(rect, padding=0)
+        active_tab = self.tabs.currentWidget()
+        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'handle_zoom_rectangle'):
+            active_tab.handle_zoom_rectangle(rect, zoom_type)
+        else:
+            self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
+            if rect.width() <= 0 and zoom_type != 'Y_ONLY': return
+            if rect.height() <= 0 and zoom_type != 'X_ONLY': return
+            if zoom_type == 'Y_ONLY': self.spectrogram_view.plot_item.setYRange(rect.top(), rect.bottom(), padding=0)
+            elif zoom_type == 'X_ONLY': self.spectrogram_view.plot_item.setXRange(rect.left(), rect.right(), padding=0)
+            else: self.spectrogram_view.plot_item.setRange(rect, padding=0)
 
     def fit_to_markers(self):
+        active_tab = self.tabs.currentWidget()
+        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'fit_to_markers'):
+            active_tab.fit_to_markers()
+            return
+
         is_freq = (self.interaction_mode in ['FREQ', 'FREQ_ENDLESS'])
         is_endless = 'ENDLESS' in self.interaction_mode
         if is_endless:
@@ -282,7 +308,10 @@ class ViewControllerMixin:
             count += 1
 
     def undo_zoom(self):
-        if self.zoom_history:
+        active_tab = self.tabs.currentWidget()
+        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'undo_zoom'):
+            active_tab.undo_zoom()
+        elif self.zoom_history:
             prev_rect = self.zoom_history.pop()
             self.spectrogram_view.plot_item.setRange(rect=prev_rect, padding=0)
 

@@ -228,15 +228,57 @@ class FrequencyDomainView(QWidget):
             self.stats_markers.hide()
             if self.stats_line: self.stats_line.hide()
             
-        cursor = Qt.CursorShape.ArrowCursor
-        if mode == 'ZOOM': cursor = Qt.CursorShape.CrossCursor
-        elif mode == 'MOVE': cursor = Qt.CursorShape.SizeAllCursor
-        elif 'ENDLESS' in mode: cursor = Qt.CursorShape.PointingHandCursor
-        self.plot_widget.setCursor(cursor)
+        self.refresh_cursor()
         
         self.marker_panel.update_mode_ui(mode)
         self.marker_panel.update_headers(mode, self.y_label_text)
         self.update_marker_info()
+
+    def refresh_cursor(self):
+        mode = self.interaction_mode
+        cursor = Qt.CursorShape.ArrowCursor
+        if mode == 'ZOOM': cursor = Qt.CursorShape.CrossCursor
+        elif mode == 'MOVE': cursor = Qt.CursorShape.SizeAllCursor
+        elif 'ENDLESS' in mode: cursor = Qt.CursorShape.PointingHandCursor
+        elif mode in ['FREQ', 'MAG', 'Y', 'FILTER', 'STATS']: cursor = Qt.CursorShape.CrossCursor
+        self.plot_widget.setCursor(cursor)
+
+    def undo_zoom(self):
+        if self.zoom_history:
+            prev_rect = self.zoom_history.pop()
+            self.plot_item.setRange(rect=prev_rect, padding=0)
+
+    def reset_zoom(self):
+        self.zoom_history.append(self.plot_item.viewRect())
+        self.plot_item.autoRange()
+
+    def handle_zoom_rectangle(self, rect, zoom_type='BOTH'):
+        self.zoom_history.append(self.plot_item.viewRect())
+        if rect.width() <= 0 and zoom_type != 'Y_ONLY': return
+        if rect.height() <= 0 and zoom_type != 'X_ONLY': return
+        if zoom_type == 'Y_ONLY': self.plot_item.setYRange(rect.top(), rect.bottom(), padding=0)
+        elif zoom_type == 'X_ONLY': self.plot_item.setXRange(rect.left(), rect.right(), padding=0)
+        else: self.plot_item.setRange(rect, padding=0)
+
+    def fit_to_markers(self):
+        is_freq = (self.interaction_mode in ['FREQ', 'FREQ_ENDLESS'])
+        is_endless = 'ENDLESS' in self.interaction_mode
+        if is_endless:
+            active_markers = self.markers_freq_endless if is_freq else [] # Y markers not implemented for fit yet
+        else:
+            active_markers = self.markers_freq if is_freq else []
+            
+        if not active_markers and self.interaction_mode in ['MAG', 'Y', 'MAG_ENDLESS']:
+            label = self.y_label_text
+            if is_endless: active_markers = self.markers_y_endless_dict.get(label, [])
+            else: active_markers = self.markers_y_dict.get(label, [])
+
+        if len(active_markers) == 2:
+            self.zoom_history.append(self.plot_item.viewRect())
+            v1, v2 = active_markers[0].value(), active_markers[1].value()
+            v_min, v_max = min(v1, v2), max(v1, v2)
+            if is_freq: self.plot_item.setXRange(v_min, v_max, padding=0)
+            else: self.plot_item.setYRange(v_min, v_max, padding=0)
 
     def plot_magnitude(self): self._update_plot(np.abs(self.fft_data), "magnitude")
     def plot_magnitude_db(self):
