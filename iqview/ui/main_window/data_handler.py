@@ -9,6 +9,10 @@ class DataHandlerMixin:
     # Full-file processing (stdin / bytes sources, or lazy mode disabled)
     # ------------------------------------------------------------------
 
+    def _has_data(self):
+        """True when a data source has been loaded (works in both lazy and full-file modes)."""
+        return self.data_source is not None
+
     def start_processing(self):
         if self.data_source is None:
             return  # nothing loaded yet — waiting for user to open a file
@@ -35,8 +39,9 @@ class DataHandlerMixin:
 
         # Lazy mode only applies to file-path sources, not in-memory bytes
         if lazy_enabled and isinstance(self.data_source, str):
-            # On (re)start, request a fresh render from the current view or full range
-            self.is_first_load = True
+            # NOTE: do NOT set is_first_load here — that is only set by
+            # load_new_file() / __init__ for genuine new-file loads.
+            # Re-processing due to parameter/filter changes must NOT reset the zoom.
             self._schedule_lazy_render()
         else:
             # Fallback: traditional full-file processing

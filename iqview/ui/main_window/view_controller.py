@@ -18,19 +18,28 @@ class ViewControllerMixin:
         if needs_reprocess:
             self.start_processing()
             
-        if hasattr(self, 'full_spectrogram_cache'):
-            old_duration = self.time_duration
+        # Remap current view and markers when fs or fc changed.
+        # Works in both full-file and lazy mode (no full_spectrogram_cache required).
+        old_duration = self.time_duration
+        if old_duration > 0:
             old_bottom = old_fc - old_rate / 2
+
+            # Recompute duration: sample count stays the same, only rate changed
             if hasattr(self, 'total_samples_in_cache'):
                 self.time_duration = self.total_samples_in_cache / self.rate
-            else:
+            elif self.rate > 0:
                 self.time_duration = (old_duration * old_rate) / self.rate
+
+            # Also update the viewport full-range records used by zoom-out
+            self.spectrogram_view.full_t_range = (0.0, self.time_duration)
+            self.spectrogram_view.full_f_range = (self.fc - self.rate / 2,
+                                                   self.fc + self.rate / 2)
 
             vr = self.spectrogram_view.plot_item.viewRange()
             rel_t_min, rel_t_max = vr[0][0] / old_duration, vr[0][1] / old_duration
             rel_f_min = (vr[1][0] - old_bottom) / old_rate
             rel_f_max = (vr[1][1] - old_bottom) / old_rate
-            
+
             new_bottom = self.fc - self.rate / 2
             self.spectrogram_view.plot_item.setXRange(rel_t_min * self.time_duration, rel_t_max * self.time_duration, padding=0)
             self.spectrogram_view.plot_item.setYRange(new_bottom + rel_f_min * self.rate, new_bottom + rel_f_max * self.rate, padding=0)
@@ -41,7 +50,7 @@ class ViewControllerMixin:
                 rel_f = (marker.value() - old_bottom) / old_rate
                 marker.setPos(new_bottom + rel_f * self.rate)
 
-            if not needs_reprocess:
+            if not needs_reprocess and hasattr(self, 'full_spectrogram_cache'):
                 self.spectrogram_view.update_spectrogram(
                     self.full_spectrogram_cache, self.fc, self.rate, self.time_duration, auto_range=False
                 )
@@ -91,7 +100,7 @@ class ViewControllerMixin:
                 self.filter_region.hide()
         
         # Trigger reprocessing if we have data
-        if hasattr(self, 'full_spectrogram_cache'):
+        if self._has_data():
             self.start_processing()
 
     def on_filter_region_changed(self):
@@ -117,7 +126,7 @@ class ViewControllerMixin:
             self.filter_bounds = new_bounds
             
         # Trigger reprocessing when the user finishes dragging the region
-        if getattr(self, 'filter_enabled', False) and hasattr(self, 'full_spectrogram_cache'):
+        if getattr(self, 'filter_enabled', False) and self._has_data():
             self.start_processing()
 
     def refresh_cursor(self):

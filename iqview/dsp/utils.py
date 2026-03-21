@@ -274,7 +274,7 @@ class ViewportAwareReader(QThread):
                  pixel_width, is_complex=True, window_type="Hanning",
                  overlap_percent=0.0,
                  filter_enabled=False, f_min=None, f_max=None,
-                 oversample_factor=4, **kwargs):
+                 max_rows=20000, **kwargs):
         super().__init__()
         self.source        = source
         self.dtype         = dtype
@@ -334,16 +334,22 @@ class ViewportAwareReader(QThread):
         req_step = int(fft_size * (1.0 - overlap_percent / 100.0))
         req_step = max(1, req_step)
 
-        # Pixel-accurate row count: enough rows so that the image fills the
-        # given pixel width without wasting computation on invisible rows.
-        # oversample_factor > 1 computes extra rows so autoDownsample() can
-        # smooth the image and eliminate visible row-boundary artifacts.
+        # How many rows to compute:
+        #   - max_rows caps computation (same as FileReaderThread's 20,000 limit)
+        #   - req_step implements the requested overlap_percent as a minimum step
+        #   - pixe_width is a secondary floor: never compute fewer rows than pixels
+        #     (so the image always fills the display without upscaling artefacts)
         max_possible_rows = max(1, (view_samples - fft_size) // max(1, req_step) + 1)
-        self.num_rows  = min(self.pixel_width * oversample_factor, max_possible_rows)
+        # Use at least pixel_width rows so the image fills the screen,
+        # up to max_rows (like FileReaderThread) to bound computation time.
+        self.num_rows = min(max(self.pixel_width, max_possible_rows), max_rows)
+        self.num_rows = min(self.num_rows, max_possible_rows)  # can't exceed what data supports
 
         if self.num_rows > 1:
-            self.step_size = max(req_step,
-                                 (view_samples - fft_size) // (self.num_rows - 1))
+            # Natural step to fill the view, but never smaller than req_step
+            # (so the requested overlap is honoured as a minimum quality bar).
+            natural_step = (view_samples - fft_size) // (self.num_rows - 1)
+            self.step_size = max(req_step, natural_step)
         else:
             self.step_size = view_samples
 
