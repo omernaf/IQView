@@ -15,6 +15,43 @@ from iqview.ui import SpectrogramWindow
 from iqview.utils.settings_manager import SettingsManager
 from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext, detect_params_from_filename
 
+def load_mat_file(path):
+    """
+    Loads a .mat file containing Y, XDelta, and InputCenter fields.
+    Returns:
+        tuple: (data_bytes, type_str, fs, fc, is_complex)
+    """
+    import scipy.io
+    import numpy as np
+    
+    try:
+        data = scipy.io.loadmat(path)
+        if 'Y' not in data or 'XDelta' not in data or 'InputCenter' not in data:
+            print(f"Error: .mat file {path} is missing required fields (Y, XDelta, InputCenter).")
+            return None
+            
+        y = data['Y'].flatten()
+        # Handle potential 1x1 arrays from loadmat
+        x_delta = float(data['XDelta'].item()) if hasattr(data['XDelta'], 'item') else float(data['XDelta'])
+        input_center = float(data['InputCenter'].item()) if hasattr(data['InputCenter'], 'item') else float(data['InputCenter'])
+        
+        # Normalization: samples = Y * sqrt(10)
+        # Ensure we are using complex64 (32-bit float real/imag)
+        samples = (y * np.sqrt(10)).astype(np.complex64)
+        
+        dtype_str = 'complex64'
+        is_complex = True
+            
+        fs = 1.0 / x_delta
+        fc = input_center
+        
+        print(f"Successfully loaded .mat file: {len(samples):,} samples, Fs={fs/1e6:g} MHz, Fc={fc/1e6:g} MHz")
+        return samples.tobytes(), dtype_str, fs, fc, is_complex
+        
+    except Exception as e:
+        print(f"Error loading .mat file {path}: {e}")
+        return None
+
 def parse_args():
     sm = SettingsManager()
     parser = argparse.ArgumentParser(description="IQView - High-performance Static RF Spectrogram Viewer")
@@ -110,6 +147,12 @@ def main():
         print("Reading IQ data from stdin...", flush=True)
         data_source = sys.stdin.buffer.read()
         print(f"Read {len(data_source):,} bytes from stdin.", flush=True)
+    elif file_path and file_path.lower().endswith('.mat'):
+        mat_data = load_mat_file(file_path)
+        if mat_data:
+            data_source, type_str, fs, fc, is_complex = mat_data
+        else:
+            sys.exit(1)
     else:
         data_source = file_path  # may be None if no source given
 
