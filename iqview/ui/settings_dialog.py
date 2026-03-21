@@ -50,6 +50,7 @@ class PlotItemWidget(QWidget):
         self.layout.addStretch()
         
         self.spin = None
+        self.psd_combo = None
         if filter_len is not None:
             self.label = QLabel("Median Filter:")
             self.layout.addWidget(self.label)
@@ -59,6 +60,14 @@ class PlotItemWidget(QWidget):
             self.spin.setValue(filter_len)
             self.spin.setFixedWidth(60)
             self.layout.addWidget(self.spin)
+            
+        if "power spectrum density" in text.lower():
+            self.label = QLabel("Algorithm:")
+            self.layout.addWidget(self.label)
+            self.psd_combo = QComboBox()
+            self.psd_combo.addItems(["Welch", "Periodogram"])
+            # Set default or provided value later in add_plot_item
+            self.layout.addWidget(self.psd_combo)
         
         self.set_theme(p)
 
@@ -195,18 +204,21 @@ class SettingsDialog(QDialog):
         self.side_menu.currentRowChanged.connect(self.stacked_widget.setCurrentIndex)
         
         # --- Helper for Plot Lists ---
-        def add_plot_item(list_widget, text, checked, filter_len=None):
+        def add_plot_item(list_widget, text, checked, filter_len=None, psd_algo=None):
             # Keep item empty so QListWidget doesn't render text/checkbox over our widget
             item = QListWidgetItem()
             item.setSizeHint(QSize(0, 36))
             
             # Store serializable data in UserRole for drag-drop persistence
             # QVariant can handle dictionaries (QMap) fine without recursion errors
-            data = {"text": text, "checked": checked, "filter_len": filter_len}
+            data = {"text": text, "checked": checked, "filter_len": filter_len, "psd_algo": psd_algo}
             item.setData(Qt.ItemDataRole.UserRole, data)
             
             list_widget.addItem(item)
             widget = PlotItemWidget(text, checked, self.p, filter_len)
+            if widget.psd_combo and psd_algo:
+                widget.psd_combo.setCurrentText(psd_algo)
+                
             self._themed_plot_widgets.append(widget)
             list_widget.setItemWidget(item, widget)
             
@@ -217,11 +229,15 @@ class SettingsDialog(QDialog):
                     d["checked"] = widget.cb.isChecked()
                     if widget.spin:
                         d["filter_len"] = widget.spin.value()
+                    if widget.psd_combo:
+                        d["psd_algo"] = widget.psd_combo.currentText()
                     item.setData(Qt.ItemDataRole.UserRole, d)
                     
             widget.cb.toggled.connect(update_data)
             if widget.spin:
                 widget.spin.valueChanged.connect(update_data)
+            if widget.psd_combo:
+                widget.psd_combo.currentTextChanged.connect(update_data)
             
             return item
 
@@ -481,21 +497,23 @@ class SettingsDialog(QDialog):
         
         all_freq_plots = [
             "magnitude", "magnitude [dB]", "magnitude^2", 
+            "power spectrum density (PSD)",
             "real", "real [dB]", 
             "imag", "imag [dB]", "phase", "unwrapped phase"
         ]
         
         saved_freq_plots = self.mgr.get("core/frequency_plots", [])
+        psd_algo = str(self.mgr.get("core/psd_algorithm", "Welch"))
         
         # 1. Add saved ones
         for p in saved_freq_plots:
             if p in all_freq_plots:
-                add_plot_item(self.freq_plots_list, p, True)
+                add_plot_item(self.freq_plots_list, p, True, psd_algo=psd_algo if "PSD" in p else None)
                 
         # 2. Add remaining
         for p in all_freq_plots:
             if p not in saved_freq_plots:
-                add_plot_item(self.freq_plots_list, p, False)
+                add_plot_item(self.freq_plots_list, p, False, psd_algo=psd_algo if "PSD" in p else None)
                 
         self.freq_plots_layout.addWidget(self.freq_plots_list)
         
@@ -646,9 +664,14 @@ class SettingsDialog(QDialog):
                 if widget:
                     if widget.cb.isChecked():
                         active_freq_plots.append(widget.text)
+                        if widget.psd_combo:
+                            self.mgr.set("core/psd_algorithm", widget.psd_combo.currentText())
                 elif isinstance(data, dict):
                     if data.get("checked"):
-                        active_freq_plots.append(data.get("text"))
+                        plot_name = data.get("text")
+                        active_freq_plots.append(plot_name)
+                        if "PSD" in plot_name:
+                            self.mgr.set("core/psd_algorithm", data.get("psd_algo", "Welch"))
             self.mgr.set("core/frequency_plots", active_freq_plots)
             
             # Save Extension Mappings

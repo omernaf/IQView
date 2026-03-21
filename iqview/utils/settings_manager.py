@@ -37,6 +37,7 @@ class SettingsManager:
             "magnitude",
             "magnitude [dB]"
         ],
+        "core/psd_algorithm": "Welch",
         "ui/theme": "Light",
         "ui/colormap": "turbo",
         "ui/colormap_reversed": False,

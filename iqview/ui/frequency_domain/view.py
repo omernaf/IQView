@@ -8,6 +8,7 @@ from PyQt6.QtGui import QKeySequence
 from ..widgets import CustomViewBox
 from .marker_panel import FrequencyDomainMarkerPanel
 from ..themes import get_palette, get_scrollbar_stylesheet
+from ...dsp.dsp import compute_psd
 
 class FrequencyDomainView(QWidget):
     """
@@ -145,6 +146,7 @@ class FrequencyDomainView(QWidget):
             "magnitude": self.plot_magnitude,
             "magnitude [dB]": self.plot_magnitude_db,
             "magnitude^2": self.plot_magnitude_squared,
+            "power spectrum density (PSD)": self.plot_psd,
             "real": self.plot_real,
             "real [dB]": self.plot_real_db,
             "imag": self.plot_imag,
@@ -297,6 +299,100 @@ class FrequencyDomainView(QWidget):
         self._update_plot(20 * np.log10(data), "imag [dB]")
     def plot_phase(self): self._update_plot(np.angle(self.fft_data), "phase")
     def plot_unwrapped_phase(self): self._update_plot(np.unwrap(np.angle(self.fft_data)), "unwrapped phase")
+
+    def plot_psd(self):
+        method = "Welch"
+        if self.settings_mgr:
+            method = self.settings_mgr.get("core/psd_algorithm", "Welch")
+        
+        freqs, psd = compute_psd(self.samples, self.rate, method=method)
+        # scipy shifted freqs are relative to 0, we need to add center_freq
+        freqs += self.center_freq
+        
+        # PSD is usually viewed in dB/Hz
+        # Reference level: 1.0 (density)
+        psd_db = 10 * np.log10(psd + 1e-20)
+        
+        # We need to ensure freqs match self.freq_axis for markers if they are tied to indices
+        # but compute_psd might return a different number of points (e.g. nperseg for Welch)
+        # So we update current_plot_data and ALSO freq_axis if needed, 
+        # but that might break existing markers that rely on length.
+        # However, the user wants to VIEW it, so we should update the plot correctly.
+        
+        self._update_plot_dynamic(freqs, psd_db, "PSD [dB/Hz]")
+
+    def _update_plot_dynamic(self, freqs, data, y_label):
+        """Standard update but allows changing frequency axis (used for PSD)."""
+        # Save current view range
+        old_x_range = None
+        if not self._first_plot and self.view_box.viewRect() is not None:
+            old_x_range, old_y_range = self.view_box.viewRange()
+            self.zoom_y_dict[self.y_label_text] = old_y_range
+
+        self._first_plot = False
+        self.current_plot_data = data
+        self.y_label_text = y_label
+        
+        # Temporary override freq_axis for this plot
+        orig_freq_axis = self.freq_axis
+        self.freq_axis = freqs
+        
+        self.marker_panel.update_headers(self.interaction_mode, y_label)
+        if self.stats_region.isVisible(): self.update_statistics()
+        
+        self.plot_item.clear()
+        self.plot_item.addItem(self.stats_region)
+        self.stats_region.setZValue(50)
+        self.plot_item.addItem(self.stats_markers)
+        self.stats_markers.setZValue(100)
+        self.plot_item.getAxis('left').setLabel(y_label)
+        
+        theme = self.settings_mgr.get("ui/theme", "Dark")
+        p = get_palette(theme)
+        pen = pg.mkPen(p.accent, width=1.5)
+        curve = self.plot_item.plot(freqs, data, pen=pen)
+        curve.setZValue(0)
+        
+        if hasattr(self, 'stats_line') and self.stats_line:
+            if self.stats_line not in self.plot_item.items:
+                self.plot_item.addItem(self.stats_line)
+            self.stats_line.setZValue(100)
+            
+        for m in self.markers_freq: 
+            self.plot_item.addItem(m)
+        for m in self.markers_freq_endless: 
+            self.plot_item.addItem(m)
+            
+        active_y = self.markers_y_dict.get(y_label, [])
+        for m in active_y:
+            self.plot_item.addItem(m)
+
+        # Bounds checks
+        valid_data = data[np.isfinite(data)]
+        if len(valid_data) > 0:
+            y_min, y_max = np.min(valid_data), np.max(valid_data)
+        else:
+            y_min, y_max = -100.0, 0.0
+            
+        y_range = y_max - y_min if y_max != y_min else 1.0
+        f_start, f_end = float(freqs[0]), float(freqs[-1])
+        y_min_lim, y_max_lim = float(y_min - y_range*0.1), float(y_max + y_range*0.1)
+        
+        self.view_box.setLimits(xMin=f_start, xMax=f_end, yMin=y_min_lim, yMax=y_max_lim)
+        
+        if y_label in self.zoom_y_dict:
+            self.plot_item.setYRange(*self.zoom_y_dict[y_label], padding=0)
+        else:
+            self.plot_item.setYRange(float(y_min - y_range*0.05), float(y_max + y_range*0.05), padding=0)
+            
+        if old_x_range: self.plot_item.setXRange(*old_x_range, padding=0)
+        else: self.plot_item.setXRange(f_start, f_end, padding=0)
+        
+        self.update_scrollbars()
+        # Restore orig_freq_axis for other plots? 
+        # No, if we stay in PSD mode, markers should work with PSD freqs.
+        # But wait, markers are placed based on freq_axis. If freq_axis changes, markers might "jump" if they are index-based.
+        # In this app, InfiniteLine markers use absolute values (freq), so it should be fine.
 
     def _update_plot(self, data, y_label):
         old_x_range = None
