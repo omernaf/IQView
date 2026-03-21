@@ -130,5 +130,15 @@ IQView saves its state in the system registry or config files via `QSettings`. Y
 
 ---
 
+## 📚 Detailed Documentation
+
+For a deep dive into the specific features and mathematical foundations of each analysis view, please refer to the dedicated documentation files:
+
+- [🌌 **Spectrogram View**](docs/spectrogram.md): STFT, windowing, colormaps, and OpenGL rendering.
+- [⏳ **Time Domain View**](docs/time_domain.md): Plot modes, marker locking logic, and statistics.
+- [📶 **Frequency Domain View**](docs/frequency_domain.md): FFT analysis, PSD estimation, and integrated power.
+
+---
+
 ## 📄 License
 IQView is open-source software. Original author: Omer Naf (omernaf).
