@@ -151,9 +151,8 @@ class SettingsDialog(QDialog):
         scroll.setWidgetResizable(True)
         scroll.setWidget(widget)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        # Force the viewport to be transparent so the main background shows through
-        scroll.viewport().setAutoFillBackground(False)
-        scroll.viewport().setStyleSheet("background: transparent;")
+        # Use a more specific selector to avoid inheritance issues with popups
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; } QScrollArea > QWidget { background: transparent; }")
         
         self.stacked_widget.addWidget(scroll)
         item = QListWidgetItem(title)
@@ -216,7 +215,6 @@ class SettingsDialog(QDialog):
         
         for name, _ in tabs_info:
             content_widget = QWidget()
-            content_widget.setObjectName("settings_tab_content")
             form_layout = QFormLayout(content_widget)
             
             # Use refined spacing for better density while maintaining an airy feel
@@ -400,7 +398,6 @@ class SettingsDialog(QDialog):
 
         # --- Plots Tab ---
         self.plots_tab = QWidget()
-        self.plots_tab.setObjectName("settings_tab_content")
         self.plots_layout = QVBoxLayout(self.plots_tab)
         
         help_lbl = QLabel("Drag to reorder. Checked plots appear in the Time Domain toolbar.")
@@ -452,7 +449,6 @@ class SettingsDialog(QDialog):
 
         # --- Frequency Plots Tab ---
         self.freq_plots_tab = QWidget()
-        self.freq_plots_tab.setObjectName("settings_tab_content")
         self.freq_plots_layout = QVBoxLayout(self.freq_plots_tab)
         
         freq_help_lbl = QLabel("Select and reorder frequency domain plots (Drag-and-drop to reorder):")
@@ -501,7 +497,6 @@ class SettingsDialog(QDialog):
 
         # --- File Types Tab ---
         self.file_types_tab = QWidget()
-        self.file_types_tab.setObjectName("settings_tab_content")
         self.file_types_layout = QVBoxLayout(self.file_types_tab)
         
         ft_help = QLabel("Map file extensions (e.g. '.32f') to a data type. These are used when auto-detecting the data type of an opened file.")
@@ -663,13 +658,17 @@ class SettingsDialog(QDialog):
         self._update_dialog_style(theme_text)
 
     def _update_sidebar_style(self, theme_text):
-        from .themes import get_palette
-        p = get_palette(theme_text)
-        
-        bg = p.bg_sidebar
-        text = p.text_main
-        sel_bg = p.accent
-        sel_text = p.text_header
+        theme = theme_text.lower()
+        if theme == "dark":
+            bg = "#1e1e1e"
+            text = "#d4d4d4"
+            sel_bg = "#007acc"
+            sel_text = "#ffffff"
+        else:
+            bg = "#f3f3f3"
+            text = "#000000"
+            sel_bg = "#007acc"
+            sel_text = "#ffffff"
             
         self.side_menu.setStyleSheet(f"""
             QListWidget {{ 
@@ -684,7 +683,7 @@ class SettingsDialog(QDialog):
                 margin-bottom: 2px;
             }}
             QListWidget::item:hover {{
-                background-color: {p.border};
+                background-color: rgba(128, 128, 128, 0.1);
             }}
             QListWidget::item:selected {{ 
                 background-color: {sel_bg};
