@@ -74,7 +74,18 @@ def parse_args():
     parser.add_argument('--uninstall-desktop', action='store_true', help='Remove Start Menu shortcut and File associations')
     parser.add_argument('--install-mat', action='store_true', help='Associate .mat files with IQView')
     parser.add_argument('--uninstall-mat', action='store_true', help='Remove .mat file association')
-    
+
+    # Rendering mode (overrides the settings default for this session)
+    render_group = parser.add_mutually_exclusive_group()
+    render_group.add_argument(
+        '--lazy', dest='lazy_rendering', action='store_const', const=True, default=None,
+        help='Enable on-demand (lazy) rendering — only process the visible file slice'
+    )
+    render_group.add_argument(
+        '--full', dest='lazy_rendering', action='store_const', const=False,
+        help='Disable lazy rendering — process the entire file upfront (classic mode)'
+    )
+
     return parser.parse_args()
 
 def main():
@@ -169,6 +180,13 @@ def main():
         data_source = file_path  # may be None if no source given
 
     pg.setConfigOptions(useOpenGL=True, enableExperimental=True, imageAxisOrder='row-major')
+    
+    # Resolve rendering mode: CLI flag > settings default
+    # args.lazy_rendering is True (--lazy), False (--full), or None (not specified)
+    if args.lazy_rendering is not None:
+        sm.set("core/lazy_rendering", args.lazy_rendering)
+        mode_label = "lazy" if args.lazy_rendering else "full-file"
+        print(f"Rendering mode forced by CLI: {mode_label}")
     
     app = QApplication(sys.argv)
     window = SpectrogramWindow(data_source, dtype, fs, fc, args.fft, args.profile, is_complex=is_complex)

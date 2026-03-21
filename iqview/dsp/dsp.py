@@ -29,30 +29,21 @@ def postprocess_fft(fft_result, fft_size):
 
 from scipy import signal
 
-def apply_bpf(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, **kwargs):
+def design_filter(fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, **kwargs):
     """
-    Applies a sharp COMPLEX (Asymmetric) Band-Pass filter to IQ data.
-    Uses Shift-to-Baseband -> Low-Pass Filter -> Shift-Back-Up approach.
-    This ensures that ONLY the selected freq range is kept even in complex signals.
-    Supports choice of Butterworth, Chebyshev, Elliptic, and Bessel.
+    Designs a Second-Order Sections (SOS) low-pass filter representing the target band.
+    Returns (sos, f_center) where f_center is the frequency that was shifted to 0 Hz.
     """
-    if f_min >= f_max or len(data) == 0:
-        return data
+    if f_min >= f_max:
+        return None, 0.0
         
     f_center = (f_min + f_max) / 2.0
     bandwidth = f_max - f_min
     
-    # 1. Shift target band to 0 Hz
-    t = np.arange(len(data)) / fs
-    shift_vector = np.exp(-2j * np.pi * f_center * t)
-    data_shifted = data * shift_vector
-    
-    # 2. Design Low-Pass Filter at half-bandwidth
     nyquist = fs / 2.0
     cutoff = (bandwidth / 2.0) / nyquist
     cutoff = max(0.0001, min(cutoff, 0.9999))
     
-    # Design SOS filter based on selected type
     if filter_type == "Butterworth":
         sos = signal.butter(order, cutoff, btype='low', output='sos')
     elif filter_type == "Chebyshev I":
@@ -64,11 +55,27 @@ def apply_bpf(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, r
         sos = signal.bessel(order, cutoff, btype='low', output='sos', norm=b_norm)
     else: # Default: Elliptic
         sos = signal.ellip(order, rp, rs, cutoff, btype='low', output='sos')
+        
+    return sos, f_center
+
+def apply_bpf(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, **kwargs):
+    """
+    Applies a sharp COMPLEX (Asymmetric) Band-Pass filter to IQ data.
+    Uses Shift-to-Baseband -> Low-Pass Filter -> Shift-Back-Up approach.
+    """
+    sos, f_center = design_filter(fs, f_min, f_max, filter_type, order, rp, rs, **kwargs)
+    if sos is None or len(data) == 0:
+        return data
+        
+    # 1. Shift target band to 0 Hz
+    t = np.arange(len(data)) / fs
+    shift_vector = np.exp(-2j * np.pi * f_center * t)
+    data_shifted = data * shift_vector
     
-    # 3. Apply Filter
+    # 2. Apply Filter
     data_filtered = signal.sosfilt(sos, data_shifted)
     
-    # 4. Shift back to original frequency band
+    # 3. Shift back to original frequency band
     return data_filtered * np.conj(shift_vector)
 
 def compute_psd(samples, fs=1.0, method='Welch', **kwargs):

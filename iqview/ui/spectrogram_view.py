@@ -126,6 +126,7 @@ class SpectrogramView(QWidget):
         self.view_box.sigRangeChanged.connect(self.update_scrollbars)
         self.view_box.sigRangeChanged.connect(lambda: self.parent_window.update_grid('TIME'))
         self.view_box.sigRangeChanged.connect(lambda: self.parent_window.update_grid('FREQ'))
+        self.view_box.sigRangeChanged.connect(self._on_range_changed_lazy)
         self.x_scroll.valueChanged.connect(self.scroll_view)
         self.y_scroll.valueChanged.connect(self.scroll_view)
 
@@ -229,6 +230,85 @@ class SpectrogramView(QWidget):
             prev = getattr(self.parent_window, '_prev_interaction_mode', 'TIME')
             self.parent_window.set_interaction_mode(prev)
         super().keyReleaseEvent(ev)
+
+    # ---- Lazy render helpers ----
+
+    def _on_range_changed_lazy(self):
+        """Forward viewport changes to the data handler for lazy re-rendering."""
+        if hasattr(self.parent_window, 'on_viewport_changed'):
+            self.parent_window.on_viewport_changed()
+
+    def get_pixel_width(self):
+        """Return the current plot pixel width (integer). Used by ViewportAwareReader
+        to compute how many FFT rows are actually needed."""
+        try:
+            rect = self.view_box.screenGeometry()
+            if rect and rect.width() > 0:
+                return int(rect.width())
+        except Exception:
+            pass
+        # Fallback: use the widget width
+        return max(1, self.glw_plot.width())
+
+    def update_lazy_tile(self, spectrogram, fc, rate, t_start, t_end,
+                         auto_range=False):
+        """
+        Like update_spectrogram() but positions the image at [t_start, t_end]
+        instead of always starting at 0.  Used by the lazy renderer.
+        """
+        duration = t_end - t_start
+        if duration <= 0:
+            return
+
+        valid_data = spectrogram[spectrogram > -190.0]
+        if len(valid_data) > 0:
+            max_v = float(np.max(valid_data))
+            p5 = float(np.percentile(valid_data, 5))
+            if max_v - p5 < 20.0:
+                min_v = max_v - 80.0
+            else:
+                min_v = p5
+            min_v = max(min_v, max_v - 120.0)
+        else:
+            max_v = 0.0
+            min_v = -100.0
+
+        if not auto_range:
+            levels = self.img.levels if self.img.levels is not None else [min_v, max_v]
+        else:
+            levels = [min_v, max_v]
+            self.level_region.setRegion([min_v, max_v])
+
+        self.img.setImage(spectrogram, autoLevels=False, levels=levels,
+                          autoDownsample=True)
+        # Place the image rect at the correct world-space position
+        self.img.setRect(QRectF(t_start, fc - rate / 2, duration, rate))
+
+        if auto_range:
+            # Use the full file extent (set by display_lazy_tile before calling us)
+            # rather than autoRange() which would only zoom to the rendered tile.
+            t0, t1 = self.full_t_range
+            f0, f1 = self.full_f_range
+            if t1 > t0 and f1 > f0:
+                self.plot_item.setXRange(t0, t1, padding=0)
+                self.plot_item.setYRange(f0, f1, padding=0)
+            else:
+                self.plot_item.autoRange()
+
+        # Update spectrum envelope
+        min_env = np.min(spectrogram, axis=1)
+        max_env = np.max(spectrogram, axis=1)
+        freqs = np.linspace(fc - rate / 2, fc + rate / 2, len(min_env))
+        self.min_env_curve.setData(freqs, min_env)
+        self.max_env_curve.setData(freqs, max_env)
+        self.spectrum_plot.setXRange(fc - rate / 2, fc + rate / 2, padding=0)
+
+        if auto_range:
+            pad = (max_v - min_v) * 0.1
+            self.spectrum_plot.setYRange(min_v, max_v, padding=0.1)
+            self.level_region.setBounds([min_v - pad, max_v + pad])
+
+    # ---- Scrollbars ----
 
     def update_scrollbars(self):
         if self._block_signals: return

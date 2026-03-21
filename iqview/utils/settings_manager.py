@@ -39,6 +39,7 @@ class SettingsManager:
             "magnitude"
         ],
         "core/psd_algorithm": "Welch",
+        "core/lazy_rendering": True,
         "ui/theme": "Light",
         "ui/colormap": "turbo",
         "ui/colormap_reversed": False,

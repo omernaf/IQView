@@ -295,6 +295,18 @@ class SettingsDialog(QDialog):
         self.show_inv_combo.setCurrentText("On" if show_inv_val else "Off")
         self._add_reset_row(self.general_form, "Show 1/T (Hz) Row in Markers:", self.show_inv_combo, "ui/show_inv_time")
         
+        self.general_form.addRow(QLabel(" "))
+        self.general_form.addRow(QLabel("<b>Performance</b>"))
+        self.lazy_rendering_cb = QCheckBox("On-demand rendering (lazy mode)")
+        self.lazy_rendering_cb.setChecked(bool(self.mgr.get("core/lazy_rendering", True)))
+        self.lazy_rendering_cb.setToolTip(
+            "When enabled, only the signal data visible in the current viewport is\n"
+            "processed. This makes large files open instantly and reduces memory usage.\n"
+            "Zooming in will re-render at higher resolution automatically.\n"
+            "Disable to revert to the classic full-file processing mode."
+        )
+        self._add_reset_row(self.general_form, "Lazy Rendering:", self.lazy_rendering_cb, "core/lazy_rendering")
+        
         self.add_side_tab(self.general_tab, "General")
 
         # --- Appearance Tab ---
@@ -632,6 +644,7 @@ class SettingsDialog(QDialog):
             self.mgr.set("core/filter_ripple", float(self.filter_ripple_edit.text()))
             self.mgr.set("core/filter_stopband", float(self.filter_stopband_edit.text()))
             self.mgr.set("core/filter_bessel_norm", self.filter_bessel_norm_combo.currentText())
+            self.mgr.set("core/lazy_rendering", self.lazy_rendering_cb.isChecked())
             
             # Save Plots
             active_plots = []

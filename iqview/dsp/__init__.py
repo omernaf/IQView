@@ -1,2 +1,2 @@
 from .dsp import apply_bpf
-from .utils import FileReaderThread
+from .utils import FileReaderThread, ViewportAwareReader

@@ -8,9 +8,8 @@ IQView is a streamlined, high-performance GUI application designed for deep anal
 
 ## 🚀 Key Features
 
-- **Blazing Fast Spectrogram**: GPU-accelerated rendering using PyOpenGL for smooth navigation of massive datasets.
-- **Multi-Domain Analysis**: Interactive Spectrogram, Time Domain (Waveform), and Frequency Domain (Spectrum) views.
-- **Dynamic Filtering**: Apply real-time complex band-pass filters to isolate signals of interest.
+- **Lazy Rendering Engine**: Explore ultra-long captures (e.g. 1 hour+) without RAM exhaustion by computing FFTs on-demand only for the visible viewport.
+- **Dynamic Filtering**: Zero-cost frequency-domain BPF with realistic roll-offs for real-time signal isolation.
 - **Advanced Markers**: Locked delta and center markers for precise timing and frequency measurements.
 - **Statistical Analysis**: Instant computation of Min, Max, Mean, Median, and Integrated Power for selected segments.
 - **Export Capabilities**: Capture raw spectrogram images or full plots with axes for reports.
@@ -85,11 +84,12 @@ In the Frequency Domain view, selecting a region $[f_1, f_2]$ computes the integ
 $$\text{Total Power} = \sum_{k \in \{f_1, f_2\}} |X[k]|^2$$
 For dB displays, this is converted via $10 \log_{10}$ to represent total power relative to full scale.
 
-### 4. Complex Band-Pass Filter (BPF)
-When the filter is enabled, IQView performs an asymmetric complex filter to isolate a specific band:
-1.  **Shift to Baseband**: $x_{\text{base}}[n] = x[n] \cdot e^{-j 2\pi f_{\text{target}} \frac{n}{f_s}}$
-2.  **Low-Pass Filter**: Applied using a Second-Order Sections (SOS) IIR filter (Elliptic, Butterworth, etc.) designed for the target bandwidth $\Delta f$.
-3.  **Shift Back**: $x_{\text{filt}}[n] = x_{\text{base, filt}}[n] \cdot e^{j 2\pi f_{\text{target}} \frac{n}{f_s}}$
+### 4. Optimized Complex BPF
+For the main spectrogram display, IQView applies an optimized frequency-domain mask to the FFT results:
+1.  **Design**: A standard IIR low-pass filter (Elliptic, Butterworth, etc.) is designed for the target bandwidth.
+2.  **Evaluate**: The filter's complex frequency response $H(f)$ is evaluated at each FFT bin frequency using `sosfreqz`.
+3.  **Apply**: Each FFT row is multiplied by the response magnitude: $X_{\text{filt}}[k] = X[k] \cdot |H(f_k)|$.
+This provides **zero-cost** filtering with realistic visual roll-offs. For time-domain analysis in pop-up tabs, the original sample-by-sample IIR filter is still used to maintain phase and signal integrity.
 
 ---
 
@@ -121,6 +121,8 @@ When the filter is enabled, IQView performs an asymmetric complex filter to isol
 | `-c`, `--fc` | Center frequency in Hz | 0 Hz |
 | `-t`, `--type` | Data type (`int16`, `float32`, `complex64`, etc.) | `complex64` |
 | `-s`, `--fft` | FFT bin size (Power of 2) | 1024 |
+| `--lazy` | Force on-demand viewport rendering | Settings |
+| `--full` | Force full-file upfront rendering | Settings |
 | `--profile` | Run with cProfile for performance debugging | False |
 
 ---

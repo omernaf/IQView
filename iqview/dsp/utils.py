@@ -2,7 +2,8 @@ import io
 import os
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
-from .dsp import preprocess_chunk, postprocess_fft, apply_bpf
+from scipy import signal
+from .dsp import preprocess_chunk, postprocess_fft, apply_bpf, design_filter
 
 class FileReaderThread(QThread):
     """
@@ -28,15 +29,17 @@ class FileReaderThread(QThread):
         self.profile_enabled = profile_enabled
         self.running = True
         
-        # Filter settings
-        self.filter_enabled = filter_enabled
-        self.f_min = f_min
-        self.f_max = f_max
-        self.filter_type = kwargs.get('filter_type', 'Elliptic')
-        self.filter_order = kwargs.get('filter_order', 8)
-        self.filter_ripple = kwargs.get('filter_ripple', 0.1)
-        self.filter_stopband = kwargs.get('filter_stopband', 60.0)
         self.filter_bessel_norm = kwargs.get('filter_bessel_norm', 'phase')
+        
+        # Precompute frequency-domain BPF response for consistent visuals and performance
+        self.freq_mask = None
+        if filter_enabled and f_min is not None and f_max is not None:
+            sos, f_center = design_filter(sample_rate, f_min, f_max, **kwargs)
+            if sos is not None:
+                bin_freqs = np.fft.fftshift(np.fft.fftfreq(fft_size, 1.0 / sample_rate))
+                f_eval = bin_freqs - f_center
+                _, h = signal.sosfreqz(sos, f_eval, fs=sample_rate)
+                self.freq_mask = np.abs(h).astype(np.float32)
         
         # Select Window Function
         if window_type == "Hanning":
@@ -151,14 +154,8 @@ class FileReaderThread(QThread):
                         # Already real samples, just treat as complex with 0 imag
                         full_complex = raw_array.astype(np.complex64)
                     
-                    # Apply Band-Pass Filter if enabled
-                    if self.filter_enabled and self.f_min is not None and self.f_max is not None:
-                        full_complex = apply_bpf(
-                            full_complex, self.sample_rate, self.f_min, self.f_max,
-                            filter_type=self.filter_type, order=self.filter_order,
-                            rp=self.filter_ripple, rs=self.filter_stopband,
-                            bessel_norm=self.filter_bessel_norm
-                        )
+                    # No time-domain filtering — BPF is applied in the frequency domain
+                    # below (after fftshift) for maximum performance and visual consistency.
 
                     # Extract windows into a 2D array for vectorized processing
                     # We use stride_tricks to avoid copying data where possible
@@ -189,6 +186,11 @@ class FileReaderThread(QThread):
                     
                     # Post-process (vectorized)
                     shifted_batch = np.fft.fftshift(fft_batch, axes=1)
+                    
+                    # Apply frequency-domain BPF response mask
+                    if self.freq_mask is not None:
+                        shifted_batch *= self.freq_mask # broadcast across batch, zero-cost
+                        
                     mag_batch = np.abs(shifted_batch)
                     epsilon = np.float32(1e-10)
                     mag_batch = np.maximum(mag_batch, epsilon)
@@ -233,6 +235,239 @@ class FileReaderThread(QThread):
         except Exception as e:
             print(f"Error reading IQ source: {e}")
             
+    def stop(self):
+        self.running = False
+        self.wait()
+
+
+class ViewportAwareReader(QThread):
+    """
+    On-demand / lazy spectrogram renderer.
+
+    Instead of processing the entire file, this thread only reads the file
+    slice that corresponds to [t_start, t_end] seconds and computes exactly
+    `pixel_width` FFT rows — one per horizontal pixel available in the plot.
+
+    This means:
+     - Initial load is nearly instant (only the visible portion is computed).
+     - Zooming in re-renders at higher resolution automatically.
+     - Very large files that cannot fit in RAM work correctly.
+
+    Signals
+    -------
+    progress(current, total)
+    finished_processing(spectrogram_2d, t_start, t_end)
+        spectrogram_2d : np.ndarray, shape (fft_size, num_rows)  — same
+                         orientation as FileReaderThread so the display code
+                         is identical.
+        t_start, t_end : float — the time range this render covers in seconds.
+    """
+
+    progress = pyqtSignal(int, int)
+    finished_processing = pyqtSignal(np.ndarray, float, float)
+
+    # Number of extra samples added on each side of the slice before the BPF
+    # is applied.  These samples are processed but the resulting FFT rows
+    # that fall entirely within the guard are discarded.  This avoids filter
+    # transient artefacts at both edges.
+    BPF_GUARD_SAMPLES = 4096
+
+    def __init__(self, source, dtype, fft_size, sample_rate, t_start, t_end,
+                 pixel_width, is_complex=True, window_type="Hanning",
+                 overlap_percent=0.0,
+                 filter_enabled=False, f_min=None, f_max=None,
+                 max_rows=20000, **kwargs):
+        super().__init__()
+        self.source        = source
+        self.dtype         = dtype
+        self.fft_size      = fft_size
+        self.sample_rate   = sample_rate
+        self.t_start       = t_start
+        self.t_end         = t_end
+        self.pixel_width   = max(1, int(pixel_width))
+        self.is_complex    = is_complex
+        self.running       = True
+
+        # Filter settings
+        self.filter_enabled   = filter_enabled
+        self.f_min            = f_min
+        self.f_max            = f_max
+        self.filter_type      = kwargs.get('filter_type', 'Elliptic')
+        self.filter_order     = kwargs.get('filter_order', 8)
+        self.filter_ripple    = kwargs.get('filter_ripple', 0.1)
+        self.filter_stopband  = kwargs.get('filter_stopband', 60.0)
+        self.filter_bessel_norm = kwargs.get('filter_bessel_norm', 'phase')
+
+        # Window function
+        if window_type == "Hanning":
+            self.window = np.hanning(fft_size).astype(np.float32)
+        elif window_type == "Hamming":
+            self.window = np.hamming(fft_size).astype(np.float32)
+        elif window_type == "Blackman":
+            self.window = np.blackman(fft_size).astype(np.float32)
+        elif window_type == "Bartlett":
+            self.window = np.bartlett(fft_size).astype(np.float32)
+        else:
+            self.window = np.ones(fft_size, dtype=np.float32)
+
+        # --- Derive sample indices ---
+        item_size = np.dtype(dtype).itemsize
+        if isinstance(source, (bytes, bytearray)):
+            file_size = len(source)
+        else:
+            file_size = os.path.getsize(source)
+
+        read_multiplier = 2 if is_complex else 1
+        num_items = file_size // item_size
+        total_samples = num_items // read_multiplier
+
+        # Clamp requested range to file bounds
+        self.s_start = max(0, int(round(t_start * sample_rate)))
+        self.s_end   = min(total_samples, int(round(t_end   * sample_rate)))
+
+        view_samples = self.s_end - self.s_start
+        if view_samples <= 0:
+            self.num_rows = 0
+            return
+
+        # How many rows do we need? One per pixel width, but at most one per
+        # fft_size worth of samples (can't have more rows than samples).
+        # We also honour the overlap setting if provided.
+        req_step = int(fft_size * (1.0 - overlap_percent / 100.0))
+        req_step = max(1, req_step)
+
+        # How many rows to compute:
+        #   - max_rows caps computation (same as FileReaderThread's 20,000 limit)
+        #   - req_step implements the requested overlap_percent as a minimum step
+        #   - pixe_width is a secondary floor: never compute fewer rows than pixels
+        #     (so the image always fills the display without upscaling artefacts)
+        max_possible_rows = max(1, (view_samples - fft_size) // max(1, req_step) + 1)
+        # Use at least pixel_width rows so the image fills the screen,
+        # up to max_rows (like FileReaderThread) to bound computation time.
+        self.num_rows = min(max(self.pixel_width, max_possible_rows), max_rows)
+        self.num_rows = min(self.num_rows, max_possible_rows)  # can't exceed what data supports
+
+        if self.num_rows > 1:
+            # Natural step to fill the view, but never smaller than req_step
+            # (so the requested overlap is honoured as a minimum quality bar).
+            natural_step = (view_samples - fft_size) // (self.num_rows - 1)
+            self.step_size = max(req_step, natural_step)
+        else:
+            self.step_size = view_samples
+
+        # Precompute frequency-domain BPF response (much better than binary mask).
+        # We use the same filter design as the time-domain path, then evaluate
+        # its frequency response (roll-off) at each FFT bin.
+        self.freq_mask = None
+        if filter_enabled and f_min is not None and f_max is not None:
+            sos, f_center = design_filter(sample_rate, f_min, f_max, **kwargs)
+            if sos is not None:
+                # Get bins relative to fc (baseband)
+                bin_freqs = np.fft.fftshift(np.fft.fftfreq(fft_size, 1.0 / sample_rate))
+                # Evaluate at (bin_freq - f_center) because the filter is designed as a low-pass 
+                # on a signals that was shifted by -f_center in the time domain.
+                f_eval = bin_freqs - f_center
+                _, h = signal.sosfreqz(sos, f_eval, fs=sample_rate)
+                self.freq_mask = np.abs(h).astype(np.float32)
+
+        # No guard region needed — we no longer filter in time-domain
+        self.s_read_start = self.s_start
+        self.s_read_end   = self.s_end
+
+    # ------------------------------------------------------------------
+    def run(self):
+        if self.num_rows <= 0:
+            self.finished_processing.emit(
+                np.zeros((self.fft_size, 1), dtype=np.float32),
+                self.t_start, self.t_end)
+            return
+
+        item_size   = np.dtype(self.dtype).itemsize
+        read_mult   = 2 if self.is_complex else 1
+        batch_size  = 500
+
+        if isinstance(self.source, (bytes, bytearray)):
+            data_file = io.BytesIO(self.source)
+        else:
+            data_file = open(self.source, 'rb')
+
+        try:
+            with data_file as f:
+                # --- Single read: load the entire slice + guard into RAM ---
+                offset = self.s_read_start * read_mult * item_size
+                n_to_read = (self.s_read_end - self.s_read_start) * read_mult
+                f.seek(offset)
+                raw_bytes = f.read(n_to_read * item_size)
+
+            raw_array = np.frombuffer(raw_bytes, dtype=self.dtype).astype(np.float32)
+            if self.dtype == np.int16:
+                raw_array /= 32768.0
+
+            if self.is_complex:
+                full_complex = raw_array[0::2] + 1j * raw_array[1::2]
+            else:
+                full_complex = raw_array.astype(np.complex64)
+
+            # No time-domain filtering — BPF is applied in the frequency domain
+            # below (after fftshift) as a bin mask, which is essentially free.
+            valid_complex = full_complex
+
+            if len(valid_complex) < self.fft_size:
+                padded = np.zeros(self.fft_size, dtype=np.complex64)
+                padded[:len(valid_complex)] = valid_complex
+                valid_complex = padded
+
+            # --- Batch-process FFT rows ---
+            from numpy.lib.stride_tricks import as_strided
+            spectrogram = np.zeros((self.num_rows, self.fft_size), dtype=np.float32)
+            itemsize = valid_complex.itemsize
+
+            row_idx = 0
+            while self.running and row_idx < self.num_rows:
+                rows_now = min(batch_size, self.num_rows - row_idx)
+
+                required = (rows_now - 1) * self.step_size + self.fft_size
+                if row_idx * self.step_size + required > len(valid_complex):
+                    # Pad to avoid striding past the end
+                    needed_total = row_idx * self.step_size + required
+                    padded = np.zeros(needed_total, dtype=valid_complex.dtype)
+                    padded[:len(valid_complex)] = valid_complex
+                    valid_complex = padded
+
+                batch = as_strided(
+                    valid_complex[row_idx * self.step_size:],
+                    shape=(rows_now, self.fft_size),
+                    strides=(self.step_size * itemsize, itemsize),
+                    writeable=False
+                )
+
+                windowed  = batch * self.window
+                fft_out   = np.fft.fft(windowed, axis=1)
+                shifted   = np.fft.fftshift(fft_out, axes=1)
+
+                # Apply frequency-domain BPF mask (zero out out-of-band bins)
+                if self.freq_mask is not None:
+                    shifted *= self.freq_mask  # broadcast across rows, zero-cost
+
+                mag       = np.abs(shifted)
+                mag       = np.maximum(mag, np.float32(1e-10))
+                db        = 20.0 * np.log10(mag)
+
+                spectrogram[row_idx:row_idx + rows_now] = db
+                row_idx += rows_now
+                self.progress.emit(row_idx, self.num_rows)
+                QThread.msleep(1)
+
+            if self.running:
+                self.finished_processing.emit(
+                    spectrogram[:row_idx].T,  # (fft_size, num_rows)
+                    self.t_start,
+                    self.t_end
+                )
+
+        except Exception as e:
+            print(f"[ViewportAwareReader] Error: {e}")
+
     def stop(self):
         self.running = False
         self.wait()

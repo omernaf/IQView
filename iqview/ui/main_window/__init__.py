@@ -161,7 +161,10 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         menu.exec(pos)
 
     def closeEvent(self, event):
-        if hasattr(self, 'worker'): self.worker.stop()
+        if hasattr(self, '_stop_all_workers'):
+            self._stop_all_workers()
+        elif hasattr(self, 'worker'):
+            self.worker.stop()
         event.accept()
 
     def keyPressEvent(self, event):
