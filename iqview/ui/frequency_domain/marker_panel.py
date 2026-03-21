@@ -52,7 +52,26 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.btn_marker_freq_endless.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_freq_endless, 0, 1)
 
-        # 2. Magnitude (Bottom-Left)
+        # 3. Zoom
+        self.btn_zoom = QPushButton("")
+        self.btn_zoom.setIcon(self._get_icon("zoom_mode"))
+        self.btn_zoom.setIconSize(QSize(32, 32))
+        self.btn_zoom.setObjectName("mode_btn")
+        self.btn_zoom.setToolTip("Zoom Mode (Rubberband) [Z]")
+        self.btn_zoom.setCheckable(True)
+        self.mode_btn_layout.addWidget(self.btn_zoom, 0, 2)
+        
+        # 4. Home
+        self.btn_home = QPushButton("")
+        self.btn_home.setIcon(self._get_icon("reset_zoom"))
+        self.btn_home.setIconSize(QSize(32, 32))
+        self.btn_home.setObjectName("mode_btn")
+        self.btn_home.setToolTip("Reset Zoom (Home)")
+        self.mode_btn_layout.addWidget(self.btn_home, 0, 3)
+
+        # --- Row 2 ---
+
+        # 2. Magnitude
         self.btn_marker_mag = DoubleClickButton("")
         self.btn_marker_mag.setIcon(self._get_icon("horizontal_markers"))
         self.btn_marker_mag.setIconSize(QSize(32, 32))
@@ -60,7 +79,7 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.btn_marker_mag.setToolTip("Magnitude Markers (Double-click to clear) [M]")
         self.btn_marker_mag.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_mag, 1, 0)
-
+        
         # 2b. Endless Magnitude
         self.btn_marker_mag_endless = DoubleClickButton("")
         self.btn_marker_mag_endless.setIcon(self._get_icon("endless_horizontal_markers"))
@@ -69,41 +88,24 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.btn_marker_mag_endless.setToolTip("Endless Magnitude Markers")
         self.btn_marker_mag_endless.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_mag_endless, 1, 1)
-        
-        # 3. Zoom
-        self.btn_zoom = QPushButton("")
-        self.btn_zoom.setIcon(self._get_icon("zoom_mode"))
-        self.btn_zoom.setIconSize(QSize(32, 32))
-        self.btn_zoom.setObjectName("mode_btn")
-        self.btn_zoom.setToolTip("Zoom Mode [Hold Ctrl]")
-        self.btn_zoom.setCheckable(True)
-        self.mode_btn_layout.addWidget(self.btn_zoom, 0, 2)
-        
-        # 4. Move
+
+        # 5. Move
         self.btn_move = QPushButton("")
         self.btn_move.setIcon(self._get_icon("free_move_mode"))
         self.btn_move.setIconSize(QSize(32, 32))
         self.btn_move.setObjectName("mode_btn")
-        self.btn_move.setToolTip("Free Move Mode")
+        self.btn_move.setToolTip("Free Move Mode (Pan) [P]")
         self.btn_move.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_move, 1, 2)
         
-        # 5. Stats
+        # 6. Stats
         self.btn_stats = DoubleClickButton("")
         self.btn_stats.setIcon(self._get_icon("region_statistics"))
         self.btn_stats.setIconSize(QSize(32, 32))
         self.btn_stats.setObjectName("mode_btn")
-        self.btn_stats.setToolTip("Region Statistics (Double-click to clear)")
+        self.btn_stats.setToolTip("Region Statistics (Double-click to clear) [S]")
         self.btn_stats.setCheckable(True)
-        self.mode_btn_layout.addWidget(self.btn_stats, 0, 3)
-        
-        # 6. Home
-        self.btn_home = QPushButton("")
-        self.btn_home.setIcon(self._get_icon("reset_zoom"))
-        self.btn_home.setIconSize(QSize(32, 32))
-        self.btn_home.setObjectName("mode_btn")
-        self.btn_home.setToolTip("Reset Zoom")
-        self.mode_btn_layout.addWidget(self.btn_home, 1, 3)
+        self.mode_btn_layout.addWidget(self.btn_stats, 1, 3)
         self.btn_home.clicked.connect(self.resetZoomRequested.emit)
         
         # Mutual Exclusion Group

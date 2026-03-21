@@ -48,7 +48,35 @@ class MarkerPanel(QFrame):
         self.btn_marker_time.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_time, 0, 0)
         
-        # 2. Freq (Bottom-Left)
+        # 1b. Time Endless
+        self.btn_marker_time_endless = DoubleClickButton("")
+        self.btn_marker_time_endless.setIcon(self._get_icon("endless_vertical_markers"))
+        self.btn_marker_time_endless.setIconSize(QSize(32, 32))
+        self.btn_marker_time_endless.setObjectName("mode_btn")
+        self.btn_marker_time_endless.setToolTip("Endless Time Markers")
+        self.btn_marker_time_endless.setCheckable(True)
+        self.mode_btn_layout.addWidget(self.btn_marker_time_endless, 0, 1)
+
+        # 2. Zoom
+        self.btn_zoom = QPushButton("")
+        self.btn_zoom.setIcon(self._get_icon("zoom_mode"))
+        self.btn_zoom.setIconSize(QSize(32, 32))
+        self.btn_zoom.setObjectName("mode_btn")
+        self.btn_zoom.setToolTip("Zoom Mode (Rubberband)")
+        self.btn_zoom.setCheckable(True)
+        self.mode_btn_layout.addWidget(self.btn_zoom, 0, 2)
+        
+        # 3. Home
+        self.btn_home = QPushButton("")
+        self.btn_home.setIcon(self._get_icon("reset_zoom"))
+        self.btn_home.setIconSize(QSize(32, 32))
+        self.btn_home.setObjectName("mode_btn")
+        self.btn_home.setToolTip("Reset Zoom (Home)")
+        self.mode_btn_layout.addWidget(self.btn_home, 0, 3)
+
+        # --- Row 2 ---
+        
+        # 4. Freq
         self.btn_marker_freq = DoubleClickButton("")
         self.btn_marker_freq.setIcon(self._get_icon("horizontal_markers"))
         self.btn_marker_freq.setIconSize(QSize(32, 32))
@@ -57,32 +85,24 @@ class MarkerPanel(QFrame):
         self.btn_marker_freq.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_freq, 1, 0)
         
-        # 3. Zoom
-        self.btn_zoom = QPushButton("")
-        self.btn_zoom.setIcon(self._get_icon("zoom_mode"))
-        self.btn_zoom.setIconSize(QSize(32, 32))
-        self.btn_zoom.setObjectName("mode_btn")
-        self.btn_zoom.setToolTip("Zoom Mode (Rubberband)")
-        self.btn_zoom.setCheckable(True)
-        self.mode_btn_layout.addWidget(self.btn_zoom, 0, 1)
-        
-        # 4. Move
+        # 4b. Freq Endless
+        self.btn_marker_freq_endless = DoubleClickButton("")
+        self.btn_marker_freq_endless.setIcon(self._get_icon("endless_horizontal_markers"))
+        self.btn_marker_freq_endless.setIconSize(QSize(32, 32))
+        self.btn_marker_freq_endless.setObjectName("mode_btn")
+        self.btn_marker_freq_endless.setToolTip("Endless Frequency Markers")
+        self.btn_marker_freq_endless.setCheckable(True)
+        self.mode_btn_layout.addWidget(self.btn_marker_freq_endless, 1, 1)
+
+        # 5. Move
         self.btn_move = QPushButton("")
         self.btn_move.setIcon(self._get_icon("free_move_mode"))
         self.btn_move.setIconSize(QSize(32, 32))
         self.btn_move.setObjectName("mode_btn")
         self.btn_move.setToolTip("Free Move Mode (Pan)")
         self.btn_move.setCheckable(True)
-        self.mode_btn_layout.addWidget(self.btn_move, 1, 1)
+        self.mode_btn_layout.addWidget(self.btn_move, 1, 2)
         
-        # 5. Home
-        self.btn_home = QPushButton("")
-        self.btn_home.setIcon(self._get_icon("reset_zoom"))
-        self.btn_home.setIconSize(QSize(32, 32))
-        self.btn_home.setObjectName("mode_btn")
-        self.btn_home.setToolTip("Reset Zoom (Home)")
-        self.mode_btn_layout.addWidget(self.btn_home, 0, 2)
-
         # 6. BPF Mode
         self.btn_bpf = DoubleClickButton("")
         self.btn_bpf.setIcon(self._get_icon("bpf_selection_mode"))
@@ -90,25 +110,7 @@ class MarkerPanel(QFrame):
         self.btn_bpf.setObjectName("mode_btn")
         self.btn_bpf.setToolTip("BPF Selection Mode (Double-click to clear)")
         self.btn_bpf.setCheckable(True)
-        self.mode_btn_layout.addWidget(self.btn_bpf, 1, 2)
-
-        # 7. Time Endless
-        self.btn_marker_time_endless = DoubleClickButton("")
-        self.btn_marker_time_endless.setIcon(self._get_icon("endless_vertical_markers"))
-        self.btn_marker_time_endless.setIconSize(QSize(32, 32))
-        self.btn_marker_time_endless.setObjectName("mode_btn")
-        self.btn_marker_time_endless.setToolTip("Endless Time Markers")
-        self.btn_marker_time_endless.setCheckable(True)
-        self.mode_btn_layout.addWidget(self.btn_marker_time_endless, 0, 3)
-
-        # 8. Freq Endless
-        self.btn_marker_freq_endless = DoubleClickButton("")
-        self.btn_marker_freq_endless.setIcon(self._get_icon("endless_horizontal_markers"))
-        self.btn_marker_freq_endless.setIconSize(QSize(32, 32))
-        self.btn_marker_freq_endless.setObjectName("mode_btn")
-        self.btn_marker_freq_endless.setToolTip("Endless Frequency Markers")
-        self.btn_marker_freq_endless.setCheckable(True)
-        self.mode_btn_layout.addWidget(self.btn_marker_freq_endless, 1, 3)
+        self.mode_btn_layout.addWidget(self.btn_bpf, 1, 3)
 
         self.btn_home.clicked.connect(self.resetZoomRequested.emit)
         
