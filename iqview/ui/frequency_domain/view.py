@@ -310,14 +310,16 @@ class FrequencyDomainView(QWidget):
         # Default to 4096 or segments of ~1/4 size
         nperseg = 4096 if len(self.samples) > 4096 else 1024
         
-        # Fix: Use fs=1.0 to get normalized density (independent of actual sample rate)
+        # Fix: Use fs=1.0 density and divide by N to get Power per Bin
         freqs, psd = compute_psd(self.samples, fs=1.0, method=method, nperseg=nperseg)
+        # Power per Bin (independent of fs)
+        psd_bin_power = psd / len(psd)
+        
         # Scale frequencies only for display
         freqs = freqs * self.rate + self.center_freq
         
-        # PSD is usually viewed in dB/Hz
-        # Reference level: 1.0 (density)
-        psd_db = 10 * np.log10(psd + 1e-20)
+        # PSD is viewed as Power per Bin in dB
+        psd_db = 10 * np.log10(psd_bin_power + 1e-20)
         
         # We need to ensure freqs match self.freq_axis for markers if they are tied to indices
         # but compute_psd might return a different number of points (e.g. nperseg for Welch)
@@ -325,7 +327,7 @@ class FrequencyDomainView(QWidget):
         # but that might break existing markers that rely on length.
         # However, the user wants to VIEW it, so we should update the plot correctly.
         
-        self._update_plot_dynamic(freqs, psd_db, "PSD [dB/Hz]")
+        self._update_plot_dynamic(freqs, psd_db, "PSD [dB]")
 
     def _update_plot_dynamic(self, freqs, data, y_label):
         """Standard update but allows changing frequency axis (used for PSD)."""
@@ -487,43 +489,37 @@ class FrequencyDomainView(QWidget):
         slice_data = self.current_plot_data[i_min:i_max]
         p_max, p_min, p_median = np.max(slice_data), np.min(slice_data), np.median(slice_data)
         
-        if "[dB]" in self.y_label_text:
-            # Use 10log10 for power-related plots (PSD, magnitude^2), 20log10 for amplitude (magnitude, real, imag)
-            is_power_plot = any(x in self.y_label_text.lower() for x in ["psd", "magnitude^2"])
-            factor = 10 if is_power_plot else 20
-            p_mean = factor * np.log10(np.mean(10**(slice_data/factor)) + 1e-18)
-        else: p_mean = np.mean(slice_data)
-        
         idx_max, idx_min = i_min + np.argmax(slice_data), i_min + np.argmin(slice_data)
         f_max, f_min = self.freq_axis[idx_max], self.freq_axis[idx_min]
-        
         panel = self.marker_panel
-        panel.stats_max_val.setText(f"{p_max:.4g}"); panel.stats_min_val.setText(f"{p_min:.4g}")
-        panel.stats_mean_val.setText(f"{p_mean:.4g}"); panel.stats_median_val.setText(f"{p_median:.4g}")
         
-        # Calculate Integrated Power
+        # 1. Convert slice_data to Linear Power
         if "[dB]" in self.y_label_text:
-            # 10log for power regardless of amplitude scaling
+            # slice_data is either 20*log10(mag) or 10*log10(psd).
+            # To get power, divide by 10 and pow(10, x).
             lin_pow_slice = 10**(slice_data / 10.0)
         else:
-            if "magnitude^2" in self.y_label_text.lower():
+            if "magnitude^2" in self.y_label_text.lower() or "psd" in self.y_label_text.lower():
                 lin_pow_slice = slice_data
             else:
                 lin_pow_slice = slice_data**2
         
-        # Compute Total linear power
+        # 2. Calculate Mean Power in selection
+        p_mean_lin = np.mean(lin_pow_slice)
+        
+        # 3. Calculate Integrated Power in selection
+        # (Since all modes now store linear 'Power per Bin', this is just a sum)
         total_p_lin = np.sum(lin_pow_slice)
         
-        # If PSD, we integrate over normalized frequency (-0.5 to 0.5)
-        # This makes the integrated power independent of the physical sample rate.
-        if "PSD" in self.y_label_text:
-            df_norm = 1.0 / len(self.freq_axis)
-            total_p_lin *= df_norm
-        
-        # Window Incoherent Gain (IG) compensation (S2/N)
-        # We always use Rectangular currently (IG=1), but for future-proofing:
-        # IG = np.sum(window**2) / n. Since window is forced ones(n), IG = 1.0.
-        total_p_lin /= 1.0 # Placeholder for IG compensation if windowing is added back
+        # Update UI text
+        if "[dB]" in self.y_label_text:
+            p_mean_db = 10 * np.log10(p_mean_lin + 1e-18)
+            panel.stats_mean_val.setText(f"{p_mean_db:.2f} dB")
+        else:
+            panel.stats_mean_val.setText(f"{p_mean_lin:.4g}")
+            
+        panel.stats_max_val.setText(f"{p_max:.4g}"); panel.stats_min_val.setText(f"{p_min:.4g}")
+        panel.stats_median_val.setText(f"{p_median:.4g}")
         
         if "[dB]" in self.y_label_text:
             total_p_db = 10 * np.log10(total_p_lin + 1e-15)
@@ -532,7 +528,7 @@ class FrequencyDomainView(QWidget):
             panel.stats_total_power.setText(f"{total_p_lin:.4g}")
 
         panel.stats_max_freq.setText(f"{f_max:,.0f}"); panel.stats_min_freq.setText(f"{f_min:,.0f}")
-        panel.stats_max_idx.setText(f"{idx_max}"); panel.stats_min_idx.setText(f"{idx_min}")
+        panel.stats_max_idx.setText(f"{idx_max:,}"); panel.stats_min_idx.setText(f"{idx_min:,}")
         
         self.stats_markers.setData([
             {'pos': (f_max, p_max), 'brush': pg.mkBrush(255, 50, 50), 'pen': pg.mkPen('#ff3232', width=2), 'symbol': 'o'},
