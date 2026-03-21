@@ -162,6 +162,10 @@ class SpectrogramView(QWidget):
         if ev.button() != Qt.MouseButton.RightButton:
             return
             
+        if ColorMapMenu is None:
+            print("Warning: pyqtgraph.widgets.ColorMapMenu not found. Please upgrade pyqtgraph to >= 0.13.0")
+            return
+
         presets = [(name, 'preset-gradient') for name in Gradients.keys()]
         menu = ColorMapMenu(userList=presets, showColorMapSubMenus=False, showGradientSubMenu=False)
         

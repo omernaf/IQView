@@ -35,7 +35,7 @@ from pathlib import Path
 DEPENDENCIES = [
     "numpy",
     "PyQt6",
-    "pyqtgraph",
+    "pyqtgraph >= 0.13.0",
     "PyOpenGL",
     "scipy",
 ]

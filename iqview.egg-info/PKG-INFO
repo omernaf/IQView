@@ -6,29 +6,151 @@ Requires-Python: >=3.9
 Description-Content-Type: text/markdown
 Requires-Dist: numpy
 Requires-Dist: PyQt6
-Requires-Dist: pyqtgraph
+Requires-Dist: pyqtgraph>=0.13.0
 Requires-Dist: PyOpenGL
 Requires-Dist: scipy
 
 # IQView
 
-High-performance Static RF Spectrogram Viewer.
+**High-Performance Static RF Spectrogram Viewer**
 
-## Installation
+IQView is a streamlined, high-performance GUI application designed for deep analysis of In-phase and Quadrature (IQ) signals. Built with Python, PyQt6, and PyOpenGL, it provides a fluid experience for exploring large RF captures in the time and frequency domains.
 
-For users:
+---
+
+## 🚀 Key Features
+
+- **Blazing Fast Spectrogram**: GPU-accelerated rendering using PyOpenGL for smooth navigation of massive datasets.
+- **Multi-Domain Analysis**: Interactive Spectrogram, Time Domain (Waveform), and Frequency Domain (Spectrum) views.
+- **Dynamic Filtering**: Apply real-time complex band-pass filters to isolate signals of interest.
+- **Advanced Markers**: Locked delta and center markers for precise timing and frequency measurements.
+- **Statistical Analysis**: Instant computation of Min, Max, Mean, Median, and Integrated Power for selected segments.
+- **Export Capabilities**: Capture raw spectrogram images or full plots with axes for reports.
+- **Desktop Integration**: One-click installation of shortcuts and file associations for `.iq`, `.bin`, and `.mat` files.
+
+---
+
+## 💻 Installation
+
+### For Users
+Download the latest `.whl` or `.exe` (if available) and install via pip:
 ```bash
-pip install iqview-0.1.2-py3-none-any.whl
+pip install iqview
 ```
 
-For developers (Setup):
+### For Developers
+Clone the repository and install in editable mode:
 ```bash
-# Clone the repository and run:
+git clone https://github.com/omernaf/IQView.git
+cd IQView
 pip install -e .
 ```
 
-## Usage
-Once installed, use the `iqview` command:
+### Desktop Integration
+To add IQView to your Start Menu and associate it with common IQ file extensions:
 ```bash
-iqview -f path/to/file.iq -t complex64 -r 2e6
+iqview --install-desktop
 ```
+To associate `.mat` files specifically (which requires specific fields `Y`, `XDelta`, `InputCenter`):
+```bash
+iqview --install-mat
+```
+
+---
+
+## 📖 Quick Start
+
+Open a file directly from the command line:
+```bash
+iqview -f signals.iq -r 20e6 -c 2.44e9 -t complex64
+```
+*   `-r`: Sample Rate ($f_s$)
+*   `-c`: Center Frequency ($f_c$)
+*   `-t`: Data Type
+
+---
+
+## 🧪 Mathematical Foundations
+
+### 1. Spectrogram Rendering
+The spectrogram is computed using the Short-Time Fourier Transform (STFT). Each vertical slice represents the power spectral density of a windowed segment:
+
+$$X[k] = \sum_{n=0}^{N-1} x[n] \cdot w[n] e^{-j \frac{2\pi}{N} kn}$$
+
+Where $w[n]$ is the chosen window function (e.g., Hamming, Hann). The visual dB level is calculated as:
+$$\text{Level}_{\text{dB}} = 20 \log_{10}(|X[k]| + \epsilon)$$
+*$\epsilon$ is a small constant ($10^{-10}$) to prevent $\log(0)$.*
+
+### 2. Time Domain Modes
+IQView provides several ways to visualize raw samples $x[n] = I[n] + jQ[n]$:
+
+| Mode | Formula |
+| :--- | :--- |
+| **Magnitude** | $|x[n]| = \sqrt{I[n]^2 + Q[n]^2}$ |
+| **Magnitude [dB]** | $20 \log_{10}(|x[n]|)$ |
+| **Magnitude² [dB]**| $10 \log_{10}(|x[n]|^2)$ |
+| **Phase** | $\phi[n] = \arctan2(Q[n], I[n])$ |
+| **Inst. Frequency**| $f_{\text{inst}}[n] = \frac{\phi[n] - \phi[n-1]}{2\pi} \cdot f_s$ |
+
+### 3. Integrated Power
+In the Frequency Domain view, selecting a region $[f_1, f_2]$ computes the integrated power within that bandwidth:
+$$\text{Total Power} = \sum_{k \in \{f_1, f_2\}} |X[k]|^2$$
+For dB displays, this is converted via $10 \log_{10}$ to represent total power relative to full scale.
+
+### 4. Complex Band-Pass Filter (BPF)
+When the filter is enabled, IQView performs an asymmetric complex filter to isolate a specific band:
+1.  **Shift to Baseband**: $x_{\text{base}}[n] = x[n] \cdot e^{-j 2\pi f_{\text{target}} \frac{n}{f_s}}$
+2.  **Low-Pass Filter**: Applied using a Second-Order Sections (SOS) IIR filter (Elliptic, Butterworth, etc.) designed for the target bandwidth $\Delta f$.
+3.  **Shift Back**: $x_{\text{filt}}[n] = x_{\text{base, filt}}[n] \cdot e^{j 2\pi f_{\text{target}} \frac{n}{f_s}}$
+
+---
+
+## ⌨️ Controls & Shortcuts
+
+### General
+| Key | Action |
+| :--- | :--- |
+| **T** | Enter **Time Marker** placement mode |
+| **F** | Enter **Frequency/Magnitude Marker** placement mode |
+| **Ctrl (Hold)** | Enter **Zoom Mode** (Left-click & drag to box zoom) |
+| **Ctrl + Z** | Undo last zoom level |
+| **Middle-Click** | Close active analysis tab |
+
+### Markers
+- **Draggable**: Hover over a marker; it turns red and can be dragged.
+- **Locked Delta**: Lock the distance between $M_1$ and $M_2$ to move them together.
+- **Locked Center**: Lock the midpoint between $M_1$ and $M_2$ to expand/shrink symmetrically.
+
+---
+
+## 🛠️ CLI Reference
+
+| Flag | Description | Default |
+| :--- | :--- | :--- |
+| `-f`, `--file` | Path to binary IQ file | None |
+| `--stdin` | Read binary IQ data from stdin pipe | False |
+| `-r`, `--rate` | Sample rate in Hz | 1 MHz |
+| `-c`, `--fc` | Center frequency in Hz | 0 Hz |
+| `-t`, `--type` | Data type (`int16`, `float32`, `complex64`, etc.) | `complex64` |
+| `-s`, `--fft` | FFT bin size (Power of 2) | 1024 |
+| `--profile` | Run with cProfile for performance debugging | False |
+
+---
+
+## ⚙️ Configuration
+IQView saves its state in the system registry or config files via `QSettings`. You can adjust default colormaps, themes (Dark/Light), and FFT defaults in the **Settings Dialog** within the app.
+
+---
+
+## 📚 Detailed Documentation
+
+For a deep dive into the specific features and mathematical foundations of each analysis view, please refer to the dedicated documentation files:
+
+- [🌌 **Spectrogram View**](docs/spectrogram.md): STFT, windowing, colormaps, and OpenGL rendering.
+- [⏳ **Time Domain View**](docs/time_domain.md): Plot modes, marker locking logic, and statistics.
+- [📶 **Frequency Domain View**](docs/frequency_domain.md): FFT analysis, PSD estimation, and integrated power.
+
+---
+
+## 📄 License
+IQView is open-source software. Original author: Omer Naf (omernaf).
