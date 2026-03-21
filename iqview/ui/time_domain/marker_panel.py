@@ -1,6 +1,8 @@
 from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QPushButton, QHBoxLayout, QButtonGroup, QStackedWidget, QWidget, QVBoxLayout, QScrollArea
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtGui import QFont, QIcon, QPixmap
+import importlib.resources
+import os
 from ..widgets import FormattedLineEdit, DoubleClickButton
 from ..themes import get_palette
 
@@ -34,56 +36,72 @@ class TimeDomainMarkerPanel(QFrame):
         self.main_layout.addLayout(self.mode_btn_layout)
 
         # 1. Time (Top-Left)
-        self.btn_marker_time = DoubleClickButton("║")
+        self.btn_marker_time = DoubleClickButton("")
+        self.btn_marker_time.setIcon(self._get_icon("vertical_markers"))
+        self.btn_marker_time.setIconSize(QSize(32, 32))
         self.btn_marker_time.setObjectName("mode_btn")
         self.btn_marker_time.setToolTip("Time Markers (Double-click to clear) [T]")
         self.btn_marker_time.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_time, 0, 0)
         
         # 1b. Endless Time
-        self.btn_marker_time_endless = DoubleClickButton("⫼")
+        self.btn_marker_time_endless = DoubleClickButton("")
+        self.btn_marker_time_endless.setIcon(self._get_icon("endless_vertical_markers"))
+        self.btn_marker_time_endless.setIconSize(QSize(32, 32))
         self.btn_marker_time_endless.setObjectName("mode_btn")
         self.btn_marker_time_endless.setToolTip("Endless Time Markers")
         self.btn_marker_time_endless.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_time_endless, 0, 1)
 
         # 2. Magnitude (Bottom-Left)
-        self.btn_marker_mag = DoubleClickButton("〓")
+        self.btn_marker_mag = DoubleClickButton("")
+        self.btn_marker_mag.setIcon(self._get_icon("horizontal_markers"))
+        self.btn_marker_mag.setIconSize(QSize(32, 32))
         self.btn_marker_mag.setObjectName("mode_btn")
         self.btn_marker_mag.setToolTip("Magnitude Markers (Double-click to clear) [F/M]")
         self.btn_marker_mag.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_mag, 1, 0)
 
         # 2b. Endless Magnitude
-        self.btn_marker_mag_endless = DoubleClickButton("≡")
+        self.btn_marker_mag_endless = DoubleClickButton("")
+        self.btn_marker_mag_endless.setIcon(self._get_icon("endless_horizontal_markers"))
+        self.btn_marker_mag_endless.setIconSize(QSize(32, 32))
         self.btn_marker_mag_endless.setObjectName("mode_btn")
         self.btn_marker_mag_endless.setToolTip("Endless Magnitude Markers")
         self.btn_marker_mag_endless.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_mag_endless, 1, 1)
         
         # 3. Zoom
-        self.btn_zoom = QPushButton("🔍")
+        self.btn_zoom = QPushButton("")
+        self.btn_zoom.setIcon(self._get_icon("zoom_mode"))
+        self.btn_zoom.setIconSize(QSize(32, 32))
         self.btn_zoom.setObjectName("mode_btn")
         self.btn_zoom.setToolTip("Zoom Mode [Hold Ctrl]")
         self.btn_zoom.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_zoom, 0, 2)
         
         # 4. Move
-        self.btn_move = QPushButton("✥")
+        self.btn_move = QPushButton("")
+        self.btn_move.setIcon(self._get_icon("free_move_mode"))
+        self.btn_move.setIconSize(QSize(32, 32))
         self.btn_move.setObjectName("mode_btn")
         self.btn_move.setToolTip("Free Move Mode")
         self.btn_move.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_move, 1, 2)
         
         # 5. Stats
-        self.btn_stats = DoubleClickButton("📈")
+        self.btn_stats = DoubleClickButton("")
+        self.btn_stats.setIcon(self._get_icon("region_statistics"))
+        self.btn_stats.setIconSize(QSize(32, 32))
         self.btn_stats.setObjectName("mode_btn")
         self.btn_stats.setToolTip("Region Statistics (Double-click to clear)")
         self.btn_stats.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_stats, 0, 3)
         
         # 6. Home
-        self.btn_home = QPushButton("🏠")
+        self.btn_home = QPushButton("")
+        self.btn_home.setIcon(self._get_icon("reset_zoom"))
+        self.btn_home.setIconSize(QSize(32, 32))
         self.btn_home.setObjectName("mode_btn")
         self.btn_home.setToolTip("Reset Zoom")
         self.mode_btn_layout.addWidget(self.btn_home, 1, 3)
@@ -305,6 +323,21 @@ class TimeDomainMarkerPanel(QFrame):
         self.stats_layout.addWidget(self.stats_max_idx, 3, 1)
         self.stats_layout.addWidget(self.stats_min_idx, 3, 2)
         self.stats_layout.addWidget(self.stats_diff_val, 3, 6)
+
+    def _get_icon(self, name):
+        """Helper to load icons from resources/assets."""
+        try:
+            from importlib.resources import files
+            icon_resource = files("iqview.resources.assets").joinpath(f"{name}.png")
+            with icon_resource.open("rb") as f:
+                pixmap = QPixmap()
+                pixmap.loadFromData(f.read())
+                return QIcon(pixmap)
+        except Exception:
+            # Fallback for local dev
+            base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+            local_path = os.path.join(base_path, "iqview", "resources", "assets", f"{name}.png")
+            return QIcon(local_path)
 
     def set_y_label(self, label):
         # We handle this via update_headers now
@@ -611,8 +644,8 @@ class TimeDomainMarkerPanel(QFrame):
                 border: 1px solid {p.border};
             }}
             QPushButton#mode_btn {{
-                background-color: {p.bg_sidebar};
-                border: 1px solid {p.border};
+                background-color: transparent; 
+                border: none;
                 border-radius: 4px;
                 min-width: 32px;
                 min-height: 32px;
@@ -622,7 +655,6 @@ class TimeDomainMarkerPanel(QFrame):
             QPushButton#mode_btn:hover {{ background-color: {p.border_light}; }}
             QPushButton#mode_btn:checked {{ 
                 background-color: {p.accent_dim}; 
-                border-color: {p.accent};
                 color: {p.accent};
             }}
             QLineEdit {{

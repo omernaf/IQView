@@ -1,6 +1,8 @@
 from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QCheckBox, QPushButton, QHBoxLayout, QStackedWidget, QWidget, QScrollArea, QVBoxLayout, QButtonGroup
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap
+import importlib.resources
+import os
 from .widgets import FormattedLineEdit, DoubleClickButton
 from .themes import get_palette
 
@@ -39,55 +41,71 @@ class MarkerPanel(QFrame):
         self.main_layout.addLayout(self.mode_btn_layout, 0)
 
         # 1. Time (Top-Left)
-        self.btn_marker_time = DoubleClickButton("║")
+        self.btn_marker_time = DoubleClickButton("")
+        self.btn_marker_time.setIcon(self._get_icon("vertical_markers"))
+        self.btn_marker_time.setIconSize(QSize(32, 32))
         self.btn_marker_time.setObjectName("mode_btn")
         self.btn_marker_time.setToolTip("Time Markers (Double-click to clear)")
         self.btn_marker_time.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_time, 0, 0)
         
         # 2. Freq (Bottom-Left)
-        self.btn_marker_freq = DoubleClickButton("〓")
+        self.btn_marker_freq = DoubleClickButton("")
+        self.btn_marker_freq.setIcon(self._get_icon("horizontal_markers"))
+        self.btn_marker_freq.setIconSize(QSize(32, 32))
         self.btn_marker_freq.setObjectName("mode_btn")
         self.btn_marker_freq.setToolTip("Frequency Markers (Double-click to clear)")
         self.btn_marker_freq.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_freq, 1, 0)
         
         # 3. Zoom
-        self.btn_zoom = QPushButton("🔍")
+        self.btn_zoom = QPushButton("")
+        self.btn_zoom.setIcon(self._get_icon("zoom_mode"))
+        self.btn_zoom.setIconSize(QSize(32, 32))
         self.btn_zoom.setObjectName("mode_btn")
         self.btn_zoom.setToolTip("Zoom Mode (Rubberband)")
         self.btn_zoom.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_zoom, 0, 1)
         
         # 4. Move
-        self.btn_move = QPushButton("✥")
+        self.btn_move = QPushButton("")
+        self.btn_move.setIcon(self._get_icon("free_move_mode"))
+        self.btn_move.setIconSize(QSize(32, 32))
         self.btn_move.setObjectName("mode_btn")
         self.btn_move.setToolTip("Free Move Mode (Pan)")
         self.btn_move.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_move, 1, 1)
         
         # 5. Home
-        self.btn_home = QPushButton("🏠")
+        self.btn_home = QPushButton("")
+        self.btn_home.setIcon(self._get_icon("reset_zoom"))
+        self.btn_home.setIconSize(QSize(32, 32))
         self.btn_home.setObjectName("mode_btn")
         self.btn_home.setToolTip("Reset Zoom (Home)")
         self.mode_btn_layout.addWidget(self.btn_home, 0, 2)
 
         # 6. BPF Mode
-        self.btn_bpf = DoubleClickButton("📊")
+        self.btn_bpf = DoubleClickButton("")
+        self.btn_bpf.setIcon(self._get_icon("bpf_selection_mode"))
+        self.btn_bpf.setIconSize(QSize(32, 32)) # Added this line
         self.btn_bpf.setObjectName("mode_btn")
         self.btn_bpf.setToolTip("BPF Selection Mode (Double-click to clear)")
         self.btn_bpf.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_bpf, 1, 2)
 
         # 7. Time Endless
-        self.btn_marker_time_endless = DoubleClickButton("⫼")
+        self.btn_marker_time_endless = DoubleClickButton("")
+        self.btn_marker_time_endless.setIcon(self._get_icon("endless_vertical_markers"))
+        self.btn_marker_time_endless.setIconSize(QSize(32, 32))
         self.btn_marker_time_endless.setObjectName("mode_btn")
         self.btn_marker_time_endless.setToolTip("Endless Time Markers")
         self.btn_marker_time_endless.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_time_endless, 0, 3)
 
         # 8. Freq Endless
-        self.btn_marker_freq_endless = DoubleClickButton("≡")
+        self.btn_marker_freq_endless = DoubleClickButton("")
+        self.btn_marker_freq_endless.setIcon(self._get_icon("endless_horizontal_markers"))
+        self.btn_marker_freq_endless.setIconSize(QSize(32, 32))
         self.btn_marker_freq_endless.setObjectName("mode_btn")
         self.btn_marker_freq_endless.setToolTip("Endless Frequency Markers")
         self.btn_marker_freq_endless.setCheckable(True)
@@ -105,8 +123,6 @@ class MarkerPanel(QFrame):
         self.mode_group.addButton(self.btn_move)
         self.mode_group.addButton(self.btn_bpf)
         self.mode_group.setExclusive(True)
-
-        # Connections
 
         # Connections
         self.btn_marker_time.clicked.connect(lambda: self.interactionModeChanged.emit('TIME'))
@@ -255,6 +271,21 @@ class MarkerPanel(QFrame):
         # Explicit Default Force
         self.btn_marker_time.setChecked(True)
         self.interactionModeChanged.emit('TIME')
+
+    def _get_icon(self, name):
+        """Helper to load icons from resources/assets."""
+        try:
+            from importlib.resources import files
+            icon_resource = files("iqview.resources.assets").joinpath(f"{name}.png")
+            with icon_resource.open("rb") as f:
+                pixmap = QPixmap()
+                pixmap.loadFromData(f.read())
+                return QIcon(pixmap)
+        except Exception:
+            # Fallback for local dev if package structure isn't perfect
+            base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            local_path = os.path.join(base_path, "iqview", "resources", "assets", f"{name}.png")
+            return QIcon(local_path)
 
     def _clear_marker_locks(self, mode=None, keep=None):
         """Uncheck all marker-position locks except the one named in `keep`."""
@@ -552,8 +583,8 @@ class MarkerPanel(QFrame):
                 border-bottom: 2px solid {p.bg_main};
             }}
             QPushButton#mode_btn {{
-                background-color: {p.bg_sidebar};
-                border: 1px solid {p.border};
+                background-color: transparent; 
+                border: none;
                 border-radius: 4px;
                 min-width: 34px;
                 min-height: 34px;
@@ -563,7 +594,6 @@ class MarkerPanel(QFrame):
             QPushButton#mode_btn:hover {{ background-color: {p.border_light}; }}
             QPushButton#mode_btn:checked {{ 
                 background-color: {p.accent_dim}; 
-                border-color: {p.accent};
                 color: {p.accent};
             }}
             QLineEdit {{
