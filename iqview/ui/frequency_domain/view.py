@@ -201,7 +201,7 @@ class FrequencyDomainView(QWidget):
                 self.plot_buttons_layout.addWidget(btn)
                 btn.clicked.connect(self.available_modes[name])
                 self.plot_buttons.append(btn)
-                if name == "magnitude": btn.setChecked(True)
+                if i == 0: btn.setChecked(True)
         
         if self.plot_buttons and not any(b.isChecked() for b in self.plot_buttons):
             self.plot_buttons[0].setChecked(True)
