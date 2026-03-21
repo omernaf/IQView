@@ -37,7 +37,7 @@ class ColorButton(QPushButton):
             self.colorChanged.emit(self._color)
 
 class PlotItemWidget(QWidget):
-    def __init__(self, text, checked, filter_len=None, parent=None):
+    def __init__(self, text, checked, p, filter_len=None, parent=None):
         super().__init__(parent)
         self.text = text
         self.layout = QHBoxLayout(self)
@@ -60,7 +60,11 @@ class PlotItemWidget(QWidget):
             self.spin.setFixedWidth(60)
             self.layout.addWidget(self.spin)
         
-        self.setStyleSheet("background: transparent; color: inherit;")
+        self.set_theme(p)
+
+    def set_theme(self, p):
+        # Explicit color to override system light-mode default for checkboxes/labels on Windows
+        self.setStyleSheet(f"background: transparent; color: {p.text_main};")
 
 class SettingsDialog(QDialog):
     settingsApplied = pyqtSignal()
@@ -70,8 +74,15 @@ class SettingsDialog(QDialog):
         self.mgr = settings_manager
         self.setWindowTitle("Settings")
         self.setMinimumSize(730, 560)
+        
+        self._themed_viewports = []
+        self._themed_widgets = []
+        self._themed_plot_widgets = []
+        
         self.setup_ui()
-        self._update_dialog_style(self.mgr.get("ui/theme", "Dark"))
+        current_theme = self.mgr.get("ui/theme", "Dark")
+        self._update_dialog_style(current_theme)
+        self._apply_theme_to_subwidgets(current_theme)
 
     def _update_dialog_style(self, theme_text):
         from .themes import get_main_stylesheet
@@ -153,22 +164,9 @@ class SettingsDialog(QDialog):
         scroll.setWidget(widget)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         
-        # Isolated background fix: Use a specific palette for the viewport
-        # This avoid inheritance regressions in global dropdown popups
-        theme_name = self.mgr.get("ui/theme", "Dark")
-        p = get_palette(theme_name)
-        
-        vp = scroll.viewport()
-        vp_pal = vp.palette()
-        vp_pal.setColor(QPalette.ColorRole.Window, QColor(p.bg_main))
-        vp.setPalette(vp_pal)
-        vp.setAutoFillBackground(True)
-        
-        # Ensure the content widget inside is also correctly colored
-        widget_pal = widget.palette()
-        widget_pal.setColor(QPalette.ColorRole.Window, QColor(p.bg_main))
-        widget.setPalette(widget_pal)
-        widget.setAutoFillBackground(True)
+        # Register for dynamic theme updates
+        self._themed_viewports.append(scroll.viewport())
+        self._themed_widgets.append(widget)
         
         self.stacked_widget.addWidget(scroll)
         item = QListWidgetItem(title)
@@ -176,6 +174,10 @@ class SettingsDialog(QDialog):
         self.side_menu.addItem(item)
 
     def setup_ui(self):
+        # Fetch palette once for all sub-components
+        theme_name = self.mgr.get("ui/theme", "Dark")
+        self.p = get_palette(theme_name)
+        
         self.layout = QVBoxLayout(self)
         
         self.main_content = QHBoxLayout()
@@ -204,7 +206,8 @@ class SettingsDialog(QDialog):
             item.setData(Qt.ItemDataRole.UserRole, data)
             
             list_widget.addItem(item)
-            widget = PlotItemWidget(text, checked, filter_len)
+            widget = PlotItemWidget(text, checked, self.p, filter_len)
+            self._themed_plot_widgets.append(widget)
             list_widget.setItemWidget(item, widget)
             
             # Sync widget changes back to item data dictionary
@@ -671,8 +674,31 @@ class SettingsDialog(QDialog):
 
     def _on_theme_changed(self, theme_text):
         self._load_theme_specific_settings(theme_text)
-        self._update_sidebar_style(theme_text)
         self._update_dialog_style(theme_text)
+        self._update_sidebar_style(theme_text)
+        self._apply_theme_to_subwidgets(theme_text)
+
+    def _apply_theme_to_subwidgets(self, theme_text):
+        p = get_palette(theme_text)
+        self.p = p # Update cached palette
+        
+        # Update registered scroll area viewports
+        for vp in self._themed_viewports:
+            pal = vp.palette()
+            pal.setColor(QPalette.ColorRole.Window, QColor(p.bg_main))
+            vp.setPalette(pal)
+            vp.setAutoFillBackground(True)
+            
+        # Update registered content widgets
+        for w in self._themed_widgets:
+            pal = w.palette()
+            pal.setColor(QPalette.ColorRole.Window, QColor(p.bg_main))
+            w.setPalette(pal)
+            w.setAutoFillBackground(True)
+            
+        # Update registered plot widgets
+        for pw in self._themed_plot_widgets:
+            pw.set_theme(p)
 
     def _update_sidebar_style(self, theme_text):
         theme = theme_text.lower()
