@@ -16,10 +16,14 @@ class DataHandlerMixin:
             v_low, v_high = self.filter_region.getRegion()
             f_min, f_max = min(v_low, v_high), max(v_low, v_high)
 
+        # Make frequencies relative to Fc for the baseband DSP filter
+        f_min_rel = (f_min - self.fc) if f_min is not None else None
+        f_max_rel = (f_max - self.fc) if f_max is not None else None
+
         self.worker = FileReaderThread(
             self.data_source, self.data_type, self.fft_size, self.overlap_percent, self.rate, 
             self.profile_enabled, self.window_type,
-            filter_enabled=self.filter_enabled, f_min=f_min, f_max=f_max,
+            filter_enabled=self.filter_enabled, f_min=f_min_rel, f_max=f_max_rel,
             is_complex=self.is_complex,
             filter_type=str(self.settings_mgr.get("core/filter_type", "Elliptic")),
             filter_order=int(self.settings_mgr.get("core/filter_order", 8)),
@@ -60,11 +64,20 @@ class DataHandlerMixin:
             num_samples = end_sample - start_sample
             if num_samples <= 0: return None
             
-            # Cap extraction for performance
-            MAX_EXTRACT_SAMPLES = 1_000_000
-            if num_samples > MAX_EXTRACT_SAMPLES:
-                num_samples = MAX_EXTRACT_SAMPLES
-                end_sample = start_sample + num_samples
+            # Safety Check: Warn if selection is exceptionally large (> 500 million samples)
+            # 500M complex64 samples ≈ 4GB RAM.
+            if num_samples > 500_000_000:
+                from PyQt6.QtWidgets import QMessageBox
+                reply = QMessageBox.question(
+                    self, "Large Data Extraction",
+                    f"The selected range contains {num_samples:,} samples.\n\n"
+                    "Extracting this many samples may consume significant memory and make the UI unresponsive.\n\n"
+                    "Do you want to proceed?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No
+                )
+                if reply == QMessageBox.StandardButton.No:
+                    return None
 
             item_size = np.dtype(self.data_type).itemsize
             read_multiplier = 2 if self.is_complex else 1
@@ -104,7 +117,7 @@ class DataHandlerMixin:
                 f_bessel_norm = str(self.settings_mgr.get("core/filter_bessel_norm", "phase"))
                 
                 complex_data = apply_bpf(
-                    complex_data, self.rate, f_min, f_max,
+                    complex_data, self.rate, f_min - self.fc, f_max - self.fc,
                     filter_type=f_type, order=f_order,
                     rp=f_ripple, rs=f_stopband,
                     bessel_norm=f_bessel_norm

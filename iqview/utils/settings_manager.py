@@ -28,10 +28,17 @@ class SettingsManager:
         },
         "core/time_plots": [
             "instant frequency", 
-            "magnitude^2", 
+            "magnitude [dB]", 
             "Real", 
             "Imaginary"
         ],
+        "core/inst_freq_filter_len": 7,
+        "core/frequency_plots": [
+            "power spectrum density (PSD)",
+            "magnitude [dB]",
+            "magnitude"
+        ],
+        "core/psd_algorithm": "Welch",
         "ui/theme": "Light",
         "ui/colormap": "turbo",
         "ui/colormap_reversed": False,

@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: iqview
-Version: 0.1.0
+Version: 0.1.1
 Summary: High-performance Static RF Spectrogram Viewer
 Requires-Python: >=3.9
 Description-Content-Type: text/markdown
@@ -18,7 +18,7 @@ High-performance Static RF Spectrogram Viewer.
 
 For users:
 ```bash
-pip install iqview-0.1.0-py3-none-any.whl
+pip install iqview-0.1.1-py3-none-any.whl
 ```
 
 For developers (Setup):

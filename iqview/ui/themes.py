@@ -21,6 +21,7 @@ DARK_PALETTE = Palette(
     plot_bg="#121212",
     plot_grid="#333333",
     marker_time="#00ff00",
+    marker_freq="#ffaa00",
     marker_mag="#ffaa00"
 )
 
@@ -40,6 +41,7 @@ LIGHT_PALETTE = Palette(
     plot_bg="#ffffff",
     plot_grid="#eeeeee",
     marker_time="#008800",
+    marker_freq="#cc6600",
     marker_mag="#cc6600"
 )
 
@@ -87,11 +89,20 @@ def get_main_stylesheet(theme_name):
             border-radius: 4px; padding: 4px 8px; 
         }}
         QComboBox::drop-down {{ border: none; width: 20px; }}
-        QComboBox QAbstractItemView {{ 
+        
+        /* Force the popup dropdown list to be fully opaque and hide background */
+        QComboBox QAbstractItemView, QComboBox QListView, QComboBox QAbstractItemView::viewport {{ 
             background-color: {p.bg_input}; 
+            qproperty-autoFillBackground: true;
             color: {p.text_main}; 
-            selection-background-color: {p.bg_widget}; 
-            border: 1px solid {p.border}; 
+            selection-background-color: {p.accent_dim}; 
+            selection-color: {p.accent};
+            border: 1px solid {p.border};
+            outline: none;
+        }}
+        QComboBox::item {{
+            background-color: {p.bg_input};
+            color: {p.text_main};
         }}
         
         QTabWidget::pane {{ border: 1px solid {p.border}; top: -1px; background-color: {p.bg_main}; }}
@@ -132,8 +143,14 @@ def get_main_stylesheet(theme_name):
             gridline-color: {p.border};
             border-radius: 4px;
         }}
-        QListWidget::item {{ padding: 4px 8px; }}
-        QListWidget::item:selected {{ background-color: {p.accent_dim}; color: {p.accent}; }}
+        QListWidget::item, QTableWidget::item {{ 
+            padding: 4px 8px; 
+            color: {p.text_main};
+        }}
+        QListWidget::item:selected, QTableWidget::item:selected {{ 
+            background-color: {p.accent_dim}; 
+            color: {p.accent}; 
+        }}
         
         QHeaderView::section {{
             background-color: {p.bg_widget};

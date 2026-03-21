@@ -50,6 +50,13 @@ class ViewControllerMixin:
     def set_interaction_mode(self, mode):
         self.interaction_mode = mode
         self.zoom_mode = (mode == 'ZOOM')
+        
+        # Delegate to active tab if it's not the spectrogram
+        active_tab = self.tabs.currentWidget()
+        if active_tab and active_tab != self.spectrogram_view:
+            if hasattr(active_tab, 'set_interaction_mode'):
+                active_tab.set_interaction_mode(mode)
+        
         self.refresh_cursor()
         self.marker_panel.update_headers(mode)
         self.update_marker_info()
@@ -114,6 +121,12 @@ class ViewControllerMixin:
             self.start_processing()
 
     def refresh_cursor(self):
+        active_tab = self.tabs.currentWidget()
+        if active_tab and active_tab != self.spectrogram_view:
+            if hasattr(active_tab, 'refresh_cursor'):
+                active_tab.refresh_cursor()
+                return # Active tab handles its own cursor
+        
         if hasattr(self, 'zoom_mode') and self.zoom_mode:
             self.spectrogram_view.setCursor(Qt.CursorShape.CrossCursor)
         elif self.interaction_mode in ['TIME', 'FREQ', 'FILTER']:
@@ -124,39 +137,71 @@ class ViewControllerMixin:
             self.spectrogram_view.setCursor(Qt.CursorShape.ArrowCursor)
 
     def open_time_domain_tab(self):
-        if len(self.markers_time) == 2:
-            t1 = self.markers_time[0].value()
-            t2 = self.markers_time[1].value()
-            start_t, end_t = min(t1, t2), max(t1, t2)
+        """Extracts the IQ data between the two time markers (or full range) and opens it in a new tab."""
+        # Find time markers in spectrogram
+        markers = self.markers_time
+        if len(markers) < 2:
+            # Fallback to current view range if < 2 markers
+            xr, _ = self.spectrogram_view.view_box.viewRange()
+            start_t, end_t = xr
         else:
-            # Fallback to current visible range
-            vr = self.spectrogram_view.plot_item.viewRect()
-            start_t, end_t = vr.left(), vr.right()
-            # Clamp to data bounds
-            start_t = max(0, min(self.time_duration, start_t))
-            end_t = max(0, min(self.time_duration, end_t))
-            
-        samples = self.extract_iq_segment(start_t, end_t)
-        if samples is not None:
+            sorted_m = sorted(markers, key=lambda m: m.value())
+            start_t, end_t = sorted_m[0].value(), sorted_m[1].value()
+        
+        # Extract IQ segment
+        segment = self.extract_iq_segment(start_t, end_t)
+        if segment is not None:
             from ..time_domain.view import TimeDomainView
-            td_view = TimeDomainView(samples, start_t, self.rate, parent_window=self)
-            idx = self.tabs.addTab(td_view, "Time Domain")
-            self.tabs.setCurrentIndex(idx)
+            view = TimeDomainView(segment, start_t, self.rate, parent_window=self)
+            self.tabs.addTab(view, "Time Domain")
+            self.tabs.setCurrentWidget(view)
+            self.update_tab_names()
+
+    def open_frequency_domain_tab(self):
+        """Extracts IQ data for the selected time range and opens a Frequency Domain analysis tab."""
+        markers = self.markers_time
+        if len(markers) < 2:
+            xr, _ = self.spectrogram_view.view_box.viewRange()
+            start_t, end_t = xr
+        else:
+            sorted_m = sorted(markers, key=lambda m: m.value())
+            start_t, end_t = sorted_m[0].value(), sorted_m[1].value()
+            
+        segment = self.extract_iq_segment(start_t, end_t)
+        if segment is not None:
+            from ..frequency_domain.view import FrequencyDomainView
+            # Use center frequency from current state
+            view = FrequencyDomainView(segment, self.fc, self.rate, parent_window=self)
+            self.tabs.addTab(view, "Freq Domain")
+            self.tabs.setCurrentWidget(view)
             self.update_tab_names()
 
     def reset_zoom(self):
-        self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
-        self.spectrogram_view.plot_item.autoRange()
+        active_tab = self.tabs.currentWidget()
+        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'reset_zoom'):
+            active_tab.reset_zoom()
+        else:
+            self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
+            self.spectrogram_view.plot_item.autoRange()
 
     def handle_zoom_rectangle(self, rect, zoom_type='BOTH'):
-        self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
-        if rect.width() <= 0 and zoom_type != 'Y_ONLY': return
-        if rect.height() <= 0 and zoom_type != 'X_ONLY': return
-        if zoom_type == 'Y_ONLY': self.spectrogram_view.plot_item.setYRange(rect.top(), rect.bottom(), padding=0)
-        elif zoom_type == 'X_ONLY': self.spectrogram_view.plot_item.setXRange(rect.left(), rect.right(), padding=0)
-        else: self.spectrogram_view.plot_item.setRange(rect, padding=0)
+        active_tab = self.tabs.currentWidget()
+        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'handle_zoom_rectangle'):
+            active_tab.handle_zoom_rectangle(rect, zoom_type)
+        else:
+            self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
+            if rect.width() <= 0 and zoom_type != 'Y_ONLY': return
+            if rect.height() <= 0 and zoom_type != 'X_ONLY': return
+            if zoom_type == 'Y_ONLY': self.spectrogram_view.plot_item.setYRange(rect.top(), rect.bottom(), padding=0)
+            elif zoom_type == 'X_ONLY': self.spectrogram_view.plot_item.setXRange(rect.left(), rect.right(), padding=0)
+            else: self.spectrogram_view.plot_item.setRange(rect, padding=0)
 
     def fit_to_markers(self):
+        active_tab = self.tabs.currentWidget()
+        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'fit_to_markers'):
+            active_tab.fit_to_markers()
+            return
+
         is_freq = (self.interaction_mode in ['FREQ', 'FREQ_ENDLESS'])
         is_endless = 'ENDLESS' in self.interaction_mode
         if is_endless:
@@ -185,18 +230,22 @@ class ViewControllerMixin:
             self._grid_timer = QTimer()
             self._grid_timer.setSingleShot(True)
             self._grid_timer.timeout.connect(self._do_update_grid)
-            self._grid_pending_axis = None
+            self._grid_pending_axes = set()
 
         if force:
-            self._do_update_grid(axis)
+            self._do_update_grid(axis, force=True)
         else:
-            self._grid_pending_axis = axis
+            self._grid_pending_axes.add(axis)
             if not self._grid_timer.isActive():
                 self._grid_timer.start(50) # 50ms throttle
 
-    def _do_update_grid(self, axis=None):
+    def _do_update_grid(self, axis=None, force=False):
         if axis is None:
-            axis = getattr(self, '_grid_pending_axis', 'TIME')
+            axes_to_update = list(self._grid_pending_axes)
+            self._grid_pending_axes.clear()
+            for a in axes_to_update:
+                self._do_update_grid(a, force=force)
+            return
         
         is_freq = (axis == 'FREQ')
         enabled = self.grid_freq_enabled if is_freq else self.grid_time_enabled
@@ -259,7 +308,10 @@ class ViewControllerMixin:
             count += 1
 
     def undo_zoom(self):
-        if self.zoom_history:
+        active_tab = self.tabs.currentWidget()
+        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'undo_zoom'):
+            active_tab.undo_zoom()
+        elif self.zoom_history:
             prev_rect = self.zoom_history.pop()
             self.spectrogram_view.plot_item.setRange(rect=prev_rect, padding=0)
 
@@ -303,6 +355,31 @@ class ViewControllerMixin:
         )
         if path:
             self.load_new_file(path)
+
+    def update_sidebar_file_info(self, source, type_str=None):
+        if not hasattr(self, 'sidebar'): return
+        
+        # Determine type string if not provided
+        if type_str is None:
+            if isinstance(source, str):
+                auto_type = detect_type_from_ext(source)
+                type_str = auto_type if auto_type else str(self.settings_mgr.get("core/type", "complex64"))
+            elif isinstance(source, (bytes, bytearray)):
+                type_str = "stdin (pipe)"
+            else:
+                type_str = "N/A"
+
+        # Determine size
+        try:
+            if isinstance(source, str) and os.path.isfile(source):
+                file_size = os.path.getsize(source)
+            elif isinstance(source, (bytes, bytearray)):
+                file_size = len(source)
+            else:
+                file_size = None
+            self.sidebar.set_file_info(type_str, file_size)
+        except Exception:
+            self.sidebar.set_file_info(type_str, None)
 
     def load_new_file(self, path):
         """Swap the data source to a new file and reprocess everything."""
@@ -364,6 +441,9 @@ class ViewControllerMixin:
         self.filter_marker_order = []
         if hasattr(self.marker_panel, 'filter_on_btn'):
             self.marker_panel.filter_on_btn.setChecked(False)
+
+        # Update sidebar file info
+        self.update_sidebar_file_info(path, type_str)
 
         # Reprocess with the new file
         self.start_processing()

@@ -4,8 +4,8 @@ from PyQt6.QtGui import QFont
 from ..widgets import FormattedLineEdit, DoubleClickButton
 from ..themes import get_palette
 
-class TimeDomainMarkerPanel(QFrame):
-    interactionModeChanged = pyqtSignal(str) # 'TIME', 'MAG', 'ZOOM', 'MOVE'
+class FrequencyDomainMarkerPanel(QFrame):
+    interactionModeChanged = pyqtSignal(str) # 'FREQ', 'MAG', 'ZOOM', 'MOVE'
     resetZoomRequested = pyqtSignal()
     markerClearRequested = pyqtSignal(str)
 
@@ -13,14 +13,14 @@ class TimeDomainMarkerPanel(QFrame):
         super().__init__()
         self.controller = controller
         self.lock_states = {
-            'TIME': {'delta': False, 'center': False, 'm1': False, 'm2': False},
+            'FREQ': {'delta': False, 'center': False, 'm1': False, 'm2': False},
             'MAG':  {'delta': False, 'center': False, 'm1': False, 'm2': False}
         }
-        self.last_marker_mode = 'TIME'
+        self.last_marker_mode = 'FREQ'
         self.setup_ui()
 
     def setup_ui(self):
-        self.setFixedHeight(120) # Increased height for 3 rows
+        self.setFixedHeight(100) 
         self.header_font = QFont("Segoe UI", 9, QFont.Weight.Bold)
         self.refresh_theme()
         
@@ -33,24 +33,24 @@ class TimeDomainMarkerPanel(QFrame):
         self.mode_btn_layout.setSpacing(6)
         self.main_layout.addLayout(self.mode_btn_layout)
 
-        # 1. Time (Top-Left)
-        self.btn_marker_time = DoubleClickButton("║")
-        self.btn_marker_time.setObjectName("mode_btn")
-        self.btn_marker_time.setToolTip("Time Markers (Double-click to clear) [T]")
-        self.btn_marker_time.setCheckable(True)
-        self.mode_btn_layout.addWidget(self.btn_marker_time, 0, 0)
+        # 1. Frequency (Top-Left)
+        self.btn_marker_freq = DoubleClickButton("║")
+        self.btn_marker_freq.setObjectName("mode_btn")
+        self.btn_marker_freq.setToolTip("Frequency Markers (Double-click to clear) [F]")
+        self.btn_marker_freq.setCheckable(True)
+        self.mode_btn_layout.addWidget(self.btn_marker_freq, 0, 0)
         
-        # 1b. Endless Time
-        self.btn_marker_time_endless = DoubleClickButton("⫼")
-        self.btn_marker_time_endless.setObjectName("mode_btn")
-        self.btn_marker_time_endless.setToolTip("Endless Time Markers")
-        self.btn_marker_time_endless.setCheckable(True)
-        self.mode_btn_layout.addWidget(self.btn_marker_time_endless, 0, 1)
+        # 1b. Endless Frequency
+        self.btn_marker_freq_endless = DoubleClickButton("⫼")
+        self.btn_marker_freq_endless.setObjectName("mode_btn")
+        self.btn_marker_freq_endless.setToolTip("Endless Frequency Markers")
+        self.btn_marker_freq_endless.setCheckable(True)
+        self.mode_btn_layout.addWidget(self.btn_marker_freq_endless, 0, 1)
 
         # 2. Magnitude (Bottom-Left)
         self.btn_marker_mag = DoubleClickButton("〓")
         self.btn_marker_mag.setObjectName("mode_btn")
-        self.btn_marker_mag.setToolTip("Magnitude Markers (Double-click to clear) [F/M]")
+        self.btn_marker_mag.setToolTip("Magnitude Markers (Double-click to clear) [M]")
         self.btn_marker_mag.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_mag, 1, 0)
 
@@ -91,8 +91,8 @@ class TimeDomainMarkerPanel(QFrame):
         
         # Mutual Exclusion Group
         self.mode_group = QButtonGroup(self)
-        self.mode_group.addButton(self.btn_marker_time)
-        self.mode_group.addButton(self.btn_marker_time_endless)
+        self.mode_group.addButton(self.btn_marker_freq)
+        self.mode_group.addButton(self.btn_marker_freq_endless)
         self.mode_group.addButton(self.btn_marker_mag)
         self.mode_group.addButton(self.btn_marker_mag_endless)
         self.mode_group.addButton(self.btn_zoom)
@@ -101,16 +101,16 @@ class TimeDomainMarkerPanel(QFrame):
         self.mode_group.setExclusive(True)
 
         # Connections
-        self.btn_marker_time.clicked.connect(lambda: self.interactionModeChanged.emit('TIME'))
-        self.btn_marker_time_endless.clicked.connect(lambda: self.interactionModeChanged.emit('TIME_ENDLESS'))
+        self.btn_marker_freq.clicked.connect(lambda: self.interactionModeChanged.emit('FREQ'))
+        self.btn_marker_freq_endless.clicked.connect(lambda: self.interactionModeChanged.emit('FREQ_ENDLESS'))
         self.btn_marker_mag.clicked.connect(lambda: self.interactionModeChanged.emit('MAG'))
         self.btn_marker_mag_endless.clicked.connect(lambda: self.interactionModeChanged.emit('MAG_ENDLESS'))
         self.btn_zoom.clicked.connect(lambda: self.interactionModeChanged.emit('ZOOM'))
         self.btn_move.clicked.connect(lambda: self.interactionModeChanged.emit('MOVE'))
         self.btn_stats.clicked.connect(lambda: self.interactionModeChanged.emit('STATS'))
         
-        self.btn_marker_time.doubleClicked.connect(lambda: self.markerClearRequested.emit('TIME'))
-        self.btn_marker_time_endless.doubleClicked.connect(lambda: self.markerClearRequested.emit('TIME_ENDLESS'))
+        self.btn_marker_freq.doubleClicked.connect(lambda: self.markerClearRequested.emit('FREQ'))
+        self.btn_marker_freq_endless.doubleClicked.connect(lambda: self.markerClearRequested.emit('FREQ_ENDLESS'))
         self.btn_marker_mag.doubleClicked.connect(lambda: self.markerClearRequested.emit('Y')) 
         self.btn_marker_mag_endless.doubleClicked.connect(lambda: self.markerClearRequested.emit('MAG_ENDLESS'))
         self.btn_stats.doubleClicked.connect(lambda: self.markerClearRequested.emit('STATS'))
@@ -140,67 +140,52 @@ class TimeDomainMarkerPanel(QFrame):
         self.btn_lock_m2.setCheckable(True)
         self.grid.addWidget(self.btn_lock_m2, 0, 2, Qt.AlignmentFlag.AlignCenter)
 
-        # Delta Header (Combined with Lock)
         self.btn_lock_delta = QPushButton("Delta (Δ) 🔓")
         self.btn_lock_delta.setFont(self.header_font)
         self.btn_lock_delta.setCheckable(True)
-        self.btn_lock_delta.setCheckable(True)
-        # Style moved to refresh_theme
         self.grid.addWidget(self.btn_lock_delta, 0, 3)
 
-        # Center Header (Combined with Lock)
         self.btn_lock_center = QPushButton("Center 🔓")
         self.btn_lock_center.setFont(self.header_font)
         self.btn_lock_center.setCheckable(True)
-        self.btn_lock_center.setCheckable(True)
-        # Style moved to refresh_theme
         self.grid.addWidget(self.btn_lock_center, 0, 4)
 
         # Side labels (Row names)
-        self.row_v1_label = QLabel("Time (sec)")
-        self.row_v2_label = QLabel("Samples")
-        self.row_v3_label = QLabel("1/T (Hz)")
+        self.row_v1_label = QLabel("Frequency (Hz)")
+        self.row_v2_label = QLabel("Index")
         self.row_v1_label.setObjectName("header_label")
         self.row_v2_label.setObjectName("header_label")
-        self.row_v3_label.setObjectName("header_label")
         self.grid.addWidget(self.row_v1_label, 1, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(self.row_v2_label, 2, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.grid.addWidget(self.row_v3_label, 3, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         # Edit Widgets (3 Rows)
         self.m_widgets = []
         for i in range(2):
             v1_edit = FormattedLineEdit(); v1_edit.setFixedWidth(130); v1_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
             v2_edit = FormattedLineEdit(); v2_edit.setFixedWidth(130); v2_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            v3_edit = FormattedLineEdit(); v3_edit.setFixedWidth(130); v3_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
             
             v1_edit.setObjectName(f"m{i}_v1")
             v2_edit.setObjectName(f"m{i}_v2")
-            v3_edit.setObjectName(f"m{i}_v3")
             
             for w in [v1_edit, v2_edit]:
                 w.returnPressed.connect(self.controller.marker_edit_finished)
-            v3_edit.setReadOnly(True)
                 
             self.grid.addWidget(v1_edit, 1, i + 1)
             self.grid.addWidget(v2_edit, 2, i + 1)
-            self.grid.addWidget(v3_edit, 3, i + 1)
-            self.m_widgets.append({'v1': v1_edit, 'v2': v2_edit, 'v3': v3_edit})
+            self.m_widgets.append({'v1': v1_edit, 'v2': v2_edit})
 
         # Delta/Center Edits
         self.delta_v1 = FormattedLineEdit(); self.delta_v1.setFixedWidth(130); self.delta_v1.setObjectName("delta_v1"); self.delta_v1.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.delta_v2 = FormattedLineEdit(); self.delta_v2.setFixedWidth(130); self.delta_v2.setObjectName("delta_v2"); self.delta_v2.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.delta_v3 = FormattedLineEdit(); self.delta_v3.setFixedWidth(130); self.delta_v3.setObjectName("delta_v3"); self.delta_v3.setAlignment(Qt.AlignmentFlag.AlignCenter); self.delta_v3.setReadOnly(True)
+        self.delta_v2 = FormattedLineEdit(); self.delta_v2.setFixedWidth(130); self.delta_v2.setObjectName("delta_v2"); self.delta_v2.setAlignment(Qt.AlignmentFlag.AlignCenter); self.delta_v2.setReadOnly(True)
         
         self.center_v1 = FormattedLineEdit(); self.center_v1.setFixedWidth(130); self.center_v1.setObjectName("center_v1"); self.center_v1.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.center_v2 = FormattedLineEdit(); self.center_v2.setFixedWidth(130); self.center_v2.setObjectName("center_v2"); self.center_v2.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.center_v3 = FormattedLineEdit(); self.center_v3.setFixedWidth(130); self.center_v3.setObjectName("center_v3"); self.center_v3.setAlignment(Qt.AlignmentFlag.AlignCenter); self.center_v3.setReadOnly(True)
+        self.center_v2 = FormattedLineEdit(); self.center_v2.setFixedWidth(130); self.center_v2.setObjectName("center_v2"); self.center_v2.setAlignment(Qt.AlignmentFlag.AlignCenter); self.center_v2.setReadOnly(True)
         
-        for w in [self.delta_v1, self.delta_v2, self.center_v1, self.center_v2]:
+        for w in [self.delta_v1, self.center_v1]:
             w.returnPressed.connect(self.controller.marker_edit_finished)
             
-        self.grid.addWidget(self.delta_v1, 1, 3); self.grid.addWidget(self.delta_v2, 2, 3); self.grid.addWidget(self.delta_v3, 3, 3)
-        self.grid.addWidget(self.center_v1, 1, 4); self.grid.addWidget(self.center_v2, 2, 4); self.grid.addWidget(self.center_v3, 3, 4)
+        self.grid.addWidget(self.delta_v1, 1, 3); self.grid.addWidget(self.delta_v2, 2, 3)
+        self.grid.addWidget(self.center_v1, 1, 4); self.grid.addWidget(self.center_v2, 2, 4)
         
         # Connect locks
         self.btn_lock_m1.toggled.connect(self.on_lock_m1_toggled)
@@ -208,7 +193,7 @@ class TimeDomainMarkerPanel(QFrame):
         self.btn_lock_delta.toggled.connect(self.on_lock_delta_toggled)
         self.btn_lock_center.toggled.connect(self.on_lock_center_toggled)
         
-        self.btn_marker_time.setChecked(True)
+        self.btn_marker_freq.setChecked(True)
 
         # Page 2: Endless Table
         self.endless_widget = QWidget()
@@ -238,7 +223,7 @@ class TimeDomainMarkerPanel(QFrame):
         # Headers (Row 0)
         self.stats_layout.addWidget(QLabel(""), 0, 0) 
         
-        headers = ["Maximum", "Minimum", "Mean", "Median"]
+        headers = ["Maximum", "Minimum", "Mean", "Median", "Integrated Power"]
         for i, h in enumerate(headers):
             lbl = QLabel(h)
             lbl.setFont(self.header_font)
@@ -248,11 +233,11 @@ class TimeDomainMarkerPanel(QFrame):
             
         # Row Labels (Col 0)
         lbl_val = QLabel("Value"); lbl_val.setObjectName("header_label")
-        lbl_time = QLabel("Time (sec)"); lbl_time.setObjectName("header_label")
+        lbl_freq = QLabel("Frequency (Hz)"); lbl_freq.setObjectName("header_label")
         lbl_idx = QLabel("Index"); lbl_idx.setObjectName("header_label")
         
         self.stats_layout.addWidget(lbl_val, 1, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.stats_layout.addWidget(lbl_time, 2, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.stats_layout.addWidget(lbl_freq, 2, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.stats_layout.addWidget(lbl_idx, 3, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         
         # Line Edits
@@ -260,9 +245,10 @@ class TimeDomainMarkerPanel(QFrame):
         self.stats_min_val = FormattedLineEdit(); self.stats_min_val.setFixedWidth(130); self.stats_min_val.setReadOnly(True); self.stats_min_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stats_mean_val = FormattedLineEdit(); self.stats_mean_val.setFixedWidth(130); self.stats_mean_val.setReadOnly(True); self.stats_mean_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stats_median_val = FormattedLineEdit(); self.stats_median_val.setFixedWidth(130); self.stats_median_val.setReadOnly(True); self.stats_median_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_total_power = FormattedLineEdit(); self.stats_total_power.setFixedWidth(130); self.stats_total_power.setReadOnly(True); self.stats_total_power.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        self.stats_max_time = FormattedLineEdit(); self.stats_max_time.setFixedWidth(130); self.stats_max_time.setReadOnly(True); self.stats_max_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_min_time = FormattedLineEdit(); self.stats_min_time.setFixedWidth(130); self.stats_min_time.setReadOnly(True); self.stats_min_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_max_freq = FormattedLineEdit(); self.stats_max_freq.setFixedWidth(130); self.stats_max_freq.setReadOnly(True); self.stats_max_freq.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_min_freq = FormattedLineEdit(); self.stats_min_freq.setFixedWidth(130); self.stats_min_freq.setReadOnly(True); self.stats_min_freq.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         self.stats_max_idx = FormattedLineEdit(); self.stats_max_idx.setFixedWidth(130); self.stats_max_idx.setReadOnly(True); self.stats_max_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stats_min_idx = FormattedLineEdit(); self.stats_min_idx.setFixedWidth(130); self.stats_min_idx.setReadOnly(True); self.stats_min_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -272,32 +258,24 @@ class TimeDomainMarkerPanel(QFrame):
         self.stats_layout.addWidget(self.stats_min_val, 1, 2)
         self.stats_layout.addWidget(self.stats_mean_val, 1, 3)
         self.stats_layout.addWidget(self.stats_median_val, 1, 4)
+        self.stats_layout.addWidget(self.stats_total_power, 1, 5)
         
-        # Add to Grid (Row 2: Time)
-        self.stats_layout.addWidget(self.stats_max_time, 2, 1)
-        self.stats_layout.addWidget(self.stats_min_time, 2, 2)
+        # Add to Grid (Row 2: Frequency)
+        self.stats_layout.addWidget(self.stats_max_freq, 2, 1)
+        self.stats_layout.addWidget(self.stats_min_freq, 2, 2)
         
         # Add to Grid (Row 3: Index)
         self.stats_layout.addWidget(self.stats_max_idx, 3, 1)
         self.stats_layout.addWidget(self.stats_min_idx, 3, 2)
 
-    def set_y_label(self, label):
-        # We handle this via update_headers now
-        pass
-
     def update_headers(self, mode, y_axis_label="Magnitude"):
         self.row_v1_label.blockSignals(True)
         self.row_v2_label.blockSignals(True)
         
-        # Track the last valid marker mode OR stats mode so we can return to it when zooming
-        if mode in ['TIME', 'MAG', 'TIME_ENDLESS', 'MAG_ENDLESS', 'STATS']:
+        if mode in ['FREQ', 'MAG', 'FREQ_ENDLESS', 'MAG_ENDLESS', 'STATS']:
             self.last_marker_mode = mode
             
         display_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE'] else mode
-        
-        # Handle Page Switching
-        # We must use the cached last_marker_mode if we are currently panning/zooming, 
-        # because we want to preserve the UI of the last thing the user was doing.
         actual_ui_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE'] else mode
         
         if actual_ui_mode == 'STATS':
@@ -307,35 +285,28 @@ class TimeDomainMarkerPanel(QFrame):
         else:
             self.stacked.setCurrentIndex(0)
 
-        if display_mode in ['TIME', 'TIME_ENDLESS']:
-            show_inv = self.controller.settings_mgr.get("ui/show_inv_time", False)
-            self.row_v1_label.setText("Time (sec)")
-            self.row_v2_label.setText("Samples")
-            self.row_v3_label.setText("1/T (Hz)")
+        if display_mode in ['FREQ', 'FREQ_ENDLESS']:
+            self.row_v1_label.setText("Frequency (Hz)")
+            self.row_v2_label.setText("Index")
+            self.row_v1_label.show()
             self.row_v2_label.show()
-            self.row_v3_label.setVisible(show_inv)
             for i in range(2): 
                 self.m_widgets[i]['v2'].show()
-                self.m_widgets[i]['v3'].setVisible(show_inv)
-            self.delta_v2.show(); self.delta_v3.setVisible(show_inv)
-            self.center_v2.show(); self.center_v3.setVisible(show_inv)
+            self.delta_v2.show()
+            self.center_v2.show()
         else: # MAG
             self.row_v1_label.setText(y_axis_label)
             self.row_v2_label.setText("")
-            self.row_v3_label.setText("")
             self.row_v2_label.hide()
-            self.row_v3_label.hide()
             for i in range(2): 
                 self.m_widgets[i]['v2'].hide()
-                self.m_widgets[i]['v3'].hide()
-            self.delta_v2.hide(); self.delta_v3.hide()
-            self.center_v2.hide(); self.center_v3.hide()
+            self.delta_v2.hide()
+            self.center_v2.hide()
             
         self.row_v1_label.blockSignals(False)
         self.row_v2_label.blockSignals(False)
 
-        # Sync lock UI with saved state for this display mode
-        base_mode = 'TIME' if 'TIME' in display_mode else 'MAG'
+        base_mode = 'FREQ' if 'FREQ' in display_mode else 'MAG'
         if base_mode in self.lock_states:
             for key, btn, label_fn in [
                 ('m1',     self.btn_lock_m1,     lambda c: f"Marker 1 {'🔒' if c else '🔓'}"),
@@ -351,40 +322,38 @@ class TimeDomainMarkerPanel(QFrame):
                 btn.blockSignals(False)
 
     def update_mode_ui(self, mode):
-        self.btn_marker_time.blockSignals(True)
-        self.btn_marker_time_endless.blockSignals(True)
+        self.btn_marker_freq.blockSignals(True)
+        self.btn_marker_freq_endless.blockSignals(True)
         self.btn_marker_mag.blockSignals(True)
         self.btn_marker_mag_endless.blockSignals(True)
         self.btn_zoom.blockSignals(True)
         self.btn_move.blockSignals(True)
         self.btn_stats.blockSignals(True)
         
-        self.btn_marker_time.setChecked(mode == 'TIME')
-        self.btn_marker_time_endless.setChecked(mode == 'TIME_ENDLESS')
+        self.btn_marker_freq.setChecked(mode == 'FREQ')
+        self.btn_marker_freq_endless.setChecked(mode == 'FREQ_ENDLESS')
         self.btn_marker_mag.setChecked(mode == 'MAG')
         self.btn_marker_mag_endless.setChecked(mode == 'MAG_ENDLESS')
         self.btn_zoom.setChecked(mode == 'ZOOM')
         self.btn_move.setChecked(mode == 'MOVE')
         self.btn_stats.setChecked(mode == 'STATS')
         
-        self.btn_marker_time.blockSignals(False)
-        self.btn_marker_time_endless.blockSignals(False)
+        self.btn_marker_freq.blockSignals(False)
+        self.btn_marker_freq_endless.blockSignals(False)
         self.btn_marker_mag.blockSignals(False)
         self.btn_marker_mag_endless.blockSignals(False)
         self.btn_zoom.blockSignals(False)
         self.btn_move.blockSignals(False)
         self.btn_stats.blockSignals(False)
         
-        self.btn_lock_delta.setEnabled(mode in ['TIME', 'MAG'])
-        self.btn_lock_center.setEnabled(mode in ['TIME', 'MAG'])
+        self.btn_lock_delta.setEnabled(mode in ['FREQ', 'MAG'])
+        self.btn_lock_center.setEnabled(mode in ['FREQ', 'MAG'])
 
     def update_endless_list(self, markers, mode):
-        """Update the scroll area with rows for each endless marker, reusing widgets where possible."""
-        is_time = 'TIME' in mode
-        unit_main = "sec" if is_time else self.controller.y_label_text
-        unit_sub = "Sam" if is_time else ""
+        is_freq = 'FREQ' in mode
+        unit_main = "Hz" if is_freq else self.controller.y_label_text
+        unit_sub = "Bin" if is_freq else ""
         
-        # 1. Initialize or find internal row storage
         if not hasattr(self, '_endless_rows'):
             self._endless_rows = []
         if not hasattr(self, '_header_widget'):
@@ -405,24 +374,21 @@ class TimeDomainMarkerPanel(QFrame):
             h_layout.addWidget(l_sub, 1)
             h_layout.addWidget(l_del)
             self.scroll_layout.insertWidget(0, self._header_widget)
-            self.refresh_theme() # Apply theme to new header
+            self.refresh_theme() 
 
-        # 2. Update header labels
         for lbl in self._header_widget.findChildren(QLabel, "header_label"):
             if lbl.property("role") == "pos_header":
                 lbl.setText(f"Pos ({unit_main})")
             elif lbl.property("role") == "sub_header":
                 lbl.setText(unit_sub)
         
-        if not is_time:
-            # Hide sub-header if in MAG mode
+        if not is_freq:
             for lbl in self._header_widget.findChildren(QLabel, "header_label"):
                 if lbl.property("role") == "sub_header": lbl.hide()
         else:
             for lbl in self._header_widget.findChildren(QLabel, "header_label"):
                 if lbl.property("role") == "sub_header": lbl.show()
 
-        # 3. Synchronize row count
         while len(self._endless_rows) > len(markers):
             row_data = self._endless_rows.pop()
             row_data['widget'].deleteLater()
@@ -469,24 +435,23 @@ class TimeDomainMarkerPanel(QFrame):
                 'btn_del': btn_del
             })
 
-        # 4. Update data for all rows
         for i, m in enumerate(markers):
             row_data = self._endless_rows[i]
             val = m.value()
-            prec = 9 if is_time else 6
+            prec = 3 if is_freq else 6
             
             row_data['lbl_id'].setText(f"M{i+1}")
             
             row_data['edit_pos'].blockSignals(True)
-            row_data['edit_pos'].setObjectName(f"em_{i}_sec")
+            row_data['edit_pos'].setObjectName(f"em_{i}_hz")
             row_data['edit_pos'].setText(f"{val:.{prec}f}")
             row_data['edit_pos'].blockSignals(False)
             
-            if is_time:
-                sub_val = int(round(val * self.controller.rate)) + 1
+            if is_freq:
+                sub_val = self.controller.freq_to_index(val)
                 row_data['edit_sub'].show()
                 row_data['edit_sub'].blockSignals(True)
-                row_data['edit_sub'].setObjectName(f"em_{i}_sam")
+                row_data['edit_sub'].setObjectName(f"em_{i}_bin")
                 row_data['edit_sub'].setText(f"{sub_val}")
                 row_data['edit_sub'].blockSignals(False)
             else:
@@ -497,8 +462,7 @@ class TimeDomainMarkerPanel(QFrame):
             row_data['btn_del'].clicked.connect(lambda _, m=m: self.controller.remove_marker_item(m, mode))
 
     def _clear_marker_locks(self, mode, keep=None):
-        """Uncheck all marker-position locks except the one named in `keep`."""
-        base_mode = 'TIME' if 'TIME' in mode else 'MAG'
+        base_mode = 'FREQ' if 'FREQ' in mode else 'MAG'
         if base_mode not in self.lock_states: return
 
         for key, btn, label in [
@@ -515,7 +479,6 @@ class TimeDomainMarkerPanel(QFrame):
             btn.blockSignals(False)
 
     def set_locks_enabled(self, m1_placed, m2_placed):
-        """Enable/disable lock buttons based on marker presence."""
         self.btn_lock_m1.setEnabled(m1_placed)
         self.btn_lock_m2.setEnabled(m2_placed)
         
@@ -523,7 +486,6 @@ class TimeDomainMarkerPanel(QFrame):
         self.btn_lock_delta.setEnabled(can_pair_lock)
         self.btn_lock_center.setEnabled(can_pair_lock)
         
-        # If a marker was removed, ensure its lock is released
         if not m1_placed and self.btn_lock_m1.isChecked(): self.on_lock_m1_toggled(False)
         if not m2_placed and self.btn_lock_m2.isChecked(): self.on_lock_m2_toggled(False)
         if not can_pair_lock:
@@ -532,7 +494,7 @@ class TimeDomainMarkerPanel(QFrame):
 
     def on_lock_delta_toggled(self, checked):
         mode = self.controller.interaction_mode
-        base_mode = 'TIME' if 'TIME' in mode else 'MAG'
+        base_mode = 'FREQ' if 'FREQ' in mode else 'MAG'
         self.lock_states[base_mode]['delta'] = checked
         if checked: self._clear_marker_locks(mode, keep='delta')
         self.btn_lock_delta.setText(f"Delta (Δ) {'🔒' if checked else '🔓'}")
@@ -540,7 +502,7 @@ class TimeDomainMarkerPanel(QFrame):
 
     def on_lock_center_toggled(self, checked):
         mode = self.controller.interaction_mode
-        base_mode = 'TIME' if 'TIME' in mode else 'MAG'
+        base_mode = 'FREQ' if 'FREQ' in mode else 'MAG'
         self.lock_states[base_mode]['center'] = checked
         if checked: self._clear_marker_locks(mode, keep='center')
         self.btn_lock_center.setText(f"Center {'🔒' if checked else '🔓'}")
@@ -548,7 +510,7 @@ class TimeDomainMarkerPanel(QFrame):
 
     def on_lock_m1_toggled(self, checked):
         mode = self.controller.interaction_mode
-        base_mode = 'TIME' if 'TIME' in mode else 'MAG'
+        base_mode = 'FREQ' if 'FREQ' in mode else 'MAG'
         self.lock_states[base_mode]['m1'] = checked
         if checked: self._clear_marker_locks(mode, keep='m1')
         self.btn_lock_m1.setText(f"Marker 1 {'🔒' if checked else '🔓'}")
@@ -556,15 +518,14 @@ class TimeDomainMarkerPanel(QFrame):
 
     def on_lock_m2_toggled(self, checked):
         mode = self.controller.interaction_mode
-        base_mode = 'TIME' if 'TIME' in mode else 'MAG'
+        base_mode = 'FREQ' if 'FREQ' in mode else 'MAG'
         self.lock_states[base_mode]['m2'] = checked
         if checked: self._clear_marker_locks(mode, keep='m2')
         self.btn_lock_m2.setText(f"Marker 2 {'🔒' if checked else '🔓'}")
         self.controller.handle_lock_change('m2', checked)
 
     def flip_m_lock(self, mode):
-        """Silently swap the m1/m2 lock buttons when markers cross each other."""
-        base_mode = 'TIME' if 'TIME' in mode else 'MAG'
+        base_mode = 'FREQ' if 'FREQ' in mode else 'MAG'
         m1 = self.btn_lock_m1.isChecked()
         m2 = self.btn_lock_m2.isChecked()
         if not m1 and not m2: return
@@ -580,7 +541,7 @@ class TimeDomainMarkerPanel(QFrame):
         theme = self.controller.parent_window.settings_mgr.get("ui/theme", "Dark")
         p = get_palette(theme)
         self.setStyleSheet(f"""
-            TimeDomainMarkerPanel {{ 
+            FrequencyDomainMarkerPanel {{ 
                 background-color: {p.bg_widget}; 
                 border-radius: 6px;
                 border: 1px solid {p.border};

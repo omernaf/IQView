@@ -406,23 +406,33 @@ class CustomViewBox(pg.ViewBox):
         if is_spec:
             td_popup_act = menu.addAction("Time Domain Popup")
             td_popup_act.triggered.connect(self.ui_controller.open_time_domain_tab)
+            
+            fd_popup_act = menu.addAction("Frequency Domain Popup")
+            fd_popup_act.triggered.connect(self.ui_controller.open_frequency_domain_tab)
 
         fit_act = menu.addAction("Fit to Screen")
-        # Handle 'Y' mode for TimeDomainView or 'FREQ' for Spectrogram
+        # Handle 'Y' mode for TimeDomainView or 'FREQ' for Spectrogram/Frequency Popup
         if is_spec:
-            is_freq = (self.ui_controller.interaction_mode in ['FREQ', 'FREQ_ENDLESS', 'MAG', 'Y'])
-            active_markers = self.ui_controller.markers_freq_endless if self.ui_controller.interaction_mode == 'FREQ_ENDLESS' else \
-                             self.ui_controller.markers_freq if is_freq else \
-                             self.ui_controller.markers_time_endless if self.ui_controller.interaction_mode == 'TIME_ENDLESS' else \
-                             self.ui_controller.markers_time
+            is_freq = (getattr(self.ui_controller, 'interaction_mode', 'TIME') in ['FREQ', 'FREQ_ENDLESS', 'MAG', 'Y'])
+            active_markers = getattr(self.ui_controller, 'markers_freq_endless', []) if getattr(self.ui_controller, 'interaction_mode', '') == 'FREQ_ENDLESS' else \
+                             getattr(self.ui_controller, 'markers_freq', []) if is_freq else \
+                             getattr(self.ui_controller, 'markers_time_endless', []) if getattr(self.ui_controller, 'interaction_mode', '') == 'TIME_ENDLESS' else \
+                             getattr(self.ui_controller, 'markers_time', [])
         else:
-            # TimeDomainView
-            if self.ui_controller.interaction_mode in ['MAG', 'Y', 'MAG_ENDLESS']:
-                active_markers = self.ui_controller.markers_y_endless_dict.get(self.ui_controller.y_label_text, []) if 'ENDLESS' in self.ui_controller.interaction_mode else \
-                                 self.ui_controller.markers_y_dict.get(self.ui_controller.y_label_text, [])
+            # Popup View (Time or Frequency)
+            mode = getattr(self.ui_controller, 'interaction_mode', 'TIME')
+            if mode in ['MAG', 'Y', 'MAG_ENDLESS']:
+                y_label = getattr(self.ui_controller, 'y_label_text', '')
+                if 'ENDLESS' in mode:
+                    active_markers = getattr(self.ui_controller, 'markers_y_endless_dict', {}).get(y_label, [])
+                else:
+                    active_markers = getattr(self.ui_controller, 'markers_y_dict', {}).get(y_label, [])
+            elif mode in ['FREQ', 'FREQ_ENDLESS']:
+                active_markers = getattr(self.ui_controller, 'markers_freq_endless', []) if 'ENDLESS' in mode else \
+                                 getattr(self.ui_controller, 'markers_freq', [])
             else:
-                active_markers = self.ui_controller.markers_time_endless if 'ENDLESS' in self.ui_controller.interaction_mode else \
-                                 self.ui_controller.markers_time
+                active_markers = getattr(self.ui_controller, 'markers_time_endless', []) if 'ENDLESS' in mode else \
+                                 getattr(self.ui_controller, 'markers_time', [])
                 
         fit_act.setEnabled(len(active_markers) >= 2)
         fit_act.triggered.connect(self.ui_controller.fit_to_markers)
@@ -431,11 +441,12 @@ class CustomViewBox(pg.ViewBox):
             menu.addSeparator()
             # Time Grid Submenu
             grid_time_menu = menu.addMenu("Time Grid")
-            grid_time_menu.setEnabled(len(self.ui_controller.markers_time) == 2)
+            markers_time = getattr(self.ui_controller, 'markers_time', [])
+            grid_time_menu.setEnabled(len(markers_time) == 2)
             
             grid_time_enable_act = grid_time_menu.addAction("Enabled")
             grid_time_enable_act.setCheckable(True)
-            grid_time_enable_act.setChecked(self.ui_controller.grid_time_enabled)
+            grid_time_enable_act.setChecked(getattr(self.ui_controller, 'grid_time_enabled', False))
             grid_time_enable_act.triggered.connect(lambda checked: self.ui_controller.toggle_grid('TIME', checked))
             
             grid_time_track_act = grid_time_menu.addAction("Tracking")
@@ -458,23 +469,35 @@ class CustomViewBox(pg.ViewBox):
             grid_freq_track_act.triggered.connect(lambda checked: self.ui_controller.toggle_tracking('FREQ', checked))
         else:
             menu.addSeparator()
-            # Time Grid Submenu
-            grid_time_menu = menu.addMenu("Time Grid")
-            grid_time_menu.setEnabled(len(self.ui_controller.markers_time) == 2)
+            mode = getattr(self.ui_controller, 'interaction_mode', 'TIME')
+            is_freq_popup = ('FREQ' in mode)
             
-            grid_time_enable_act = grid_time_menu.addAction("Enabled")
-            grid_time_enable_act.setCheckable(True)
-            grid_time_enable_act.setChecked(getattr(self.ui_controller, 'grid_time_enabled', False))
-            grid_time_enable_act.triggered.connect(lambda checked: self.ui_controller.toggle_grid('TIME', checked))
+            # Main Axis Grid Submenu (Time or Frequency)
+            main_axis_name = "Frequency" if is_freq_popup else "Time"
+            grid_main_menu = menu.addMenu(f"{main_axis_name} Grid")
+            main_markers = getattr(self.ui_controller, 'markers_freq', []) if is_freq_popup else \
+                           getattr(self.ui_controller, 'markers_time', [])
+            grid_main_menu.setEnabled(len(main_markers) == 2)
             
-            grid_time_track_act = grid_time_menu.addAction("Tracking")
-            grid_time_track_act.setCheckable(True)
-            grid_time_track_act.setChecked(getattr(self.ui_controller, 'grid_time_tracking', False))
-            grid_time_track_act.triggered.connect(lambda checked: self.ui_controller.toggle_tracking('TIME', checked))
+            grid_main_enable_act = grid_main_menu.addAction("Enabled")
+            grid_main_enable_act.setCheckable(True)
+            main_grid_enabled = getattr(self.ui_controller, 'grid_freq_enabled', False) if is_freq_popup else \
+                                getattr(self.ui_controller, 'grid_time_enabled', False)
+            grid_main_enable_act.setChecked(main_grid_enabled)
+            grid_main_enable_act.triggered.connect(lambda checked: self.ui_controller.toggle_grid('FREQ' if is_freq_popup else 'TIME', checked))
             
-            # Magnitude Grid Submenu
+            grid_main_track_act = grid_main_menu.addAction("Tracking")
+            grid_main_track_act.setCheckable(True)
+            main_grid_tracking = getattr(self.ui_controller, 'grid_freq_tracking', False) if is_freq_popup else \
+                                 getattr(self.ui_controller, 'grid_time_tracking', False)
+            grid_main_track_act.setChecked(main_grid_tracking)
+            grid_main_track_act.triggered.connect(lambda checked: self.ui_controller.toggle_tracking('FREQ' if is_freq_popup else 'TIME', checked))
+            
+            # Magnitude/Y Grid Submenu
             grid_mag_menu = menu.addMenu("Magnitude Grid")
-            active_y_markers = self.ui_controller.markers_y_dict.get(self.ui_controller.y_label_text, [])
+            markers_y_dict = getattr(self.ui_controller, 'markers_y_dict', {})
+            y_label = getattr(self.ui_controller, 'y_label_text', '')
+            active_y_markers = markers_y_dict.get(y_label, [])
             grid_mag_menu.setEnabled(len(active_y_markers) == 2)
             
             grid_mag_enable_act = grid_mag_menu.addAction("Enabled")

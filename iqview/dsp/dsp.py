@@ -70,3 +70,45 @@ def apply_bpf(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, r
     
     # 4. Shift back to original frequency band
     return data_filtered * np.conj(shift_vector)
+
+def compute_psd(samples, fs=1.0, method='Welch', **kwargs):
+    """
+    Computes the Power Spectrum Density (PSD) of the samples.
+    Methods supported: 'Periodogram' and 'Welch'.
+    Returns (freqs, psd)
+    NOTE: If fs=1.0 (default), returns normalized density.
+    """
+    if len(samples) == 0:
+        return np.array([]), np.array([])
+
+    if method == 'Welch':
+        # Welch's method: Overlapping segments and averaging
+        # Default nperseg to 1024 or len(samples) if shorter
+        nperseg = kwargs.get('nperseg', 1024)
+        nperseg = min(nperseg, len(samples))
+        
+        freqs, psd = signal.welch(
+            samples, fs, 
+            window=kwargs.get('window_type', 'hann'),
+            nperseg=nperseg,
+            nfft=kwargs.get('nfft', nperseg),
+            scaling='density',
+            return_onesided=False
+        )
+        # Shift to center DC
+        freqs = np.fft.fftshift(freqs)
+        psd = np.fft.fftshift(psd)
+    else:
+        # Periodogram method: Basic FFT-based estimate
+        freqs, psd = signal.periodogram(
+            samples, fs, 
+            window=kwargs.get('window_type', 'boxcar'),
+            nfft=kwargs.get('nfft', len(samples)),
+            scaling='density',
+            return_onesided=False
+        )
+        # Shift to center DC
+        freqs = np.fft.fftshift(freqs)
+        psd = np.fft.fftshift(psd)
+        
+    return freqs, psd

@@ -480,7 +480,7 @@ class ExportDialog(QtWidgets.QDialog):
                 bessel_norm = s.settings_mgr.get('dsp/filter_bessel_norm', 'phase')
                 
                 data = apply_bpf(
-                    data, s.rate, f_low, f_high, 
+                    data, s.rate, f_low - s.fc, f_high - s.fc, 
                     filter_type=filter_type, order=filter_order, 
                     rp=filter_ripple, rs=filter_stopband, bessel_norm=bessel_norm
                 )

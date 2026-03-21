@@ -368,14 +368,14 @@ class MarkerPanel(QFrame):
         if mode in ['TIME', 'FREQ', 'TIME_ENDLESS', 'FREQ_ENDLESS']:
             self.last_marker_mode = mode
             
-        display_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE', 'FILTER'] else mode
+        display_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE'] else mode
 
         if display_mode in ['TIME_ENDLESS', 'FREQ_ENDLESS']:
             self.stack.setCurrentIndex(1)
         else:
             self.stack.setCurrentIndex(0)
 
-        if display_mode in ['FREQ', 'FREQ_ENDLESS']:
+        if display_mode in ['FREQ', 'FREQ_ENDLESS', 'FILTER']:
             self.row1_label.setText("Freq (Hz)")
             self.row2_label.setText("Bin")
             self.row3_label.setText("1/F (sec)")

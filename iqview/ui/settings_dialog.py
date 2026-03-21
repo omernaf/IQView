@@ -5,8 +5,9 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QStackedWidget,
                              QAbstractItemView, QTableWidget, QTableWidgetItem, QHeaderView,
                              QScrollArea, QFrame)
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
-from PyQt6.QtGui import QKeySequence, QIcon, QPixmap, QPainter, QLinearGradient, QColor
+from PyQt6.QtGui import QKeySequence, QIcon, QPixmap, QPainter, QLinearGradient, QColor, QPalette
 from .widgets import KeyBindEdit
+from .themes import get_palette
 
 class ColorButton(QPushButton):
     colorChanged = pyqtSignal(str)
@@ -35,6 +36,45 @@ class ColorButton(QPushButton):
             self._update_style()
             self.colorChanged.emit(self._color)
 
+class PlotItemWidget(QWidget):
+    def __init__(self, text, checked, p, filter_len=None, parent=None):
+        super().__init__(parent)
+        self.text = text
+        self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(10, 2, 10, 2)
+        
+        self.cb = QCheckBox(text)
+        self.cb.setChecked(checked)
+        self.layout.addWidget(self.cb)
+        
+        self.layout.addStretch()
+        
+        self.spin = None
+        self.psd_combo = None
+        if filter_len is not None:
+            self.label = QLabel("Median Filter:")
+            self.layout.addWidget(self.label)
+            self.spin = QSpinBox()
+            self.spin.setRange(1, 101)
+            self.spin.setSingleStep(2)
+            self.spin.setValue(filter_len)
+            self.spin.setFixedWidth(60)
+            self.layout.addWidget(self.spin)
+            
+        if "power spectrum density" in text.lower():
+            self.label = QLabel("Algorithm:")
+            self.layout.addWidget(self.label)
+            self.psd_combo = QComboBox()
+            self.psd_combo.addItems(["Welch", "Periodogram"])
+            # Set default or provided value later in add_plot_item
+            self.layout.addWidget(self.psd_combo)
+        
+        self.set_theme(p)
+
+    def set_theme(self, p):
+        # Explicit color to override system light-mode default for checkboxes/labels on Windows
+        self.setStyleSheet(f"background: transparent; color: {p.text_main};")
+
 class SettingsDialog(QDialog):
     settingsApplied = pyqtSignal()
 
@@ -43,8 +83,15 @@ class SettingsDialog(QDialog):
         self.mgr = settings_manager
         self.setWindowTitle("Settings")
         self.setMinimumSize(730, 560)
+        
+        self._themed_viewports = []
+        self._themed_widgets = []
+        self._themed_plot_widgets = []
+        
         self.setup_ui()
-        self._update_dialog_style(self.mgr.get("ui/theme", "Dark"))
+        current_theme = self.mgr.get("ui/theme", "Dark")
+        self._update_dialog_style(current_theme)
+        self._apply_theme_to_subwidgets(current_theme)
 
     def _update_dialog_style(self, theme_text):
         from .themes import get_main_stylesheet
@@ -118,17 +165,28 @@ class SettingsDialog(QDialog):
         row_layout.addSpacing(10)
         row_layout.addWidget(reset_btn)
         
-        label_widget = QLabel(label)
-        label_widget.setMinimumWidth(180)
-        form.addRow(label_widget, row_layout)
+        form.addRow(label, row_layout)
 
     def add_side_tab(self, widget, title):
-        self.stacked_widget.addWidget(widget)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(widget)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        
+        # Register for dynamic theme updates
+        self._themed_viewports.append(scroll.viewport())
+        self._themed_widgets.append(widget)
+        
+        self.stacked_widget.addWidget(scroll)
         item = QListWidgetItem(title)
-        item.setSizeHint(QSize(110, 30))
+        item.setSizeHint(QSize(110, 32))
         self.side_menu.addItem(item)
 
     def setup_ui(self):
+        # Fetch palette once for all sub-components
+        theme_name = self.mgr.get("ui/theme", "Dark")
+        self.p = get_palette(theme_name)
+        
         self.layout = QVBoxLayout(self)
         
         self.main_content = QHBoxLayout()
@@ -138,11 +196,50 @@ class SettingsDialog(QDialog):
         # Style applied dynamically in _update_sidebar_style
         
         self.stacked_widget = QStackedWidget()
+        self.stacked_widget.setAutoFillBackground(True)
         self.main_content.addWidget(self.side_menu)
         self.main_content.addWidget(self.stacked_widget, 1)
         self.layout.addLayout(self.main_content)
         
         self.side_menu.currentRowChanged.connect(self.stacked_widget.setCurrentIndex)
+        
+        # --- Helper for Plot Lists ---
+        def add_plot_item(list_widget, text, checked, filter_len=None, psd_algo=None):
+            # Keep item empty so QListWidget doesn't render text/checkbox over our widget
+            item = QListWidgetItem()
+            item.setSizeHint(QSize(0, 36))
+            
+            # Store serializable data in UserRole for drag-drop persistence
+            # QVariant can handle dictionaries (QMap) fine without recursion errors
+            data = {"text": text, "checked": checked, "filter_len": filter_len, "psd_algo": psd_algo}
+            item.setData(Qt.ItemDataRole.UserRole, data)
+            
+            list_widget.addItem(item)
+            widget = PlotItemWidget(text, checked, self.p, filter_len)
+            if widget.psd_combo and psd_algo:
+                widget.psd_combo.setCurrentText(psd_algo)
+                
+            self._themed_plot_widgets.append(widget)
+            list_widget.setItemWidget(item, widget)
+            
+            # Sync widget changes back to item data dictionary
+            def update_data():
+                d = item.data(Qt.ItemDataRole.UserRole)
+                if isinstance(d, dict):
+                    d["checked"] = widget.cb.isChecked()
+                    if widget.spin:
+                        d["filter_len"] = widget.spin.value()
+                    if widget.psd_combo:
+                        d["psd_algo"] = widget.psd_combo.currentText()
+                    item.setData(Qt.ItemDataRole.UserRole, d)
+                    
+            widget.cb.toggled.connect(update_data)
+            if widget.spin:
+                widget.spin.valueChanged.connect(update_data)
+            if widget.psd_combo:
+                widget.psd_combo.currentTextChanged.connect(update_data)
+            
+            return item
 
         # Initialize all tabs and forms first so we can style them uniformly
         tabs_info = [
@@ -156,22 +253,13 @@ class SettingsDialog(QDialog):
             content_widget = QWidget()
             form_layout = QFormLayout(content_widget)
             
-            # Use generous spacing and margins for an airy, premium feel
-            form_layout.setSpacing(22)
-            form_layout.setContentsMargins(40, 35, 40, 35)
+            # Use refined spacing for better density while maintaining an airy feel
+            form_layout.setSpacing(18)
+            form_layout.setContentsMargins(30, 25, 30, 25)
             form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
             form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
             
-            # Wrap in scroll area to prevent "squeezing"
-            scroll = QScrollArea()
-            scroll.setWidget(content_widget)
-            scroll.setWidgetResizable(True)
-            scroll.setFrameShape(QFrame.Shape.NoFrame)
-            scroll.setObjectName(f"scroll_{name}")
-            # Ensure the background is transparent/matches the theme
-            scroll.setStyleSheet("background: transparent;")
-            
-            setattr(self, f"{name}_tab", scroll)
+            setattr(self, f"{name}_tab", content_widget)
             setattr(self, f"{name}_form", form_layout)
             setattr(self, f"{name}_content", content_widget)
 
@@ -360,28 +448,22 @@ class SettingsDialog(QDialog):
         all_plots = [
             "Real", "Real [dB]", "Imaginary", "Imaginary [dB]", 
             "Phase", "Unwrapped phase", "instant frequency", 
-            "magnitude", "magnitude [dB]", "magnitude^2", 
-            "magnitude^2 [dB]"
+            "magnitude", "magnitude [dB]", "magnitude^2"
         ]
         
         # Load active/sorted plots from settings
         saved_plots = self.mgr.get("core/time_plots", [])
         
-        # 1. Add saved ones (they are 'checked' by virtue of being in the list)
+        # 1. Add saved ones
+        filter_len = int(self.mgr.get("core/inst_freq_filter_len", 7))
         for p in saved_plots:
             if p in all_plots:
-                item = QListWidgetItem(p)
-                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
-                item.setCheckState(Qt.CheckState.Checked)
-                self.plots_list.addItem(item)
+                add_plot_item(self.plots_list, p, True, filter_len if p == "instant frequency" else None)
                 
-        # 2. Add remaining ones not in saved_plots (unchecked)
+        # 2. Add remaining
         for p in all_plots:
             if p not in saved_plots:
-                item = QListWidgetItem(p)
-                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
-                item.setCheckState(Qt.CheckState.Unchecked)
-                self.plots_list.addItem(item)
+                add_plot_item(self.plots_list, p, False, filter_len if p == "instant frequency" else None)
                 
         self.plots_layout.addWidget(self.plots_list)
         
@@ -392,20 +474,64 @@ class SettingsDialog(QDialog):
             defaults = self.mgr.get_default("core/time_plots")
             for p in defaults:
                 if p in all_plots:
-                    item = QListWidgetItem(p)
-                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
-                    item.setCheckState(Qt.CheckState.Checked)
-                    self.plots_list.addItem(item)
+                    add_plot_item(self.plots_list, p, True, filter_len if p == "instant frequency" else None)
             for p in all_plots:
                 if p not in defaults:
-                    item = QListWidgetItem(p)
-                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
-                    item.setCheckState(Qt.CheckState.Unchecked)
-                    self.plots_list.addItem(item)
+                    add_plot_item(self.plots_list, p, False, filter_len if p == "instant frequency" else None)
         reset_plots_btn.clicked.connect(reset_plots)
         self.plots_layout.addWidget(reset_plots_btn)
         
         self.add_side_tab(self.plots_tab, "Time Plots")
+
+        # --- Frequency Plots Tab ---
+        self.freq_plots_tab = QWidget()
+        self.freq_plots_layout = QVBoxLayout(self.freq_plots_tab)
+        
+        freq_help_lbl = QLabel("Select and reorder frequency domain plots (Drag-and-drop to reorder):")
+        freq_help_lbl.setStyleSheet("font-style: italic;")
+        self.freq_plots_layout.addWidget(freq_help_lbl)
+        
+        self.freq_plots_list = QListWidget()
+        self.freq_plots_list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.freq_plots_list.setDefaultDropAction(Qt.DropAction.MoveAction)
+        
+        all_freq_plots = [
+            "magnitude", "magnitude [dB]", "magnitude^2", 
+            "power spectrum density (PSD)",
+            "real", "real [dB]", 
+            "imag", "imag [dB]", "phase", "unwrapped phase"
+        ]
+        
+        saved_freq_plots = self.mgr.get("core/frequency_plots", [])
+        psd_algo = str(self.mgr.get("core/psd_algorithm", "Welch"))
+        
+        # 1. Add saved ones
+        for p in saved_freq_plots:
+            if p in all_freq_plots:
+                add_plot_item(self.freq_plots_list, p, True, psd_algo=psd_algo if "PSD" in p else None)
+                
+        # 2. Add remaining
+        for p in all_freq_plots:
+            if p not in saved_freq_plots:
+                add_plot_item(self.freq_plots_list, p, False, psd_algo=psd_algo if "PSD" in p else None)
+                
+        self.freq_plots_layout.addWidget(self.freq_plots_list)
+        
+        reset_freq_plots_btn = QPushButton("Reset to Default")
+        def reset_freq_plots():
+            self.freq_plots_list.clear()
+            defaults = self.mgr.get_default("core/frequency_plots")
+            if not defaults: defaults = ["magnitude", "magnitude [dB]"]
+            for p in defaults:
+                if p in all_freq_plots:
+                    add_plot_item(self.freq_plots_list, p, True)
+            for p in all_freq_plots:
+                if p not in defaults:
+                    add_plot_item(self.freq_plots_list, p, False)
+        reset_freq_plots_btn.clicked.connect(reset_freq_plots)
+        self.freq_plots_layout.addWidget(reset_freq_plots_btn)
+        
+        self.add_side_tab(self.freq_plots_tab, "Frequency Plots")
 
         # --- File Types Tab ---
         self.file_types_tab = QWidget()
@@ -511,9 +637,42 @@ class SettingsDialog(QDialog):
             active_plots = []
             for i in range(self.plots_list.count()):
                 item = self.plots_list.item(i)
-                if item.checkState() == Qt.CheckState.Checked:
-                    active_plots.append(item.text())
+                widget = self.plots_list.itemWidget(item)
+                data = item.data(Qt.ItemDataRole.UserRole)
+                
+                # Preferred: read from widget
+                if widget:
+                    if widget.cb.isChecked():
+                        active_plots.append(widget.text)
+                        if widget.spin:
+                            self.mgr.set("core/inst_freq_filter_len", widget.spin.value())
+                # Fallback: read from persistent dictionary
+                elif isinstance(data, dict):
+                    if data.get("checked"):
+                        plot_name = data.get("text")
+                        active_plots.append(plot_name)
+                        if plot_name == "instant frequency":
+                            self.mgr.set("core/inst_freq_filter_len", data.get("filter_len", 7))
             self.mgr.set("core/time_plots", active_plots)
+
+            active_freq_plots = []
+            for i in range(self.freq_plots_list.count()):
+                item = self.freq_plots_list.item(i)
+                widget = self.freq_plots_list.itemWidget(item)
+                data = item.data(Qt.ItemDataRole.UserRole)
+                
+                if widget:
+                    if widget.cb.isChecked():
+                        active_freq_plots.append(widget.text)
+                        if widget.psd_combo:
+                            self.mgr.set("core/psd_algorithm", widget.psd_combo.currentText())
+                elif isinstance(data, dict):
+                    if data.get("checked"):
+                        plot_name = data.get("text")
+                        active_freq_plots.append(plot_name)
+                        if "PSD" in plot_name:
+                            self.mgr.set("core/psd_algorithm", data.get("psd_algo", "Welch"))
+            self.mgr.set("core/frequency_plots", active_freq_plots)
             
             # Save Extension Mappings
             ext_map = {}
@@ -538,8 +697,31 @@ class SettingsDialog(QDialog):
 
     def _on_theme_changed(self, theme_text):
         self._load_theme_specific_settings(theme_text)
-        self._update_sidebar_style(theme_text)
         self._update_dialog_style(theme_text)
+        self._update_sidebar_style(theme_text)
+        self._apply_theme_to_subwidgets(theme_text)
+
+    def _apply_theme_to_subwidgets(self, theme_text):
+        p = get_palette(theme_text)
+        self.p = p # Update cached palette
+        
+        # Update registered scroll area viewports
+        for vp in self._themed_viewports:
+            pal = vp.palette()
+            pal.setColor(QPalette.ColorRole.Window, QColor(p.bg_main))
+            vp.setPalette(pal)
+            vp.setAutoFillBackground(True)
+            
+        # Update registered content widgets
+        for w in self._themed_widgets:
+            pal = w.palette()
+            pal.setColor(QPalette.ColorRole.Window, QColor(p.bg_main))
+            w.setPalette(pal)
+            w.setAutoFillBackground(True)
+            
+        # Update registered plot widgets
+        for pw in self._themed_plot_widgets:
+            pw.set_theme(p)
 
     def _update_sidebar_style(self, theme_text):
         theme = theme_text.lower()
