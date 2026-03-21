@@ -55,7 +55,7 @@ class SidePanel(QFrame):
         self.layout.addWidget(title)
 
         # --- CORE SETTINGS ---
-        core_header = QLabel("⚙️ Core Settings")
+        core_header = QLabel("Core Settings")
         core_header.setObjectName("section_header")
         self.layout.addWidget(core_header)
 
@@ -70,7 +70,7 @@ class SidePanel(QFrame):
         self.layout.addWidget(self.fc_edit)
 
         # --- DSP SETTINGS ---
-        dsp_header = QLabel("📡 DSP Settings")
+        dsp_header = QLabel("DSP Settings")
         dsp_header.setObjectName("section_header")
         self.layout.addWidget(dsp_header)
 
@@ -96,7 +96,7 @@ class SidePanel(QFrame):
         self.layout.addWidget(self.window_type_combo)
 
         # --- DIAGNOSTICS ---
-        diag_header = QLabel("🔍 Diagnostics")
+        diag_header = QLabel("Diagnostics")
         diag_header.setObjectName("section_header")
         self.layout.addWidget(diag_header)
 
@@ -111,7 +111,7 @@ class SidePanel(QFrame):
         self.layout.addWidget(self.rbw_display)
 
         # --- FILE INFORMATION ---
-        file_header = QLabel("ℹ️ File Information")
+        file_header = QLabel("File Information")
         file_header.setObjectName("section_header")
         self.layout.addWidget(file_header)
 
