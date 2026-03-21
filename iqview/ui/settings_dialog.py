@@ -445,6 +445,7 @@ class SettingsDialog(QDialog):
         self.freq_plots_tab = QWidget()
         self.freq_plots_layout = QVBoxLayout(self.freq_plots_tab)
         
+        freq_help_lbl = QLabel("Select and reorder frequency domain plots (Drag-and-drop to reorder):")
         freq_help_lbl.setStyleSheet("font-style: italic;")
         self.freq_plots_layout.addWidget(freq_help_lbl)
         
