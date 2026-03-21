@@ -353,11 +353,19 @@ class ViewportAwareReader(QThread):
         else:
             self.step_size = view_samples
 
-        # Guard region to mitigate BPF edge transients
-        self.guard = self.BPF_GUARD_SAMPLES if filter_enabled else 0
-        # Extend read range by guard on both sides (clamped to file bounds)
-        self.s_read_start = max(0, self.s_start - self.guard)
-        self.s_read_end   = min(total_samples, self.s_end + self.guard)
+        # Precompute frequency-domain BPF mask (much faster than time-domain IIR).
+        # After fftshift, bin i corresponds to frequency:
+        #   f_i = (i - fft_size/2) * sample_rate / fft_size
+        # We zero out bins outside [f_min, f_max] (both relative to fc, i.e. baseband).
+        self.freq_mask = None
+        if filter_enabled and f_min is not None and f_max is not None:
+            bin_freqs = np.fft.fftshift(np.fft.fftfreq(fft_size, 1.0 / sample_rate))
+            mask = (bin_freqs >= f_min) & (bin_freqs <= f_max)
+            self.freq_mask = mask.astype(np.float32)  # shape: (fft_size,)
+
+        # No guard region needed — we no longer filter in time-domain
+        self.s_read_start = self.s_start
+        self.s_read_end   = self.s_end
 
     # ------------------------------------------------------------------
     def run(self):
@@ -393,21 +401,11 @@ class ViewportAwareReader(QThread):
             else:
                 full_complex = raw_array.astype(np.complex64)
 
-            # Apply BPF if enabled (on the full slice including guard)
-            if self.filter_enabled and self.f_min is not None and self.f_max is not None:
-                full_complex = apply_bpf(
-                    full_complex, self.sample_rate, self.f_min, self.f_max,
-                    filter_type=self.filter_type, order=self.filter_order,
-                    rp=self.filter_ripple, rs=self.filter_stopband,
-                    bessel_norm=self.filter_bessel_norm
-                )
-
-            # Strip the guard so that FFT windows are placed within [s_start, s_end]
-            guard_offset = self.s_start - self.s_read_start  # samples to skip at the front
-            valid_complex = full_complex[guard_offset : guard_offset + (self.s_end - self.s_start)]
+            # No time-domain filtering — BPF is applied in the frequency domain
+            # below (after fftshift) as a bin mask, which is essentially free.
+            valid_complex = full_complex
 
             if len(valid_complex) < self.fft_size:
-                # Pad with zeros if the slice is shorter than one FFT window
                 padded = np.zeros(self.fft_size, dtype=np.complex64)
                 padded[:len(valid_complex)] = valid_complex
                 valid_complex = padded
@@ -439,6 +437,11 @@ class ViewportAwareReader(QThread):
                 windowed  = batch * self.window
                 fft_out   = np.fft.fft(windowed, axis=1)
                 shifted   = np.fft.fftshift(fft_out, axes=1)
+
+                # Apply frequency-domain BPF mask (zero out out-of-band bins)
+                if self.freq_mask is not None:
+                    shifted *= self.freq_mask  # broadcast across rows, zero-cost
+
                 mag       = np.abs(shifted)
                 mag       = np.maximum(mag, np.float32(1e-10))
                 db        = 20.0 * np.log10(mag)
