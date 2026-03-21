@@ -51,10 +51,15 @@ def get_palette(theme_name):
 def get_main_stylesheet(theme_name):
     p = get_palette(theme_name)
     return f"""
-        QMainWindow, QWidget#central, QDialog {{ 
+        QMainWindow, QWidget#central, QDialog, QStackedWidget {{ 
             background-color: {p.bg_main}; 
             color: {p.text_main}; 
             font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif; 
+        }}
+        
+        QScrollArea, QScrollArea > QWidget, QScrollArea #qt_scrollarea_viewport, QScrollArea #qt_scrollarea_hcontainer, QScrollArea #qt_scrollarea_vcontainer {{
+            background-color: {p.bg_main};
+            border: none;
         }}
         QLabel {{ color: {p.text_dim}; }}
         QPushButton {{ 
@@ -120,6 +125,7 @@ def get_main_stylesheet(theme_name):
         QCheckBox {{ 
             color: {p.text_main};
             spacing: 8px;
+            background: transparent;
         }}
         QCheckBox::indicator {{
             width: 16px;
@@ -136,12 +142,15 @@ def get_main_stylesheet(theme_name):
             border-color: {p.accent};
         }}
 
-        QListWidget, QTableWidget {{
+        QListWidget, QTableWidget, QListView, QHeaderView {{
             background-color: {p.bg_input};
             border: 1px solid {p.border};
             color: {p.text_main};
             gridline-color: {p.border};
             border-radius: 4px;
+        }}
+        QListWidget::viewport, QTableWidget::viewport, QListView::viewport {{
+            background-color: {p.bg_input};
         }}
         QListWidget::item {{ padding: 4px 8px; }}
         QListWidget::item:selected {{ background-color: {p.accent_dim}; color: {p.accent}; }}
