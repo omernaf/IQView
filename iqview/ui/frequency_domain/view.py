@@ -488,6 +488,8 @@ class FrequencyDomainView(QWidget):
         
         slice_data = self.current_plot_data[i_min:i_max]
         p_max, p_min, p_median = np.max(slice_data), np.min(slice_data), np.median(slice_data)
+        p_10, p_90 = np.percentile(slice_data, [10, 90])
+        p_diff = p_90 - p_10
         
         idx_max, idx_min = i_min + np.argmax(slice_data), i_min + np.argmin(slice_data)
         f_max, f_min = self.freq_axis[idx_max], self.freq_axis[idx_min]
@@ -520,6 +522,9 @@ class FrequencyDomainView(QWidget):
             
         panel.stats_max_val.setText(f"{p_max:.4g}"); panel.stats_min_val.setText(f"{p_min:.4g}")
         panel.stats_median_val.setText(f"{p_median:.4g}")
+        panel.stats_90th_val.setText(f"{p_90:.4g}")
+        panel.stats_10th_val.setText(f"{p_10:.4g}")
+        panel.stats_diff_val.setText(f"{p_diff:.4g}")
         
         if "[dB]" in self.y_label_text:
             total_p_db = 10 * np.log10(total_p_lin + 1e-15)

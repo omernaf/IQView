@@ -48,11 +48,11 @@ def main():
     args, unknown = parser.parse_known_args()
 
     # filename = "samples/temp_10Msps_433MHz.32fc"
-    # filename = "samples/mavic_air_2.16tc"
+    filename = "samples/mavic_air_2.16tc"
     # filename = "samples/long_sweep.32fc"
     # filename = "samples/chirp_rate_3MHz.32fc";
     # filename = "samples/noise.32fc"
-    filename = "samples/saved/iq1.mat"
+    # filename = "samples/saved/iq1.mat"
     sample_rate = 50e6  # 2 MHz
     duration = 10.0    # 10 seconds of simulated RF recording
     if args.line_profile:

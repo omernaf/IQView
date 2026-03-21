@@ -395,6 +395,8 @@ class TimeDomainView(QWidget):
         p_max = np.max(slice_data)
         p_min = np.min(slice_data)
         p_median = np.median(slice_data)
+        p_10, p_90 = np.percentile(slice_data, [10, 90])
+        p_diff = p_90 - p_10
         
         # Mean Calculation: For dB plots, average in linear domain
         if "[dB]" in self.y_label_text:
@@ -420,6 +422,9 @@ class TimeDomainView(QWidget):
         self.marker_panel.stats_min_val.setText(f"{p_min:.6g}")
         self.marker_panel.stats_mean_val.setText(f"{p_mean:.6g}")
         self.marker_panel.stats_median_val.setText(f"{p_median:.6g}")
+        self.marker_panel.stats_90th_val.setText(f"{p_90:.6g}")
+        self.marker_panel.stats_10th_val.setText(f"{p_10:.6g}")
+        self.marker_panel.stats_diff_val.setText(f"{p_diff:.6g}")
         
         self.marker_panel.stats_max_time.setText(f"{t_max:.6f}")
         self.marker_panel.stats_min_time.setText(f"{t_min:.6f}")

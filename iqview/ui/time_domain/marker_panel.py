@@ -255,6 +255,23 @@ class TimeDomainMarkerPanel(QFrame):
         self.stats_layout.addWidget(lbl_time, 2, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.stats_layout.addWidget(lbl_idx, 3, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         
+        # Distribution section (Col 5 Labels + Col 6 Values)
+        lbl_dist = QLabel("Distribution")
+        lbl_dist.setFont(self.header_font)
+        lbl_dist.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_dist.setStyleSheet(f"color: #888; text-transform: uppercase; font-size: 10px;")
+        self.stats_layout.addWidget(lbl_dist, 0, 5, 1, 2)
+        
+        lbl_90th = QLabel("90th %")
+        lbl_10th = QLabel("10th %")
+        lbl_diff = QLabel("90-10 Diff")
+        for lbl in [lbl_90th, lbl_10th, lbl_diff]:
+            lbl.setObjectName("header_label")
+        
+        self.stats_layout.addWidget(lbl_90th, 1, 5, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.stats_layout.addWidget(lbl_10th, 2, 5, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.stats_layout.addWidget(lbl_diff, 3, 5, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        
         # Line Edits
         self.stats_max_val = FormattedLineEdit(); self.stats_max_val.setFixedWidth(130); self.stats_max_val.setReadOnly(True); self.stats_max_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stats_min_val = FormattedLineEdit(); self.stats_min_val.setFixedWidth(130); self.stats_min_val.setReadOnly(True); self.stats_min_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -267,19 +284,27 @@ class TimeDomainMarkerPanel(QFrame):
         self.stats_max_idx = FormattedLineEdit(); self.stats_max_idx.setFixedWidth(130); self.stats_max_idx.setReadOnly(True); self.stats_max_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stats_min_idx = FormattedLineEdit(); self.stats_min_idx.setFixedWidth(130); self.stats_min_idx.setReadOnly(True); self.stats_min_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
+        # Distribution Line Edits
+        self.stats_90th_val = FormattedLineEdit(); self.stats_90th_val.setFixedWidth(130); self.stats_90th_val.setReadOnly(True); self.stats_90th_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_10th_val = FormattedLineEdit(); self.stats_10th_val.setFixedWidth(130); self.stats_10th_val.setReadOnly(True); self.stats_10th_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_diff_val = FormattedLineEdit(); self.stats_diff_val.setFixedWidth(130); self.stats_diff_val.setReadOnly(True); self.stats_diff_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
         # Add to Grid (Row 1: Value)
         self.stats_layout.addWidget(self.stats_max_val, 1, 1)
         self.stats_layout.addWidget(self.stats_min_val, 1, 2)
         self.stats_layout.addWidget(self.stats_mean_val, 1, 3)
         self.stats_layout.addWidget(self.stats_median_val, 1, 4)
+        self.stats_layout.addWidget(self.stats_90th_val, 1, 6)
         
         # Add to Grid (Row 2: Time)
         self.stats_layout.addWidget(self.stats_max_time, 2, 1)
         self.stats_layout.addWidget(self.stats_min_time, 2, 2)
+        self.stats_layout.addWidget(self.stats_10th_val, 2, 6)
         
         # Add to Grid (Row 3: Index)
         self.stats_layout.addWidget(self.stats_max_idx, 3, 1)
         self.stats_layout.addWidget(self.stats_min_idx, 3, 2)
+        self.stats_layout.addWidget(self.stats_diff_val, 3, 6)
 
     def set_y_label(self, label):
         # We handle this via update_headers now
