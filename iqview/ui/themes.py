@@ -143,8 +143,14 @@ def get_main_stylesheet(theme_name):
             gridline-color: {p.border};
             border-radius: 4px;
         }}
-        QListWidget::item {{ padding: 4px 8px; }}
-        QListWidget::item:selected {{ background-color: {p.accent_dim}; color: {p.accent}; }}
+        QListWidget::item, QTableWidget::item {{ 
+            padding: 4px 8px; 
+            color: {p.text_main};
+        }}
+        QListWidget::item:selected, QTableWidget::item:selected {{ 
+            background-color: {p.accent_dim}; 
+            color: {p.accent}; 
+        }}
         
         QHeaderView::section {{
             background-color: {p.bg_widget};

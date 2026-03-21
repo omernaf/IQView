@@ -5,8 +5,9 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QStackedWidget,
                              QAbstractItemView, QTableWidget, QTableWidgetItem, QHeaderView,
                              QScrollArea, QFrame)
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
-from PyQt6.QtGui import QKeySequence, QIcon, QPixmap, QPainter, QLinearGradient, QColor
+from PyQt6.QtGui import QKeySequence, QIcon, QPixmap, QPainter, QLinearGradient, QColor, QPalette
 from .widgets import KeyBindEdit
+from .themes import get_palette
 
 class ColorButton(QPushButton):
     colorChanged = pyqtSignal(str)
@@ -151,8 +152,23 @@ class SettingsDialog(QDialog):
         scroll.setWidgetResizable(True)
         scroll.setWidget(widget)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        # Use a more specific selector to avoid inheritance issues with popups
-        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; } QScrollArea > QWidget { background: transparent; }")
+        
+        # Isolated background fix: Use a specific palette for the viewport
+        # This avoid inheritance regressions in global dropdown popups
+        theme_name = self.mgr.get("ui/theme", "Dark")
+        p = get_palette(theme_name)
+        
+        vp = scroll.viewport()
+        vp_pal = vp.palette()
+        vp_pal.setColor(QPalette.ColorRole.Window, QColor(p.bg_main))
+        vp.setPalette(vp_pal)
+        vp.setAutoFillBackground(True)
+        
+        # Ensure the content widget inside is also correctly colored
+        widget_pal = widget.palette()
+        widget_pal.setColor(QPalette.ColorRole.Window, QColor(p.bg_main))
+        widget.setPalette(widget_pal)
+        widget.setAutoFillBackground(True)
         
         self.stacked_widget.addWidget(scroll)
         item = QListWidgetItem(title)
@@ -169,6 +185,7 @@ class SettingsDialog(QDialog):
         # Style applied dynamically in _update_sidebar_style
         
         self.stacked_widget = QStackedWidget()
+        self.stacked_widget.setAutoFillBackground(True)
         self.main_content.addWidget(self.side_menu)
         self.main_content.addWidget(self.stacked_widget, 1)
         self.layout.addLayout(self.main_content)
