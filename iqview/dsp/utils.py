@@ -273,7 +273,8 @@ class ViewportAwareReader(QThread):
     def __init__(self, source, dtype, fft_size, sample_rate, t_start, t_end,
                  pixel_width, is_complex=True, window_type="Hanning",
                  overlap_percent=0.0,
-                 filter_enabled=False, f_min=None, f_max=None, **kwargs):
+                 filter_enabled=False, f_min=None, f_max=None,
+                 oversample_factor=4, **kwargs):
         super().__init__()
         self.source        = source
         self.dtype         = dtype
@@ -335,8 +336,10 @@ class ViewportAwareReader(QThread):
 
         # Pixel-accurate row count: enough rows so that the image fills the
         # given pixel width without wasting computation on invisible rows.
+        # oversample_factor > 1 computes extra rows so autoDownsample() can
+        # smooth the image and eliminate visible row-boundary artifacts.
         max_possible_rows = max(1, (view_samples - fft_size) // max(1, req_step) + 1)
-        self.num_rows  = min(self.pixel_width, max_possible_rows)
+        self.num_rows  = min(self.pixel_width * oversample_factor, max_possible_rows)
 
         if self.num_rows > 1:
             self.step_size = max(req_step,

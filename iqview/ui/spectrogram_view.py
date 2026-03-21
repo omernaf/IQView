@@ -288,7 +288,15 @@ class SpectrogramView(QWidget):
         self.img.setRect(QRectF(t_start, fc - rate / 2, duration, rate))
 
         if auto_range:
-            self.plot_item.autoRange()
+            # Use the full file extent (set by display_lazy_tile before calling us)
+            # rather than autoRange() which would only zoom to the rendered tile.
+            t0, t1 = self.full_t_range
+            f0, f1 = self.full_f_range
+            if t1 > t0 and f1 > f0:
+                self.plot_item.setXRange(t0, t1, padding=0)
+                self.plot_item.setYRange(f0, f1, padding=0)
+            else:
+                self.plot_item.autoRange()
 
         # Update spectrum envelope
         min_env = np.min(spectrogram, axis=1)

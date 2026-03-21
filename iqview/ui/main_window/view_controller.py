@@ -182,7 +182,19 @@ class ViewControllerMixin:
             active_tab.reset_zoom()
         else:
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
-            self.spectrogram_view.plot_item.autoRange()
+            self._zoom_to_full_range()
+
+    def _zoom_to_full_range(self):
+        """Zoom to the full file extent using full_t_range / full_f_range.
+        Falls back to autoRange() if the ranges aren't set yet."""
+        sv = self.spectrogram_view
+        t0, t1 = sv.full_t_range
+        f0, f1 = sv.full_f_range
+        if t1 > t0 and f1 > f0:
+            sv.plot_item.setXRange(t0, t1, padding=0)
+            sv.plot_item.setYRange(f0, f1, padding=0)
+        else:
+            sv.plot_item.autoRange()
 
     def handle_zoom_rectangle(self, rect, zoom_type='BOTH'):
         active_tab = self.tabs.currentWidget()
@@ -314,6 +326,9 @@ class ViewControllerMixin:
         elif self.zoom_history:
             prev_rect = self.zoom_history.pop()
             self.spectrogram_view.plot_item.setRange(rect=prev_rect, padding=0)
+        else:
+            # No history: zoom to the full file range
+            self._zoom_to_full_range()
 
     def handle_move_drag(self, scene_pos, is_start=False, is_finish=False):
         if is_start:
