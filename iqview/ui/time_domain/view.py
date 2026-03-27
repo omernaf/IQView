@@ -418,6 +418,43 @@ class TimeDomainView(QWidget):
         t_min = self.time_axis[idx_min]
         
         # Update Marker Panel readouts
+        # --- Update Marker Panel Region Definition ---
+        prec1 = int(self.settings_mgr.get("ui/label_precision", 9))
+        self.marker_panel.st_row_v1_lbl.setText("Region (s)")
+        self.marker_panel.st_row_v2_lbl.setText("Samples")
+        self.marker_panel.st_row_v3_lbl.setText("1/T (Hz)")
+        
+        # In case they were swapped during drag
+        b1, b2 = sorted([r_min, r_max])
+        
+        # Bounds (M1, M2)
+        for i, val in enumerate([b1, b2]):
+            w = self.marker_panel.st_widgets[i]
+            w['v1'].blockSignals(True); w['v1'].setText(f"{val:.{prec1}f}"); w['v1'].blockSignals(False)
+            
+            abs_s = int(round(val * self.rate)) + 1
+            w['v2'].blockSignals(True); w['v2'].setText(f"{abs_s}"); w['v2'].blockSignals(False)
+            
+            inv_val = (1.0 / val) if abs(val) > 1e-12 else float('inf')
+            w['v3'].blockSignals(True); w['v3'].setText(f"{inv_val:.{prec1}f}" if inv_val != float('inf') else "∞"); w['v3'].blockSignals(False)
+
+        # Delta/Center
+        dv = abs(b2 - b1)
+        cv = (b1 + b2) / 2
+        
+        self.marker_panel.st_delta_v1.blockSignals(True); self.marker_panel.st_delta_v1.setText(f"{dv:.{prec1}f}"); self.marker_panel.st_delta_v1.blockSignals(False)
+        self.marker_panel.st_center_v1.blockSignals(True); self.marker_panel.st_center_v1.setText(f"{cv:.{prec1}f}"); self.marker_panel.st_center_v1.blockSignals(False)
+        
+        s1, s2 = int(round(b1 * self.rate)) + 1, int(round(b2 * self.rate)) + 1
+        self.marker_panel.st_delta_v2.blockSignals(True); self.marker_panel.st_delta_v2.setText(f"{abs(s2-s1)+1}"); self.marker_panel.st_delta_v2.blockSignals(False)
+        self.marker_panel.st_center_v2.blockSignals(True); self.marker_panel.st_center_v2.setText(f"{int(round(cv*self.rate))+1}"); self.marker_panel.st_center_v2.blockSignals(False)
+        
+        if dv > 1e-12: self.marker_panel.st_delta_v3.setText(f"{1.0/dv:.{prec1}f}")
+        else: self.marker_panel.st_delta_v3.setText("∞")
+        if abs(cv) > 1e-12: self.marker_panel.st_center_v3.setText(f"{1.0/cv:.{prec1}f}")
+        else: self.marker_panel.st_center_v3.setText("∞")
+
+        # --- Update Statistics Results ---
         self.marker_panel.stats_max_val.setText(f"{p_max:.6g}")
         self.marker_panel.stats_min_val.setText(f"{p_min:.6g}")
         self.marker_panel.stats_mean_val.setText(f"{p_mean:.6g}")
@@ -642,14 +679,32 @@ class TimeDomainView(QWidget):
                         best_idx = i
                 
                 if best_idx != -1:
-                    old_v = self.stats_bounds[best_idx]
-                    self.stats_bounds[best_idx] = val
-                    if old_v in self.stats_marker_order:
-                        oidx = self.stats_marker_order.index(old_v)
-                        self.stats_marker_order[oidx] = val
+                    lock_m1 = self.marker_panel.lock_states['STATS']['m1']
+                    lock_m2 = self.marker_panel.lock_states['STATS']['m2']
+                    lock_delta = self.marker_panel.lock_states['STATS']['delta']
+                    lock_center = self.marker_panel.lock_states['STATS']['center']
                     
+                    if (best_idx == 0 and lock_m1) or (best_idx == 1 and lock_m2):
+                        if not (lock_delta or lock_center): return
+
+                    old_v = self.stats_bounds[best_idx]
+                    shift = val - old_v
+                    other_idx = 1 - best_idx
+                    
+                    if lock_delta and len(self.stats_bounds) == 2:
+                        self.stats_bounds[0] += shift
+                        self.stats_bounds[1] += shift
+                    elif lock_center and len(self.stats_bounds) == 2:
+                        ct = sum(self.stats_bounds) / 2
+                        self.stats_bounds[best_idx] = val
+                        self.stats_bounds[other_idx] = 2 * ct - val
+                    else:
+                        self.stats_bounds[best_idx] = val
+                        
+                    # Maintain order and update sync members
                     self.stats_bounds.sort()
-                    self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
+                    self.stats_marker_order = list(self.stats_bounds) # Simplified sync
+                    self.active_drag_stats_bound_idx = self.stats_bounds.index(val) if val in self.stats_bounds else 0
                     
                     if len(self.stats_bounds) == 1:
                         if self.stats_line: self.stats_line.setPos(val)
@@ -946,22 +1001,34 @@ class TimeDomainView(QWidget):
                 idx = self.active_drag_stats_bound_idx
                 t_min, t_max = self.time_axis[0], self.time_axis[-1]
                 val = max(t_min, min(t_max, v_pos.x()))
-                self.stats_bounds[idx] = val
+                
+                lock_delta = self.marker_panel.lock_states['STATS']['delta']
+                lock_center = self.marker_panel.lock_states['STATS']['center']
                 
                 if len(self.stats_bounds) == 2:
                     other_idx = 1 - idx
-                    other_v = self.stats_bounds[other_idx]
+                    old_v = self.stats_bounds[idx]
+                    shift = val - old_v
+                    
+                    if lock_delta:
+                        self.stats_bounds[0] += shift
+                        self.stats_bounds[1] += shift
+                    elif lock_center:
+                        ct = sum(self.stats_bounds) / 2
+                        self.stats_bounds[idx] = val
+                        self.stats_bounds[other_idx] = 2 * ct - val
+                    else:
+                        self.stats_bounds[idx] = val
                     
                     self.stats_bounds.sort()
-                    self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
-                    
-                    self.stats_marker_order = [other_v, val] if self.stats_marker_order[0] == self.stats_bounds[1 - self.active_drag_stats_bound_idx] else [val, other_v]
+                    # Re-find drag index after sort to avoid jumpiness
+                    if val in self.stats_bounds:
+                        self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
                     
                     self.stats_region.setRegion(self.stats_bounds)
                 else:
+                    self.stats_bounds[0] = val
                     if self.stats_line: self.stats_line.setPos(val)
-                    if self.stats_marker_order:
-                        self.stats_marker_order[-1] = val
                 
                 self.update_statistics()
             return
@@ -1152,6 +1219,53 @@ class TimeDomainView(QWidget):
                         new_p = np.clip(val, curr_min, curr_max)
                     m.setPos(new_p)
                 self.update_marker_info()
+                return
+
+            if name.startswith('st_'):
+                # Stats bound/region edit
+                if not self.stats_bounds: return
+                
+                if 'm' in name:
+                    idx = int(name[4]) # st_m0_v1 -> '0'
+                    if idx >= len(self.stats_bounds): return
+                    new_p = val
+                    if 'v2' in name: new_p = (val - 1.0) / self.rate # Samples
+                    new_p = np.clip(new_p, curr_min, curr_max)
+                    
+                    # Respect locks
+                    lock_delta = self.marker_panel.lock_states['STATS']['delta']
+                    lock_center = self.marker_panel.lock_states['STATS']['center']
+                    
+                    if len(self.stats_bounds) == 2:
+                        other_idx = 1 - idx
+                        shift = new_p - self.stats_bounds[idx]
+                        if lock_delta:
+                            self.stats_bounds[0] += shift
+                            self.stats_bounds[1] += shift
+                        elif lock_center:
+                            ct = sum(self.stats_bounds) / 2
+                            self.stats_bounds[idx] = new_p
+                            self.stats_bounds[other_idx] = 2 * ct - new_p
+                        else:
+                            self.stats_bounds[idx] = new_p
+                    else:
+                        self.stats_bounds[idx] = new_p
+                elif 'delta' in name:
+                    if len(self.stats_bounds) != 2: return
+                    dv = val
+                    if 'v2' in name: dv = (val - 1) / self.rate
+                    ct = sum(self.stats_bounds) / 2
+                    self.stats_bounds = [ct - dv/2, ct + dv/2]
+                elif 'center' in name:
+                    if len(self.stats_bounds) != 2: return
+                    ct = val
+                    if 'v2' in name: ct = (val - 1) / self.rate
+                    dv = abs(self.stats_bounds[1] - self.stats_bounds[0])
+                    self.stats_bounds = [ct - dv/2, ct + dv/2]
+                
+                self.stats_bounds.sort()
+                self.stats_region.setRegion(self.stats_bounds)
+                self.update_statistics()
                 return
 
             # Fixed marker edit logic...

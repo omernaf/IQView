@@ -16,13 +16,14 @@ class TimeDomainMarkerPanel(QFrame):
         self.controller = controller
         self.lock_states = {
             'TIME': {'delta': False, 'center': False, 'm1': False, 'm2': False},
-            'MAG':  {'delta': False, 'center': False, 'm1': False, 'm2': False}
+            'MAG':  {'delta': False, 'center': False, 'm1': False, 'm2': False},
+            'STATS':{'delta': False, 'center': False, 'm1': False, 'm2': False}
         }
         self.last_marker_mode = 'TIME'
         self.setup_ui()
 
     def setup_ui(self):
-        self.setFixedHeight(120) # Increased height for 3 rows
+        self.setFixedHeight(160) 
         self.header_font = QFont("Segoe UI", 9, QFont.Weight.Bold)
         
         self.main_layout = QHBoxLayout(self)
@@ -249,81 +250,147 @@ class TimeDomainMarkerPanel(QFrame):
         # Page 3: Statistics Layout
         self.stats_widget = QWidget()
         self.stacked.addWidget(self.stats_widget)
-        self.stats_layout = QGridLayout(self.stats_widget)
-        self.stats_layout.setContentsMargins(0, 0, 0, 0)
-        self.stats_layout.setHorizontalSpacing(10)
-        self.stats_layout.setVerticalSpacing(4)
+        self.stats_main_layout = QVBoxLayout(self.stats_widget)
+        self.stats_main_layout.setContentsMargins(0, 0, 0, 0)
+        self.stats_main_layout.setSpacing(4)
+
+        # --- Statistics Tab Bar ---
+        self.stats_tab_layout = QHBoxLayout()
+        self.stats_tab_layout.setSpacing(10)
+        self.stats_main_layout.addLayout(self.stats_tab_layout)
+
+        self.btn_stats_def = QPushButton("Definition")
+        self.btn_stats_res = QPushButton("Results")
+        for btn in [self.btn_stats_def, self.btn_stats_res]:
+            btn.setCheckable(True)
+            btn.setObjectName("stats_tab_btn")
+            btn.setFixedHeight(22)
+            self.stats_tab_layout.addWidget(btn)
         
-        # Headers (Row 0)
-        self.stats_layout.addWidget(QLabel(""), 0, 0) 
+        self.stats_tab_group = QButtonGroup(self)
+        self.stats_tab_group.addButton(self.btn_stats_def)
+        self.stats_tab_group.addButton(self.btn_stats_res)
+        self.stats_tab_group.setExclusive(True)
+        self.btn_stats_res.setChecked(True)
+        self.stats_tab_layout.addStretch()
+
+        # --- Sub-Stacked Widget ---
+        self.stats_sub_stack = QStackedWidget()
+        self.stats_main_layout.addWidget(self.stats_sub_stack)
+
+        # Sub-Page 1: Region Definition
+        self.st_def_widget = QWidget()
+        self.stats_sub_stack.addWidget(self.st_def_widget)
+        self.st_layout = QGridLayout(self.st_def_widget)
+        self.st_layout.setContentsMargins(0, 0, 0, 0)
+        self.st_layout.setHorizontalSpacing(10)
+        self.st_layout.setVerticalSpacing(4)
+
+        # Region Definition Content
+        self.st_layout.addWidget(QLabel(""), 0, 0) 
+        self.st_btn_lock_m1 = QPushButton("Bound 1 🔓")
+        self.st_btn_lock_m1.setFont(self.header_font); self.st_btn_lock_m1.setCheckable(True)
+        self.st_layout.addWidget(self.st_btn_lock_m1, 0, 1, Qt.AlignmentFlag.AlignCenter)
+
+        self.st_btn_lock_m2 = QPushButton("Bound 2 🔓")
+        self.st_btn_lock_m2.setFont(self.header_font); self.st_btn_lock_m2.setCheckable(True)
+        self.st_layout.addWidget(self.st_btn_lock_m2, 0, 2, Qt.AlignmentFlag.AlignCenter)
+
+        self.st_btn_lock_delta = QPushButton("Delta (Δ) 🔓")
+        self.st_btn_lock_delta.setFont(self.header_font); self.st_btn_lock_delta.setCheckable(True)
+        self.st_layout.addWidget(self.st_btn_lock_delta, 0, 3, Qt.AlignmentFlag.AlignCenter)
+
+        self.st_btn_lock_center = QPushButton("Center 🔓")
+        self.st_btn_lock_center.setFont(self.header_font); self.st_btn_lock_center.setCheckable(True)
+        self.st_layout.addWidget(self.st_btn_lock_center, 0, 4, Qt.AlignmentFlag.AlignCenter)
+
+        self.st_widgets = []
+        for i in range(2):
+            v1 = FormattedLineEdit(); v1.setFixedWidth(110); v1.setAlignment(Qt.AlignmentFlag.AlignCenter); v1.setObjectName(f"st_m{i}_v1")
+            v2 = FormattedLineEdit(); v2.setFixedWidth(110); v2.setAlignment(Qt.AlignmentFlag.AlignCenter); v2.setObjectName(f"st_m{i}_v2")
+            v3 = FormattedLineEdit(); v3.setFixedWidth(110); v3.setAlignment(Qt.AlignmentFlag.AlignCenter); v3.setObjectName(f"st_m{i}_v3"); v3.setReadOnly(True)
+            for w in [v1, v2]: w.returnPressed.connect(self.controller.marker_edit_finished)
+            self.st_layout.addWidget(v1, 1, i + 1)
+            self.st_layout.addWidget(v2, 2, i + 1)
+            self.st_layout.addWidget(v3, 3, i + 1)
+            self.st_widgets.append({'v1': v1, 'v2': v2, 'v3': v3})
+
+        self.st_delta_v1 = FormattedLineEdit(); self.st_delta_v1.setFixedWidth(110); self.st_delta_v1.setAlignment(Qt.AlignmentFlag.AlignCenter); self.st_delta_v1.setObjectName("st_delta_v1")
+        self.st_delta_v2 = FormattedLineEdit(); self.st_delta_v2.setFixedWidth(110); self.st_delta_v2.setAlignment(Qt.AlignmentFlag.AlignCenter); self.st_delta_v2.setObjectName("st_delta_v2")
+        self.st_delta_v3 = FormattedLineEdit(); self.st_delta_v3.setFixedWidth(110); self.st_delta_v3.setAlignment(Qt.AlignmentFlag.AlignCenter); self.st_delta_v3.setObjectName("st_delta_v3"); self.st_delta_v3.setReadOnly(True)
         
-        headers = ["Maximum", "Minimum", "Mean", "Median"]
-        for i, h in enumerate(headers):
-            lbl = QLabel(h)
-            lbl.setFont(self.header_font)
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl.setStyleSheet(f"color: #888; text-transform: uppercase; font-size: 10px;")
-            self.stats_layout.addWidget(lbl, 0, i + 1)
-            
-        # Row Labels (Col 0)
+        self.st_center_v1 = FormattedLineEdit(); self.st_center_v1.setFixedWidth(110); self.st_center_v1.setAlignment(Qt.AlignmentFlag.AlignCenter); self.st_center_v1.setObjectName("st_center_v1")
+        self.st_center_v2 = FormattedLineEdit(); self.st_center_v2.setFixedWidth(110); self.st_center_v2.setAlignment(Qt.AlignmentFlag.AlignCenter); self.st_center_v2.setObjectName("st_center_v2")
+        self.st_center_v3 = FormattedLineEdit(); self.st_center_v3.setFixedWidth(110); self.st_center_v3.setAlignment(Qt.AlignmentFlag.AlignCenter); self.st_center_v3.setObjectName("st_center_v3"); self.st_center_v3.setReadOnly(True)
+
+        for w in [self.st_delta_v1, self.st_delta_v2, self.st_center_v1, self.st_center_v2]: w.returnPressed.connect(self.controller.marker_edit_finished)
+        self.st_layout.addWidget(self.st_delta_v1, 1, 3); self.st_layout.addWidget(self.st_delta_v2, 2, 3); self.st_layout.addWidget(self.st_delta_v3, 3, 3)
+        self.st_layout.addWidget(self.st_center_v1, 1, 4); self.st_layout.addWidget(self.st_center_v2, 2, 4); self.st_layout.addWidget(self.st_center_v3, 3, 4)
+
+        self.st_row_v1_lbl = QLabel("Region (s)"); self.st_row_v1_lbl.setObjectName("header_label")
+        self.st_row_v2_lbl = QLabel("Samples"); self.st_row_v2_lbl.setObjectName("header_label")
+        self.st_row_v3_lbl = QLabel("1/T (Hz)"); self.st_row_v3_lbl.setObjectName("header_label")
+        self.st_layout.addWidget(self.st_row_v1_lbl, 1, 0, Qt.AlignmentFlag.AlignRight)
+        self.st_layout.addWidget(self.st_row_v2_lbl, 2, 0, Qt.AlignmentFlag.AlignRight)
+        self.st_layout.addWidget(self.st_row_v3_lbl, 3, 0, Qt.AlignmentFlag.AlignRight)
+
+        # Sub-Page 2: Measurement Results
+        self.st_res_widget = QWidget()
+        self.stats_sub_stack.addWidget(self.st_res_widget)
+        self.res_layout = QGridLayout(self.st_res_widget)
+        self.res_layout.setContentsMargins(0, 0, 0, 0)
+        self.res_layout.setHorizontalSpacing(10)
+        self.res_layout.setVerticalSpacing(4)
+
+        res_headers = ["Maximum", "Minimum", "Mean", "Median", "Distribution"]
+        for i, h in enumerate(res_headers):
+            lbl = QLabel(h); lbl.setFont(self.header_font); lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl.setStyleSheet("color: #888; text-transform: uppercase; font-size: 10px;")
+            self.res_layout.addWidget(lbl, 0, i + 1, 1, 1 if i < 4 else 2)
+
         lbl_val = QLabel("Value"); lbl_val.setObjectName("header_label")
         lbl_time = QLabel("Time (sec)"); lbl_time.setObjectName("header_label")
         lbl_idx = QLabel("Index"); lbl_idx.setObjectName("header_label")
-        
-        self.stats_layout.addWidget(lbl_val, 1, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.stats_layout.addWidget(lbl_time, 2, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.stats_layout.addWidget(lbl_idx, 3, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        
-        # Distribution section (Col 5 Labels + Col 6 Values)
-        lbl_dist = QLabel("Distribution")
-        lbl_dist.setFont(self.header_font)
-        lbl_dist.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_dist.setStyleSheet(f"color: #888; text-transform: uppercase; font-size: 10px;")
-        self.stats_layout.addWidget(lbl_dist, 0, 5, 1, 2)
-        
-        lbl_90th = QLabel("90th %")
-        lbl_10th = QLabel("10th %")
-        lbl_diff = QLabel("90-10 Diff")
-        for lbl in [lbl_90th, lbl_10th, lbl_diff]:
-            lbl.setObjectName("header_label")
-        
-        self.stats_layout.addWidget(lbl_90th, 1, 5, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.stats_layout.addWidget(lbl_10th, 2, 5, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.stats_layout.addWidget(lbl_diff, 3, 5, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        
-        # Line Edits
-        self.stats_max_val = FormattedLineEdit(); self.stats_max_val.setFixedWidth(130); self.stats_max_val.setReadOnly(True); self.stats_max_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_min_val = FormattedLineEdit(); self.stats_min_val.setFixedWidth(130); self.stats_min_val.setReadOnly(True); self.stats_min_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_mean_val = FormattedLineEdit(); self.stats_mean_val.setFixedWidth(130); self.stats_mean_val.setReadOnly(True); self.stats_mean_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_median_val = FormattedLineEdit(); self.stats_median_val.setFixedWidth(130); self.stats_median_val.setReadOnly(True); self.stats_median_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        self.stats_max_time = FormattedLineEdit(); self.stats_max_time.setFixedWidth(130); self.stats_max_time.setReadOnly(True); self.stats_max_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_min_time = FormattedLineEdit(); self.stats_min_time.setFixedWidth(130); self.stats_min_time.setReadOnly(True); self.stats_min_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        self.stats_max_idx = FormattedLineEdit(); self.stats_max_idx.setFixedWidth(130); self.stats_max_idx.setReadOnly(True); self.stats_max_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_min_idx = FormattedLineEdit(); self.stats_min_idx.setFixedWidth(130); self.stats_min_idx.setReadOnly(True); self.stats_min_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        # Distribution Line Edits
-        self.stats_90th_val = FormattedLineEdit(); self.stats_90th_val.setFixedWidth(130); self.stats_90th_val.setReadOnly(True); self.stats_90th_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_10th_val = FormattedLineEdit(); self.stats_10th_val.setFixedWidth(130); self.stats_10th_val.setReadOnly(True); self.stats_10th_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_diff_val = FormattedLineEdit(); self.stats_diff_val.setFixedWidth(130); self.stats_diff_val.setReadOnly(True); self.stats_diff_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        # Add to Grid (Row 1: Value)
-        self.stats_layout.addWidget(self.stats_max_val, 1, 1)
-        self.stats_layout.addWidget(self.stats_min_val, 1, 2)
-        self.stats_layout.addWidget(self.stats_mean_val, 1, 3)
-        self.stats_layout.addWidget(self.stats_median_val, 1, 4)
-        self.stats_layout.addWidget(self.stats_90th_val, 1, 6)
-        
-        # Add to Grid (Row 2: Time)
-        self.stats_layout.addWidget(self.stats_max_time, 2, 1)
-        self.stats_layout.addWidget(self.stats_min_time, 2, 2)
-        self.stats_layout.addWidget(self.stats_10th_val, 2, 6)
-        
-        # Add to Grid (Row 3: Index)
-        self.stats_layout.addWidget(self.stats_max_idx, 3, 1)
-        self.stats_layout.addWidget(self.stats_min_idx, 3, 2)
-        self.stats_layout.addWidget(self.stats_diff_val, 3, 6)
+        self.res_layout.addWidget(lbl_val, 1, 0, Qt.AlignmentFlag.AlignRight)
+        self.res_layout.addWidget(lbl_time, 2, 0, Qt.AlignmentFlag.AlignRight)
+        self.res_layout.addWidget(lbl_idx, 3, 0, Qt.AlignmentFlag.AlignRight)
+
+        self.stats_max_val = FormattedLineEdit(); self.stats_max_val.setFixedWidth(110); self.stats_max_val.setReadOnly(True); self.stats_max_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_min_val = FormattedLineEdit(); self.stats_min_val.setFixedWidth(110); self.stats_min_val.setReadOnly(True); self.stats_min_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_mean_val = FormattedLineEdit(); self.stats_mean_val.setFixedWidth(110); self.stats_mean_val.setReadOnly(True); self.stats_mean_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_median_val = FormattedLineEdit(); self.stats_median_val.setFixedWidth(110); self.stats_median_val.setReadOnly(True); self.stats_median_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_max_time = FormattedLineEdit(); self.stats_max_time.setFixedWidth(110); self.stats_max_time.setReadOnly(True); self.stats_max_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_min_time = FormattedLineEdit(); self.stats_min_time.setFixedWidth(110); self.stats_min_time.setReadOnly(True); self.stats_min_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_max_idx = FormattedLineEdit(); self.stats_max_idx.setFixedWidth(110); self.stats_max_idx.setReadOnly(True); self.stats_max_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_min_idx = FormattedLineEdit(); self.stats_min_idx.setFixedWidth(110); self.stats_min_idx.setReadOnly(True); self.stats_min_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.res_layout.addWidget(self.stats_max_val, 1, 1); self.res_layout.addWidget(self.stats_min_val, 1, 2)
+        self.res_layout.addWidget(self.stats_mean_val, 1, 3); self.res_layout.addWidget(self.stats_median_val, 1, 4)
+        self.res_layout.addWidget(self.stats_max_time, 2, 1); self.res_layout.addWidget(self.stats_min_time, 2, 2)
+        self.res_layout.addWidget(self.stats_max_idx, 3, 1); self.res_layout.addWidget(self.stats_min_idx, 3, 2)
+
+        lbl_90th = QLabel("90th %"); lbl_10th = QLabel("10th %"); lbl_diff = QLabel("90-10 Diff")
+        for lbl in [lbl_90th, lbl_10th, lbl_diff]: lbl.setObjectName("header_label")
+        self.res_layout.addWidget(lbl_90th, 1, 5, Qt.AlignmentFlag.AlignRight)
+        self.res_layout.addWidget(lbl_10th, 2, 5, Qt.AlignmentFlag.AlignRight)
+        self.res_layout.addWidget(lbl_diff, 3, 5, Qt.AlignmentFlag.AlignRight)
+
+        self.stats_90th_val = FormattedLineEdit(); self.stats_90th_val.setFixedWidth(110); self.stats_90th_val.setReadOnly(True); self.stats_90th_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_10th_val = FormattedLineEdit(); self.stats_10th_val.setFixedWidth(110); self.stats_10th_val.setReadOnly(True); self.stats_10th_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_diff_val = FormattedLineEdit(); self.stats_diff_val.setFixedWidth(110); self.stats_diff_val.setReadOnly(True); self.stats_diff_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.res_layout.addWidget(self.stats_90th_val, 1, 6)
+        self.res_layout.addWidget(self.stats_10th_val, 2, 6)
+        self.res_layout.addWidget(self.stats_diff_val, 3, 6)
+
+        # Connect internal tab switching
+        self.btn_stats_def.clicked.connect(lambda: self.stats_sub_stack.setCurrentIndex(0))
+        self.btn_stats_res.clicked.connect(lambda: self.stats_sub_stack.setCurrentIndex(1))
+
+        # Connect Stats Locks
+        self.st_btn_lock_m1.toggled.connect(self.on_lock_m1_toggled)
+        self.st_btn_lock_m2.toggled.connect(self.on_lock_m2_toggled)
+        self.st_btn_lock_delta.toggled.connect(self.on_lock_delta_toggled)
+        self.st_btn_lock_center.toggled.connect(self.on_lock_center_toggled)
 
         # Apply theme (must be done AFTER buttons are initialized)
         self.refresh_theme()
@@ -401,20 +468,25 @@ class TimeDomainMarkerPanel(QFrame):
         self.row_v2_label.blockSignals(False)
 
         # Sync lock UI with saved state for this display mode
-        base_mode = 'TIME' if 'TIME' in display_mode else 'MAG'
+        base_mode = display_mode
+        if display_mode in ['TIME_ENDLESS', 'MAG_ENDLESS']: 
+             base_mode = 'TIME' if 'TIME' in display_mode else 'MAG'
+        
         if base_mode in self.lock_states:
-            for key, btn, label_fn in [
-                ('m1',     self.btn_lock_m1,     lambda c: f"Marker 1 {'🔒' if c else '🔓'}"),
-                ('m2',     self.btn_lock_m2,     lambda c: f"Marker 2 {'🔒' if c else '🔓'}"),
-                ('delta',  self.btn_lock_delta,  lambda c: f"Delta (Δ) {'🔒' if c else '🔓'}"),
-                ('center', self.btn_lock_center, lambda c: f"Center {'🔒' if c else '🔓'}"),
+            for key, btn_list, label_fn in [
+                ('m1',     [self.btn_lock_m1,     getattr(self, 'st_btn_lock_m1',     None)], lambda c: f"{'Bound' if base_mode=='STATS' else 'Marker'} 1 {'🔒' if c else '🔓'}"),
+                ('m2',     [self.btn_lock_m2,     getattr(self, 'st_btn_lock_m2',     None)], lambda c: f"{'Bound' if base_mode=='STATS' else 'Marker'} 2 {'🔒' if c else '🔓'}"),
+                ('delta',  [self.btn_lock_delta,  getattr(self, 'st_btn_lock_delta',  None)], lambda c: f"Delta (Δ) {'🔒' if c else '🔓'}"),
+                ('center', [self.btn_lock_center, getattr(self, 'st_btn_lock_center', None)], lambda c: f"Center {'🔒' if c else '🔓'}"),
             ]:
                 locked = self.lock_states[base_mode].get(key, False)
-                btn.blockSignals(True)
-                btn.setChecked(locked)
-                btn.setText(label_fn(locked))
-                btn.setEnabled('ENDLESS' not in display_mode)
-                btn.blockSignals(False)
+                for btn in btn_list:
+                    if btn:
+                        btn.blockSignals(True)
+                        btn.setChecked(locked)
+                        btn.setText(label_fn(locked))
+                        btn.setEnabled('ENDLESS' not in display_mode)
+                        btn.blockSignals(False)
 
     def update_mode_ui(self, mode):
         self.btn_marker_time.blockSignals(True)
@@ -443,6 +515,9 @@ class TimeDomainMarkerPanel(QFrame):
         
         self.btn_lock_delta.setEnabled(mode in ['TIME', 'MAG'])
         self.btn_lock_center.setEnabled(mode in ['TIME', 'MAG'])
+        if hasattr(self, 'st_btn_lock_delta'):
+            self.st_btn_lock_delta.setEnabled(mode == 'STATS')
+            self.st_btn_lock_center.setEnabled(mode == 'STATS')
 
     def update_endless_list(self, markers, mode):
         """Update the scroll area with rows for each endless marker, reusing widgets where possible."""
@@ -564,21 +639,26 @@ class TimeDomainMarkerPanel(QFrame):
 
     def _clear_marker_locks(self, mode, keep=None):
         """Uncheck all marker-position locks except the one named in `keep`."""
-        base_mode = 'TIME' if 'TIME' in mode else 'MAG'
+        base_mode = mode
+        if base_mode in ['TIME_ENDLESS', 'MAG_ENDLESS']: 
+             base_mode = 'TIME' if 'TIME' in base_mode else 'MAG'
+             
         if base_mode not in self.lock_states: return
 
-        for key, btn, label in [
-            ('m1',     self.btn_lock_m1,     lambda c: f"Marker 1 {'🔒' if c else '🔓'}"),
-            ('m2',     self.btn_lock_m2,     lambda c: f"Marker 2 {'🔒' if c else '🔓'}"),
-            ('delta',  self.btn_lock_delta,  lambda c: f"Delta (Δ) {'🔒' if c else '🔓'}"),
-            ('center', self.btn_lock_center, lambda c: f"Center {'🔒' if c else '🔓'}"),
+        for key, btns, label_maker in [
+            ('m1',     [self.btn_lock_m1,     getattr(self, 'st_btn_lock_m1',     None)], lambda c: f"{'Bound' if base_mode=='STATS' else 'Marker'} 1 {'🔒' if c else '🔓'}"),
+            ('m2',     [self.btn_lock_m2,     getattr(self, 'st_btn_lock_m2',     None)], lambda c: f"{'Bound' if base_mode=='STATS' else 'Marker'} 2 {'🔒' if c else '🔓'}"),
+            ('delta',  [self.btn_lock_delta,  getattr(self, 'st_btn_lock_delta',  None)], lambda c: f"Delta (Δ) {'🔒' if c else '🔓'}"),
+            ('center', [self.btn_lock_center, getattr(self, 'st_btn_lock_center', None)], lambda c: f"Center {'🔒' if c else '🔓'}"),
         ]:
             if key == keep: continue
-            btn.blockSignals(True)
-            btn.setChecked(False)
-            btn.setText(label(False))
+            for btn in btns:
+                if btn:
+                    btn.blockSignals(True)
+                    btn.setChecked(False)
+                    btn.setText(label_maker(False))
+                    btn.blockSignals(False)
             self.lock_states[base_mode][key] = False
-            btn.blockSignals(False)
 
     def set_locks_enabled(self, m1_placed, m2_placed):
         """Enable/disable lock buttons based on marker presence."""
@@ -630,17 +710,29 @@ class TimeDomainMarkerPanel(QFrame):
 
     def flip_m_lock(self, mode):
         """Silently swap the m1/m2 lock buttons when markers cross each other."""
-        base_mode = 'TIME' if 'TIME' in mode else 'MAG'
-        m1 = self.btn_lock_m1.isChecked()
-        m2 = self.btn_lock_m2.isChecked()
+        base_mode = mode
+        if base_mode in ['TIME_ENDLESS', 'MAG_ENDLESS']: 
+             base_mode = 'TIME' if 'TIME' in base_mode else 'MAG'
+
+        m1 = self.lock_states[base_mode]['m1']
+        m2 = self.lock_states[base_mode]['m2']
         if not m1 and not m2: return
-        self.btn_lock_m1.blockSignals(True); self.btn_lock_m2.blockSignals(True)
-        self.btn_lock_m1.setChecked(m2); self.btn_lock_m2.setChecked(m1)
-        self.btn_lock_m1.setText(f"Marker 1 {'🔒' if m2 else '🔓'}")
-        self.btn_lock_m2.setText(f"Marker 2 {'🔒' if m1 else '🔓'}")
+        
         self.lock_states[base_mode]['m1'] = m2
         self.lock_states[base_mode]['m2'] = m1
-        self.btn_lock_m1.blockSignals(False); self.btn_lock_m2.blockSignals(False)
+        
+        # Update both possible button sets
+        for b1, b2, label1_fn, label2_fn in [
+            (self.btn_lock_m1, self.btn_lock_m2, 
+             lambda c: f"Marker 1 {'🔒' if c else '🔓'}", lambda c: f"Marker 2 {'🔒' if c else '🔓'}"),
+            (getattr(self, 'st_btn_lock_m1', None), getattr(self, 'st_btn_lock_m2', None),
+             lambda c: f"Bound 1 {'🔒' if c else '🔓'}", lambda c: f"Bound 2 {'🔒' if c else '🔓'}")
+        ]:
+            if b1 and b2:
+                b1.blockSignals(True); b2.blockSignals(True)
+                b1.setChecked(m2);     b2.setChecked(m1)
+                b1.setText(label1_fn(m2)); b2.setText(label2_fn(m1))
+                b1.blockSignals(False); b2.blockSignals(False)
 
     def refresh_theme(self):
         theme = self.controller.parent_window.settings_mgr.get("ui/theme", "Dark")
@@ -671,11 +763,30 @@ class TimeDomainMarkerPanel(QFrame):
                 font-size: 16px;
                 padding: 0;
             }}
-            QPushButton#mode_btn:hover {{ background-color: {p.border_light}; }}
+            QPushButton#mode_btn:hover {{ background-color: {p.border}; }}
             QPushButton#mode_btn:checked {{ 
                 background-color: {p.accent_dim}; 
-                border-color: {p.accent};
+                border: 2px solid {p.accent};
                 color: {p.accent};
+            }}
+            QPushButton#stats_tab_btn {{
+                background-color: transparent; 
+                border: 1px solid {p.border};
+                border-radius: 4px;
+                color: {p.text_dim};
+                font-weight: bold;
+                padding: 2px 10px;
+                font-size: 10px;
+                text-transform: uppercase;
+            }}
+            QPushButton#stats_tab_btn:hover {{
+                border-color: {p.accent_dim};
+                color: {p.text_main};
+            }}
+            QPushButton#stats_tab_btn:checked {{
+                background-color: {p.accent};
+                color: {p.bg_widget};
+                border-color: {p.accent};
             }}
             QLineEdit {{
                 background-color: {p.bg_input};
@@ -701,5 +812,8 @@ class TimeDomainMarkerPanel(QFrame):
             QPushButton:checked {{ color: {p.accent}; }}
         """
         if hasattr(self, 'btn_lock_delta'):
-            for btn in [self.btn_lock_m1, self.btn_lock_m2, self.btn_lock_delta, self.btn_lock_center]:
-                btn.setStyleSheet(lock_style)
+            lock_btns = [self.btn_lock_m1, self.btn_lock_m2, self.btn_lock_delta, self.btn_lock_center]
+            if hasattr(self, 'st_btn_lock_delta'):
+                lock_btns += [self.st_btn_lock_m1, self.st_btn_lock_m2, self.st_btn_lock_delta, self.st_btn_lock_center]
+            for btn in lock_btns:
+                if btn: btn.setStyleSheet(lock_style)

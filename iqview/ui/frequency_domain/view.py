@@ -495,6 +495,34 @@ class FrequencyDomainView(QWidget):
         f_max, f_min = self.freq_axis[idx_max], self.freq_axis[idx_min]
         panel = self.marker_panel
         
+        # --- Update Marker Panel Region Definition ---
+        prec1 = int(self.settings_mgr.get("ui/label_precision", 9))
+        self.marker_panel.st_row_v1_lbl.setText("Region (Hz)")
+        self.marker_panel.st_row_v2_lbl.setText("Index")
+        
+        # In case they were swapped during drag
+        b1, b2 = sorted([r_min, r_max])
+        
+        # Bounds (M1, M2)
+        for i, val in enumerate([b1, b2]):
+            w = self.marker_panel.st_widgets[i]
+            w['v1'].blockSignals(True); w['v1'].setText(f"{val:.{prec1}f}"); w['v1'].blockSignals(False)
+            
+            idx = self.freq_to_index(val)
+            w['v2'].blockSignals(True); w['v2'].setText(f"{idx}"); w['v2'].blockSignals(False)
+
+        # Delta/Center
+        dv = abs(b2 - b1)
+        cv = (b1 + b2) / 2
+        
+        self.marker_panel.st_delta_v1.blockSignals(True); self.marker_panel.st_delta_v1.setText(f"{dv:.{prec1}f}"); self.marker_panel.st_delta_v1.blockSignals(False)
+        self.marker_panel.st_center_v1.blockSignals(True); self.marker_panel.st_center_v1.setText(f"{cv:.{prec1}f}"); self.marker_panel.st_center_v1.blockSignals(False)
+        
+        idx1, idx2 = self.freq_to_index(b1), self.freq_to_index(b2)
+        self.marker_panel.st_delta_v2.blockSignals(True); self.marker_panel.st_delta_v2.setText(f"{abs(idx2-idx1)+1}"); self.marker_panel.st_delta_v2.blockSignals(False)
+        self.marker_panel.st_center_v2.blockSignals(True); self.marker_panel.st_center_v2.setText(f"{self.freq_to_index(cv)}"); self.marker_panel.st_center_v2.blockSignals(False)
+
+        # --- Update Statistics Results ---
         # 1. Convert slice_data to Linear Power
         if "[dB]" in self.y_label_text:
             # slice_data is either 20*log10(mag) or 10*log10(psd).
@@ -510,15 +538,17 @@ class FrequencyDomainView(QWidget):
         p_mean_lin = np.mean(lin_pow_slice)
         
         # 3. Calculate Integrated Power in selection
-        # (Since all modes now store linear 'Power per Bin', this is just a sum)
         total_p_lin = np.sum(lin_pow_slice)
         
         # Update UI text
         if "[dB]" in self.y_label_text:
             p_mean_db = 10 * np.log10(p_mean_lin + 1e-18)
             panel.stats_mean_val.setText(f"{p_mean_db:.2f} dB")
+            total_p_db = 10 * np.log10(total_p_lin + 1e-15)
+            panel.stats_total_power.setText(f"{total_p_db:.2f} dB")
         else:
             panel.stats_mean_val.setText(f"{p_mean_lin:.4g}")
+            panel.stats_total_power.setText(f"{total_p_lin:.4g}")
             
         panel.stats_max_val.setText(f"{p_max:.4g}"); panel.stats_min_val.setText(f"{p_min:.4g}")
         panel.stats_median_val.setText(f"{p_median:.4g}")
@@ -526,12 +556,6 @@ class FrequencyDomainView(QWidget):
         panel.stats_10th_val.setText(f"{p_10:.4g}")
         panel.stats_diff_val.setText(f"{p_diff:.4g}")
         
-        if "[dB]" in self.y_label_text:
-            total_p_db = 10 * np.log10(total_p_lin + 1e-15)
-            panel.stats_total_power.setText(f"{total_p_db:.2f} dB")
-        else:
-            panel.stats_total_power.setText(f"{total_p_lin:.4g}")
-
         panel.stats_max_freq.setText(f"{f_max:,.0f}"); panel.stats_min_freq.setText(f"{f_min:,.0f}")
         panel.stats_max_idx.setText(f"{idx_max:,}"); panel.stats_min_idx.setText(f"{idx_min:,}")
         
@@ -573,14 +597,31 @@ class FrequencyDomainView(QWidget):
                         min_dist = dist; best_idx = i
                 
                 if best_idx != -1:
+                    lock_m1 = self.marker_panel.lock_states['STATS']['m1']
+                    lock_m2 = self.marker_panel.lock_states['STATS']['m2']
+                    lock_delta = self.marker_panel.lock_states['STATS']['delta']
+                    lock_center = self.marker_panel.lock_states['STATS']['center']
+                    
+                    if (best_idx == 0 and lock_m1) or (best_idx == 1 and lock_m2):
+                        if not (lock_delta or lock_center): return
+
                     old_v = self.stats_bounds[best_idx]
-                    self.stats_bounds[best_idx] = val
-                    if old_v in self.stats_marker_order:
-                        oidx = self.stats_marker_order.index(old_v)
-                        self.stats_marker_order[oidx] = val
+                    shift = val - old_v
+                    other_idx = 1 - best_idx
+                    
+                    if lock_delta and len(self.stats_bounds) == 2:
+                        self.stats_bounds[0] += shift
+                        self.stats_bounds[1] += shift
+                    elif lock_center and len(self.stats_bounds) == 2:
+                        ct = sum(self.stats_bounds) / 2
+                        self.stats_bounds[best_idx] = val
+                        self.stats_bounds[other_idx] = 2 * ct - val
+                    else:
+                        self.stats_bounds[best_idx] = val
+                        
                     self.stats_bounds.sort()
-                    if drag_mode:
-                        self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
+                    self.stats_marker_order = list(self.stats_bounds)
+                    self.active_drag_stats_bound_idx = self.stats_bounds.index(val) if val in self.stats_bounds else 0
                     
                     if len(self.stats_bounds) == 1:
                         if self.stats_line: self.stats_line.setPos(val)
@@ -799,10 +840,51 @@ class FrequencyDomainView(QWidget):
                             new_p = np.clip(self.freq_axis[max(0, min(len(self.freq_axis)-1, int(val)))], curr_min, curr_max)
                         else:
                             new_p = np.clip(val, curr_min, curr_max)
-                    else:
-                        new_p = np.clip(val, curr_min, curr_max)
-                    m.setValue(new_p)
-                self.update_marker_info()
+            if name.startswith('st_'):
+                # Stats bound/region edit
+                if not self.stats_bounds: return
+                
+                if 'm' in name:
+                    idx = int(name[4]) 
+                    if idx >= len(self.stats_bounds): return
+                    new_p = val
+                    if 'v2' in name: # Index
+                        idx_val = max(0, min(len(self.freq_axis)-1, int(val)))
+                        new_p = self.freq_axis[idx_val]
+                    new_p = np.clip(new_p, curr_min, curr_max)
+                    
+                    # Respect locks
+                    lock_delta = self.marker_panel.lock_states['STATS']['delta']
+                    lock_center = self.marker_panel.lock_states['STATS']['center']
+                    
+                    if len(self.stats_bounds) == 2:
+                        other_idx = 1 - idx
+                        shift = new_p - self.stats_bounds[idx]
+                        if lock_delta:
+                            self.stats_bounds[0] += shift
+                            self.stats_bounds[1] += shift
+                        elif lock_center:
+                            ct = sum(self.stats_bounds) / 2
+                            self.stats_bounds[idx] = new_p
+                            self.stats_bounds[other_idx] = 2 * ct - new_p
+                        else: self.stats_bounds[idx] = new_p
+                    else: self.stats_bounds[idx] = new_p
+                elif 'delta' in name:
+                    if len(self.stats_bounds) != 2: return
+                    dv = val
+                    if 'v2' in name: dv = val * (self.freq_axis[1] - self.freq_axis[0]) # Approx Hz from Bins
+                    ct = sum(self.stats_bounds) / 2
+                    self.stats_bounds = [ct - dv/2, ct + dv/2]
+                elif 'center' in name:
+                    if len(self.stats_bounds) != 2: return
+                    ct = val
+                    if 'v2' in name: ct = self.freq_axis[max(0, min(len(self.freq_axis)-1, int(val)))]
+                    dv = abs(self.stats_bounds[1] - self.stats_bounds[0])
+                    self.stats_bounds = [ct - dv/2, ct + dv/2]
+                
+                self.stats_bounds.sort()
+                self.stats_region.setRegion(self.stats_bounds)
+                self.update_statistics()
                 return
 
             active_markers = self.markers_freq if is_freq else self.markers_y_dict[self.y_label_text]
@@ -950,27 +1032,33 @@ class FrequencyDomainView(QWidget):
             idx = self.active_drag_stats_bound_idx
             f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
             val = max(f_min, min(f_max, v_pos.x()))
-            self.stats_bounds[idx] = val
+            
+            lock_delta = self.marker_panel.lock_states['STATS']['delta']
+            lock_center = self.marker_panel.lock_states['STATS']['center']
             
             if len(self.stats_bounds) == 2:
                 other_idx = 1 - idx
-                other_v = self.stats_bounds[other_idx]
+                old_v = self.stats_bounds[idx]
+                shift = val - old_v
                 
-                self.stats_bounds.sort()
-                self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
-                
-                # Update order to track which one is 'oldest' for future replacements
-                if self.stats_marker_order[0] == self.stats_bounds[1 - self.active_drag_stats_bound_idx]:
-                    self.stats_marker_order = [other_v, val]
+                if lock_delta:
+                    self.stats_bounds[0] += shift
+                    self.stats_bounds[1] += shift
+                elif lock_center:
+                    ct = sum(self.stats_bounds) / 2
+                    self.stats_bounds[idx] = val
+                    self.stats_bounds[other_idx] = 2 * ct - val
                 else:
-                    self.stats_marker_order = [val, other_v]
-                
+                    self.stats_bounds[idx] = val
+                    
+                self.stats_bounds.sort()
+                if val in self.stats_bounds:
+                    self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
                 self.stats_region.setRegion(self.stats_bounds)
             else:
+                self.stats_bounds[0] = val
                 if self.stats_line: self.stats_line.setPos(val)
-                if self.stats_marker_order:
-                    self.stats_marker_order[-1] = val
-            
+                
             self.update_statistics()
             return
 
