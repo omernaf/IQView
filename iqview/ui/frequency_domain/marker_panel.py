@@ -16,8 +16,7 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.controller = controller
         self.lock_states = {
             'FREQ': {'delta': False, 'center': False, 'm1': False, 'm2': False},
-            'MAG':  {'delta': False, 'center': False, 'm1': False, 'm2': False},
-            'STATS':{'delta': False, 'center': False, 'm1': False, 'm2': False}
+            'MAG':  {'delta': False, 'center': False, 'm1': False, 'm2': False}
         }
         self.last_marker_mode = 'FREQ'
         self.setup_ui()
@@ -273,21 +272,6 @@ class FrequencyDomainMarkerPanel(QFrame):
 
         # Region Definition Content
         self.st_layout.addWidget(QLabel(""), 0, 0) 
-        self.st_btn_lock_m1 = QPushButton("Bound 1 🔓")
-        self.st_btn_lock_m1.setFont(self.header_font); self.st_btn_lock_m1.setCheckable(True)
-        self.st_layout.addWidget(self.st_btn_lock_m1, 0, 1, Qt.AlignmentFlag.AlignCenter)
-
-        self.st_btn_lock_m2 = QPushButton("Bound 2 🔓")
-        self.st_btn_lock_m2.setFont(self.header_font); self.st_btn_lock_m2.setCheckable(True)
-        self.st_layout.addWidget(self.st_btn_lock_m2, 0, 2, Qt.AlignmentFlag.AlignCenter)
-
-        self.st_btn_lock_delta = QPushButton("Delta (Δ) 🔓")
-        self.st_btn_lock_delta.setFont(self.header_font); self.st_btn_lock_delta.setCheckable(True)
-        self.st_layout.addWidget(self.st_btn_lock_delta, 0, 3, Qt.AlignmentFlag.AlignCenter)
-
-        self.st_btn_lock_center = QPushButton("Center 🔓")
-        self.st_btn_lock_center.setFont(self.header_font); self.st_btn_lock_center.setCheckable(True)
-        self.st_layout.addWidget(self.st_btn_lock_center, 0, 4, Qt.AlignmentFlag.AlignCenter)
 
         self.st_widgets = []
         for i in range(2):
@@ -369,12 +353,6 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.btn_stats_def.clicked.connect(lambda: self.stats_sub_stack.setCurrentIndex(0))
         self.btn_stats_res.clicked.connect(lambda: self.stats_sub_stack.setCurrentIndex(1))
 
-        # Connect Stats Locks
-        self.st_btn_lock_m1.toggled.connect(self.on_lock_m1_toggled)
-        self.st_btn_lock_m2.toggled.connect(self.on_lock_m2_toggled)
-        self.st_btn_lock_delta.toggled.connect(self.on_lock_delta_toggled)
-        self.st_btn_lock_center.toggled.connect(self.on_lock_center_toggled)
-
         # Apply theme (must be done AFTER buttons are initialized)
         self.refresh_theme()
 
@@ -443,20 +421,19 @@ class FrequencyDomainMarkerPanel(QFrame):
              base_mode = 'FREQ' if 'FREQ' in display_mode else 'MAG'
         
         if base_mode in self.lock_states:
-            for key, btn_list, label_fn in [
-                ('m1',     [self.btn_lock_m1,     getattr(self, 'st_btn_lock_m1',     None)], lambda c: f"{'Bound' if base_mode=='STATS' else 'Marker'} 1 {'🔒' if c else '🔓'}"),
-                ('m2',     [self.btn_lock_m2,     getattr(self, 'st_btn_lock_m2',     None)], lambda c: f"{'Bound' if base_mode=='STATS' else 'Marker'} 2 {'🔒' if c else '🔓'}"),
-                ('delta',  [self.btn_lock_delta,  getattr(self, 'st_btn_lock_delta',  None)], lambda c: f"Delta (Δ) {'🔒' if c else '🔓'}"),
-                ('center', [self.btn_lock_center, getattr(self, 'st_btn_lock_center', None)], lambda c: f"Center {'🔒' if c else '🔓'}"),
+            for key, btn, label_fn in [
+                ('m1',     self.btn_lock_m1,     lambda c: f"Marker 1 {'🔒' if c else '🔓'}"),
+                ('m2',     self.btn_lock_m2,     lambda c: f"Marker 2 {'🔒' if c else '🔓'}"),
+                ('delta',  self.btn_lock_delta,  lambda c: f"Delta (Δ) {'🔒' if c else '🔓'}"),
+                ('center', self.btn_lock_center, lambda c: f"Center {'🔒' if c else '🔓'}"),
             ]:
                 locked = self.lock_states[base_mode].get(key, False)
-                for btn in btn_list:
-                    if btn:
-                        btn.blockSignals(True)
-                        btn.setChecked(locked)
-                        btn.setText(label_fn(locked))
-                        btn.setEnabled('ENDLESS' not in display_mode)
-                        btn.blockSignals(False)
+                if btn:
+                    btn.blockSignals(True)
+                    btn.setChecked(locked)
+                    btn.setText(label_fn(locked))
+                    btn.setEnabled('ENDLESS' not in display_mode)
+                    btn.blockSignals(False)
 
     def update_mode_ui(self, mode):
         self.btn_marker_freq.blockSignals(True)
@@ -485,9 +462,6 @@ class FrequencyDomainMarkerPanel(QFrame):
         
         self.btn_lock_delta.setEnabled(mode in ['FREQ', 'MAG'])
         self.btn_lock_center.setEnabled(mode in ['FREQ', 'MAG'])
-        if hasattr(self, 'st_btn_lock_delta'):
-            self.st_btn_lock_delta.setEnabled(mode == 'STATS')
-            self.st_btn_lock_center.setEnabled(mode == 'STATS')
 
     def update_endless_list(self, markers, mode):
         is_freq = 'FREQ' in mode
@@ -608,19 +582,18 @@ class FrequencyDomainMarkerPanel(QFrame):
              
         if base_mode not in self.lock_states: return
 
-        for key, btns, label_maker in [
-            ('m1',     [self.btn_lock_m1,     getattr(self, 'st_btn_lock_m1',     None)], lambda c: f"{'Bound' if base_mode=='STATS' else 'Marker'} 1 {'🔒' if c else '🔓'}"),
-            ('m2',     [self.btn_lock_m2,     getattr(self, 'st_btn_lock_m2',     None)], lambda c: f"{'Bound' if base_mode=='STATS' else 'Marker'} 2 {'🔒' if c else '🔓'}"),
-            ('delta',  [self.btn_lock_delta,  getattr(self, 'st_btn_lock_delta',  None)], lambda c: f"Delta (Δ) {'🔒' if c else '🔓'}"),
-            ('center', [self.btn_lock_center, getattr(self, 'st_btn_lock_center', None)], lambda c: f"Center {'🔒' if c else '🔓'}"),
+        for key, btn, label_maker in [
+            ('m1',     self.btn_lock_m1,     lambda c: f"Marker 1 {'🔒' if c else '🔓'}"),
+            ('m2',     self.btn_lock_m2,     lambda c: f"Marker 2 {'🔒' if c else '🔓'}"),
+            ('delta',  self.btn_lock_delta,  lambda c: f"Delta (Δ) {'🔒' if c else '🔓'}"),
+            ('center', self.btn_lock_center, lambda c: f"Center {'🔒' if c else '🔓'}"),
         ]:
             if key == keep: continue
-            for btn in btns:
-                if btn:
-                    btn.blockSignals(True)
-                    btn.setChecked(False)
-                    btn.setText(label_maker(False))
-                    btn.blockSignals(False)
+            if btn:
+                btn.blockSignals(True)
+                btn.setChecked(False)
+                btn.setText(label_maker(False))
+                btn.blockSignals(False)
             self.lock_states[base_mode][key] = False
 
     def set_locks_enabled(self, m1_placed, m2_placed):
@@ -639,40 +612,38 @@ class FrequencyDomainMarkerPanel(QFrame):
 
     def on_lock_delta_toggled(self, checked):
         mode = self.controller.interaction_mode
-        base_mode = 'STATS' if mode == 'STATS' else ('FREQ' if 'FREQ' in mode else 'MAG')
+        base_mode = 'FREQ' if 'FREQ' in mode else 'MAG'
+        if base_mode not in self.lock_states: return
         self.lock_states[base_mode]['delta'] = checked
         if checked: self._clear_marker_locks(mode, keep='delta')
-        btn = self.st_btn_lock_delta if mode == 'STATS' else self.btn_lock_delta
-        btn.setText(f"Delta (Δ) {'🔒' if checked else '🔓'}")
+        self.btn_lock_delta.setText(f"Delta (Δ) {'🔒' if checked else '🔓'}")
         self.controller.handle_lock_change('delta', checked)
 
     def on_lock_center_toggled(self, checked):
         mode = self.controller.interaction_mode
-        base_mode = 'STATS' if mode == 'STATS' else ('FREQ' if 'FREQ' in mode else 'MAG')
+        base_mode = 'FREQ' if 'FREQ' in mode else 'MAG'
+        if base_mode not in self.lock_states: return
         self.lock_states[base_mode]['center'] = checked
         if checked: self._clear_marker_locks(mode, keep='center')
-        btn = self.st_btn_lock_center if mode == 'STATS' else self.btn_lock_center
-        btn.setText(f"Center {'🔒' if checked else '🔓'}")
+        self.btn_lock_center.setText(f"Center {'🔒' if checked else '🔓'}")
         self.controller.handle_lock_change('center', checked)
 
     def on_lock_m1_toggled(self, checked):
         mode = self.controller.interaction_mode
-        base_mode = 'STATS' if mode == 'STATS' else ('FREQ' if 'FREQ' in mode else 'MAG')
+        base_mode = 'FREQ' if 'FREQ' in mode else 'MAG'
+        if base_mode not in self.lock_states: return
         self.lock_states[base_mode]['m1'] = checked
         if checked: self._clear_marker_locks(mode, keep='m1')
-        btn = self.st_btn_lock_m1 if mode == 'STATS' else self.btn_lock_m1
-        label = f"{'Bound' if base_mode=='STATS' else 'Marker'} 1 {'🔒' if checked else '🔓'}"
-        btn.setText(label)
+        self.btn_lock_m1.setText(f"Marker 1 {'🔒' if checked else '🔓'}")
         self.controller.handle_lock_change('m1', checked)
 
     def on_lock_m2_toggled(self, checked):
         mode = self.controller.interaction_mode
-        base_mode = 'STATS' if mode == 'STATS' else ('FREQ' if 'FREQ' in mode else 'MAG')
+        base_mode = 'FREQ' if 'FREQ' in mode else 'MAG'
+        if base_mode not in self.lock_states: return
         self.lock_states[base_mode]['m2'] = checked
         if checked: self._clear_marker_locks(mode, keep='m2')
-        btn = self.st_btn_lock_m2 if mode == 'STATS' else self.btn_lock_m2
-        label = f"{'Bound' if base_mode=='STATS' else 'Marker'} 2 {'🔒' if checked else '🔓'}"
-        btn.setText(label)
+        self.btn_lock_m2.setText(f"Marker 2 {'🔒' if checked else '🔓'}")
         self.controller.handle_lock_change('m2', checked)
 
     def flip_m_lock(self, mode):
@@ -687,18 +658,12 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.lock_states[base_mode]['m1'] = m2
         self.lock_states[base_mode]['m2'] = m1
         
-        # Update both possible button sets
-        for b1, b2, label1_fn, label2_fn in [
-            (self.btn_lock_m1, self.btn_lock_m2, 
-             lambda c: f"Marker 1 {'🔒' if c else '🔓'}", lambda c: f"Marker 2 {'🔒' if c else '🔓'}"),
-            (getattr(self, 'st_btn_lock_m1', None), getattr(self, 'st_btn_lock_m2', None),
-             lambda c: f"Bound 1 {'🔒' if c else '🔓'}", lambda c: f"Bound 2 {'🔒' if c else '🔓'}")
-        ]:
-            if b1 and b2:
-                b1.blockSignals(True); b2.blockSignals(True)
-                b1.setChecked(m2);     b2.setChecked(m1)
-                b1.setText(label1_fn(m2)); b2.setText(label2_fn(m1))
-                b1.blockSignals(False); b2.blockSignals(False)
+        # Update buttons
+        self.btn_lock_m1.blockSignals(True); self.btn_lock_m2.blockSignals(True)
+        self.btn_lock_m1.setChecked(m2);     self.btn_lock_m2.setChecked(m1)
+        self.btn_lock_m1.setText(f"Marker 1 {'🔒' if m2 else '🔓'}")
+        self.btn_lock_m2.setText(f"Marker 2 {'🔒' if m1 else '🔓'}")
+        self.btn_lock_m1.blockSignals(False); self.btn_lock_m2.blockSignals(False)
 
     def refresh_theme(self):
         theme = self.controller.parent_window.settings_mgr.get("ui/theme", "Dark")
@@ -779,7 +744,5 @@ class FrequencyDomainMarkerPanel(QFrame):
         """
         if hasattr(self, 'btn_lock_delta'):
             lock_btns = [self.btn_lock_m1, self.btn_lock_m2, self.btn_lock_delta, self.btn_lock_center]
-            if hasattr(self, 'st_btn_lock_delta'):
-                lock_btns += [self.st_btn_lock_m1, self.st_btn_lock_m2, self.st_btn_lock_delta, self.st_btn_lock_center]
             for btn in lock_btns:
                 if btn: btn.setStyleSheet(lock_style)

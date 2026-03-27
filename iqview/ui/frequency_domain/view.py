@@ -853,22 +853,8 @@ class FrequencyDomainView(QWidget):
                         new_p = self.freq_axis[idx_val]
                     new_p = np.clip(new_p, curr_min, curr_max)
                     
-                    # Respect locks
-                    lock_delta = self.marker_panel.lock_states['STATS']['delta']
-                    lock_center = self.marker_panel.lock_states['STATS']['center']
-                    
-                    if len(self.stats_bounds) == 2:
-                        other_idx = 1 - idx
-                        shift = new_p - self.stats_bounds[idx]
-                        if lock_delta:
-                            self.stats_bounds[0] += shift
-                            self.stats_bounds[1] += shift
-                        elif lock_center:
-                            ct = sum(self.stats_bounds) / 2
-                            self.stats_bounds[idx] = new_p
-                            self.stats_bounds[other_idx] = 2 * ct - new_p
-                        else: self.stats_bounds[idx] = new_p
-                    else: self.stats_bounds[idx] = new_p
+                    if idx < len(self.stats_bounds):
+                        self.stats_bounds[idx] = new_p
                 elif 'delta' in name:
                     if len(self.stats_bounds) != 2: return
                     dv = val
@@ -1033,23 +1019,8 @@ class FrequencyDomainView(QWidget):
             f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
             val = max(f_min, min(f_max, v_pos.x()))
             
-            lock_delta = self.marker_panel.lock_states['STATS']['delta']
-            lock_center = self.marker_panel.lock_states['STATS']['center']
-            
             if len(self.stats_bounds) == 2:
-                other_idx = 1 - idx
-                old_v = self.stats_bounds[idx]
-                shift = val - old_v
-                
-                if lock_delta:
-                    self.stats_bounds[0] += shift
-                    self.stats_bounds[1] += shift
-                elif lock_center:
-                    ct = sum(self.stats_bounds) / 2
-                    self.stats_bounds[idx] = val
-                    self.stats_bounds[other_idx] = 2 * ct - val
-                else:
-                    self.stats_bounds[idx] = val
+                self.stats_bounds[idx] = val
                     
                 self.stats_bounds.sort()
                 if val in self.stats_bounds:
