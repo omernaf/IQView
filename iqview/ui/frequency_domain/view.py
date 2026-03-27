@@ -175,6 +175,7 @@ class FrequencyDomainView(QWidget):
 
         self.fft_freq_axis = np.fft.fftshift(np.fft.fftfreq(n, 1/self.rate)) + self.center_freq
         self.freq_axis = self.fft_freq_axis
+        self.stats_region.setBounds([self.freq_axis[0], self.freq_axis[-1]])
         self.current_plot_data = np.nan_to_num(np.abs(self.fft_data), nan=0.0, posinf=1e-15, neginf=0.0)
         self.y_label_text = "magnitude"
 
@@ -597,27 +598,7 @@ class FrequencyDomainView(QWidget):
                         min_dist = dist; best_idx = i
                 
                 if best_idx != -1:
-                    lock_m1 = self.marker_panel.lock_states['STATS']['m1']
-                    lock_m2 = self.marker_panel.lock_states['STATS']['m2']
-                    lock_delta = self.marker_panel.lock_states['STATS']['delta']
-                    lock_center = self.marker_panel.lock_states['STATS']['center']
-                    
-                    if (best_idx == 0 and lock_m1) or (best_idx == 1 and lock_m2):
-                        if not (lock_delta or lock_center): return
-
-                    old_v = self.stats_bounds[best_idx]
-                    shift = val - old_v
-                    other_idx = 1 - best_idx
-                    
-                    if lock_delta and len(self.stats_bounds) == 2:
-                        self.stats_bounds[0] += shift
-                        self.stats_bounds[1] += shift
-                    elif lock_center and len(self.stats_bounds) == 2:
-                        ct = sum(self.stats_bounds) / 2
-                        self.stats_bounds[best_idx] = val
-                        self.stats_bounds[other_idx] = 2 * ct - val
-                    else:
-                        self.stats_bounds[best_idx] = val
+                    self.stats_bounds[best_idx] = val
                         
                     self.stats_bounds.sort()
                     self.stats_marker_order = list(self.stats_bounds)

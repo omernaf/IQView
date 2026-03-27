@@ -164,6 +164,7 @@ class TimeDomainView(QWidget):
         self.plot_item.addItem(self.stats_markers)
         
         self.time_axis = np.linspace(start_time, end_time, len(samples))
+        self.stats_region.setBounds([self.time_axis[0], self.time_axis[-1]])
         # Add buttons and trigger the first plot
         self.rebuild_plot_buttons()
             
@@ -679,27 +680,7 @@ class TimeDomainView(QWidget):
                         best_idx = i
                 
                 if best_idx != -1:
-                    lock_m1 = self.marker_panel.lock_states['STATS']['m1']
-                    lock_m2 = self.marker_panel.lock_states['STATS']['m2']
-                    lock_delta = self.marker_panel.lock_states['STATS']['delta']
-                    lock_center = self.marker_panel.lock_states['STATS']['center']
-                    
-                    if (best_idx == 0 and lock_m1) or (best_idx == 1 and lock_m2):
-                        if not (lock_delta or lock_center): return
-
-                    old_v = self.stats_bounds[best_idx]
-                    shift = val - old_v
-                    other_idx = 1 - best_idx
-                    
-                    if lock_delta and len(self.stats_bounds) == 2:
-                        self.stats_bounds[0] += shift
-                        self.stats_bounds[1] += shift
-                    elif lock_center and len(self.stats_bounds) == 2:
-                        ct = sum(self.stats_bounds) / 2
-                        self.stats_bounds[best_idx] = val
-                        self.stats_bounds[other_idx] = 2 * ct - val
-                    else:
-                        self.stats_bounds[best_idx] = val
+                    self.stats_bounds[best_idx] = val
                         
                     # Maintain order and update sync members
                     self.stats_bounds.sort()
