@@ -382,6 +382,8 @@ class TimeDomainMarkerPanel(QFrame):
         self.res_layout.addWidget(self.stats_10th_val, 2, 6)
         self.res_layout.addWidget(self.stats_diff_val, 3, 6)
 
+        self.stats_sub_stack.setCurrentIndex(1) # Now it's safe to set index 1
+
         # Connect internal tab switching
         self.btn_stats_def.clicked.connect(lambda: self.stats_sub_stack.setCurrentIndex(0))
         self.btn_stats_res.clicked.connect(lambda: self.stats_sub_stack.setCurrentIndex(1))
@@ -434,6 +436,9 @@ class TimeDomainMarkerPanel(QFrame):
         actual_ui_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE'] else mode
         
         if actual_ui_mode == 'STATS':
+            if self.stacked.currentIndex() != 2:
+                self.btn_stats_res.setChecked(True)
+                self.stats_sub_stack.setCurrentIndex(1)
             self.stacked.setCurrentIndex(2)
         elif 'ENDLESS' in actual_ui_mode:
             self.stacked.setCurrentIndex(1)
@@ -678,34 +683,40 @@ class TimeDomainMarkerPanel(QFrame):
 
     def on_lock_delta_toggled(self, checked):
         mode = self.controller.interaction_mode
-        base_mode = 'TIME' if 'TIME' in mode else 'MAG'
+        base_mode = 'STATS' if mode == 'STATS' else ('TIME' if 'TIME' in mode else 'MAG')
         self.lock_states[base_mode]['delta'] = checked
         if checked: self._clear_marker_locks(mode, keep='delta')
-        self.btn_lock_delta.setText(f"Delta (Δ) {'🔒' if checked else '🔓'}")
+        btn = self.st_btn_lock_delta if mode == 'STATS' else self.btn_lock_delta
+        btn.setText(f"Delta (Δ) {'🔒' if checked else '🔓'}")
         self.controller.handle_lock_change('delta', checked)
 
     def on_lock_center_toggled(self, checked):
         mode = self.controller.interaction_mode
-        base_mode = 'TIME' if 'TIME' in mode else 'MAG'
+        base_mode = 'STATS' if mode == 'STATS' else ('TIME' if 'TIME' in mode else 'MAG')
         self.lock_states[base_mode]['center'] = checked
         if checked: self._clear_marker_locks(mode, keep='center')
-        self.btn_lock_center.setText(f"Center {'🔒' if checked else '🔓'}")
+        btn = self.st_btn_lock_center if mode == 'STATS' else self.btn_lock_center
+        btn.setText(f"Center {'🔒' if checked else '🔓'}")
         self.controller.handle_lock_change('center', checked)
 
     def on_lock_m1_toggled(self, checked):
         mode = self.controller.interaction_mode
-        base_mode = 'TIME' if 'TIME' in mode else 'MAG'
+        base_mode = 'STATS' if mode == 'STATS' else ('TIME' if 'TIME' in mode else 'MAG')
         self.lock_states[base_mode]['m1'] = checked
         if checked: self._clear_marker_locks(mode, keep='m1')
-        self.btn_lock_m1.setText(f"Marker 1 {'🔒' if checked else '🔓'}")
+        btn = self.st_btn_lock_m1 if mode == 'STATS' else self.btn_lock_m1
+        label = f"{'Bound' if base_mode=='STATS' else 'Marker'} 1 {'🔒' if checked else '🔓'}"
+        btn.setText(label)
         self.controller.handle_lock_change('m1', checked)
 
     def on_lock_m2_toggled(self, checked):
         mode = self.controller.interaction_mode
-        base_mode = 'TIME' if 'TIME' in mode else 'MAG'
+        base_mode = 'STATS' if mode == 'STATS' else ('TIME' if 'TIME' in mode else 'MAG')
         self.lock_states[base_mode]['m2'] = checked
         if checked: self._clear_marker_locks(mode, keep='m2')
-        self.btn_lock_m2.setText(f"Marker 2 {'🔒' if checked else '🔓'}")
+        btn = self.st_btn_lock_m2 if mode == 'STATS' else self.btn_lock_m2
+        label = f"{'Bound' if base_mode=='STATS' else 'Marker'} 2 {'🔒' if checked else '🔓'}"
+        btn.setText(label)
         self.controller.handle_lock_change('m2', checked)
 
     def flip_m_lock(self, mode):
