@@ -143,112 +143,135 @@ class CustomViewBox(pg.ViewBox):
         if ev.isExit():
             self.unsetCursor()
             return
-            
+
+        scene_pos = ev.scenePos()
         mode = getattr(self.ui_controller, 'interaction_mode', None)
-        if mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'STATS']:
-            # Find closest marker
-            active_markers = []
-            
-            if mode == 'TIME':
-                active_markers = getattr(self.ui_controller, 'markers_time', [])
-            elif mode in ['FREQ', 'FILTER']:
-                active_markers = getattr(self.ui_controller, 'markers_freq', [])
-            elif mode in ['MAG', 'Y']:
-                if hasattr(self.ui_controller, 'markers_y_dict'):
-                    y_label = getattr(self.ui_controller, 'y_label_text', "")
-                    active_markers = self.ui_controller.markers_y_dict.get(y_label, [])
-            
-            found_near = False
-            scene_pos = ev.scenePos()
 
-            if mode == 'FILTER':
-                active_values = getattr(self.ui_controller, 'filter_bounds', [])
-                for i, b_val in enumerate(active_values):
-                    # In Spectrogram, filter bounds are horizontal frequency lines
-                    p_scene = self.mapViewToScene(pg.Point(0, b_val))
-                    dist = abs(scene_pos.y() - p_scene.y())
-                    if dist < 20:
-                        # Check lock status
-                        is_b_locked = False
-                        if len(active_values) == 2:
-                            lock_m1 = getattr(self.ui_controller.marker_panel, 'btn_lock_m1', None)
-                            lock_m2 = getattr(self.ui_controller.marker_panel, 'btn_lock_m2', None)
-                            lock_delta = getattr(self.ui_controller.marker_panel, 'btn_lock_delta', None)
-                            lock_center = getattr(self.ui_controller.marker_panel, 'btn_lock_center', None)
-                            
-                            b_locked = (i == 0 and lock_m1 and lock_m1.isChecked()) or \
-                                       (i == 1 and lock_m2 and lock_m2.isChecked())
-                            linked = (lock_delta and lock_delta.isChecked()) or \
-                                     (lock_center and lock_center.isChecked())
-                            if b_locked and not linked:
-                                is_b_locked = True
-                        
-                        if not is_b_locked:
-                            found_near = True
-                            self.setCursor(Qt.CursorShape.SizeVerCursor)
-                            break
-            
-            if not found_near:
-                for i, m in enumerate(active_markers):
-                    if getattr(m, 'mouseHovering', False):
-                        angle = getattr(m, 'angle', 90)
-                        
-                        # Check lock status
-                        is_m_locked = False
-                        if len(active_markers) == 2:
-                            lock_m1 = getattr(self.ui_controller.marker_panel, 'btn_lock_m1', None)
-                            lock_m2 = getattr(self.ui_controller.marker_panel, 'btn_lock_m2', None)
-                            lock_delta = getattr(self.ui_controller.marker_panel, 'btn_lock_delta', None)
-                            lock_center = getattr(self.ui_controller.marker_panel, 'btn_lock_center', None)
-                            
-                            m_locked = (i == 0 and lock_m1 and lock_m1.isChecked()) or \
-                                       (i == 1 and lock_m2 and lock_m2.isChecked())
-                            linked = (lock_delta and lock_delta.isChecked()) or \
-                                     (lock_center and lock_center.isChecked())
-                            
-                            if m_locked and not linked:
-                                is_m_locked = True
-                        
-                        if not is_m_locked:
-                            found_near = True
-                            self.setCursor(Qt.CursorShape.SizeHorCursor if angle == 90 else Qt.CursorShape.SizeVerCursor)
-                            break
-            
-            # 4. Check for Grid Lines (Shadow Markers) - allowable in all lock states!
-            if not found_near and mode in ['TIME', 'FREQ', 'MAG', 'Y']:
-                if mode == 'TIME':
-                    grid_lines = getattr(self.ui_controller, 'grid_lines_time', [])
-                elif mode == 'FREQ':
-                    grid_lines = getattr(self.ui_controller, 'grid_lines_freq', [])
-                else:
-                    grid_lines = getattr(self.ui_controller, 'grid_lines_mag', [])
-                for gl in grid_lines:
-                    if getattr(gl, 'mouseHovering', False):
-                        angle = getattr(gl, 'angle', 90)
+        # Only show special cursors in interactive marker modes
+        if mode not in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'STATS',
+                        'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS']:
+            self.unsetCursor()
+            return
+
+        HIT = 20  # pixel threshold — matches drag code
+
+        # --- Helpers ---
+        def dist_to_vertical(val):
+            """Pixel distance from scene_pos to a vertical InfiniteLine at x=val."""
+            p = self.mapViewToScene(pg.Point(val, 0))
+            return abs(scene_pos.x() - p.x())
+
+        def dist_to_horizontal(val):
+            """Pixel distance from scene_pos to a horizontal InfiniteLine at y=val."""
+            p = self.mapViewToScene(pg.Point(0, val))
+            return abs(scene_pos.y() - p.y())
+
+        def dist_to_line(val, is_vertical):
+            return dist_to_vertical(val) if is_vertical else dist_to_horizontal(val)
+
+        mp = getattr(self.ui_controller, 'marker_panel', None)
+        def _checked(btn_name):
+            btn = getattr(mp, btn_name, None) if mp else None
+            return btn.isChecked() if btn else False
+
+        lock_m1    = _checked('btn_lock_m1')
+        lock_m2    = _checked('btn_lock_m2')
+        lock_delta  = _checked('btn_lock_delta')
+        lock_center = _checked('btn_lock_center')
+        pair_locked = lock_delta or lock_center
+
+        found_near = False
+
+        # ── 1. FILTER mode: BPF bounds (horizontal freq lines) ──────────────
+        if not found_near and mode == 'FILTER':
+            filter_bounds = getattr(self.ui_controller, 'filter_bounds', [])
+            sorted_fb = sorted(filter_bounds)
+            for i, b_val in enumerate(sorted_fb):
+                if dist_to_horizontal(b_val) < HIT:
+                    individually_locked = (i == 0 and lock_m1) or (i == 1 and lock_m2)
+                    if not individually_locked or pair_locked:
+                        self.setCursor(Qt.CursorShape.SizeVerCursor)
                         found_near = True
-                        self.setCursor(Qt.CursorShape.SizeHorCursor if angle == 90 else Qt.CursorShape.SizeVerCursor)
                         break
-                        
-            # 5. Check for STATS Region boundaries
-            if not found_near and mode == 'STATS':
-                stats_region = getattr(self.ui_controller, 'stats_region', None)
-                if stats_region and stats_region.isVisible():
-                    for line in stats_region.lines:
-                        if getattr(line, 'mouseHovering', False):
-                            found_near = True
-                            self.setCursor(Qt.CursorShape.SizeHorCursor)
-                            break
-                
-                if not found_near:
-                    stats_line = getattr(self.ui_controller, 'stats_line', None)
-                    if stats_line and stats_line.isVisible():
-                        if getattr(stats_line, 'mouseHovering', False):
-                            found_near = True
-                            self.setCursor(Qt.CursorShape.SizeHorCursor)
 
-            
-            if not found_near:
-                self.setCursor(Qt.CursorShape.CrossCursor)
+        # ── 2. Regular markers ───────────────────────────────────────────────
+        if not found_near and mode in ['TIME', 'FREQ', 'MAG', 'Y',
+                                       'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS']:
+            # Collect active markers for this mode
+            if mode in ['TIME', 'TIME_ENDLESS']:
+                if 'ENDLESS' in mode:
+                    active_markers = list(getattr(self.ui_controller, 'markers_time_endless', []))
+                else:
+                    active_markers = list(getattr(self.ui_controller, 'markers_time', []))
+            elif mode in ['FREQ', 'FREQ_ENDLESS']:
+                if 'ENDLESS' in mode:
+                    active_markers = list(getattr(self.ui_controller, 'markers_freq_endless', []))
+                else:
+                    active_markers = list(getattr(self.ui_controller, 'markers_freq', []))
+            else:  # MAG / Y / MAG_ENDLESS
+                y_label = getattr(self.ui_controller, 'y_label_text', '')
+                if 'ENDLESS' in mode:
+                    active_markers = list(getattr(self.ui_controller, 'markers_y_endless_dict', {}).get(y_label, []))
+                else:
+                    active_markers = list(getattr(self.ui_controller, 'markers_y_dict', {}).get(y_label, []))
+
+            # Sorted by value to map m1 (lower) / m2 (higher) to lock buttons
+            sorted_m = sorted(active_markers, key=lambda m: m.value()) if len(active_markers) == 2 else active_markers
+
+            for m in active_markers:
+                angle = getattr(m, 'angle', 90)
+                is_vert = (angle == 90)
+                if dist_to_line(m.value(), is_vert) < HIT:
+                    # Skip if this individual marker is locked without a pair-lock
+                    if len(active_markers) == 2:
+                        idx = sorted_m.index(m) if m in sorted_m else -1
+                        individually_locked = (idx == 0 and lock_m1) or (idx == 1 and lock_m2)
+                        if individually_locked and not pair_locked:
+                            continue
+                    self.setCursor(Qt.CursorShape.SizeHorCursor if is_vert else Qt.CursorShape.SizeVerCursor)
+                    found_near = True
+                    break
+
+        # ── 3. Shadow markers / grid lines ──────────────────────────────────
+        # Shadow markers work in all lock states (lock_delta shifts the whole grid;
+        # lock_center adjusts the spread — both are handled in update_drag).
+        if not found_near and mode in ['TIME', 'FREQ', 'MAG', 'Y']:
+            if mode == 'TIME':
+                grid_lines = getattr(self.ui_controller, 'grid_lines_time', [])
+            elif mode == 'FREQ':
+                grid_lines = getattr(self.ui_controller, 'grid_lines_freq', [])
+            else:  # MAG / Y
+                grid_lines = getattr(self.ui_controller, 'grid_lines_mag', [])
+
+            for gl in grid_lines:
+                angle = getattr(gl, 'angle', 90)
+                is_vert = (angle == 90)
+                if dist_to_line(gl.value(), is_vert) < HIT:
+                    self.setCursor(Qt.CursorShape.SizeHorCursor if is_vert else Qt.CursorShape.SizeVerCursor)
+                    found_near = True
+                    break
+
+        # ── 4. STATS mode: region bounds and single line ─────────────────────
+        if not found_near and mode == 'STATS':
+            stats_bounds = getattr(self.ui_controller, 'stats_bounds', [])
+            stats_region = getattr(self.ui_controller, 'stats_region', None)
+            stats_line   = getattr(self.ui_controller, 'stats_line', None)
+
+            if stats_region and stats_region.isVisible():
+                for b_val in stats_bounds:
+                    if dist_to_vertical(b_val) < HIT:
+                        self.setCursor(Qt.CursorShape.SizeHorCursor)
+                        found_near = True
+                        break
+
+            if not found_near and stats_line and stats_line.isVisible():
+                if dist_to_vertical(stats_line.value()) < HIT:
+                    self.setCursor(Qt.CursorShape.SizeHorCursor)
+                    found_near = True
+
+        # ── Fallback: crosshair ───────────────────────────────────────────────
+        if not found_near:
+            self.setCursor(Qt.CursorShape.CrossCursor)
 
     def mouseDragEvent(self, ev, axis=None):
         if not hasattr(ev, 'isStart'):
