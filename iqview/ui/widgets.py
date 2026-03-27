@@ -424,6 +424,9 @@ class CustomViewBox(pg.ViewBox):
         view_all_act = menu.addAction("View All")
         view_all_act.triggered.connect(self.ui_controller.reset_zoom)
         
+        clear_markers_act = menu.addAction("Clear All Markers")
+        clear_markers_act.triggered.connect(self.ui_controller.clear_all_markers)
+        
         menu.addSeparator()
         
         if is_spec:

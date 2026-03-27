@@ -236,6 +236,40 @@ class ViewControllerMixin:
             if is_freq: self.spectrogram_view.plot_item.setYRange(v_min, v_max, padding=0)
             else: self.spectrogram_view.plot_item.setXRange(v_min, v_max, padding=0)
 
+    def clear_all_markers(self):
+        # Clear time / freq markers (regular and endless)
+        all_markers = self.markers_time + self.markers_freq + self.markers_time_endless + self.markers_freq_endless
+        for m in all_markers:
+            self.spectrogram_view.plot_item.removeItem(m)
+        self.markers_time.clear()
+        self.markers_freq.clear()
+        self.markers_time_endless.clear()
+        self.markers_freq_endless.clear()
+        
+        # Reset filter state
+        if self.filter_region:
+            self.filter_region.hide()
+        if hasattr(self, 'filter_line') and self.filter_line:
+            self.filter_line.hide()
+            
+        self.filter_enabled  = False
+        self.filter_placed   = False
+        self.filter_placing  = False
+        self.filter_bounds   = []
+        self.filter_marker_order = []
+        if hasattr(self.marker_panel, 'filter_on_btn'):
+            self.marker_panel.filter_on_btn.setChecked(False)
+
+        # Update displays
+        self.marker_panel.update_headers(self.interaction_mode)
+        self.update_marker_info()
+        self.update_grid('TIME', force=True)
+        self.update_grid('FREQ', force=True)
+        
+        # Refresh processing if filter was removed
+        if self._has_data():
+            self.start_processing()
+
     def toggle_grid(self, axis, enabled):
         if axis == 'TIME': self.grid_time_enabled = enabled
         else: self.grid_freq_enabled = enabled
@@ -435,36 +469,10 @@ class ViewControllerMixin:
         # Save to recent files list
         self._add_recent_file(path)
 
-        # Clear all markers
-        for m in self.markers_time:
-            self.spectrogram_view.plot_item.removeItem(m)
-        for m in self.markers_freq:
-            self.spectrogram_view.plot_item.removeItem(m)
-        self.markers_time.clear()
-        self.markers_freq.clear()
-        if hasattr(self, 'marker_panel'):
-            self.marker_panel.update_headers(self.interaction_mode)
+        # Clear all markers using refactored method
+        self.clear_all_markers()
 
         # Close all Time Domain tabs (keep index 0 = Spectrogram)
-        while self.tabs.count() > 1:
-            widget = self.tabs.widget(1)
-            self.tabs.removeTab(1)
-            widget.deleteLater()
-
-        # Reset zoom history and first-load flag
-        self.zoom_history.clear()
-        self.is_first_load = True
-
-        # Reset filter state
-        if self.filter_region:
-            self.filter_region.hide()
-        self.filter_enabled  = False
-        self.filter_placed   = False
-        self.filter_placing  = False
-        self.filter_bounds   = []
-        self.filter_marker_order = []
-        if hasattr(self.marker_panel, 'filter_on_btn'):
-            self.marker_panel.filter_on_btn.setChecked(False)
 
         # Update sidebar file info
         self.update_sidebar_file_info(path, type_str)

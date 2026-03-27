@@ -642,6 +642,38 @@ class TimeDomainView(QWidget):
         # View just needs to react if necessary
         self.update_marker_info()
 
+    def clear_all_markers(self):
+        # 1. Clear regular and endless time markers
+        for m in (self.markers_time + self.markers_time_endless):
+            self.plot_item.removeItem(m)
+        self.markers_time.clear()
+        self.markers_time_endless.clear()
+        
+        # 2. Clear magnitude (Y) markers for all modes
+        for y_label in self.markers_y_dict:
+            for m in self.markers_y_dict[y_label]:
+                self.plot_item.removeItem(m)
+            self.markers_y_dict[y_label].clear()
+            
+        for y_label in self.markers_y_endless_dict:
+            for m in self.markers_y_endless_dict[y_label]:
+                self.plot_item.removeItem(m)
+            self.markers_y_endless_dict[y_label].clear()
+            
+        # 3. Clear stats region and markers
+        self.stats_bounds.clear()
+        self.stats_marker_order.clear()
+        if self.stats_region: self.stats_region.hide()
+        if self.stats_line: self.stats_line.hide()
+        if self.stats_markers: self.stats_markers.clear()
+        
+        # 4. Clear grid lines
+        self.toggle_grid('TIME', False)
+        self.toggle_grid('MAG', False)
+        
+        # 5. Reset UI
+        self.update_marker_info()
+
     def _get_y_bounds(self):
         y_min = np.min(self.current_plot_data)
         y_max = np.max(self.current_plot_data)
