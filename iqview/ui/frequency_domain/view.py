@@ -652,72 +652,19 @@ class FrequencyDomainView(QWidget):
         for i, m in enumerate(active_markers):
             pi = self.view_box.mapViewToScene(pg.Point(m.value(), 0) if is_freq else pg.Point(0, m.value()))
             dist = abs(scene_pos.x() - pi.x()) if is_freq else abs(scene_pos.y() - pi.y())
-            if dist < 10:
+            if dist < 20: # Match time domain distance
                 found_marker = m
                 break
         
         if found_marker:
-            self.active_drag_marker = found_marker
-            return
-
-        # 2. Add or RE-PLACE Marker
-        if not is_endless and len(active_markers) == 2:
-            # Teleport/Swap logic (like in Time Domain)
-            lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
-            lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
-            lock_delta = self.marker_panel.btn_lock_delta.isChecked()
-            lock_center = self.marker_panel.btn_lock_center.isChecked()
-
-            # Decide which marker to move
-            if lock_m1 and not lock_m2:
-                target, other = active_markers[1], active_markers[0]
-            elif lock_m2 and not lock_m1:
-                target, other = active_markers[0], active_markers[1]
-            else:
-                # Move oldest
-                target = min(active_markers, key=lambda m: self._marker_age.get(m, 0))
-                other = active_markers[1] if target == active_markers[0] else active_markers[0]
-            
-            # If target is locked, verify if we can move it via delta/center
-            is_m1 = (target == active_markers[0])
-            if (is_m1 and lock_m1) or (not is_m1 and lock_m2):
-                if not (lock_delta or lock_center): return
-
-            shift = val - target.value()
-            if lock_delta:
-                new_t, new_o = val, other.value() + shift
-                if is_freq:
-                    f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
-                    if f_min <= new_t <= f_max and f_min <= new_o <= f_max:
-                        target.setValue(new_t); other.setValue(new_o)
-                else:
-                    y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
-                    if y_min <= new_t <= y_max and y_min <= new_o <= y_max:
-                        target.setValue(new_t); other.setValue(new_o)
-            elif lock_center:
-                ct = (active_markers[0].value() + active_markers[1].value()) / 2
-                new_o = 2 * ct - val
-                if is_freq:
-                    f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
-                    if f_min <= val <= f_max and f_min <= new_o <= f_max:
-                        target.setValue(val); other.setValue(new_o)
-                else:
-                    y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
-                    if y_min <= val <= y_max and y_min <= new_o <= y_max:
-                        target.setValue(val); other.setValue(new_o)
-            else:
-                target.setValue(val)
-                self._marker_age_counter += 1
-                self._marker_age[target] = self._marker_age_counter
-
-            if drag_mode:
-                self.active_drag_marker = target
-
+            found_marker.setValue(val)
+            if drag_mode: self.active_drag_marker = found_marker
             self.update_marker_info()
             return
 
-        # 1.5 Hit test GRID LINES (Shadow Markers)
-        if not is_endless and len(active_markers) == 2:
+        # 1.5 Check for Grid Lines (Shadow Markers)
+        lock_delta = self.marker_panel.btn_lock_delta.isChecked()
+        if not lock_delta and (self.interaction_mode in ['FREQ', 'MAG', 'Y']):
             grid_lines = self.grid_lines_freq if is_freq else self.grid_lines_mag
             best_gl = None
             min_gl_dist = 20 # pixels
@@ -729,15 +676,15 @@ class FrequencyDomainView(QWidget):
                 if dist < min_gl_dist:
                     min_gl_dist = dist; best_gl = gl
             
-            if best_gl:
+            if best_gl and len(active_markers) == 2:
                 sorted_m = sorted(active_markers, key=lambda m: m.value())
                 p1, p2 = sorted_m[0].value(), sorted_m[1].value()
                 delta = p2 - p1
-                k = (best_gl.value() - p1) / delta if delta != 0 else 0.5
+                g_pos = best_gl.value()
+                k = (g_pos - p1) / delta if delta != 0.0 else 1.0
                 
                 lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
                 lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
-                lock_delta = self.marker_panel.btn_lock_delta.isChecked()
                 lock_center = self.marker_panel.btn_lock_center.isChecked()
                 
                 move_p1 = (k < 0.5)
@@ -757,24 +704,94 @@ class FrequencyDomainView(QWidget):
                     self.active_drag_marker = None
                 return
 
-        # 2. Add NEW Marker
+        # 2. Teleport existing markers if clicked outside
+        if not is_endless and len(active_markers) == 2:
+            m1_pos, m2_pos = active_markers[0].value(), active_markers[1].value()
+            lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
+            lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
+            lock_delta = self.marker_panel.btn_lock_delta.isChecked()
+            lock_center = self.marker_panel.btn_lock_center.isChecked()
+
+            # Decide which marker to move
+            if lock_m1 and not lock_m2:
+                target, other = active_markers[1], active_markers[0]
+                target_idx = 1
+            elif lock_m2 and not lock_m1:
+                target, other = active_markers[0], active_markers[1]
+                target_idx = 0
+            else:
+                # Move oldest
+                target = min(active_markers, key=lambda m: self._marker_age.get(m, 0))
+                other = active_markers[1] if target == active_markers[0] else active_markers[0]
+                target_idx = 0 if target is active_markers[0] else 1
+            
+            if (target_idx == 0 and lock_m1) or (target_idx == 1 and lock_m2):
+                if not (lock_delta or lock_center): return
+
+            shift = val - target.value()
+            if lock_delta:
+                new_t, new_o = val, other.value() + shift
+                if is_freq:
+                    f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+                    if f_min <= new_t <= f_max and f_min <= new_o <= f_max:
+                        target.setValue(new_t); other.setValue(new_o)
+                else:
+                    y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
+                    if y_min <= new_t <= y_max and y_min <= new_o <= y_max:
+                        target.setValue(new_t); other.setValue(new_o)
+            elif lock_center:
+                ct = (m1_pos + m2_pos) / 2
+                new_o = 2 * ct - val
+                if is_freq:
+                    f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+                    if f_min <= val <= f_max and f_min <= new_o <= f_max:
+                        target.setValue(val); other.setValue(new_o)
+                else:
+                    y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
+                    if y_min <= val <= y_max and y_min <= new_o <= y_max:
+                        target.setValue(val); other.setValue(new_o)
+            else:
+                target.setValue(val)
+                # Swap logic
+                if (val > other.value() and target_idx == 0) or (val < other.value() and target_idx == 1):
+                    active_markers[0], active_markers[1] = active_markers[1], active_markers[0]
+                    self.marker_panel.flip_m_lock(self.interaction_mode)
+
+            # Age update
+            if not drag_mode:
+                self._marker_age[target] = self._marker_age_counter
+                self._marker_age_counter += 1
+            else:
+                self.active_drag_marker = target
+
+            self.update_marker_info()
+            return
+
+        # 3. Add brand new
         if len(active_markers) < (100 if is_endless else 2):
-            p = get_palette(self.settings_mgr.get("ui/theme", "Dark"))
+            theme = self.settings_mgr.get("ui/theme", "Dark")
+            p = get_palette(theme)
             color = p.marker_freq if (is_freq and hasattr(p, 'marker_freq')) else \
                     p.marker_mag if not is_freq else p.marker_time
+            orient = 90 if is_freq else 0
             
-            m = pg.InfiniteLine(pos=val, angle=90 if is_freq else 0, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine), movable=False)
-            m.setZValue(20)
+            new_m = pg.InfiniteLine(pos=val, angle=orient, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine), movable=False)
+            new_m.setHoverPen(pg.mkPen(255, 0, 0, width=2))
+            new_m.setAcceptHoverEvents(True)
+            new_m.setZValue(100)
+            self._marker_age[new_m] = self._marker_age_counter
+            self._marker_age_counter += 1
+            
             if is_endless:
                 from PyQt6.QtWidgets import QGraphicsTextItem
-                label = pg.InfLineLabel(m, text=f"M{len(active_markers)+1}", position=0.9, color=color)
-                m.label = label
+                label_text = f"M{len(active_markers)+1}"
+                new_m.label = pg.InfLineLabel(new_m, text=label_text, position=0.9, color=color)
             
-            self.plot_item.addItem(m)
-            active_markers.append(m)
-            if drag_mode:
-                self.active_drag_marker = m
+            self.plot_item.addItem(new_m, ignoreBounds=True)
+            active_markers.append(new_m)
+            if drag_mode: self.active_drag_marker = new_m
             self.update_marker_info()
+
 
     def handle_lock_change(self, lock_type, checked):
         # View just needs to react if necessary (e.g. for grid sync)
@@ -1162,11 +1179,14 @@ class FrequencyDomainView(QWidget):
             self.marker_panel.update_endless_list(active_markers, self.interaction_mode)
         else:
             sorted_markers = sorted(active_markers, key=lambda m: m.value())
+            
+            prec1 = int(self.settings_mgr.get("ui/label_precision", 9)) if is_freq else int(self.settings_mgr.get("ui/label_precision", 6))
+            
             for i in range(2):
                 if i < len(sorted_markers):
                     val = sorted_markers[i].value()
                     self.marker_panel.m_widgets[i]['v1'].blockSignals(True)
-                    self.marker_panel.m_widgets[i]['v1'].setText(f"{val:.3f}" if is_freq else f"{val:.6g}")
+                    self.marker_panel.m_widgets[i]['v1'].setText(f"{val:.{prec1}f}")
                     self.marker_panel.m_widgets[i]['v1'].blockSignals(False)
                     if is_freq:
                         idx = self.freq_to_index(val)
@@ -1182,12 +1202,13 @@ class FrequencyDomainView(QWidget):
             if len(sorted_markers) == 2:
                 v1, v2 = sorted_markers[0].value(), sorted_markers[1].value()
                 self.marker_panel.delta_v1.blockSignals(True)
-                self.marker_panel.delta_v1.setText(f"{abs(v2-v1):.1f}" if is_freq else f"{abs(v2-v1):.6g}")
+                self.marker_panel.delta_v1.setText(f"{abs(v2-v1):.{prec1}f}")
                 self.marker_panel.delta_v1.blockSignals(False)
                 
                 self.marker_panel.center_v1.blockSignals(True)
-                self.marker_panel.center_v1.setText(f"{(v1+v2)/2:.1f}" if is_freq else f"{(v1+v2)/2:.6g}")
+                self.marker_panel.center_v1.setText(f"{(v1+v2)/2:.{prec1}f}")
                 self.marker_panel.center_v1.blockSignals(False)
+
 
                 if is_freq:
                     idx1 = self.freq_to_index(v1)
