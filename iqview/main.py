@@ -191,10 +191,13 @@ def main():
 
     pg.setConfigOptions(useOpenGL=True, enableExperimental=True, imageAxisOrder='row-major')
     
-    # Resolve rendering mode: CLI flag > settings default
-    # args.lazy_rendering is True (--lazy), False (--full), or None (not specified)
+    # Resolve rendering mode: CLI flag > settings default.
+    # NOTE: do NOT write this back to QSettings — that would affect every other
+    # open window since QSettings is shared process-wide. Instead we pass the
+    # resolved value directly to SpectrogramWindow as an in-memory override.
+    lazy_override = None   # None = use whatever QSettings says
     if args.lazy_rendering is not None:
-        sm.set("core/lazy_rendering", args.lazy_rendering)
+        lazy_override = args.lazy_rendering
         mode_label = "lazy" if args.lazy_rendering else "full-file"
         print(f"Rendering mode forced by CLI: {mode_label}")
     
@@ -202,7 +205,9 @@ def main():
     # Fix taskbar/dock grouping on Linux
     app.setDesktopFileName("iqview")
     
-    window = SpectrogramWindow(data_source, dtype, fs, fc, args.fft, args.profile, is_complex=is_complex, window_name=args.name)
+    window = SpectrogramWindow(data_source, dtype, fs, fc, args.fft, args.profile,
+                               is_complex=is_complex, window_name=args.name,
+                               lazy_rendering=lazy_override)
     window.show()
     
     if args.profile:

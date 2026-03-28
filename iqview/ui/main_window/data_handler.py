@@ -13,6 +13,18 @@ class DataHandlerMixin:
         """True when a data source has been loaded (works in both lazy and full-file modes)."""
         return self.data_source is not None
 
+    @property
+    def _lazy_enabled(self):
+        """Per-instance lazy mode flag.
+        Priority: CLI override stored in self._lazy_rendering_override
+                  > QSettings 'core/lazy_rendering'
+        Using a property (not a cached value) so Settings-dialog changes take effect
+        immediately without restarting, while CLI flags still win."""
+        override = getattr(self, '_lazy_rendering_override', None)
+        if override is not None:
+            return bool(override)
+        return bool(self.settings_mgr.get("core/lazy_rendering", True))
+
     def start_processing(self):
         if self.data_source is None:
             return  # nothing loaded yet — waiting for user to open a file
@@ -35,7 +47,7 @@ class DataHandlerMixin:
         f_min_rel = (f_min - self.fc) if f_min is not None else None
         f_max_rel = (f_max - self.fc) if f_max is not None else None
 
-        lazy_enabled = bool(self.settings_mgr.get("core/lazy_rendering", True))
+        lazy_enabled = self._lazy_enabled
 
         # Lazy mode only applies to file-path sources, not in-memory bytes
         if lazy_enabled and isinstance(self.data_source, str):
@@ -83,7 +95,7 @@ class DataHandlerMixin:
         """Called by SpectrogramView whenever the visible range changes."""
         if self.data_source is None:
             return
-        lazy_enabled = bool(self.settings_mgr.get("core/lazy_rendering", True))
+        lazy_enabled = self._lazy_enabled
         if not lazy_enabled or not isinstance(self.data_source, str):
             return
         self._schedule_lazy_render()

@@ -13,9 +13,13 @@ from ...utils.settings_manager import SettingsManager
 from ..themes import get_main_stylesheet
 
 class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, ViewControllerMixin, DataHandlerMixin):
-    def __init__(self, data_source, data_type, sample_rate, center_freq, fft_size, profile_enabled=False, is_complex=True, window_name=None):
+    def __init__(self, data_source, data_type, sample_rate, center_freq, fft_size, profile_enabled=False, is_complex=True, window_name=None, lazy_rendering=None):
         super().__init__()
         self.settings_mgr = SettingsManager()
+        # Per-instance rendering mode override from CLI (None = use QSettings value).
+        # Stored here rather than in QSettings so multiple windows can coexist with
+        # different modes without interfering with each other.
+        self._lazy_rendering_override = lazy_rendering
         self.apply_current_theme()
         
         # --- Application Icon & Taskbar Fix ---

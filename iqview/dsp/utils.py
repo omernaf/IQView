@@ -276,7 +276,7 @@ class ViewportAwareReader(QThread):
                  pixel_width, is_complex=True, window_type="Hanning",
                  overlap_percent=0.0,
                  filter_enabled=False, f_min=None, f_max=None,
-                 max_rows=20000, **kwargs):
+                 **kwargs):
         super().__init__()
         self.source        = source
         self.dtype         = dtype
@@ -330,30 +330,24 @@ class ViewportAwareReader(QThread):
             self.num_rows = 0
             return
 
-        # How many rows do we need? One per pixel width, but at most one per
-        # fft_size worth of samples (can't have more rows than samples).
-        # We also honour the overlap setting if provided.
-        req_step = int(fft_size * (1.0 - overlap_percent / 100.0))
-        req_step = max(1, req_step)
+        # --- Row count & step size ---
+        # Goal: produce exactly pixel_width rows — enough to fill the display, no more.
+        # This matches what the full-file renderer shows after autoDownsample,
+        # while guaranteeing computation is always bounded at O(pixel_width) rows.
+        #
+        #   natural_step = view_samples / pixel_width  → step to get ~pixel_width rows
+        #   req_step     = fft_size * (1 - overlap/100) → minimum step from the overlap setting
+        #   step_size    = max(natural_step, req_step)
+        #
+        # Zoomed OUT (large viewport): natural_step dominates → ~pixel_width rows computed.
+        # Zoomed IN  (small viewport): req_step dominates → fewer rows, identical density
+        #                              to what the full renderer would show in that region.
+        req_step     = max(1, int(fft_size * (1.0 - overlap_percent / 100.0)))
+        natural_step = max(1, (view_samples - fft_size) // max(self.pixel_width - 1, 1))
+        self.step_size = max(req_step, natural_step)
 
-        # How many rows to compute:
-        #   - max_rows caps computation (same as FileReaderThread's 20,000 limit)
-        #   - req_step implements the requested overlap_percent as a minimum step
-        #   - pixe_width is a secondary floor: never compute fewer rows than pixels
-        #     (so the image always fills the display without upscaling artefacts)
-        max_possible_rows = max(1, (view_samples - fft_size) // max(1, req_step) + 1)
-        # Use at least pixel_width rows so the image fills the screen,
-        # up to max_rows (like FileReaderThread) to bound computation time.
-        self.num_rows = min(max(self.pixel_width, max_possible_rows), max_rows)
-        self.num_rows = min(self.num_rows, max_possible_rows)  # can't exceed what data supports
-
-        if self.num_rows > 1:
-            # Natural step to fill the view, but never smaller than req_step
-            # (so the requested overlap is honoured as a minimum quality bar).
-            natural_step = (view_samples - fft_size) // (self.num_rows - 1)
-            self.step_size = max(req_step, natural_step)
-        else:
-            self.step_size = view_samples
+        max_possible_rows = max(1, (view_samples - fft_size) // self.step_size + 1)
+        self.num_rows = min(max_possible_rows, self.pixel_width)
 
         # Precompute frequency-domain BPF response (much better than binary mask).
         # We use the same filter design as the time-domain path, then evaluate
