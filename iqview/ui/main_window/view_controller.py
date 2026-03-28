@@ -4,7 +4,6 @@ import numpy as np
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QFileDialog
 from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext
-from ..detached_window import DetachedViewWindow
 
 class ViewControllerMixin:
     def on_parameters_changed(self, params):
@@ -185,50 +184,6 @@ class ViewControllerMixin:
             self.tabs.addTab(view, "Freq Domain")
             self.tabs.setCurrentWidget(view)
             self.update_tab_names()
-
-    def undock_tab(self, index):
-        """Moves a tab from the QTabWidget to a standalone window."""
-        if index <= 0: return # Don't undock spectrogram
-        
-        widget = self.tabs.widget(index)
-        if not widget: return
-        
-        # Remove from tabs without deleting
-        self.tabs.removeTab(index)
-        
-        # Create detached window
-        dv = DetachedViewWindow(widget, self)
-        self.detached_views.append(dv)
-        dv.show()
-        dv.raise_()
-        dv.activateWindow()
-        
-        self.update_tab_names()
-
-    def dock_view(self, widget):
-        """Moves a view from a standalone window back to the QTabWidget."""
-        # Find the detached window containing this widget
-        target_dv = None
-        for dv in self.detached_views:
-            if dv.view == widget:
-                target_dv = dv
-                break
-        
-        if not target_dv: return
-        
-        # Remove from detached window
-        target_dv.setCentralWidget(None)
-        self.detached_views.remove(target_dv)
-        target_dv.close()
-        
-        # Add back to tabs
-        from ..time_domain.view import TimeDomainView
-        from ..frequency_domain.view import FrequencyDomainView
-        
-        label = "Time Domain" if isinstance(widget, TimeDomainView) else "Freq Domain"
-        self.tabs.addTab(widget, label)
-        self.tabs.setCurrentWidget(widget)
-        self.update_tab_names()
 
     def reset_zoom(self):
         active_tab = self.tabs.currentWidget()
