@@ -436,6 +436,13 @@ class CustomViewBox(pg.ViewBox):
             fd_popup_act = menu.addAction("Frequency Domain Popup")
             fd_popup_act.triggered.connect(self.ui_controller.open_frequency_domain_tab)
 
+        # Add Dock Back if detached
+        # To avoid circular imports, check if the window class name is DetachedViewWindow
+        if self.ui_controller.window().__class__.__name__ == "DetachedViewWindow":
+            menu.addSeparator()
+            dock_act = menu.addAction("Dock back")
+            dock_act.triggered.connect(self.ui_controller.window().dock_back)
+
         fit_act = menu.addAction("Fit to Screen")
         # Handle 'Y' mode for TimeDomainView or 'FREQ' for Spectrogram/Frequency Popup
         if is_spec:

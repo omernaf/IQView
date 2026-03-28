@@ -1,9 +1,29 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QProgressBar, QLabel
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QProgressBar, QLabel, QTabBar, QTabWidget
+from PyQt6.QtCore import Qt, QTimer, QPoint
 from PyQt6.QtGui import QAction, QKeySequence
 from ..marker_panel import MarkerPanel
 from ..spectrogram_view import SpectrogramView
 from ..side_panel import SidePanel
+
+class CustomTabBar(QTabBar):
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            # If released outside the tab bar, undock the current tab
+            if not self.rect().contains(event.pos()):
+                index = self.currentIndex()
+                if index > 0: # Don't undock Spectrogram
+                    # Safe to undock? Let's check if the parent window has undock_tab
+                    parent_tab_widget = self.parent()
+                    if isinstance(parent_tab_widget, QTabWidget):
+                        main_window = parent_tab_widget.window()
+                        if hasattr(main_window, 'undock_tab'):
+                            # Delay a bit to avoid parent widget receiving the release event in a weird state
+                            QTimer.singleShot(0, lambda: main_window.undock_tab(index))
+                            # Accept and return to prevent default behavior which might reorder
+                            event.accept()
+                            return
+                            
+        super().mouseReleaseEvent(event)
 
 class UIComponentsMixin:
     def setup_ui(self):
@@ -31,11 +51,9 @@ class UIComponentsMixin:
         # 2. Main Tab Widget
         from PyQt6.QtWidgets import QTabWidget
         self.tabs = QTabWidget()
+        self.tabs.setTabBar(CustomTabBar(self.tabs))
         self.tabs.setTabsClosable(False)
-        self.tabs.setMovable(False)
-        self.tabs = QTabWidget()
-        self.tabs.setTabsClosable(False)
-        self.tabs.setMovable(False)
+        self.tabs.setMovable(True)
         self.root_layout.addWidget(self.tabs)
 
         # Install event filter for middle/right click closing
