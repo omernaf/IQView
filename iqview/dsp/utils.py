@@ -34,11 +34,18 @@ class FileReaderThread(QThread):
         # Precompute frequency-domain BPF/BSF response mask
         self.freq_mask = None
         if filter_mode in ['bpf', 'bsf'] and f_min is not None and f_max is not None:
-            sos, f_center = design_filter(sample_rate, f_min, f_max, **kwargs)
-            if sos is not None:
+            filter_data, f_center, is_fir = design_filter(sample_rate, f_min, f_max, **kwargs)
+            if filter_data is not None:
                 bin_freqs = np.fft.fftshift(np.fft.fftfreq(fft_size, 1.0 / sample_rate))
                 f_eval = bin_freqs - f_center
-                _, h = signal.sosfreqz(sos, f_eval, fs=sample_rate)
+                
+                if is_fir:
+                    # filter_data contains taps
+                    _, h = signal.freqz(filter_data, [1.0], f_eval, fs=sample_rate)
+                else:
+                    # filter_data contains SOS
+                    _, h = signal.sosfreqz(filter_data, f_eval, fs=sample_rate)
+                    
                 h_abs = np.abs(h).astype(np.float32)
                 if filter_mode == 'bsf':
                     self.freq_mask = 1.0 - h_abs
@@ -355,14 +362,21 @@ class ViewportAwareReader(QThread):
         # its frequency response (roll-off) at each FFT bin.
         self.freq_mask = None
         if filter_mode in ['bpf', 'bsf'] and f_min is not None and f_max is not None:
-            sos, f_center = design_filter(sample_rate, f_min, f_max, **kwargs)
-            if sos is not None:
+            filter_data, f_center, is_fir = design_filter(sample_rate, f_min, f_max, **kwargs)
+            if filter_data is not None:
                 # Get bins relative to fc (baseband)
                 bin_freqs = np.fft.fftshift(np.fft.fftfreq(fft_size, 1.0 / sample_rate))
                 # Evaluate at (bin_freq - f_center) because the filter is designed as a low-pass 
                 # on a signals that was shifted by -f_center in the time domain.
                 f_eval = bin_freqs - f_center
-                _, h = signal.sosfreqz(sos, f_eval, fs=sample_rate)
+                
+                if is_fir:
+                    # filter_data contains taps
+                    _, h = signal.freqz(filter_data, [1.0], f_eval, fs=sample_rate)
+                else:
+                    # filter_data contains SOS
+                    _, h = signal.sosfreqz(filter_data, f_eval, fs=sample_rate)
+                    
                 h_abs = np.abs(h).astype(np.float32)
                 if filter_mode == 'bsf':
                     self.freq_mask = 1.0 - h_abs
