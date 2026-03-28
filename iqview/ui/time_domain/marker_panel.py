@@ -149,30 +149,26 @@ class TimeDomainMarkerPanel(QFrame):
         # Table Headers
         self.grid.addWidget(QLabel(""), 0, 0) 
         
-        self.btn_lock_m1 = QPushButton("Marker 1 🔓")
+        self.btn_lock_m1 = QPushButton("Marker 1")
         self.btn_lock_m1.setFont(self.header_font)
         self.btn_lock_m1.setCheckable(True)
         self.grid.addWidget(self.btn_lock_m1, 0, 1, Qt.AlignmentFlag.AlignCenter)
 
-        self.btn_lock_m2 = QPushButton("Marker 2 🔓")
+        self.btn_lock_m2 = QPushButton("Marker 2")
         self.btn_lock_m2.setFont(self.header_font)
         self.btn_lock_m2.setCheckable(True)
         self.grid.addWidget(self.btn_lock_m2, 0, 2, Qt.AlignmentFlag.AlignCenter)
 
         # Delta Header (Combined with Lock)
-        self.btn_lock_delta = QPushButton("Delta (Δ) 🔓")
+        self.btn_lock_delta = QPushButton("Delta (Δ)")
         self.btn_lock_delta.setFont(self.header_font)
         self.btn_lock_delta.setCheckable(True)
-        self.btn_lock_delta.setCheckable(True)
-        # Style moved to refresh_theme
         self.grid.addWidget(self.btn_lock_delta, 0, 3)
 
         # Center Header (Combined with Lock)
-        self.btn_lock_center = QPushButton("Center 🔓")
+        self.btn_lock_center = QPushButton("Center")
         self.btn_lock_center.setFont(self.header_font)
         self.btn_lock_center.setCheckable(True)
-        self.btn_lock_center.setCheckable(True)
-        # Style moved to refresh_theme
         self.grid.addWidget(self.btn_lock_center, 0, 4)
 
         # Side labels (Row names)
@@ -456,18 +452,17 @@ class TimeDomainMarkerPanel(QFrame):
              base_mode = 'TIME' if 'TIME' in display_mode else 'MAG'
         
         if base_mode in self.lock_states:
-            for key, btn_list, label_fn in [
-                ('m1',     [self.btn_lock_m1,     getattr(self, 'st_btn_lock_m1',     None)], lambda c: f"{'Bound' if base_mode=='STATS' else 'Marker'} 1 {'🔒' if c else '🔓'}"),
-                ('m2',     [self.btn_lock_m2,     getattr(self, 'st_btn_lock_m2',     None)], lambda c: f"{'Bound' if base_mode=='STATS' else 'Marker'} 2 {'🔒' if c else '🔓'}"),
-                ('delta',  [self.btn_lock_delta,  getattr(self, 'st_btn_lock_delta',  None)], lambda c: f"Delta (Δ) {'🔒' if c else '🔓'}"),
-                ('center', [self.btn_lock_center, getattr(self, 'st_btn_lock_center', None)], lambda c: f"Center {'🔒' if c else '🔓'}"),
+            for key, btn_list in [
+                ('m1',     [self.btn_lock_m1,     getattr(self, 'st_btn_lock_m1',     None)]),
+                ('m2',     [self.btn_lock_m2,     getattr(self, 'st_btn_lock_m2',     None)]),
+                ('delta',  [self.btn_lock_delta,  getattr(self, 'st_btn_lock_delta',  None)]),
+                ('center', [self.btn_lock_center, getattr(self, 'st_btn_lock_center', None)]),
             ]:
                 locked = self.lock_states[base_mode].get(key, False)
                 for btn in btn_list:
                     if btn:
                         btn.blockSignals(True)
                         btn.setChecked(locked)
-                        btn.setText(label_fn(locked))
                         btn.setEnabled('ENDLESS' not in display_mode)
                         btn.blockSignals(False)
 
@@ -628,18 +623,17 @@ class TimeDomainMarkerPanel(QFrame):
              
         if base_mode not in self.lock_states: return
 
-        for key, btns, label_maker in [
-            ('m1',     [self.btn_lock_m1,     getattr(self, 'st_btn_lock_m1',     None)], lambda c: f"{'Bound' if base_mode=='STATS' else 'Marker'} 1 {'🔒' if c else '🔓'}"),
-            ('m2',     [self.btn_lock_m2,     getattr(self, 'st_btn_lock_m2',     None)], lambda c: f"{'Bound' if base_mode=='STATS' else 'Marker'} 2 {'🔒' if c else '🔓'}"),
-            ('delta',  [self.btn_lock_delta,  getattr(self, 'st_btn_lock_delta',  None)], lambda c: f"Delta (Δ) {'🔒' if c else '🔓'}"),
-            ('center', [self.btn_lock_center, getattr(self, 'st_btn_lock_center', None)], lambda c: f"Center {'🔒' if c else '🔓'}"),
+        for key, btns in [
+            ('m1',     [self.btn_lock_m1,     getattr(self, 'st_btn_lock_m1',     None)]),
+            ('m2',     [self.btn_lock_m2,     getattr(self, 'st_btn_lock_m2',     None)]),
+            ('delta',  [self.btn_lock_delta,  getattr(self, 'st_btn_lock_delta',  None)]),
+            ('center', [self.btn_lock_center, getattr(self, 'st_btn_lock_center', None)]),
         ]:
             if key == keep: continue
             for btn in btns:
                 if btn:
                     btn.blockSignals(True)
                     btn.setChecked(False)
-                    btn.setText(label_maker(False))
                     btn.blockSignals(False)
             self.lock_states[base_mode][key] = False
 
@@ -665,7 +659,6 @@ class TimeDomainMarkerPanel(QFrame):
         if base_mode not in self.lock_states: return
         self.lock_states[base_mode]['delta'] = checked
         if checked: self._clear_marker_locks(mode, keep='delta')
-        self.btn_lock_delta.setText(f"Delta (Δ) {'🔒' if checked else '🔓'}")
         self.controller.handle_lock_change('delta', checked)
 
     def on_lock_center_toggled(self, checked):
@@ -674,7 +667,6 @@ class TimeDomainMarkerPanel(QFrame):
         if base_mode not in self.lock_states: return
         self.lock_states[base_mode]['center'] = checked
         if checked: self._clear_marker_locks(mode, keep='center')
-        self.btn_lock_center.setText(f"Center {'🔒' if checked else '🔓'}")
         self.controller.handle_lock_change('center', checked)
 
     def on_lock_m1_toggled(self, checked):
@@ -683,7 +675,6 @@ class TimeDomainMarkerPanel(QFrame):
         if base_mode not in self.lock_states: return
         self.lock_states[base_mode]['m1'] = checked
         if checked: self._clear_marker_locks(mode, keep='m1')
-        self.btn_lock_m1.setText(f"Marker 1 {'🔒' if checked else '🔓'}")
         self.controller.handle_lock_change('m1', checked)
 
     def on_lock_m2_toggled(self, checked):
@@ -692,7 +683,6 @@ class TimeDomainMarkerPanel(QFrame):
         if base_mode not in self.lock_states: return
         self.lock_states[base_mode]['m2'] = checked
         if checked: self._clear_marker_locks(mode, keep='m2')
-        self.btn_lock_m2.setText(f"Marker 2 {'🔒' if checked else '🔓'}")
         self.controller.handle_lock_change('m2', checked)
 
     def flip_m_lock(self, mode):
@@ -711,8 +701,6 @@ class TimeDomainMarkerPanel(QFrame):
         # Update buttons
         self.btn_lock_m1.blockSignals(True); self.btn_lock_m2.blockSignals(True)
         self.btn_lock_m1.setChecked(m2);     self.btn_lock_m2.setChecked(m1)
-        self.btn_lock_m1.setText(f"Marker 1 {'🔒' if m2 else '🔓'}")
-        self.btn_lock_m2.setText(f"Marker 2 {'🔒' if m1 else '🔓'}")
         self.btn_lock_m1.blockSignals(False); self.btn_lock_m2.blockSignals(False)
 
     def refresh_theme(self):
@@ -788,11 +776,25 @@ class TimeDomainMarkerPanel(QFrame):
         """)
         
         lock_style = f"""
-            QPushButton {{ background: none; border: none; color: {p.text_dim}; padding: 0; text-transform: uppercase; font-size: 10px; }}
-            QPushButton:hover {{ color: {p.text_header}; }}
-            QPushButton:checked {{ color: {p.accent}; }}
+            QPushButton {{ 
+                background: none; 
+                border: 1px solid transparent; 
+                border-radius: 4px;
+                color: {p.text_dim}; 
+                padding: 1px 4px; 
+                text-transform: uppercase; 
+                font-size: 10px; 
+            }}
+            QPushButton:hover {{ color: {p.text_header}; background-color: {p.border}; }}
+            QPushButton:checked {{ 
+                color: {p.accent}; 
+                border: 1px solid {p.accent};
+                background-color: {p.accent_dim};
+            }}
         """
-        if hasattr(self, 'btn_lock_delta'):
-            lock_btns = [self.btn_lock_m1, self.btn_lock_m2, self.btn_lock_delta, self.btn_lock_center]
-            for btn in lock_btns:
+        for btn in [self.btn_lock_m1, self.btn_lock_m2, self.btn_lock_delta, self.btn_lock_center]:
+            btn.setStyleSheet(lock_style)
+        
+        if hasattr(self, 'st_btn_lock_m1'):
+            for btn in [self.st_btn_lock_m1, self.st_btn_lock_m2, self.st_btn_lock_delta, self.st_btn_lock_center]:
                 if btn: btn.setStyleSheet(lock_style)
