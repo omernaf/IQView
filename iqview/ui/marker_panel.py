@@ -230,23 +230,25 @@ class MarkerPanel(QFrame):
         self.btn_lock_delta.toggled.connect(self.on_lock_delta_toggled)
         self.btn_lock_center.toggled.connect(self.on_lock_center_toggled)
 
-        # Filter Activation Checkbox (Moved next to table)
+        # Filter Activation Checkboxes (BPF / BSF)
         self.filter_container = QWidget()
         self.filter_layout = QVBoxLayout(self.filter_container)
         self.filter_layout.setContentsMargins(0, 0, 0, 0)
-        self.filter_layout.setSpacing(0)
+        self.filter_layout.setSpacing(2)
         
-        self.filter_enable_cb = QCheckBox("Filter On")
-        self.filter_enable_cb.setToolTip("Enable Band-Pass Filter")
-        self.filter_layout.addStretch()
-        self.filter_layout.addWidget(self.filter_enable_cb)
-        self.filter_layout.addStretch()
+        self.cb_bpf = QCheckBox("BPF")
+        self.cb_bsf = QCheckBox("BSF")
+        self.cb_bpf.setToolTip("Enable Band-Pass Filter")
+        self.cb_bsf.setToolTip("Enable Band-Stop Filter")
         
+        for cb in [self.cb_bpf, self.cb_bsf]:
+            cb.setEnabled(False)
+            cb.clicked.connect(self.on_filter_clicked)
+            self.filter_layout.addWidget(cb)
+            
         self.filter_container.setFixedWidth(80)
-        self.filter_enable_cb.setEnabled(False)
         self.filter_container.setVisible(False)
         self.grid.addWidget(self.filter_container, 1, 5, 2, 1)
-        self.filter_enable_cb.toggled.connect(self.parent_window.on_filter_toggled)
         
         # Page 1: Endless Marker List
         self.endless_widget = QWidget()
@@ -359,6 +361,21 @@ class MarkerPanel(QFrame):
         self.btn_lock_m2.setText(f"Marker 2 {'🔒' if checked else '🔓'}")
         self.parent_window.handle_lock_change('m2', checked)
 
+    def on_filter_clicked(self):
+        """Handle BPF/BSF exclusivity and notify parent."""
+        sender = self.sender()
+        if sender == self.cb_bpf and self.cb_bpf.isChecked():
+            self.cb_bsf.setChecked(False)
+        elif sender == self.cb_bsf and self.cb_bsf.isChecked():
+            self.cb_bpf.setChecked(False)
+            
+        # Determine mode
+        mode = None
+        if self.cb_bpf.isChecked(): mode = 'bpf'
+        elif self.cb_bsf.isChecked(): mode = 'bsf'
+        
+        self.parent_window.on_filter_changed(mode)
+
     def flip_m_lock(self):
         """Silently swap the m1/m2 lock buttons when markers cross each other."""
         m1 = self.btn_lock_m1.isChecked()
@@ -419,13 +436,15 @@ class MarkerPanel(QFrame):
             self.row1_label.setText("Freq (Hz)")
             self.row2_label.setText("Bin")
             self.row3_label.setText("1/F (sec)")
+            if display_mode == 'FILTER':
+                # Enable checkboxes only if 2 bounds are placed
+                has_bounds = getattr(self.parent_window, 'filter_placed', False)
+                self.cb_bpf.setEnabled(has_bounds)
+                self.cb_bsf.setEnabled(has_bounds)
         elif display_mode in ['TIME', 'TIME_ENDLESS']:
             self.row1_label.setText("Time (sec)")
             self.row2_label.setText("Samples")
             self.row3_label.setText("1/T (Hz)")
-            # Enable checkbox only if 2 bounds are placed
-            has_bounds = getattr(self.parent_window, 'filter_placed', False)
-            self.filter_enable_cb.setEnabled(has_bounds)
             
         show_inv = self.parent_window.settings_mgr.get("ui/show_inv_time", False)
         is_time_mode = display_mode in ['TIME', 'TIME_ENDLESS']

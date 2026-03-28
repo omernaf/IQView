@@ -150,7 +150,9 @@ class MarkerManagerMixin:
                         self.filter_region.show()
                     
                     self.filter_placed = True
-                    self.marker_panel.filter_enable_cb.setEnabled(True)
+                if hasattr(self.marker_panel, 'cb_bpf'):
+                    self.marker_panel.cb_bpf.setEnabled(True)
+                    self.marker_panel.cb_bsf.setEnabled(True)
                     if not drag_mode:
                         self.on_filter_region_finished()
                 
@@ -832,11 +834,14 @@ class MarkerManagerMixin:
             self.filter_marker_order = []
             self.filter_placed = False
             self.filter_placing = False
-            self.filter_enabled = False
+            self.filter_mode = None
             
-            # 3. Update UI
-            self.marker_panel.filter_enable_cb.setChecked(False)
-            self.marker_panel.filter_enable_cb.setEnabled(False)
+            if hasattr(self.marker_panel, 'cb_bpf'):
+                self.marker_panel.cb_bpf.setChecked(False)
+                self.marker_panel.cb_bsf.setChecked(False)
+            if hasattr(self.marker_panel, 'cb_bpf'):
+                self.marker_panel.cb_bpf.setEnabled(False)
+                self.marker_panel.cb_bsf.setEnabled(False)
             self.marker_panel._clear_marker_locks(mode)
         elif mode == 'TIME_ENDLESS':
             for marker in self.markers_time_endless:

@@ -60,7 +60,7 @@ class DataHandlerMixin:
             self.worker = FileReaderThread(
                 self.data_source, self.data_type, self.fft_size, self.overlap_percent,
                 self.rate, self.profile_enabled, self.window_type,
-                filter_enabled=self.filter_enabled, f_min=f_min_rel, f_max=f_max_rel,
+                filter_mode=self.filter_mode, f_min=f_min_rel, f_max=f_max_rel,
                 is_complex=self.is_complex,
                 filter_type=str(self.settings_mgr.get("core/filter_type", "Elliptic")),
                 filter_order=int(self.settings_mgr.get("core/filter_order", 8)),
@@ -141,7 +141,7 @@ class DataHandlerMixin:
             is_complex=self.is_complex,
             window_type=self.window_type,
             overlap_percent=self.overlap_percent,
-            filter_enabled=self.filter_enabled,
+            filter_mode=self.filter_mode,
             f_min=f_min_rel, f_max=f_max_rel,
             filter_type=str(self.settings_mgr.get("core/filter_type", "Elliptic")),
             filter_order=int(self.settings_mgr.get("core/filter_order", 8)),
@@ -286,8 +286,8 @@ class DataHandlerMixin:
                 complex_data = raw_data.astype(np.complex64)
 
             # Apply Filter if enabled
-            if hasattr(self, 'filter_enabled') and self.filter_enabled and self.filter_region:
-                from iqview.dsp import apply_bpf
+            if hasattr(self, 'filter_mode') and self.filter_mode and self.filter_region:
+                from iqview.dsp import apply_filter
                 v_low, v_high = self.filter_region.getRegion()
                 f_min, f_max = min(v_low, v_high), max(v_low, v_high)
 
@@ -297,10 +297,11 @@ class DataHandlerMixin:
                 f_stopband = float(self.settings_mgr.get("core/filter_stopband", 60.0))
                 f_bessel_norm = str(self.settings_mgr.get("core/filter_bessel_norm", "phase"))
 
-                complex_data = apply_bpf(
+                complex_data = apply_filter(
                     complex_data, self.rate, f_min - self.fc, f_max - self.fc,
                     filter_type=f_type, order=f_order,
                     rp=f_ripple, rs=f_stopband,
+                    mode=self.filter_mode,
                     bessel_norm=f_bessel_norm
                 )
 

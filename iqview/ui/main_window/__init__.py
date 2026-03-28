@@ -97,7 +97,7 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         self.active_drag_marker = None
         
         # Filter State
-        self.filter_enabled = False
+        self.filter_mode = None
         self.filter_region = None # LinearRegionItem added in setup_ui or on demand
         self.filter_placed = False
         self.filter_placing = False
@@ -144,7 +144,7 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
                 if hasattr(widget, 'marker_panel'):
                     widget.marker_panel.update_headers(getattr(widget, 'interaction_mode', 'TIME'), getattr(widget, 'y_label_text', 'Magnitude'))
                     
-        if self.filter_enabled:
+        if self.filter_mode:
             self.start_processing()
 
     def eventFilter(self, obj, event):

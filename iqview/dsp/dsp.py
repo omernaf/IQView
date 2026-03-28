@@ -58,9 +58,9 @@ def design_filter(fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=
         
     return sos, f_center
 
-def apply_bpf(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, **kwargs):
+def apply_filter(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, mode='bpf', **kwargs):
     """
-    Applies a sharp COMPLEX (Asymmetric) Band-Pass filter to IQ data.
+    Applies a sharp COMPLEX (Asymmetric) Band-Pass or Band-Stop filter to IQ data.
     Uses Shift-to-Baseband -> Low-Pass Filter -> Shift-Back-Up approach.
     """
     sos, f_center = design_filter(fs, f_min, f_max, filter_type, order, rp, rs, **kwargs)
@@ -72,11 +72,22 @@ def apply_bpf(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, r
     shift_vector = np.exp(-2j * np.pi * f_center * t)
     data_shifted = data * shift_vector
     
-    # 2. Apply Filter
+    # 2. Apply Low-Pass Filter (which represents the passband)
     data_filtered = signal.sosfilt(sos, data_shifted)
     
-    # 3. Shift back to original frequency band
-    return data_filtered * np.conj(shift_vector)
+    # 3. Shift back to original frequency band (this is the BPF result)
+    bpf_result = data_filtered * np.conj(shift_vector)
+    
+    if mode == 'bsf':
+        # BSF = Original - BPF
+        return data - bpf_result
+    else:
+        # Default: bpf
+        return bpf_result
+
+def apply_bpf(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, **kwargs):
+    """Backwards compatibility wrapper for apply_filter(mode='bpf')."""
+    return apply_filter(data, fs, f_min, f_max, filter_type, order, rp, rs, mode='bpf', **kwargs)
 
 def compute_psd(samples, fs=1.0, method='Welch', **kwargs):
     """

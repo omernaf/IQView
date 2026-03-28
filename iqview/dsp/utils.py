@@ -3,7 +3,7 @@ import os
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
 from scipy import signal
-from .dsp import preprocess_chunk, postprocess_fft, apply_bpf, design_filter
+from .dsp import preprocess_chunk, postprocess_fft, apply_filter, design_filter
 
 class FileReaderThread(QThread):
     """
@@ -19,7 +19,7 @@ class FileReaderThread(QThread):
     
     def __init__(self, source, dtype, fft_size, overlap_percent, sample_rate, 
                  profile_enabled=False, window_type="Hanning",
-                 filter_enabled=False, f_min=None, f_max=None, is_complex=True, **kwargs):
+                 filter_mode=None, f_min=None, f_max=None, is_complex=True, **kwargs):
         super().__init__()
         self.source = source
         self.dtype = dtype
@@ -31,15 +31,19 @@ class FileReaderThread(QThread):
         
         self.filter_bessel_norm = kwargs.get('filter_bessel_norm', 'phase')
         
-        # Precompute frequency-domain BPF response for consistent visuals and performance
+        # Precompute frequency-domain BPF/BSF response mask
         self.freq_mask = None
-        if filter_enabled and f_min is not None and f_max is not None:
+        if filter_mode in ['bpf', 'bsf'] and f_min is not None and f_max is not None:
             sos, f_center = design_filter(sample_rate, f_min, f_max, **kwargs)
             if sos is not None:
                 bin_freqs = np.fft.fftshift(np.fft.fftfreq(fft_size, 1.0 / sample_rate))
                 f_eval = bin_freqs - f_center
                 _, h = signal.sosfreqz(sos, f_eval, fs=sample_rate)
-                self.freq_mask = np.abs(h).astype(np.float32)
+                h_abs = np.abs(h).astype(np.float32)
+                if filter_mode == 'bsf':
+                    self.freq_mask = 1.0 - h_abs
+                else:
+                    self.freq_mask = h_abs
         
         # Select Window Function
         if window_type == "Hanning":
@@ -275,7 +279,7 @@ class ViewportAwareReader(QThread):
     def __init__(self, source, dtype, fft_size, sample_rate, t_start, t_end,
                  pixel_width, is_complex=True, window_type="Hanning",
                  overlap_percent=0.0,
-                 filter_enabled=False, f_min=None, f_max=None,
+                 filter_mode=None, f_min=None, f_max=None,
                  **kwargs):
         super().__init__()
         self.source        = source
@@ -289,7 +293,7 @@ class ViewportAwareReader(QThread):
         self.running       = True
 
         # Filter settings
-        self.filter_enabled   = filter_enabled
+        self.filter_mode      = filter_mode
         self.f_min            = f_min
         self.f_max            = f_max
         self.filter_type      = kwargs.get('filter_type', 'Elliptic')
@@ -350,7 +354,7 @@ class ViewportAwareReader(QThread):
         # We use the same filter design as the time-domain path, then evaluate
         # its frequency response (roll-off) at each FFT bin.
         self.freq_mask = None
-        if filter_enabled and f_min is not None and f_max is not None:
+        if filter_mode in ['bpf', 'bsf'] and f_min is not None and f_max is not None:
             sos, f_center = design_filter(sample_rate, f_min, f_max, **kwargs)
             if sos is not None:
                 # Get bins relative to fc (baseband)
@@ -359,7 +363,11 @@ class ViewportAwareReader(QThread):
                 # on a signals that was shifted by -f_center in the time domain.
                 f_eval = bin_freqs - f_center
                 _, h = signal.sosfreqz(sos, f_eval, fs=sample_rate)
-                self.freq_mask = np.abs(h).astype(np.float32)
+                h_abs = np.abs(h).astype(np.float32)
+                if filter_mode == 'bsf':
+                    self.freq_mask = 1.0 - h_abs
+                else:
+                    self.freq_mask = h_abs
 
         # No guard region needed — we no longer filter in time-domain
         self.s_read_start = self.s_start

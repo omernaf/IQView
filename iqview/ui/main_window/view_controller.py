@@ -91,10 +91,10 @@ class ViewControllerMixin:
             else:
                 self.filter_line.hide()
 
-    def on_filter_toggled(self, checked):
-        self.filter_enabled = checked
+    def on_filter_changed(self, mode):
+        self.filter_mode = mode
         if self.filter_region:
-            if checked and self.interaction_mode == 'FILTER' and getattr(self, 'filter_placed', False):
+            if mode and self.interaction_mode == 'FILTER' and getattr(self, 'filter_placed', False):
                 self.filter_region.show()
             elif self.interaction_mode != 'FILTER' or not getattr(self, 'filter_placed', False):
                 self.filter_region.hide()
@@ -126,7 +126,7 @@ class ViewControllerMixin:
             self.filter_bounds = new_bounds
             
         # Trigger reprocessing when the user finishes dragging the region
-        if getattr(self, 'filter_enabled', False) and self._has_data():
+        if getattr(self, 'filter_mode', None) and self._has_data():
             self.start_processing()
 
     def refresh_cursor(self):
@@ -252,13 +252,14 @@ class ViewControllerMixin:
         if hasattr(self, 'filter_line') and self.filter_line:
             self.filter_line.hide()
             
-        self.filter_enabled  = False
-        self.filter_placed   = False
-        self.filter_placing  = False
-        self.filter_bounds   = []
+        self.filter_mode    = None
+        self.filter_placed  = False
+        self.filter_placing = False
+        self.filter_bounds  = []
         self.filter_marker_order = []
-        if hasattr(self.marker_panel, 'filter_on_btn'):
-            self.marker_panel.filter_on_btn.setChecked(False)
+        if hasattr(self.marker_panel, 'cb_bpf'):
+            self.marker_panel.cb_bpf.setChecked(False)
+            self.marker_panel.cb_bsf.setChecked(False)
 
         # Update displays
         self.marker_panel.update_headers(self.interaction_mode)
