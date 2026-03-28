@@ -42,6 +42,7 @@ class FrequencyDomainView(QWidget):
         self.markers_y_dict = {
             "magnitude": [], "magnitude [dB]": [], 
             "magnitude^2": [],
+            "power spectrum density (PSD)": [], "PSD [dB]": [],
             "real": [], "real [dB]": [], 
             "imag": [], "imag [dB]": [],
             "phase": [], "unwrapped phase": []
@@ -1395,8 +1396,8 @@ class FrequencyDomainView(QWidget):
     def keyPressEvent(self, event):
         if event.isAutoRepeat(): return
         key_name = QKeySequence(event.key()).toString()
-        if key_name == "F": self.set_interaction_mode('FREQ')
-        elif key_name == "M": self.set_interaction_mode('MAG')
+        if key_name == "T": self.set_interaction_mode('FREQ') # Vertical
+        elif key_name == "F": self.set_interaction_mode('MAG')  # Horizontal
         elif key_name == "Ctrl": 
             self._prev_mode = self.interaction_mode
             self.set_interaction_mode('ZOOM')

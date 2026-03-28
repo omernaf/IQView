@@ -39,7 +39,7 @@ class TimeDomainMarkerPanel(QFrame):
         self.btn_marker_time.setIcon(self._get_icon("vertical_markers"))
         self.btn_marker_time.setIconSize(QSize(32, 32))
         self.btn_marker_time.setObjectName("mode_btn")
-        self.btn_marker_time.setToolTip("Time Markers (Double-click to clear) [T]")
+        self.btn_marker_time.setToolTip("Time Markers (Double-click to clear)")
         self.btn_marker_time.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_time, 0, 0)
         
@@ -57,7 +57,7 @@ class TimeDomainMarkerPanel(QFrame):
         self.btn_zoom.setIcon(self._get_icon("zoom_mode"))
         self.btn_zoom.setIconSize(QSize(32, 32))
         self.btn_zoom.setObjectName("mode_btn")
-        self.btn_zoom.setToolTip("Zoom Mode (Rubberband) [Z]")
+        self.btn_zoom.setToolTip("Zoom Mode (Rubberband)")
         self.btn_zoom.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_zoom, 0, 2)
         
@@ -76,7 +76,7 @@ class TimeDomainMarkerPanel(QFrame):
         self.btn_marker_mag.setIcon(self._get_icon("horizontal_markers"))
         self.btn_marker_mag.setIconSize(QSize(32, 32))
         self.btn_marker_mag.setObjectName("mode_btn")
-        self.btn_marker_mag.setToolTip("Magnitude Markers (Double-click to clear) [M]")
+        self.btn_marker_mag.setToolTip("Magnitude Markers (Double-click to clear)")
         self.btn_marker_mag.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_mag, 1, 0)
 
@@ -94,7 +94,7 @@ class TimeDomainMarkerPanel(QFrame):
         self.btn_move.setIcon(self._get_icon("free_move_mode"))
         self.btn_move.setIconSize(QSize(32, 32))
         self.btn_move.setObjectName("mode_btn")
-        self.btn_move.setToolTip("Free Move Mode (Pan) [P]")
+        self.btn_move.setToolTip("Free Move Mode (Pan)")
         self.btn_move.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_move, 1, 2)
         
@@ -103,7 +103,7 @@ class TimeDomainMarkerPanel(QFrame):
         self.btn_stats.setIcon(self._get_icon("region_statistics"))
         self.btn_stats.setIconSize(QSize(32, 32))
         self.btn_stats.setObjectName("mode_btn")
-        self.btn_stats.setToolTip("Region Statistics (Double-click to clear) [S]")
+        self.btn_stats.setToolTip("Region Statistics (Double-click to clear)")
         self.btn_stats.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_stats, 1, 3)
         self.btn_home.clicked.connect(self.resetZoomRequested.emit)

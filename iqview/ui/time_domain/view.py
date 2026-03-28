@@ -211,38 +211,29 @@ class TimeDomainView(QWidget):
 
     def keyPressEvent(self, event):
         if event.isAutoRepeat(): return
-        s = self.parent_window.settings_mgr
         key_name = QKeySequence(event.key()).toString()
         if key_name == "Control": key_name = "Ctrl"
         
-        time_seq = s.get('keybinds/time_markers', 'T')
-        mag_seq = s.get('keybinds/mag_markers', 'F')
-        zoom_seq = s.get('keybinds/zoom_mode', 'Ctrl')
-        
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Z:
             self.undo_zoom()
-        elif key_name == time_seq:
-            self.set_interaction_mode('TIME')
-        elif key_name == mag_seq:
-            self.set_interaction_mode('MAG')
-        elif key_name == zoom_seq:
+        elif key_name == "T": self.set_interaction_mode('TIME') # Vertical
+        elif key_name == "F": self.set_interaction_mode('MAG')  # Horizontal
+        elif key_name == "Ctrl": 
             self._prev_interaction_mode = getattr(self, 'interaction_mode', 'TIME')
             self.set_interaction_mode('ZOOM')
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
         if event.isAutoRepeat(): return
-        s = self.parent_window.settings_mgr
         key_name = QKeySequence(event.key()).toString()
         if key_name == "Control": key_name = "Ctrl"
-        zoom_seq = s.get('keybinds/zoom_mode', 'Ctrl')
 
-        if key_name == zoom_seq:
+        if key_name == "Ctrl":
             prev = getattr(self, '_prev_interaction_mode', 'TIME')
             self.set_interaction_mode(prev)
-        elif key_name == s.get('keybinds/endless_time', 'Shift+T'):
+        elif key_name == "Shift+T":
             self.set_interaction_mode('TIME_ENDLESS')
-        elif key_name == s.get('keybinds/endless_mag', 'Shift+F'):
+        elif key_name == "Shift+F":
             self.set_interaction_mode('MAG_ENDLESS')
         super().keyReleaseEvent(event)
 
