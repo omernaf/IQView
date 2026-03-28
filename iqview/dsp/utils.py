@@ -378,7 +378,6 @@ class ViewportAwareReader(QThread):
 
         item_size   = np.dtype(self.dtype).itemsize
         read_mult   = 2 if self.is_complex else 1
-        batch_size  = 500
 
         if isinstance(self.source, (bytes, bytearray)):
             data_file = io.BytesIO(self.source)
@@ -387,70 +386,92 @@ class ViewportAwareReader(QThread):
 
         try:
             with data_file as f:
-                # --- Single read: load the entire slice + guard into RAM ---
-                offset = self.s_read_start * read_mult * item_size
-                n_to_read = (self.s_read_end - self.s_read_start) * read_mult
-                f.seek(offset)
-                raw_bytes = f.read(n_to_read * item_size)
+                spectrogram = np.zeros((self.num_rows, self.fft_size), dtype=np.float32)
+                row_idx = 0
+                max_read_samples = 1_000_000  # Cap memory usage per batch to ~8MB (1M complex64)
+                
+                while self.running and row_idx < self.num_rows:
+                    batch_now = self.num_rows - row_idx
+                    
+                    # Logic: If step_size >= fft_size, we just read one row at a time.
+                    if self.step_size >= self.fft_size:
+                        batch_now = 1
+                    else:
+                        # Limit batch size to keep reads under max_read_samples
+                        span_samples = (batch_now - 1) * self.step_size + self.fft_size
+                        if span_samples > max_read_samples:
+                            batch_now = max(1, (max_read_samples - self.fft_size) // self.step_size + 1)
+                            
+                    samples_to_read = (batch_now - 1) * self.step_size + self.fft_size
+                    
+                    # Read directly into buffer
+                    start_sample = self.s_read_start + row_idx * self.step_size
+                    offset_bytes = start_sample * read_mult * item_size
+                    
+                    f.seek(offset_bytes)
+                    raw_bytes = f.read(samples_to_read * read_mult * item_size)
+                    
+                    if not raw_bytes or len(raw_bytes) < (samples_to_read * read_mult * item_size):
+                        if not raw_bytes: break
 
-            raw_array = np.frombuffer(raw_bytes, dtype=self.dtype).astype(np.float32)
-            if self.dtype == np.int16:
-                raw_array /= 32768.0
+                    raw_array = np.frombuffer(raw_bytes, dtype=self.dtype).astype(np.float32)
+                    if self.dtype == np.int16:
+                        raw_array /= 32768.0
 
-            if self.is_complex:
-                full_complex = raw_array[0::2] + 1j * raw_array[1::2]
-            else:
-                full_complex = raw_array.astype(np.complex64)
+                    if self.is_complex:
+                        valid_complex = raw_array[0::2] + 1j * raw_array[1::2]
+                    else:
+                        valid_complex = raw_array.astype(np.complex64)
 
-            # No time-domain filtering — BPF is applied in the frequency domain
-            # below (after fftshift) as a bin mask, which is essentially free.
-            valid_complex = full_complex
+                    if len(valid_complex) < self.fft_size:
+                        padded = np.zeros(self.fft_size, dtype=np.complex64)
+                        padded[:len(valid_complex)] = valid_complex
+                        valid_complex = padded
 
-            if len(valid_complex) < self.fft_size:
-                padded = np.zeros(self.fft_size, dtype=np.complex64)
-                padded[:len(valid_complex)] = valid_complex
-                valid_complex = padded
+                    if batch_now == 1:
+                        # Single row
+                        windowed  = valid_complex[:self.fft_size] * self.window
+                        # Expand dimensions to make it 2D so fft functions behave like batch processing
+                        windowed  = windowed[np.newaxis, :]
+                        fft_out   = np.fft.fft(windowed, axis=1)
+                        shifted   = np.fft.fftshift(fft_out, axes=1)
+                        if self.freq_mask is not None:
+                            shifted *= self.freq_mask
+                        mag       = np.abs(shifted)
+                        mag       = np.maximum(mag, np.float32(1e-10))
+                        db        = 20.0 * np.log10(mag)
+                        spectrogram[row_idx] = db[0]
+                    else:
+                        # Batch rows using as_strided
+                        from numpy.lib.stride_tricks import as_strided
+                        itemsize_c = valid_complex.itemsize
+                        
+                        required = (batch_now - 1) * self.step_size + self.fft_size
+                        if len(valid_complex) < required:
+                            padded = np.zeros(required, dtype=valid_complex.dtype)
+                            padded[:len(valid_complex)] = valid_complex
+                            valid_complex = padded
+                            
+                        batch = as_strided(
+                            valid_complex,
+                            shape=(batch_now, self.fft_size),
+                            strides=(self.step_size * itemsize_c, itemsize_c),
+                            writeable=False
+                        )
+                        
+                        windowed  = batch * self.window
+                        fft_out   = np.fft.fft(windowed, axis=1)
+                        shifted   = np.fft.fftshift(fft_out, axes=1)
+                        if self.freq_mask is not None:
+                            shifted *= self.freq_mask  # broadcast across rows, zero-cost
+                        mag       = np.abs(shifted)
+                        mag       = np.maximum(mag, np.float32(1e-10))
+                        db        = 20.0 * np.log10(mag)
+                        spectrogram[row_idx:row_idx + batch_now] = db
 
-            # --- Batch-process FFT rows ---
-            from numpy.lib.stride_tricks import as_strided
-            spectrogram = np.zeros((self.num_rows, self.fft_size), dtype=np.float32)
-            itemsize = valid_complex.itemsize
-
-            row_idx = 0
-            while self.running and row_idx < self.num_rows:
-                rows_now = min(batch_size, self.num_rows - row_idx)
-
-                required = (rows_now - 1) * self.step_size + self.fft_size
-                if row_idx * self.step_size + required > len(valid_complex):
-                    # Pad to avoid striding past the end
-                    needed_total = row_idx * self.step_size + required
-                    padded = np.zeros(needed_total, dtype=valid_complex.dtype)
-                    padded[:len(valid_complex)] = valid_complex
-                    valid_complex = padded
-
-                batch = as_strided(
-                    valid_complex[row_idx * self.step_size:],
-                    shape=(rows_now, self.fft_size),
-                    strides=(self.step_size * itemsize, itemsize),
-                    writeable=False
-                )
-
-                windowed  = batch * self.window
-                fft_out   = np.fft.fft(windowed, axis=1)
-                shifted   = np.fft.fftshift(fft_out, axes=1)
-
-                # Apply frequency-domain BPF mask (zero out out-of-band bins)
-                if self.freq_mask is not None:
-                    shifted *= self.freq_mask  # broadcast across rows, zero-cost
-
-                mag       = np.abs(shifted)
-                mag       = np.maximum(mag, np.float32(1e-10))
-                db        = 20.0 * np.log10(mag)
-
-                spectrogram[row_idx:row_idx + rows_now] = db
-                row_idx += rows_now
-                self.progress.emit(row_idx, self.num_rows)
-                QThread.msleep(1)
+                    row_idx += batch_now
+                    self.progress.emit(row_idx, self.num_rows)
+                    QThread.msleep(1)
 
             if self.running:
                 self.finished_processing.emit(
