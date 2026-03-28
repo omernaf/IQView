@@ -568,6 +568,38 @@ class FrequencyDomainView(QWidget):
     def freq_to_index(self, freq):
         return np.searchsorted(self.freq_axis, freq)
 
+    def clear_all_markers(self):
+        # 1. Clear regular and endless frequency markers
+        for m in (self.markers_freq + self.markers_freq_endless):
+            self.plot_item.removeItem(m)
+        self.markers_freq.clear()
+        self.markers_freq_endless.clear()
+        
+        # 2. Clear magnitude (Y) markers for all modes
+        for y_label in self.markers_y_dict:
+            for m in self.markers_y_dict[y_label]:
+                self.plot_item.removeItem(m)
+            self.markers_y_dict[y_label].clear()
+            
+        for y_label in self.markers_y_endless_dict:
+            for m in self.markers_y_endless_dict[y_label]:
+                self.plot_item.removeItem(m)
+            self.markers_y_endless_dict[y_label].clear()
+
+        # 3. Clear stats region and markers
+        self.stats_bounds.clear()
+        self.stats_marker_order.clear()
+        if getattr(self, 'stats_region', None): self.stats_region.hide()
+        if getattr(self, 'stats_line', None): self.stats_line.hide()
+        if getattr(self, 'stats_markers', None): self.stats_markers.clear()
+        
+        # 4. Clear grid lines
+        self.toggle_grid('FREQ', False)
+        self.toggle_grid('MAG', False)
+        
+        # 5. Reset UI
+        self.update_marker_info()
+
     def place_marker(self, scene_pos, drag_mode=False):
         v_pos = self.view_box.mapSceneToView(scene_pos)
         is_freq = (self.interaction_mode in ['FREQ', 'FREQ_ENDLESS', 'STATS'])
@@ -643,38 +675,6 @@ class FrequencyDomainView(QWidget):
                 
             self.update_statistics()
             return
-
-    def clear_all_markers(self):
-        # 1. Clear regular and endless frequency markers
-        for m in (self.markers_freq + self.markers_freq_endless):
-            self.plot_item.removeItem(m)
-        self.markers_freq.clear()
-        self.markers_freq_endless.clear()
-        
-        # 2. Clear magnitude (Y) markers for all modes
-        for y_label in self.markers_y_dict:
-            for m in self.markers_y_dict[y_label]:
-                self.plot_item.removeItem(m)
-            self.markers_y_dict[y_label].clear()
-            
-        for y_label in self.markers_y_endless_dict:
-            for m in self.markers_y_endless_dict[y_label]:
-                self.plot_item.removeItem(m)
-            self.markers_y_endless_dict[y_label].clear()
-
-        # 3. Clear stats region and markers
-        self.stats_bounds.clear()
-        self.stats_marker_order.clear()
-        if self.stats_region: self.stats_region.hide()
-        if self.stats_line: self.stats_line.hide()
-        if self.stats_markers: self.stats_markers.clear()
-        
-        # 4. Clear grid lines
-        self.toggle_grid('FREQ', False)
-        self.toggle_grid('MAG', False)
-        
-        # 5. Reset UI
-        self.update_marker_info()
 
         if self.interaction_mode in ['ZOOM', 'MOVE']:
             return
