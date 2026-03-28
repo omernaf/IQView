@@ -227,6 +227,7 @@ Terminal=false
 Type=Application
 Categories=Science;Utility;Engineering;DataVisualization;
 MimeType={''.join(f'application/x-extension-{ext[1:]};' for ext in _get_supported_extensions())}
+StartupWMClass=iqview
 """
     try:
         with open(desktop_file, "w") as f:

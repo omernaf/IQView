@@ -15,6 +15,15 @@ from iqview.ui import SpectrogramWindow
 from iqview.utils.settings_manager import SettingsManager
 from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext, detect_params_from_filename
 
+# Fix taskbar grouping on Windows (must be done before creating QApplication)
+if sys.platform == "win32":
+    try:
+        import ctypes
+        myapp_id = "OmerNaf.IQView.0.1.3" # Unique AppUserModelID
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myapp_id)
+    except Exception:
+        pass
+
 def load_mat_file(path):
     """
     Loads a .mat file containing Y, XDelta, and InputCenter fields.
@@ -190,6 +199,9 @@ def main():
         print(f"Rendering mode forced by CLI: {mode_label}")
     
     app = QApplication(sys.argv)
+    # Fix taskbar/dock grouping on Linux
+    app.setDesktopFileName("iqview")
+    
     window = SpectrogramWindow(data_source, dtype, fs, fc, args.fft, args.profile, is_complex=is_complex, window_name=args.name)
     window.show()
     

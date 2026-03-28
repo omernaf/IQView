@@ -110,7 +110,9 @@ echo "Creating symbolic link..."
 ln -sf "$VENV_DIR/bin/iqview" /usr/bin/iqview
 
 # Trigger desktop integration to set up associations
+echo "Configuring desktop integration and file associations..."
 /usr/bin/iqview --install-desktop
+/usr/bin/iqview --install-mat
 
 echo "IQView installation complete."
 exit 0
