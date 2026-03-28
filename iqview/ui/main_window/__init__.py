@@ -17,9 +17,11 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         super().__init__()
         self.settings_mgr = SettingsManager()
         # Per-instance rendering mode override from CLI (None = use QSettings value).
-        # Stored here rather than in QSettings so multiple windows can coexist with
-        # different modes without interfering with each other.
         self._lazy_rendering_override = lazy_rendering
+        
+        # Detached Views Management
+        self.detached_views = [] # List of DetachedViewWindow objects
+        
         self.apply_current_theme()
         
         # --- Application Icon & Taskbar Fix ---
@@ -126,6 +128,12 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
                 widget = self.tabs.widget(i)
                 if hasattr(widget, 'refresh_theme'):
                     widget.refresh_theme()
+                    
+        # Refresh all detached views
+        if hasattr(self, 'detached_views'):
+            for dv in self.detached_views:
+                if hasattr(dv, 'refresh_theme'):
+                    dv.refresh_theme()
 
     def on_settings_applied(self):
         """Handle settings changes: refresh theme and re-process if filter is active."""
@@ -163,12 +171,29 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
     def handle_tab_context_menu(self, index, pos):
         """Show context menu for a tab."""
         menu = QMenu(self)
+        
+        if index > 0:
+            undock_action = QAction("Undock", self)
+            undock_action.triggered.connect(lambda: self.undock_tab(index))
+            menu.addAction(undock_action)
+            menu.addSeparator()
+            
         close_action = QAction("Close Tab", self)
         close_action.triggered.connect(lambda: self.close_tab(index))
         menu.addAction(close_action)
         menu.exec(pos)
 
+    def close_detached_view(self, dv_window):
+        """Called when a detached window is closed."""
+        if dv_window in self.detached_views:
+            self.detached_views.remove(dv_window)
+        # Widget is already parented to dv_window and will be destroyed with it.
+
     def closeEvent(self, event):
+        # Close all detached windows first
+        for dv in list(self.detached_views):
+            dv.close()
+            
         if hasattr(self, '_stop_all_workers'):
             self._stop_all_workers()
         elif hasattr(self, 'worker'):
