@@ -203,8 +203,8 @@ class FileReaderThread(QThread):
                     
                     # Overhead
                     overhead_start = time.time()
-                    self.progress.emit(row_idx, self.num_rows)
-                    QThread.msleep(1)
+                    if row_idx == self.num_rows or row_idx % max(1, self.num_rows // 20) == 0:
+                        self.progress.emit(row_idx, self.num_rows)
                     overhead_time += (time.time() - overhead_start)
                     
                 total_time = time.time() - start_time
@@ -470,8 +470,8 @@ class ViewportAwareReader(QThread):
                         spectrogram[row_idx:row_idx + batch_now] = db
 
                     row_idx += batch_now
-                    self.progress.emit(row_idx, self.num_rows)
-                    QThread.msleep(1)
+                    if row_idx == self.num_rows or row_idx % max(1, self.num_rows // 20) == 0:
+                        self.progress.emit(row_idx, self.num_rows)
 
             if self.running:
                 self.finished_processing.emit(
