@@ -447,7 +447,10 @@ class ViewControllerMixin:
         # Update data source
         self.data_source = path
         self.file_path   = path
-        self.setWindowTitle(f"IQView - {path}")
+        if getattr(self, 'custom_window_name', None):
+            self.setWindowTitle(f"IQView - {self.custom_window_name}")
+        else:
+            self.setWindowTitle(f"IQView - {path}")
 
         # Priority: 1. Auto-detection from filename, 2. App Settings
         auto_type = detect_type_from_ext(path)

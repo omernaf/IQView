@@ -75,6 +75,7 @@ def main():
         "-f", filename,
         "-r", str(sample_rate),
         "--lazy",
+        "--name", "Test Window"
     ]
     
     if args.profile:

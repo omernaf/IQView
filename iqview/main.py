@@ -68,6 +68,7 @@ def parse_args():
     parser.add_argument('-c', '--fc', type=float, default=float(sm.get("core/fc", 0.0)), help='Center frequency in Hz')
     parser.add_argument('-s', '--fft', type=int, default=int(sm.get("core/fft_size", 1024)), help='FFT bin size')
     parser.add_argument('--profile', action='store_true', help='Enable cProfile profiling')
+    parser.add_argument('-n', '--name', type=str, default=None, help='Custom window name')
 
     # Desktop integration flags
     parser.add_argument('--install-desktop', action='store_true', help='Install Start Menu shortcut and File associations')
@@ -189,7 +190,7 @@ def main():
         print(f"Rendering mode forced by CLI: {mode_label}")
     
     app = QApplication(sys.argv)
-    window = SpectrogramWindow(data_source, dtype, fs, fc, args.fft, args.profile, is_complex=is_complex)
+    window = SpectrogramWindow(data_source, dtype, fs, fc, args.fft, args.profile, is_complex=is_complex, window_name=args.name)
     window.show()
     
     if args.profile:

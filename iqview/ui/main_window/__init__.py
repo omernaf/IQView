@@ -13,7 +13,7 @@ from ...utils.settings_manager import SettingsManager
 from ..themes import get_main_stylesheet
 
 class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, ViewControllerMixin, DataHandlerMixin):
-    def __init__(self, data_source, data_type, sample_rate, center_freq, fft_size, profile_enabled=False, is_complex=True):
+    def __init__(self, data_source, data_type, sample_rate, center_freq, fft_size, profile_enabled=False, is_complex=True, window_name=None):
         super().__init__()
         self.settings_mgr = SettingsManager()
         self.apply_current_theme()
@@ -47,7 +47,11 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
 
         # data_source is either a str (file path), bytes (piped from stdin), or None (empty launch)
         self.data_source = data_source
-        if data_source is None:
+        self.custom_window_name = window_name
+        
+        if self.custom_window_name:
+            display_name = self.custom_window_name
+        elif data_source is None:
             display_name = "No File Loaded"
         elif isinstance(data_source, (bytes, bytearray)):
             display_name = "<stdin>"
