@@ -419,7 +419,7 @@ class SettingsDialog(QDialog):
 
         # --- Filter Tab ---
         self.filter_type_combo = QComboBox()
-        self.filter_type_combo.addItems(["Butterworth", "Chebyshev I", "Chebyshev II", "Elliptic", "Bessel"])
+        self.filter_type_combo.addItems(["Butterworth", "Chebyshev I", "Chebyshev II", "Elliptic", "Bessel", "FIR (Windowed)"])
         self.filter_type_combo.setCurrentText(str(self.mgr.get("core/filter_type", "Elliptic")))
         self.filter_type_combo.currentTextChanged.connect(self._on_filter_type_changed)
         
@@ -430,6 +430,15 @@ class SettingsDialog(QDialog):
         self.filter_ripple_edit = QLineEdit(str(self.mgr.get("core/filter_ripple", 0.1)))
         self.filter_stopband_edit = QLineEdit(str(self.mgr.get("core/filter_stopband", 60.0)))
         
+        self.filter_taps_spin = QSpinBox()
+        self.filter_taps_spin.setRange(1, 1001)
+        self.filter_taps_spin.setSingleStep(2)
+        self.filter_taps_spin.setValue(int(self.mgr.get("core/filter_taps", 101)))
+        
+        self.fir_window_combo = QComboBox()
+        self.fir_window_combo.addItems(["Hamming", "Hanning", "Blackman", "Bartlett", "Rectangular"])
+        self.fir_window_combo.setCurrentText(str(self.mgr.get("core/fir_window", "Hamming")))
+        
         self.filter_bessel_norm_combo = QComboBox()
         self.filter_bessel_norm_combo.addItems(["phase", "delay", "mag"])
         self.filter_bessel_norm_combo.setCurrentText(str(self.mgr.get("core/filter_bessel_norm", "phase")))
@@ -438,6 +447,8 @@ class SettingsDialog(QDialog):
         self._add_reset_row(self.filter_form, "Filter Order:", self.filter_order_spin, "core/filter_order")
         self._add_reset_row(self.filter_form, "Passband Ripple (dB):", self.filter_ripple_edit, "core/filter_ripple")
         self._add_reset_row(self.filter_form, "Stopband Atten (dB):", self.filter_stopband_edit, "core/filter_stopband")
+        self._add_reset_row(self.filter_form, "Number of Taps:", self.filter_taps_spin, "core/filter_taps")
+        self._add_reset_row(self.filter_form, "FIR Window:", self.fir_window_combo, "core/fir_window")
         self._add_reset_row(self.filter_form, "Bessel Norm:", self.filter_bessel_norm_combo, "core/filter_bessel_norm")
         
         self._on_filter_type_changed(self.filter_type_combo.currentText())
@@ -643,6 +654,8 @@ class SettingsDialog(QDialog):
             self.mgr.set("core/filter_order", self.filter_order_spin.value())
             self.mgr.set("core/filter_ripple", float(self.filter_ripple_edit.text()))
             self.mgr.set("core/filter_stopband", float(self.filter_stopband_edit.text()))
+            self.mgr.set("core/filter_taps", self.filter_taps_spin.value())
+            self.mgr.set("core/fir_window", self.fir_window_combo.currentText())
             self.mgr.set("core/filter_bessel_norm", self.filter_bessel_norm_combo.currentText())
             self.mgr.set("core/lazy_rendering", self.lazy_rendering_cb.isChecked())
             
@@ -794,15 +807,18 @@ class SettingsDialog(QDialog):
 
     def _on_filter_type_changed(self, filter_type):
         """Show/Hide ripple, stopband, and norm inputs based on filter type."""
+        is_fir = filter_type == "FIR (Windowed)"
         is_ripple_valid = filter_type in ["Chebyshev I", "Elliptic"]
         is_stopband_valid = filter_type in ["Chebyshev II", "Elliptic"]
         is_bessel = filter_type == "Bessel"
         
-        # QFormLayout.setRowVisible is available in Qt 5.15+ (PyQt6 6.0+)
-        # Rows are: 0: Type, 1: Order, 2: Ripple, 3: Stopband, 4: Bessel Norm
+        # Row indices: 0:Type, 1:Order, 2:Ripple, 3:Stopband, 4:Taps, 5:Window, 6:Bessel Norm
+        self.filter_form.setRowVisible(1, not is_fir)
         self.filter_form.setRowVisible(2, is_ripple_valid)
         self.filter_form.setRowVisible(3, is_stopband_valid)
-        self.filter_form.setRowVisible(4, is_bessel)
+        self.filter_form.setRowVisible(4, is_fir)
+        self.filter_form.setRowVisible(5, is_fir)
+        self.filter_form.setRowVisible(6, is_bessel)
 
     def _load_extension_mappings(self):
         self.ext_table.setRowCount(0)

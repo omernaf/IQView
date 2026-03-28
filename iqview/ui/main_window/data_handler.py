@@ -66,6 +66,8 @@ class DataHandlerMixin:
                 filter_order=int(self.settings_mgr.get("core/filter_order", 8)),
                 filter_ripple=float(self.settings_mgr.get("core/filter_ripple", 0.1)),
                 filter_stopband=float(self.settings_mgr.get("core/filter_stopband", 60.0)),
+                filter_taps=int(self.settings_mgr.get("core/filter_taps", 101)),
+                fir_window=str(self.settings_mgr.get("core/fir_window", "Hamming")),
                 filter_bessel_norm=str(self.settings_mgr.get("core/filter_bessel_norm", "phase"))
             )
             self.worker.progress.connect(self.update_progress)
@@ -147,6 +149,8 @@ class DataHandlerMixin:
             filter_order=int(self.settings_mgr.get("core/filter_order", 8)),
             filter_ripple=float(self.settings_mgr.get("core/filter_ripple", 0.1)),
             filter_stopband=float(self.settings_mgr.get("core/filter_stopband", 60.0)),
+            filter_taps=int(self.settings_mgr.get("core/filter_taps", 101)),
+            fir_window=str(self.settings_mgr.get("core/fir_window", "Hamming")),
             filter_bessel_norm=str(self.settings_mgr.get("core/filter_bessel_norm", "phase"))
         )
         self.lazy_worker.progress.connect(self.update_progress)
@@ -301,6 +305,8 @@ class DataHandlerMixin:
                     complex_data, self.rate, f_min - self.fc, f_max - self.fc,
                     filter_type=f_type, order=f_order,
                     rp=f_ripple, rs=f_stopband,
+                    filter_taps=int(self.settings_mgr.get("core/filter_taps", 101)),
+                    fir_window=str(self.settings_mgr.get("core/fir_window", "Hamming")),
                     mode=self.filter_mode,
                     bessel_norm=f_bessel_norm
                 )

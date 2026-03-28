@@ -29,7 +29,7 @@ def postprocess_fft(fft_result, fft_size):
 
 from scipy import signal
 
-def design_filter(fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, **kwargs):
+def design_filter(fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, filter_taps=101, fir_window="hamming", **kwargs):
     """
     Designs a Second-Order Sections (SOS) low-pass filter representing the target band.
     Returns (sos, f_center) where f_center is the frequency that was shifted to 0 Hz.
@@ -53,17 +53,22 @@ def design_filter(fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=
     elif filter_type == "Bessel":
         b_norm = kwargs.get('bessel_norm', 'phase')
         sos = signal.bessel(order, cutoff, btype='low', output='sos', norm=b_norm)
+    elif filter_type == "FIR (Windowed)":
+        numtaps = filter_taps
+        fir_win = fir_window.lower()
+        taps = signal.firwin(numtaps, cutoff, window=fir_win)
+        sos = signal.tf2sos(taps, [1.0])
     else: # Default: Elliptic
         sos = signal.ellip(order, rp, rs, cutoff, btype='low', output='sos')
         
     return sos, f_center
 
-def apply_filter(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, mode='bpf', **kwargs):
+def apply_filter(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, filter_taps=101, fir_window="hamming", mode='bpf', **kwargs):
     """
     Applies a sharp COMPLEX (Asymmetric) Band-Pass or Band-Stop filter to IQ data.
     Uses Shift-to-Baseband -> Low-Pass Filter -> Shift-Back-Up approach.
     """
-    sos, f_center = design_filter(fs, f_min, f_max, filter_type, order, rp, rs, **kwargs)
+    sos, f_center = design_filter(fs, f_min, f_max, filter_type, order, rp, rs, filter_taps, fir_window, **kwargs)
     if sos is None or len(data) == 0:
         return data
         
@@ -85,9 +90,9 @@ def apply_filter(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1
         # Default: bpf
         return bpf_result
 
-def apply_bpf(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, **kwargs):
+def apply_bpf(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, filter_taps=101, fir_window="hamming", **kwargs):
     """Backwards compatibility wrapper for apply_filter(mode='bpf')."""
-    return apply_filter(data, fs, f_min, f_max, filter_type, order, rp, rs, mode='bpf', **kwargs)
+    return apply_filter(data, fs, f_min, f_max, filter_type, order, rp, rs, filter_taps, fir_window, mode='bpf', **kwargs)
 
 def compute_psd(samples, fs=1.0, method='Welch', **kwargs):
     """
