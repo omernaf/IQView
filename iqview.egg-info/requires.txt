@@ -1,5 +1,5 @@
 numpy
 PyQt6
-pyqtgraph>=0.13.0
+pyqtgraph>=0.14.0
 PyOpenGL
 scipy
