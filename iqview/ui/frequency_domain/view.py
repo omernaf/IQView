@@ -689,7 +689,35 @@ class FrequencyDomainView(QWidget):
                 break
         
         if found_marker:
-            found_marker.setValue(val)
+            if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+                old_v = found_marker.value()
+                shift = val - old_v
+                other = active_markers[0] if active_markers[1] == found_marker else active_markers[1]
+                
+                if self.marker_panel.btn_lock_delta.isChecked():
+                    new_o = other.value() + shift
+                    if is_freq:
+                        f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+                        if f_min <= val <= f_max and f_min <= new_o <= f_max:
+                            found_marker.setValue(val); other.setValue(new_o)
+                    else:
+                        y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
+                        if y_min <= val <= y_max and y_min <= new_o <= y_max:
+                            found_marker.setValue(val); other.setValue(new_o)
+                elif self.marker_panel.btn_lock_center.isChecked():
+                    ct = (old_v + other.value()) / 2
+                    new_o = 2 * ct - val
+                    if is_freq:
+                        f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+                        if f_min <= val <= f_max and f_min <= new_o <= f_max:
+                            found_marker.setValue(val); other.setValue(new_o)
+                    else:
+                        y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
+                        if y_min <= val <= y_max and y_min <= new_o <= y_max:
+                            found_marker.setValue(val); other.setValue(new_o)
+            else:
+                found_marker.setValue(val)
+                
             if drag_mode: self.active_drag_marker = found_marker
             self.update_marker_info()
             return

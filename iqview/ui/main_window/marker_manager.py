@@ -184,21 +184,28 @@ class MarkerManagerMixin:
             # If we hit a marker, move it and handle the logic (may move others if locked)
             if best_marker:
                 is_drag_target = (self.active_drag_marker == best_marker) # Not really needed here, we just hit it
-                best_marker.setPos(val)
-                if drag_mode: self.active_drag_marker = best_marker
                 
                 # If a lock is active, move the other marker too
-                if len(active_markers) == 2:
+                if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+                    old_v = best_marker.value()
+                    shift = val - old_v
                     other = active_markers[0] if active_markers[1] == best_marker else active_markers[1]
+                    
                     if self.marker_panel.btn_lock_delta.isChecked():
-                        shift = val - best_marker.value() # Note: we already moved it, shift might be 0? 
-                        # Actually we should move it, then shift other. Wait.
-                        # Re-calculating shift based on previous state might be better but let's see.
-                        # marker.setPos(val) was already called. 
-                        # To be safe, let's use the logic from update_drag.
-                        # But place_marker is often just for the start click.
-                        pass # update_drag handles the subsequent movement
-                
+                        other_new = other.value() + shift
+                        if curr_min <= val <= curr_max and curr_min <= other_new <= curr_max:
+                            best_marker.setPos(val)
+                            other.setPos(other_new)
+                    elif self.marker_panel.btn_lock_center.isChecked():
+                        ct = (old_v + other.value()) / 2
+                        other_new = 2 * ct - val
+                        if curr_min <= val <= curr_max and curr_min <= other_new <= curr_max:
+                            best_marker.setPos(val)
+                            other.setPos(other_new)
+                else:
+                    best_marker.setPos(val)
+
+                if drag_mode: self.active_drag_marker = best_marker
                 self.update_marker_info()
                 return
 
