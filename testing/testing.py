@@ -35,7 +35,7 @@ def generate_test_file(filename, sample_rate, duration):
 
 def main():
     # --- CONFIGURATION (Toggle features here for easy IDE 'Run') ---
-    PROFILE_ENABLED      = True   # Set to True to always run with the summary profiler
+    PROFILE_ENABLED      = False   # Set to True to always run with the summary profiler
     LINE_PROFILE_ENABLED = False  # Set to True to run the deep line-by-line profiler
     GENERATE_ENABLED     = False  # Set to True to force regenerate the test file
     # -------------------------------------------------------------
@@ -49,8 +49,8 @@ def main():
 
     # filename = "samples/temp_10Msps_433MHz.32fc"
     # filename = "samples/mavic_air_2.16tc"
-    # filename = "samples/long_sweep.32fc"
-    filename = "samples/very_long_sweep.32fc"
+    filename = "samples/long_sweep.32fc"
+    # filename = "samples/very_long_sweep.32fc"
     # filename = "samples/long_cw.32fc"
     # filename = "samples/chirp_rate_3MHz.32fc";
     # filename = "samples/noise.32fc"
@@ -75,10 +75,10 @@ def main():
         sys.executable, main_py,
         "-f", filename,
         "-r", str(sample_rate),
-        "--lazy",
-        "--name", "lazy"
-        # "--full",
-        # "--name", "full"
+        # "--lazy",
+        # "--name", "lazy"
+        "--full",
+        "--name", "full"
     ]
     
     if args.profile:

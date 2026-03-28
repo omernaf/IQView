@@ -331,23 +331,20 @@ class ViewportAwareReader(QThread):
             return
 
         # --- Row count & step size ---
-        # Goal: produce exactly pixel_width rows — enough to fill the display, no more.
-        # This matches what the full-file renderer shows after autoDownsample,
-        # while guaranteeing computation is always bounded at O(pixel_width) rows.
+        # Goal: produce multiple rows per pixel width — enough to make the image perceptually
+        # richer and detailed via automatic downsampling, but keeping runtime strictly bounded.
         #
-        #   natural_step = view_samples / pixel_width  → step to get ~pixel_width rows
-        #   req_step     = fft_size * (1 - overlap/100) → minimum step from the overlap setting
-        #   step_size    = max(natural_step, req_step)
-        #
-        # Zoomed OUT (large viewport): natural_step dominates → ~pixel_width rows computed.
-        # Zoomed IN  (small viewport): req_step dominates → fewer rows, identical density
-        #                              to what the full renderer would show in that region.
+        # By targeting ~4x pixel_width rows, we rely on the Qt backend's autoDownsample
+        # to compress fine signal components visually, delivering excellent "overlap"
+        # appearance while completely dodging the 20,000+ row read bottlenecks.
+        target_rows = max(1, self.pixel_width * 4)
+
         req_step     = max(1, int(fft_size * (1.0 - overlap_percent / 100.0)))
-        natural_step = max(1, (view_samples - fft_size) // max(self.pixel_width - 1, 1))
+        natural_step = max(1, (view_samples - fft_size) // max(target_rows - 1, 1))
         self.step_size = max(req_step, natural_step)
 
         max_possible_rows = max(1, (view_samples - fft_size) // self.step_size + 1)
-        self.num_rows = min(max_possible_rows, self.pixel_width)
+        self.num_rows = min(max_possible_rows, target_rows)
 
         # Precompute frequency-domain BPF response (much better than binary mask).
         # We use the same filter design as the time-domain path, then evaluate
