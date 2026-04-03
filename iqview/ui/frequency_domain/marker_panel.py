@@ -7,7 +7,8 @@ from ..widgets import FormattedLineEdit, DoubleClickButton
 from ..themes import get_palette
 
 class FrequencyDomainMarkerPanel(QFrame):
-    interactionModeChanged = pyqtSignal(str) # 'FREQ', 'MAG', 'ZOOM', 'MOVE'
+    interactionModeChanged = pyqtSignal(str) # 'FREQ', 'MAG', 'ZOOM', 'MOVE', 'FILTER'
+    filterModeChanged = pyqtSignal(str)       # 'bpf', 'bsf', or '' (disabled)
     resetZoomRequested = pyqtSignal()
     markerClearRequested = pyqtSignal(str)
 
@@ -98,14 +99,23 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.btn_move.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_move, 1, 2)
         
-        # 6. Stats
+        # 6. BPF / Filter Mode
+        self.btn_bpf = DoubleClickButton("")
+        self.btn_bpf.setIcon(self._get_icon("bpf_selection_mode"))
+        self.btn_bpf.setIconSize(QSize(32, 32))
+        self.btn_bpf.setObjectName("mode_btn")
+        self.btn_bpf.setToolTip("BPF / BSF Filter Mode (Double-click to clear)")
+        self.btn_bpf.setCheckable(True)
+        self.mode_btn_layout.addWidget(self.btn_bpf, 1, 3)
+
+        # 7. Stats
         self.btn_stats = DoubleClickButton("")
         self.btn_stats.setIcon(self._get_icon("region_statistics"))
         self.btn_stats.setIconSize(QSize(32, 32))
         self.btn_stats.setObjectName("mode_btn")
         self.btn_stats.setToolTip("Region Statistics (Double-click to clear) [S]")
         self.btn_stats.setCheckable(True)
-        self.mode_btn_layout.addWidget(self.btn_stats, 1, 3)
+        self.mode_btn_layout.addWidget(self.btn_stats, 1, 4)
         self.btn_home.clicked.connect(self.resetZoomRequested.emit)
         
         # Mutual Exclusion Group
@@ -116,6 +126,7 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.mode_group.addButton(self.btn_marker_mag_endless)
         self.mode_group.addButton(self.btn_zoom)
         self.mode_group.addButton(self.btn_move)
+        self.mode_group.addButton(self.btn_bpf)
         self.mode_group.addButton(self.btn_stats)
         self.mode_group.setExclusive(True)
 
@@ -126,12 +137,14 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.btn_marker_mag_endless.clicked.connect(lambda: self.interactionModeChanged.emit('MAG_ENDLESS'))
         self.btn_zoom.clicked.connect(lambda: self.interactionModeChanged.emit('ZOOM'))
         self.btn_move.clicked.connect(lambda: self.interactionModeChanged.emit('MOVE'))
+        self.btn_bpf.clicked.connect(lambda: self.interactionModeChanged.emit('FILTER'))
         self.btn_stats.clicked.connect(lambda: self.interactionModeChanged.emit('STATS'))
         
         self.btn_marker_freq.doubleClicked.connect(lambda: self.markerClearRequested.emit('FREQ'))
         self.btn_marker_freq_endless.doubleClicked.connect(lambda: self.markerClearRequested.emit('FREQ_ENDLESS'))
-        self.btn_marker_mag.doubleClicked.connect(lambda: self.markerClearRequested.emit('Y')) 
+        self.btn_marker_mag.doubleClicked.connect(lambda: self.markerClearRequested.emit('Y'))
         self.btn_marker_mag_endless.doubleClicked.connect(lambda: self.markerClearRequested.emit('MAG_ENDLESS'))
+        self.btn_bpf.doubleClicked.connect(lambda: self.markerClearRequested.emit('FILTER'))
         self.btn_stats.doubleClicked.connect(lambda: self.markerClearRequested.emit('STATS'))
 
         # --- Stacked Widget for Marker Data ---
@@ -168,6 +181,24 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.btn_lock_center.setFont(self.header_font)
         self.btn_lock_center.setCheckable(True)
         self.grid.addWidget(self.btn_lock_center, 0, 4)
+
+        # --- Filter BPF/BSF checkboxes (shown only in FILTER mode) ---
+        from PyQt6.QtWidgets import QCheckBox, QVBoxLayout
+        self.filter_container = QWidget()
+        _fl = QVBoxLayout(self.filter_container)
+        _fl.setContentsMargins(0, 0, 0, 0)
+        _fl.setSpacing(2)
+        self.cb_bpf = QCheckBox("BPF")
+        self.cb_bsf = QCheckBox("BSF")
+        self.cb_bpf.setToolTip("Enable Band-Pass Filter")
+        self.cb_bsf.setToolTip("Enable Band-Stop Filter")
+        for cb in [self.cb_bpf, self.cb_bsf]:
+            cb.setEnabled(False)
+            cb.clicked.connect(self._on_filter_clicked)
+            _fl.addWidget(cb)
+        self.filter_container.setFixedWidth(80)
+        self.filter_container.setVisible(False)
+        self.grid.addWidget(self.filter_container, 1, 5, 2, 1)
 
         # Side labels (Row names)
         self.row_v1_label = QLabel("Frequency (Hz)")
@@ -378,13 +409,13 @@ class FrequencyDomainMarkerPanel(QFrame):
     def update_headers(self, mode, y_axis_label="Magnitude"):
         self.row_v1_label.blockSignals(True)
         self.row_v2_label.blockSignals(True)
-        
-        if mode in ['FREQ', 'MAG', 'FREQ_ENDLESS', 'MAG_ENDLESS', 'STATS']:
+
+        if mode in ['FREQ', 'MAG', 'FREQ_ENDLESS', 'MAG_ENDLESS', 'STATS', 'FILTER']:
             self.last_marker_mode = mode
-            
+
         display_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE'] else mode
         actual_ui_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE'] else mode
-        
+
         if actual_ui_mode == 'STATS':
             if self.stacked.currentIndex() != 2:
                 self.btn_stats_res.setChecked(True)
@@ -395,12 +426,12 @@ class FrequencyDomainMarkerPanel(QFrame):
         else:
             self.stacked.setCurrentIndex(0)
 
-        if display_mode in ['FREQ', 'FREQ_ENDLESS']:
+        if display_mode in ['FREQ', 'FREQ_ENDLESS', 'FILTER']:
             self.row_v1_label.setText("Frequency (Hz)")
             self.row_v2_label.setText("Index")
             self.row_v1_label.show()
             self.row_v2_label.show()
-            for i in range(2): 
+            for i in range(2):
                 self.m_widgets[i]['v2'].show()
             self.delta_v2.show()
             self.center_v2.show()
@@ -435,32 +466,31 @@ class FrequencyDomainMarkerPanel(QFrame):
                     btn.blockSignals(False)
 
     def update_mode_ui(self, mode):
-        self.btn_marker_freq.blockSignals(True)
-        self.btn_marker_freq_endless.blockSignals(True)
-        self.btn_marker_mag.blockSignals(True)
-        self.btn_marker_mag_endless.blockSignals(True)
-        self.btn_zoom.blockSignals(True)
-        self.btn_move.blockSignals(True)
-        self.btn_stats.blockSignals(True)
-        
+        for btn in [self.btn_marker_freq, self.btn_marker_freq_endless,
+                    self.btn_marker_mag, self.btn_marker_mag_endless,
+                    self.btn_zoom, self.btn_move, self.btn_bpf, self.btn_stats]:
+            btn.blockSignals(True)
+
         self.btn_marker_freq.setChecked(mode == 'FREQ')
         self.btn_marker_freq_endless.setChecked(mode == 'FREQ_ENDLESS')
         self.btn_marker_mag.setChecked(mode == 'MAG')
         self.btn_marker_mag_endless.setChecked(mode == 'MAG_ENDLESS')
         self.btn_zoom.setChecked(mode == 'ZOOM')
         self.btn_move.setChecked(mode == 'MOVE')
+        self.btn_bpf.setChecked(mode == 'FILTER')
         self.btn_stats.setChecked(mode == 'STATS')
-        
-        self.btn_marker_freq.blockSignals(False)
-        self.btn_marker_freq_endless.blockSignals(False)
-        self.btn_marker_mag.blockSignals(False)
-        self.btn_marker_mag_endless.blockSignals(False)
-        self.btn_zoom.blockSignals(False)
-        self.btn_move.blockSignals(False)
-        self.btn_stats.blockSignals(False)
-        
+
+        for btn in [self.btn_marker_freq, self.btn_marker_freq_endless,
+                    self.btn_marker_mag, self.btn_marker_mag_endless,
+                    self.btn_zoom, self.btn_move, self.btn_bpf, self.btn_stats]:
+            btn.blockSignals(False)
+
         self.btn_lock_delta.setEnabled(mode in ['FREQ', 'MAG'])
         self.btn_lock_center.setEnabled(mode in ['FREQ', 'MAG'])
+
+        # Show filter container only in FILTER mode
+        if hasattr(self, 'filter_container'):
+            self.filter_container.setVisible(mode == 'FILTER')
 
     def update_endless_list(self, markers, mode):
         is_freq = 'FREQ' in mode
@@ -657,6 +687,26 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.btn_lock_m1.setChecked(m2);     self.btn_lock_m2.setChecked(m1)
         self.btn_lock_m1.blockSignals(False); self.btn_lock_m2.blockSignals(False)
 
+    def _on_filter_clicked(self):
+        """Enforce BPF/BSF mutual exclusion and emit filterModeChanged."""
+        sender = self.sender()
+        if sender == self.cb_bpf and self.cb_bpf.isChecked():
+            self.cb_bsf.setChecked(False)
+        elif sender == self.cb_bsf and self.cb_bsf.isChecked():
+            self.cb_bpf.setChecked(False)
+        mode = ''
+        if self.cb_bpf.isChecked(): mode = 'bpf'
+        elif self.cb_bsf.isChecked(): mode = 'bsf'
+        self.filterModeChanged.emit(mode)
+
+    def set_filter_checkboxes_enabled(self, enabled):
+        """Enable/disable BPF/BSF checkboxes (enabled only when both bounds placed)."""
+        self.cb_bpf.setEnabled(enabled)
+        self.cb_bsf.setEnabled(enabled)
+        if not enabled:
+            self.cb_bpf.setChecked(False)
+            self.cb_bsf.setChecked(False)
+
     def refresh_theme(self):
         theme = self.controller.parent_window.settings_mgr.get("ui/theme", "Dark")
         p = get_palette(theme)
@@ -668,6 +718,7 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.btn_marker_mag_endless.setIcon(self._get_icon("endless_horizontal_markers", theme))
         self.btn_zoom.setIcon(self._get_icon("zoom_mode", theme))
         self.btn_move.setIcon(self._get_icon("free_move_mode", theme))
+        self.btn_bpf.setIcon(self._get_icon("bpf_selection_mode", theme))
         self.btn_stats.setIcon(self._get_icon("region_statistics", theme))
         self.btn_home.setIcon(self._get_icon("reset_zoom", theme))
         
