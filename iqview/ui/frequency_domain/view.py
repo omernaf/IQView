@@ -1678,7 +1678,7 @@ class FrequencyDomainView(QWidget):
 
     def on_filter_region_finished(self):
         """Replot after the user finishes dragging the filter region."""
-        if self.filter_bounds:
+        if len(self.filter_bounds) == 2:
             new_region = sorted(self.filter_region.getRegion())
             if len(new_region) == 2:
                 self.filter_bounds = list(new_region)
