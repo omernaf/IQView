@@ -1,9 +1,208 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QProgressBar, QLabel
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QProgressBar,
+                               QLabel, QTabBar, QTabWidget)
+from PyQt6.QtCore import Qt, QTimer, QPoint
+from PyQt6.QtGui import QAction, QKeySequence, QPainter, QPixmap
 from ..marker_panel import MarkerPanel
 from ..spectrogram_view import SpectrogramView
 from ..side_panel import SidePanel
+
+
+class DetachableTabBar(QTabBar):
+    """
+    A QTabBar subclass that supports:
+      - Reordering tabs by dragging left/right (the Spectrogram tab is pinned at index 0)
+      - Tearing a tab off by dragging it vertically, showing a ghost preview, then
+        calling undock_tab() on the parent SpectrogramWindow on release.
+    """
+
+    # Vertical pixel threshold before switching to "undock" mode
+    UNDOCK_Y_THRESHOLD = 28
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._drag_start_pos = None
+        self._drag_tab_index = -1
+        self._ghost_label = None
+        self._is_dragging_out = False
+
+        # Allow horizontal tab reordering
+        self.setMovable(True)
+
+        # Enforce the Spectrogram tab stays pinned after any reorder
+        self.tabMoved.connect(self._on_tab_moved)
+
+    # ------------------------------------------------------------------ #
+    #  Mouse event overrides                                               #
+    # ------------------------------------------------------------------ #
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            idx = self.tabAt(event.pos())
+            self._drag_tab_index = idx
+            self._drag_start_pos = event.pos()
+            self._is_dragging_out = False
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if not (event.buttons() & Qt.MouseButton.LeftButton):
+            super().mouseMoveEvent(event)
+            return
+
+        # Block the Spectrogram tab (index 0) from being dragged at all
+        if self._drag_tab_index == 0:
+            event.accept()
+            return
+
+        if self._drag_start_pos is None or self._drag_tab_index < 0:
+            super().mouseMoveEvent(event)
+            return
+
+        delta = event.pos() - self._drag_start_pos
+
+        # Vertical drag exceeds threshold → switch to undock ghost mode
+        if not self._is_dragging_out and abs(delta.y()) > self.UNDOCK_Y_THRESHOLD:
+            self._is_dragging_out = True
+            self._show_ghost(event.pos())
+
+        if self._is_dragging_out:
+            # Keep ghost following the cursor
+            if self._ghost_label:
+                global_pos = self.mapToGlobal(event.pos())
+                self._ghost_label.move(
+                    global_pos.x() - self._ghost_label.width() // 2,
+                    global_pos.y() - 20,
+                )
+            event.accept()
+            return
+
+        # Otherwise: normal left/right tab reordering handled by Qt
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._is_dragging_out and self._drag_tab_index > 0:
+            self._hide_ghost()
+            global_pos = self.mapToGlobal(event.pos())
+
+            # The parent chain: DetachableTabBar → QTabWidget → central_widget → SpectrogramWindow
+            # self.window() is the reliable shortcut to the top-level QMainWindow.
+            main_window = self.window()
+            if hasattr(main_window, 'undock_tab'):
+                tab_idx = self._drag_tab_index
+                main_window.undock_tab(tab_idx)
+                # Position the freshly-created detached window under the cursor
+                if main_window.detached_views:
+                    dv = main_window.detached_views[-1]
+                    dv.move(
+                        max(0, global_pos.x() - dv.width() // 2),
+                        max(0, global_pos.y() - 30),
+                    )
+
+            self._reset_drag_state()
+            event.accept()
+            return
+
+        self._reset_drag_state()
+        super().mouseReleaseEvent(event)
+
+    # ------------------------------------------------------------------ #
+    #  Ghost preview helpers                                               #
+    # ------------------------------------------------------------------ #
+
+    def _show_ghost(self, local_pos):
+        """Render a semi-transparent thumbnail of the tab content and float it."""
+        tab_widget = self.parent()
+        if not tab_widget:
+            return
+
+        widget = tab_widget.widget(self._drag_tab_index)
+        if widget:
+            original = widget.grab()
+            thumbnail = original.scaled(
+                min(original.width(), 360),
+                min(original.height(), 225),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        else:
+            thumbnail = QPixmap(360, 225)
+            thumbnail.fill(Qt.GlobalColor.darkGray)
+
+        # Add a thin border to make the ghost look like a floating window
+        bordered = QPixmap(thumbnail.width() + 4, thumbnail.height() + 4)
+        bordered.fill(Qt.GlobalColor.transparent)
+        border_painter = QPainter(bordered)
+        border_painter.setPen(Qt.GlobalColor.darkGray)
+        border_painter.drawRect(0, 0, bordered.width() - 1, bordered.height() - 1)
+        border_painter.drawPixmap(2, 2, thumbnail)
+        border_painter.end()
+
+        # Apply semi-transparency
+        ghost_pixmap = QPixmap(bordered.size())
+        ghost_pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(ghost_pixmap)
+        painter.setOpacity(0.72)
+        painter.drawPixmap(0, 0, bordered)
+        painter.end()
+
+        self._ghost_label = QLabel()
+        self._ghost_label.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.Tool
+            | Qt.WindowType.WindowStaysOnTopHint,
+        )
+        self._ghost_label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._ghost_label.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self._ghost_label.setPixmap(ghost_pixmap)
+        self._ghost_label.resize(ghost_pixmap.size())
+
+        global_pos = self.mapToGlobal(local_pos)
+        self._ghost_label.move(
+            global_pos.x() - ghost_pixmap.width() // 2,
+            global_pos.y() - 20,
+        )
+        self._ghost_label.show()
+        self.setCursor(Qt.CursorShape.DragMoveCursor)
+
+    def _hide_ghost(self):
+        if self._ghost_label:
+            self._ghost_label.hide()
+            self._ghost_label.deleteLater()
+            self._ghost_label = None
+        self.unsetCursor()
+
+    def _reset_drag_state(self):
+        self._drag_start_pos = None
+        self._drag_tab_index = -1
+        self._is_dragging_out = False
+        self._hide_ghost()
+
+    # ------------------------------------------------------------------ #
+    #  Spectrogram tab pinning                                             #
+    # ------------------------------------------------------------------ #
+
+    def _on_tab_moved(self, from_idx, to_idx):
+        """If any move would displace the Spectrogram tab from index 0, revert it."""
+        if to_idx == 0 or from_idx == 0:
+            QTimer.singleShot(0, self._enforce_spectrogram_at_zero)
+
+    def _enforce_spectrogram_at_zero(self):
+        """Find spec_tab_page and move it back to index 0 if displaced."""
+        tab_widget = self.parent()
+        if not tab_widget:
+            return
+        main_window = self.window()
+        spec_page = getattr(main_window, 'spec_tab_page', None)
+        if spec_page is None:
+            return
+        for i in range(tab_widget.count()):
+            if tab_widget.widget(i) is spec_page:
+                if i != 0:
+                    self.moveTab(i, 0)
+                break
+
+
+# ======================================================================= #
+
 
 class UIComponentsMixin:
     def setup_ui(self):
@@ -25,20 +224,21 @@ class UIComponentsMixin:
         self.progress_bar = QProgressBar()
         self.progress_bar.setFixedHeight(2)
         self.progress_bar.setTextVisible(False)
-        self.progress_bar.setStyleSheet("QProgressBar { background-color: transparent; border: none; } QProgressBar::chunk { background-color: #00aaff; }")
+        self.progress_bar.setStyleSheet(
+            "QProgressBar { background-color: transparent; border: none; } "
+            "QProgressBar::chunk { background-color: #00aaff; }"
+        )
         self.root_layout.addWidget(self.progress_bar)
 
-        # 2. Main Tab Widget
-        from PyQt6.QtWidgets import QTabWidget
+        # 2. Main Tab Widget — backed by a DetachableTabBar
         self.tabs = QTabWidget()
+        detachable_bar = DetachableTabBar(self.tabs)
+        self.tabs.setTabBar(detachable_bar)
         self.tabs.setTabsClosable(False)
-        self.tabs.setMovable(False)
-        self.tabs = QTabWidget()
-        self.tabs.setTabsClosable(False)
-        self.tabs.setMovable(False)
+        # NOTE: setMovable is controlled inside DetachableTabBar (it sets self.setMovable(True))
         self.root_layout.addWidget(self.tabs)
 
-        # Install event filter for middle/right click closing
+        # Install event filter for middle/right click on the tab bar
         self.tabs.tabBar().installEventFilter(self)
 
         # --- Spectrogram Tab Content (Specialized Layout) ---
@@ -132,7 +332,7 @@ class UIComponentsMixin:
         self._rebuild_recent_menu()
 
     def close_tab(self, index):
-        if index > 0: # Don't close Spectrogram
+        if index > 0:  # Don't close Spectrogram
             widget = self.tabs.widget(index)
             self.tabs.removeTab(index)
             widget.deleteLater()
@@ -142,24 +342,24 @@ class UIComponentsMixin:
         """Update tab names dynamically: 'Time Domain' or 'Freq Domain'."""
         from ..time_domain.view import TimeDomainView
         from ..frequency_domain.view import FrequencyDomainView
-        
+
         td_indices = []
         fd_indices = []
-        
+
         for i in range(1, self.tabs.count()):
             widget = self.tabs.widget(i)
             if isinstance(widget, TimeDomainView):
                 td_indices.append(i)
             elif isinstance(widget, FrequencyDomainView):
                 fd_indices.append(i)
-        
+
         # Update Time Domain tabs
         if len(td_indices) == 1:
             self.tabs.setTabText(td_indices[0], "Time Domain")
         elif len(td_indices) > 1:
             for i, idx in enumerate(td_indices):
                 self.tabs.setTabText(idx, f"Time Domain ({i+1})")
-                
+
         # Update Freq Domain tabs
         if len(fd_indices) == 1:
             self.tabs.setTabText(fd_indices[0], "Freq Domain")
