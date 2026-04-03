@@ -163,7 +163,7 @@ class FrequencyDomainView(QWidget):
         # --- Process Data ---
         self.compute_fft()
         
-        self.available_modes = {
+        raw_modes = {
             "magnitude": self.plot_magnitude,
             "magnitude [dB]": self.plot_magnitude_db,
             "magnitude^2": self.plot_magnitude_squared,
@@ -176,6 +176,15 @@ class FrequencyDomainView(QWidget):
             "unwrapped phase": self.plot_unwrapped_phase
         }
         
+        # Track the actual requested mode key, since y_label_text might change dynamically (e.g., PSD [dB])
+        self._current_plot_mode_key = 'magnitude'
+        def _track(key, fn):
+            def wrapper(*args, **kwargs):
+                self._current_plot_mode_key = key
+                fn()
+            return wrapper
+        self.available_modes = {k: _track(k, fn) for k, fn in raw_modes.items()}
+
         self.rebuild_plot_buttons()
         self.set_interaction_mode('FREQ')
 
@@ -404,11 +413,12 @@ class FrequencyDomainView(QWidget):
         self.stats_region.setZValue(50)
         self.plot_item.addItem(self.stats_markers)
         self.stats_markers.setZValue(100)
-        # Re-add filter overlays (removed by plot_item.clear())
-        if hasattr(self, 'filter_region') and self.filter_region.isVisible():
+        # Always re-add filter overlays — plot_item.clear() removes them from the scene;
+        # visibility is controlled by show()/hide(), not scene membership.
+        if hasattr(self, 'filter_region'):
             self.plot_item.addItem(self.filter_region)
             self.filter_region.setZValue(8)
-        if hasattr(self, 'filter_line') and self.filter_line and self.filter_line.isVisible():
+        if hasattr(self, 'filter_line') and self.filter_line:
             self.plot_item.addItem(self.filter_line)
             self.filter_line.setZValue(9)
         self.plot_item.getAxis('left').setLabel(y_label)
@@ -480,11 +490,12 @@ class FrequencyDomainView(QWidget):
         self.stats_region.setZValue(50)
         self.plot_item.addItem(self.stats_markers)
         self.stats_markers.setZValue(100)
-        # Re-add filter overlays (removed by plot_item.clear())
-        if hasattr(self, 'filter_region') and self.filter_region.isVisible():
+        # Always re-add filter overlays — plot_item.clear() removes them from the scene;
+        # visibility is controlled by show()/hide(), not scene membership.
+        if hasattr(self, 'filter_region'):
             self.plot_item.addItem(self.filter_region)
             self.filter_region.setZValue(8)
-        if hasattr(self, 'filter_line') and self.filter_line and self.filter_line.isVisible():
+        if hasattr(self, 'filter_line') and self.filter_line:
             self.plot_item.addItem(self.filter_line)
             self.filter_line.setZValue(9)
         self.plot_item.getAxis('left').setLabel(y_label)
@@ -1626,8 +1637,9 @@ class FrequencyDomainView(QWidget):
         Calls apply_filter() which now uses zero-phase filtering (sosfiltfilt/filtfilt),
         making BSF = (Original - BPF) mathematically exact.
         """
-        # Save current display mode — compute_fft() resets y_label_text to 'magnitude'
-        saved_mode = getattr(self, 'y_label_text', 'magnitude')
+        # Use _current_plot_mode_key (always the available_modes key, unlike y_label_text
+        # which may differ, e.g. PSD key='power spectrum density (PSD)' vs label='PSD [dB]')
+        saved_mode = getattr(self, '_current_plot_mode_key', 'magnitude')
 
         if (self.filter_mode in ('bpf', 'bsf')
                 and len(self.filter_bounds) == 2
