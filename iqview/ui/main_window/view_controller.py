@@ -186,21 +186,27 @@ class ViewControllerMixin:
             self.tabs.setCurrentWidget(view)
             self.update_tab_names()
 
-    def undock_tab(self, index):
-        """Moves a tab from the QTabWidget to a standalone window."""
-        if index <= 0: return # Don't undock spectrogram
+    def undock_tab(self, index, initial_pos=None):
+        """Moves a tab from the QTabWidget to a standalone window.
         
+        Args:
+            index:       Tab index to undock (must be > 0).
+            initial_pos: Optional QPoint for the new window's top-left corner.
+                         When provided the window is positioned before show() so
+                         it appears exactly where the user released the drag.
+        """
+        if index <= 0: return  # Don't undock spectrogram
+
         widget = self.tabs.widget(index)
         if not widget: return
-        
+
         # Remove from tabs without deleting
         self.tabs.removeTab(index)
-        
-        # Create detached window
-        dv = DetachedViewWindow(widget, self)
+
+        # Create detached window — position is applied inside __init__ before show()
+        dv = DetachedViewWindow(widget, self, initial_pos=initial_pos)
         self.detached_views.append(dv)
-        dv.show()
-        
+
         self.update_tab_names()
 
     def dock_view(self, widget):
@@ -211,18 +217,25 @@ class ViewControllerMixin:
             if dv.view == widget:
                 target_dv = dv
                 break
-        
+
         if not target_dv: return
-        
-        # Remove from detached window
-        target_dv.setCentralWidget(None)
+
+        # IMPORTANT: reparent the widget away from the detached window BEFORE
+        # closing it.  QMainWindow takes ownership of its central widget, so
+        # calling close() (or setCentralWidget(None)) would delete the widget.
+        # setParent(None) breaks the parent-child link so Qt won't destroy it.
+        widget.hide()
+        widget.setParent(None)
+
+        # Close the now-empty detached window (closeEvent is a no-op because
+        # we already removed it from detached_views before close()).
         self.detached_views.remove(target_dv)
         target_dv.close()
-        
+
         # Add back to tabs
         from ..time_domain.view import TimeDomainView
         from ..frequency_domain.view import FrequencyDomainView
-        
+
         label = "Time Domain" if isinstance(widget, TimeDomainView) else "Freq Domain"
         self.tabs.addTab(widget, label)
         self.tabs.setCurrentWidget(widget)

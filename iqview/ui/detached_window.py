@@ -9,7 +9,7 @@ class DetachedViewWindow(QMainWindow):
     Includes a toolbar with a "Dock Back" button to return the view to the
     main window's tab bar.
     """
-    def __init__(self, view, parent_window):
+    def __init__(self, view, parent_window, initial_pos=None):
         # We set parent_window to None to make it a top-level window
         super().__init__(None)
         self.view = view
@@ -31,6 +31,11 @@ class DetachedViewWindow(QMainWindow):
         self.update_title()
 
         self.resize(1200, 800)
+
+        # Position BEFORE show() so the window appears exactly at the
+        # drag-release point without any post-show jump.
+        if initial_pos is not None:
+            self.move(initial_pos)
 
         # Visibility and layout kick
         self.show()

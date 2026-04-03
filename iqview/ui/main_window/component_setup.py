@@ -88,14 +88,14 @@ class DetachableTabBar(QTabBar):
             main_window = self.window()
             if hasattr(main_window, 'undock_tab'):
                 tab_idx = self._drag_tab_index
-                main_window.undock_tab(tab_idx)
-                # Position the freshly-created detached window under the cursor
-                if main_window.detached_views:
-                    dv = main_window.detached_views[-1]
-                    dv.move(
-                        max(0, global_pos.x() - dv.width() // 2),
-                        max(0, global_pos.y() - 30),
-                    )
+                # Position the new window so its top-center sits just below the cursor,
+                # exactly where the user let go of the drag.  We set this BEFORE show()
+                # via initial_pos so there is no post-show jump.
+                initial_pos = QPoint(
+                    max(0, global_pos.x() - 600),   # centre the 1200-px-wide window
+                    max(0, global_pos.y() - 30),
+                )
+                main_window.undock_tab(tab_idx, initial_pos=initial_pos)
 
             self._reset_drag_state()
             event.accept()
