@@ -68,7 +68,13 @@ def design_filter(fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=
 def apply_filter(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, filter_taps=101, fir_window="hamming", mode='bpf', **kwargs):
     """
     Applies a sharp COMPLEX (Asymmetric) Band-Pass or Band-Stop filter to IQ data.
-    Uses Shift-to-Baseband -> Low-Pass Filter -> Shift-Back-Up approach.
+    Uses Shift-to-Baseband -> Zero-Phase Low-Pass Filter -> Shift-Back-Up approach.
+
+    Zero-phase filtering (sosfiltfilt / filtfilt) is used so that:
+      - There is no group delay: filtered output is perfectly time-aligned with input.
+      - There is no phase distortion: every frequency component is preserved in phase.
+    This makes BSF = (Original - BPF_result) exact: the target band is cleanly cancelled
+    rather than leaving residuals from a misaligned or phase-distorted causal BPF.
     """
     filter_data, f_center, is_fir = design_filter(fs, f_min, f_max, filter_type, order, rp, rs, filter_taps, fir_window, **kwargs)
     if filter_data is None or len(data) == 0:
@@ -79,37 +85,29 @@ def apply_filter(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1
     shift_vector = np.exp(-2j * np.pi * f_center * t)
     data_shifted = data * shift_vector
     
-    # 2. Apply Low-Pass Filter (which represents the passband)
-    if is_fir:
-        # For FIR filters, lfilter is more stable and efficient than tf2sos
-        data_filtered = signal.lfilter(filter_data, [1.0], data_shifted)
-        # Calculate delay for perfect phase restoration
-        delay_samples = (len(filter_data) - 1) / 2.0
-    else:
-        # For IIR filters, SOS is superior
-        data_filtered = signal.sosfilt(filter_data, data_shifted)
-        # Approximate delay for IIR is more complex; however, for baseband filtering
-        # we can use the phase response of the filter or ignore it if DC phase shift is OK.
-        # Most of the IQView tabs are frequency-domain magnitude based, so this is fine.
-        delay_samples = 0.0 # Standard approach
-    
-    # 3. Shift back to original frequency band (this is the BPF result)
-    # Corrected shift-back: apply shift relative to the filter delay for phase consistency
-    if delay_samples > 0:
-        t_delayed = (np.arange(len(data)) - delay_samples) / fs
-        shift_back = np.exp(2j * np.pi * f_center * t_delayed)
-    else:
-        shift_back = np.conj(shift_vector)
-        
+    # 2. Apply zero-phase Low-Pass Filter
+    #    filtfilt / sosfiltfilt filter forward then backward: zero net phase, zero group delay.
+    try:
+        if is_fir:
+            data_filtered = signal.filtfilt(filter_data, [1.0], data_shifted)
+        else:
+            data_filtered = signal.sosfiltfilt(filter_data, data_shifted)
+    except ValueError:
+        # Data segment shorter than ~3x filter length — fall back to causal (BSF will be approximate).
+        if is_fir:
+            data_filtered = signal.lfilter(filter_data, [1.0], data_shifted)
+        else:
+            data_filtered = signal.sosfilt(filter_data, data_shifted)
+
+    # 3. Shift back to original frequency band
+    #    Zero-phase filtering has no delay, so a simple conjugate reversal is exact.
+    shift_back = np.conj(shift_vector)
     bpf_result = data_filtered * shift_back
-    
+
     if mode == 'bsf':
-        # BSF = Original - BPF
-        # To strictly subtract, original should be delayed too to align with BPF
-        # But simple subtraction works for visualization of spectral holes.
+        # BSF = Original - BPF  (exact: both signals have identical time alignment and phase)
         return data - bpf_result
     else:
-        # Default: bpf
         return bpf_result
 
 def apply_bpf(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, filter_taps=101, fir_window="hamming", **kwargs):

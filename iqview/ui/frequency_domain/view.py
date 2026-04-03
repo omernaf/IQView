@@ -1621,7 +1621,11 @@ class FrequencyDomainView(QWidget):
         self._apply_filter_and_replot()
 
     def _apply_filter_and_replot(self):
-        """Apply BPF/BSF to samples then recompute and replot the FFT."""
+        """Apply BPF/BSF to samples then recompute and replot the FFT.
+
+        Calls apply_filter() which now uses zero-phase filtering (sosfiltfilt/filtfilt),
+        making BSF = (Original - BPF) mathematically exact.
+        """
         # Save current display mode — compute_fft() resets y_label_text to 'magnitude'
         saved_mode = getattr(self, 'y_label_text', 'magnitude')
 
@@ -1658,6 +1662,7 @@ class FrequencyDomainView(QWidget):
         target = saved_mode if saved_mode in available else 'magnitude'
         if target in available:
             available[target]()
+
 
     def on_filter_region_finished(self):
         """Replot after the user finishes dragging the filter region."""
