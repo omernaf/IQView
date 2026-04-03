@@ -28,7 +28,7 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         try:
             # Set AppUserModelID so Windows taskbar shows the custom icon instead of Python's
             if sys.platform == "win32":
-                myappid = 'omernaf.iqview.spectrogram.0.1.2' # arbitrary string
+                myappid = 'omernaf.iqview.spectrogram.0.1.4' # arbitrary string
                 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         except Exception:
             pass

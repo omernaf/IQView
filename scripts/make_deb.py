@@ -50,7 +50,7 @@ def get_project_version():
                     return line.split("=")[1].strip().strip('"').strip("'")
     except Exception:
         pass
-    return "0.1.3"
+    return "0.1.4"
 
 def find_wheel():
     """Find the .whl in dist/."""

@@ -19,7 +19,7 @@ from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext, detect_params_
 if sys.platform == "win32":
     try:
         import ctypes
-        myapp_id = "OmerNaf.IQView.0.1.3" # Unique AppUserModelID
+        myapp_id = "OmerNaf.IQView.0.1.4" # Unique AppUserModelID
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myapp_id)
     except Exception:
         pass
