@@ -88,14 +88,23 @@ class DetachableTabBar(QTabBar):
             main_window = self.window()
             if hasattr(main_window, 'undock_tab'):
                 tab_idx = self._drag_tab_index
-                # Position the new window so its top-center sits just below the cursor,
-                # exactly where the user let go of the drag.  We set this BEFORE show()
-                # via initial_pos so there is no post-show jump.
-                initial_pos = QPoint(
-                    max(0, global_pos.x() - 600),   # centre the 1200-px-wide window
-                    max(0, global_pos.y() - 30),
-                )
-                main_window.undock_tab(tab_idx, initial_pos=initial_pos)
+
+                # Find which screen the cursor is on — handles multi-monitor
+                # setups where secondary screens may have negative coordinates
+                # (screen to the left of primary) or large positive coordinates
+                # (screen to the right).  max(0, ...) would be wrong for both cases.
+                from PyQt6.QtGui import QGuiApplication
+                screen = QGuiApplication.screenAt(global_pos) or QGuiApplication.primaryScreen()
+                sg = screen.geometry()
+
+                win_w, win_h = 1200, 800
+                x = global_pos.x() - win_w // 2           # centre under cursor
+                y = global_pos.y() - 30                   # just below release point
+                # Clamp so the window doesn't overshoot any edge of this screen
+                x = max(sg.left(), min(x, sg.right()  - win_w))
+                y = max(sg.top(),  min(y, sg.bottom() - win_h))
+
+                main_window.undock_tab(tab_idx, initial_pos=QPoint(x, y))
 
             self._reset_drag_state()
             event.accept()
