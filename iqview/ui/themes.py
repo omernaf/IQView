@@ -57,10 +57,11 @@ def get_main_stylesheet(theme_name):
             font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif; 
         }}
         QToolTip {{ 
-            background-color: {p.bg_widget}; 
-            color: {p.text_main}; 
-            border: 1px solid {p.accent_dim}; 
+            background-color: #1a1a1a; 
+            color: #ffffff; 
+            border: 1px solid {p.accent}; 
             padding: 4px;
+            border-radius: 4px;
         }}
         QLabel {{ color: {p.text_dim}; }}
         QPushButton {{ 
