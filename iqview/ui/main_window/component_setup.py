@@ -306,6 +306,19 @@ class UIComponentsMixin:
         self.recent_menu = file_menu.addMenu("Open &Recent")
         self._rebuild_recent_menu()
 
+        # --- Overlays Menu ---
+        overlays_menu = mb.addMenu("&Overlays")
+        
+        import_action = QAction("&Import Overlays...", self)
+        import_action.setStatusTip("Import overlays from a JSON file and add them to the current view")
+        import_action.triggered.connect(self.import_overlays)
+        overlays_menu.addAction(import_action)
+
+        export_action = QAction("&Export Overlays...", self)
+        export_action.setStatusTip("Export all currently placed overlays to a JSON file")
+        export_action.triggered.connect(self.export_overlays)
+        overlays_menu.addAction(export_action)
+
     def _rebuild_recent_menu(self):
         """Populate the Open Recent sub-menu from settings."""
         self.recent_menu.clear()

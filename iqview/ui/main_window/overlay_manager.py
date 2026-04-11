@@ -358,3 +358,64 @@ class OverlayManagerMixin:
                 self.add_overlay(o)
             except Exception as exc:
                 print(f"[IQView] Skipping malformed overlay entry: {exc}")
+
+    def export_overlays(self) -> None:
+        from PyQt6.QtWidgets import QFileDialog, QMessageBox
+        
+        user_overlays = [o for o in self.overlays if o.source == 'user']
+        if not user_overlays:
+            QMessageBox.information(self, "Export Overlays", "No user overlays to export.")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Overlays", "", "JSON Files (*.json)"
+        )
+        if not path:
+            return
+
+        data = {
+            "version": 1,
+            "overlays": [o.to_dict() for o in user_overlays],
+        }
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2)
+            QMessageBox.information(self, "Export Successful", f"Saved {len(user_overlays)} overlays to {path}.")
+        except Exception as exc:
+            QMessageBox.critical(self, "Export Failed", f"Failed to export overlays:\n{exc}")
+
+    def import_overlays(self) -> None:
+        from PyQt6.QtWidgets import QFileDialog, QMessageBox
+        
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import Overlays", "", "JSON Files (*.json)"
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception as exc:
+            QMessageBox.critical(self, "Import Failed", f"Failed to read overlay file:\n{exc}")
+            return
+
+        imported_count = 0
+        for d in data.get("overlays", []):
+            try:
+                import uuid
+                o = Overlay.from_dict(d)
+                o.source = 'user'
+                # Ensure a new random ID so we append instead of overwriting visually overlapping items
+                # if the user imports the same file twice, although the API technically just uses the ID inside the dict.
+                # The user request: "add them to the current ones rather then replacing"
+                o.id = str(uuid.uuid4())
+                self.add_overlay(o)
+                imported_count += 1
+            except Exception as exc:
+                print(f"[IQView] Skipping malformed overlay entry during import: {exc}")
+
+        QMessageBox.information(self, "Import Successful", f"Imported {imported_count} overlays.")
+        if hasattr(self, 'update_marker_info'):
+            self.update_marker_info()
+
