@@ -525,15 +525,11 @@ class MarkerPanel(QFrame):
             hl.setContentsMargins(5, 2, 5, 2)
             hl.setSpacing(8)
             l_id   = QLabel("#");          l_id.setFixedWidth(22);  l_id.setObjectName("header_label")
-            l_sh   = QLabel("Shape");      l_sh.setObjectName("header_label")
+            l_sh   = QLabel("Shape");      l_sh.setObjectName("header_label"); l_sh.setFixedWidth(40)
             l_tag  = QLabel("Tag");        l_tag.setObjectName("header_label")
-            l_ed   = QLabel("");           l_ed.setFixedWidth(28)
-            l_dl   = QLabel("");           l_dl.setFixedWidth(28)
             hl.addWidget(l_id)
             hl.addWidget(l_sh)
             hl.addWidget(l_tag, 1)
-            hl.addWidget(l_ed)
-            hl.addWidget(l_dl)
             self._overlay_header_widget = hw
             self.scroll_layout.insertWidget(0, hw)
 
@@ -542,6 +538,7 @@ class MarkerPanel(QFrame):
             rd = self._overlay_rows.pop()
             rd['widget'].deleteLater()
         while len(self._overlay_rows) < len(overlays):
+            from PyQt6.QtWidgets import QLineEdit
             i   = len(self._overlay_rows)
             row = QWidget()
             rl  = QHBoxLayout(row)
@@ -553,34 +550,41 @@ class MarkerPanel(QFrame):
             lbl_id.setStyleSheet("color: #00aaff; font-weight: bold;")
 
             lbl_shape = QLabel("RECT")
-            lbl_shape.setFixedWidth(60)
+            lbl_shape.setFixedWidth(40)
 
-            lbl_tag = QLabel("")
+            edit_tag = QLineEdit()
+            edit_tag.setFixedHeight(24)
+            edit_tag.setPlaceholderText("...")
 
-            btn_edit = QPushButton("✎")
-            btn_edit.setFixedWidth(28); btn_edit.setFixedHeight(24)
+            btn_vis = QPushButton("Hide")
+            btn_vis.setFixedHeight(28)
+            btn_vis.setToolTip("Toggle Visibility")
+
+            btn_edit = QPushButton("Edit")
+            btn_edit.setFixedHeight(28)
             btn_edit.setToolTip("Edit overlay properties")
 
-            btn_del = QPushButton("×")
-            btn_del.setFixedWidth(28); btn_del.setFixedHeight(24)
+            btn_del = QPushButton("Del")
+            btn_del.setFixedHeight(28)
             btn_del.setToolTip("Delete overlay")
             btn_del.setStyleSheet("""
                 QPushButton { background: none; color: #ff4444; font-weight: bold;
-                              font-size: 16px; border-radius: 12px; }
+                              font-size: 13px; border-radius: 4px; border: 1px solid #ff4444; }
                 QPushButton:hover { background: rgba(255,68,68,0.2); }
             """)
 
             rl.addWidget(lbl_id)
             rl.addWidget(lbl_shape)
-            rl.addWidget(lbl_tag, 1)
+            rl.addWidget(edit_tag, 1)
+            rl.addWidget(btn_vis)
             rl.addWidget(btn_edit)
             rl.addWidget(btn_del)
 
             self.scroll_layout.insertWidget(self.scroll_layout.count()-1, row)
             self._overlay_rows.append({
                 'widget': row, 'lbl_id': lbl_id,
-                'lbl_shape': lbl_shape, 'lbl_tag': lbl_tag,
-                'btn_edit': btn_edit, 'btn_del': btn_del,
+                'lbl_shape': lbl_shape, 'edit_tag': edit_tag,
+                'btn_vis': btn_vis, 'btn_edit': btn_edit, 'btn_del': btn_del,
             })
 
         # Show/hide headers
@@ -602,14 +606,25 @@ class MarkerPanel(QFrame):
                 f"color: {overlay.border_color or overlay.color or '#00aaff'}; font-weight: bold;"
             )
             rd['lbl_shape'].setText(overlay.shape.value)
-            rd['lbl_tag'].setText(overlay.display_str or "(no tag)")
-            rd['lbl_tag'].setToolTip(overlay.hover_str or "")
+            rd['edit_tag'].blockSignals(True)
+            rd['edit_tag'].setText(overlay.display_str or "")
+            rd['edit_tag'].setToolTip(overlay.hover_str or "")
+            rd['edit_tag'].blockSignals(False)
+
+            rd['btn_vis'].setText("Hide" if overlay.visible else "Show")
 
             oid = overlay.id
+            try: rd['edit_tag'].editingFinished.disconnect()
+            except: pass
+            try: rd['btn_vis'].clicked.disconnect()
+            except: pass
             try: rd['btn_edit'].clicked.disconnect()
             except: pass
             try: rd['btn_del'].clicked.disconnect()
             except: pass
+            
+            rd['edit_tag'].editingFinished.connect(lambda r=rd, o=oid: self.parent_window.update_overlay(o, display_str=r['edit_tag'].text()))
+            rd['btn_vis'].clicked.connect(lambda _, o=oid, v=overlay.visible: self.parent_window.update_overlay(o, visible=not v))
             rd['btn_edit'].clicked.connect(lambda _, o=oid: self._on_overlay_edit(o))
             rd['btn_del'].clicked.connect(lambda _, o=oid: self.parent_window.remove_overlay(o))
 
@@ -685,12 +700,10 @@ class MarkerPanel(QFrame):
             l_main = QLabel(f"Pos ({unit_main})")
             l_main.setObjectName("header_label")
             l_main.setProperty("role", "pos_header")
-            l_del = QLabel(""); l_del.setFixedWidth(24)
             
             h_layout.addWidget(l_id)
             h_layout.addWidget(l_sub, 1)
             h_layout.addWidget(l_main, 1)
-            h_layout.addWidget(l_del)
             self.scroll_layout.insertWidget(0, self._header_widget)
 
         # 2. Update header labels
@@ -726,11 +739,11 @@ class MarkerPanel(QFrame):
             edit_pos.setFixedHeight(24)
             edit_pos.returnPressed.connect(self.parent_window.marker_edit_finished)
             
-            btn_del = QPushButton("×")
-            btn_del.setFixedWidth(24); btn_del.setFixedHeight(24)
+            btn_del = QPushButton("Del")
+            btn_del.setFixedHeight(28)
             btn_del.setToolTip("Remove marker")
             btn_del.setStyleSheet("""
-                QPushButton { background: none; color: #ff4444; font-weight: bold; font-size: 16px; border-radius: 12px; }
+                QPushButton { background: none; color: #ff4444; font-weight: bold; font-size: 13px; border-radius: 4px; border: 1px solid #ff4444; }
                 QPushButton:hover { background: rgba(255, 68, 68, 0.2); }
             """)
             
