@@ -3,7 +3,6 @@ from PyQt6.QtCore import Qt, QEvent
 from PyQt6.QtGui import QAction, QKeySequence, QIcon, QPixmap
 import os
 import sys
-import ctypes
 
 from .component_setup import UIComponentsMixin
 from .marker_manager import MarkerManagerMixin
@@ -24,14 +23,8 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         
         self.apply_current_theme()
         
-        # --- Application Icon & Taskbar Fix ---
-        try:
-            # Set AppUserModelID so Windows taskbar shows the custom icon instead of Python's
-            if sys.platform == "win32":
-                myappid = 'omernaf.iqview.spectrogram.0.1.4' # arbitrary string
-                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-        except Exception:
-            pass
+        # --- Application Icon ---
+        # Note: AppUserModelID is set in main.py before QApplication is created (correct place).
 
         # Load logo from resources
         pixmap = QPixmap()

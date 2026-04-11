@@ -15,12 +15,14 @@ from iqview.ui import SpectrogramWindow
 from iqview.utils.settings_manager import SettingsManager
 from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext, detect_params_from_filename
 
+# Canonical AppUserModelID — must match exactly across main.py, main_window, and any .lnk shortcut
+APP_USER_MODEL_ID = "OmerNaf.IQView.0.1.4"
+
 # Fix taskbar grouping on Windows (must be done before creating QApplication)
 if sys.platform == "win32":
     try:
         import ctypes
-        myapp_id = "OmerNaf.IQView.0.1.4" # Unique AppUserModelID
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myapp_id)
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
     except Exception:
         pass
 
@@ -204,6 +206,24 @@ def main():
     app = QApplication(sys.argv)
     # Fix taskbar/dock grouping on Linux
     app.setDesktopFileName("iqview")
+
+    # Set the application-level icon so the taskbar always uses it (not just the window icon)
+    from PyQt6.QtGui import QIcon, QPixmap
+    try:
+        from importlib.resources import files
+        logo_resource = files("iqview.resources").joinpath("logo.png")
+        with logo_resource.open("rb") as _f:
+            _px = QPixmap()
+            _px.loadFromData(_f.read())
+        if not _px.isNull():
+            app.setWindowIcon(QIcon(_px))
+    except Exception:
+        import os as _os
+        _base = _os.path.dirname(_os.path.abspath(__file__))
+        _local_logo = _os.path.join(_base, "resources", "logo.png")
+        _px = QPixmap(_local_logo)
+        if not _px.isNull():
+            app.setWindowIcon(QIcon(_px))
     
     window = SpectrogramWindow(data_source, dtype, fs, fc, args.fft, args.profile,
                                is_complex=is_complex, window_name=args.name,
