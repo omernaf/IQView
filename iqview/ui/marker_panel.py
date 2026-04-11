@@ -547,7 +547,7 @@ class MarkerPanel(QFrame):
 
             lbl_id  = QLabel(f"{i+1}")
             lbl_id.setFixedWidth(22)
-            lbl_id.setStyleSheet("color: #00aaff; font-weight: bold;")
+            lbl_id.setStyleSheet("color: #008800; font-weight: bold;")
 
             lbl_shape = QLabel("RECT")
             lbl_shape.setFixedWidth(40)
@@ -603,7 +603,7 @@ class MarkerPanel(QFrame):
             rd['widget'].setVisible(True)
             rd['lbl_id'].setText(str(i + 1))
             rd['lbl_id'].setStyleSheet(
-                f"color: {overlay.border_color or overlay.color or '#00aaff'}; font-weight: bold;"
+                f"color: {overlay.border_color or overlay.color or '#008800'}; font-weight: bold;"
             )
             rd['lbl_shape'].setText(overlay.shape.value)
             rd['edit_tag'].blockSignals(True)

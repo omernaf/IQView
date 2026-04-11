@@ -76,7 +76,7 @@ class OverlayManagerMixin:
         overlay = Overlay(
             shape=OverlayShape.LINE,
             points=[(t, 0.0)],
-            color='#00aaff',
+            color='#008800',
             alpha=0.0,
             border_width=2,
             border_style='solid',
@@ -108,7 +108,7 @@ class OverlayManagerMixin:
         overlay = Overlay(
             shape=OverlayShape.RECT,
             points=[(min(t0, t1), min(f0, f1)), (max(t0, t1), max(f0, f1))],
-            color='#00aaff',
+            color='#008800',
             alpha=0.20,
             border_width=2,
             border_style='solid',

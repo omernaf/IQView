@@ -394,7 +394,7 @@ class CustomViewBox(pg.ViewBox):
                     self._overlay_preview = pg.QtWidgets.QGraphicsPathItem()
                     bc = self.ui_controller.settings_mgr.get(
                         f"ui/{self.ui_controller.settings_mgr.get('ui/theme','Dark').lower()}/time_marker_color",
-                        '#00aaff')
+                        '#008800')
                     self._overlay_preview.setPen(pg.mkPen(bc, width=2, style=Qt.PenStyle.DashLine))
                     c = QtGui.QColor(bc); c.setAlpha(30)
                     self._overlay_preview.setBrush(QtGui.QBrush(c))
