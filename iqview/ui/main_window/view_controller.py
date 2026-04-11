@@ -299,8 +299,13 @@ class ViewControllerMixin:
             self.spectrogram_view.plot_item.removeItem(m)
         self.markers_time.clear()
         self.markers_freq.clear()
+        # Endless markers are now overlay-backed; clear_overlays handles list cleanup
         self.markers_time_endless.clear()
         self.markers_freq_endless.clear()
+
+        # Clear user overlays (includes endless markers that were backed by overlays)
+        if hasattr(self, 'clear_overlays'):
+            self.clear_overlays(source='user')
         
         # Reset filter state
         if self.filter_region:
@@ -500,6 +505,15 @@ class ViewControllerMixin:
         """Swap the data source to a new file and reprocess everything."""
         if not os.path.isfile(path):
             return
+
+        # Save current user overlays before switching
+        if hasattr(self, 'save_overlay_sidecar'):
+            self.save_overlay_sidecar()
+
+        # Clear previous user overlays (do NOT call clear_all_markers here —
+        # it would also wipe markers which the user may want to keep).
+        if hasattr(self, 'clear_overlays'):
+            self.clear_overlays(source='user')
 
         # Update data source
         self.data_source = path

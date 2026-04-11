@@ -186,6 +186,7 @@ class DataHandlerMixin:
     @pyqtSlot(np.ndarray, float)
     def display_spectrogram(self, full_spectrogram, duration):
         """Slot for the legacy full-file FileReaderThread."""
+        was_first = self.is_first_load
         self.progress_bar.setValue(0)
         self.progress_bar.setStyleSheet(
             "QProgressBar { background-color: transparent; border: none; } "
@@ -200,10 +201,14 @@ class DataHandlerMixin:
         )
         self.is_first_load = False
         self.update_marker_info()
+        # Load persisted overlays on first display
+        if was_first and hasattr(self, 'load_overlay_sidecar'):
+            self.load_overlay_sidecar()
 
     @pyqtSlot(np.ndarray, float, float)
     def display_lazy_tile(self, spectrogram, t_start, t_end):
         """Slot for ViewportAwareReader — updates only the visible image."""
+        was_first = self.is_first_load
         self.progress_bar.setValue(0)
         self.progress_bar.setStyleSheet(
             "QProgressBar { background-color: transparent; border: none; } "
@@ -231,6 +236,9 @@ class DataHandlerMixin:
         )
         self.is_first_load = False
         self.update_marker_info()
+        # Load persisted overlays on first display
+        if was_first and hasattr(self, 'load_overlay_sidecar'):
+            self.load_overlay_sidecar()
 
     # ------------------------------------------------------------------
     # IQ extraction (unchanged — reads directly from file)

@@ -6,12 +6,13 @@ import sys
 
 from .component_setup import UIComponentsMixin
 from .marker_manager import MarkerManagerMixin
+from .overlay_manager import OverlayManagerMixin
 from .view_controller import ViewControllerMixin
 from .data_handler import DataHandlerMixin
 from ...utils.settings_manager import SettingsManager
 from ..themes import get_main_stylesheet
 
-class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, ViewControllerMixin, DataHandlerMixin):
+class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, OverlayManagerMixin, ViewControllerMixin, DataHandlerMixin):
     def __init__(self, data_source, data_type, sample_rate, center_freq, fft_size, profile_enabled=False, is_complex=True, window_name=None, lazy_rendering=None):
         super().__init__()
         self.settings_mgr = SettingsManager()
@@ -100,6 +101,7 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         self.filter_marker_order = [] # [v1, v2] in placement order
         self.filter_line = None # pg.InfiniteLine for the first bound
         
+        self._init_overlays()
         self.setup_ui()
         if data_source is not None:
             self.update_sidebar_file_info(data_source)
@@ -114,6 +116,8 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         if hasattr(self, 'spectrogram_view'):
             self.spectrogram_view.refresh_theme()
             self.refresh_spectrogram_markers()
+        if hasattr(self, '_overlay_items'):
+            self.refresh_overlays_theme()
         
         # Refresh all Time Domain tabs
         if hasattr(self, 'tabs'):

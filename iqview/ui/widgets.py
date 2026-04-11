@@ -436,6 +436,17 @@ class CustomViewBox(pg.ViewBox):
             fd_popup_act = menu.addAction("Frequency Domain Popup")
             fd_popup_act.triggered.connect(self.ui_controller.open_frequency_domain_tab)
 
+            menu.addSeparator()
+            overlay_act = menu.addAction("Overlays…")
+            def _open_overlay_panel():
+                panel = getattr(self.ui_controller, 'overlay_panel', None)
+                if panel is not None:
+                    if not panel._expanded:
+                        panel._toggle()
+                    # Open Add dialog directly
+                    panel._on_add()
+            overlay_act.triggered.connect(_open_overlay_panel)
+
         # Add Dock Back if detached
         # To avoid circular imports, check if the window class name is DetachedViewWindow
         if self.ui_controller.window().__class__.__name__ == "DetachedViewWindow":

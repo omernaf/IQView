@@ -287,18 +287,26 @@ class MarkerManagerMixin:
 
             # 5. LOWEST PRIORITY: Place brand new marker (and replace oldest if needed)
             if is_endless:
+                from ..overlay import Overlay, OverlayShape
                 theme = self.settings_mgr.get("ui/theme", "Dark").lower()
                 color = self.settings_mgr.get(f"ui/{theme}/time_marker_color") if is_time else self.settings_mgr.get(f"ui/{theme}/freq_marker_color")
-                
+
                 m_count = len(active_markers)
-                marker = pg.InfiniteLine(
-                    pos=val, angle=angle, movable=False, 
-                    pen=pg.mkPen(color, width=2, style=Qt.PenStyle.SolidLine),
-                    label=f"M{m_count + 1}",
-                    labelOpts={'position': 0.1, 'color': color, 'anchors': [(0,0), (0,0)]}
+                shape = OverlayShape.LINE if is_time else OverlayShape.HLINE
+                pts   = [(val, 0.0)] if is_time else [(0.0, val)]
+                overlay = Overlay(
+                    shape=shape,
+                    points=pts,
+                    color=color,
+                    alpha=0.0,           # lines have no fill
+                    border_width=2,
+                    border_style="solid",
+                    display_str=f"M{m_count + 1}",
+                    z_order=10,
+                    source='user',
                 )
-                marker.setZValue(10)
-                self.spectrogram_view.plot_item.addItem(marker, ignoreBounds=True)
+                self.add_overlay(overlay)
+                marker = self._overlay_items[overlay.id]  # the pg.InfiniteLine
                 active_markers.append(marker)
                 if drag_mode: self.active_drag_marker = marker
             else:
@@ -844,12 +852,23 @@ class MarkerManagerMixin:
                 self.marker_panel.cb_bsf.setEnabled(False)
             self.marker_panel._clear_marker_locks(mode)
         elif mode == 'TIME_ENDLESS':
-            for marker in self.markers_time_endless:
-                self.spectrogram_view.plot_item.removeItem(marker)
+            # go through the overlay system so the overlay list stays in sync
+            for marker in list(self.markers_time_endless):
+                # Find the matching overlay and remove it
+                oid = self._find_overlay_id_for_item(marker)
+                if oid:
+                    self.remove_overlay(oid)
+                else:
+                    # Fallback: direct removal (pre-migration item)
+                    self.spectrogram_view.plot_item.removeItem(marker)
             self.markers_time_endless.clear()
         elif mode == 'FREQ_ENDLESS':
-            for marker in self.markers_freq_endless:
-                self.spectrogram_view.plot_item.removeItem(marker)
+            for marker in list(self.markers_freq_endless):
+                oid = self._find_overlay_id_for_item(marker)
+                if oid:
+                    self.remove_overlay(oid)
+                else:
+                    self.spectrogram_view.plot_item.removeItem(marker)
             self.markers_freq_endless.clear()
         else:
             is_time = (mode == 'TIME')
@@ -867,13 +886,24 @@ class MarkerManagerMixin:
         is_time = 'TIME' in mode
         active_markers = self.markers_time_endless if is_time else self.markers_freq_endless
         if marker in active_markers:
-            self.spectrogram_view.plot_item.removeItem(marker)
-            active_markers.remove(marker)
+            oid = self._find_overlay_id_for_item(marker)
+            if oid:
+                self.remove_overlay(oid)
+            else:
+                self.spectrogram_view.plot_item.removeItem(marker)
+                active_markers.remove(marker)
             # Renumber remaining labels
             for i, m in enumerate(active_markers):
                 if hasattr(m, 'label'):
                     m.label.setText(f"M{i+1}")
             self.update_marker_info()
+
+    def _find_overlay_id_for_item(self, item):
+        """Return the overlay id whose graphics item matches *item*, or None."""
+        for oid, gfx in getattr(self, '_overlay_items', {}).items():
+            if gfx is item:
+                return oid
+        return None
 
     def refresh_spectrogram_markers(self):
         theme = self.settings_mgr.get("ui/theme", "Dark").lower()
