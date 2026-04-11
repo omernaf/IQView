@@ -118,7 +118,7 @@ class MarkerPanel(QFrame):
         self.btn_overlay.setToolTip("Overlay Mode — click or drag to place a shape")
         self.btn_overlay.setCheckable(True)
         self.btn_overlay.setFont(QFont("Segoe UI", 13))
-        self.mode_btn_layout.addWidget(self.btn_overlay, 0, 3)
+        self.mode_btn_layout.addWidget(self.btn_overlay, 0, 4)
 
         # Re-assign BPF to row 1, col 3 (push it down) — already done above
 
