@@ -32,6 +32,7 @@ iqview/resources/assets/vertical_markers_dark.png
 iqview/resources/assets/zoom_mode.png
 iqview/resources/assets/zoom_mode_dark.png
 iqview/ui/__init__.py
+iqview/ui/detached_window.py
 iqview/ui/export_dialog.py
 iqview/ui/marker_panel.py
 iqview/ui/settings_dialog.py

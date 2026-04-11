@@ -150,14 +150,113 @@ class MarkerManagerMixin:
                         self.filter_region.show()
                     
                     self.filter_placed = True
-                    self.marker_panel.filter_enable_cb.setEnabled(True)
+                if hasattr(self.marker_panel, 'cb_bpf'):
+                    self.marker_panel.cb_bpf.setEnabled(True)
+                    self.marker_panel.cb_bsf.setEnabled(True)
                     if not drag_mode:
                         self.on_filter_region_finished()
                 
                 self.update_marker_info()
                 return
 
-            # 3. SECOND PRIORITY: If 2 markers exist and lock is on, ALWAYS shift the pair
+            # 3. SECOND PRIORITY: Hit-test for dragging a single marker or grid line
+            hit_threshold = 20 # pixels
+            best_marker = None
+            min_dist = float('inf')
+            
+            for m in active_markers:
+                m_pos = m.value()
+                p_scene = vb.mapViewToScene(pg.Point(m_pos, 0)) if is_time else vb.mapViewToScene(pg.Point(0, m_pos))
+                dist = abs(scene_pos.x() - p_scene.x()) if is_time else abs(scene_pos.y() - p_scene.y())
+                
+                # Skip the locked marker so only the free one is draggable
+                if len(active_markers) == 2 and (
+                    self.marker_panel.btn_lock_m1.isChecked() or
+                    self.marker_panel.btn_lock_m2.isChecked()
+                ):
+                    sorted_m = sorted(active_markers, key=lambda m: m.value())
+                    locked_marker = sorted_m[0] if self.marker_panel.btn_lock_m1.isChecked() else sorted_m[1]
+                    if m is locked_marker:
+                        continue
+
+                if dist < hit_threshold and dist < min_dist:
+                    min_dist = dist
+                    best_marker = m
+
+            # If we hit a marker, move it and handle the logic (may move others if locked)
+            if best_marker:
+                is_drag_target = (self.active_drag_marker == best_marker) # Not really needed here, we just hit it
+                
+                # If a lock is active, move the other marker too
+                if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+                    old_v = best_marker.value()
+                    shift = val - old_v
+                    other = active_markers[0] if active_markers[1] == best_marker else active_markers[1]
+                    
+                    if self.marker_panel.btn_lock_delta.isChecked():
+                        other_new = other.value() + shift
+                        if curr_min <= val <= curr_max and curr_min <= other_new <= curr_max:
+                            best_marker.setPos(val)
+                            other.setPos(other_new)
+                    elif self.marker_panel.btn_lock_center.isChecked():
+                        ct = (old_v + other.value()) / 2
+                        other_new = 2 * ct - val
+                        if curr_min <= val <= curr_max and curr_min <= other_new <= curr_max:
+                            best_marker.setPos(val)
+                            other.setPos(other_new)
+                else:
+                    best_marker.setPos(val)
+
+                if drag_mode: self.active_drag_marker = best_marker
+                self.update_marker_info()
+                return
+
+            # Check for Grid Lines (Shadow Markers)
+            if self.interaction_mode in ['TIME', 'FREQ']:
+                grid_lines = getattr(self, 'grid_lines_time' if is_time else 'grid_lines_freq', [])
+                best_gl = None
+                min_gl_dist = 20 # pixels
+                
+                for gl in grid_lines:
+                    gl_pos = gl.value()
+                    p_scene = vb.mapViewToScene(pg.Point(gl_pos, 0)) if is_time else vb.mapViewToScene(pg.Point(0, gl_pos))
+                    dist = abs(scene_pos.x() - p_scene.x()) if is_time else abs(scene_pos.y() - p_scene.y())
+                    
+                    if dist < min_gl_dist:
+                        min_gl_dist = dist
+                        best_gl = gl
+                
+                if best_gl and len(active_markers) == 2:
+                    # We hit a shadow marker! Calculate k and figure out which marker to move.
+                    sorted_m = sorted(active_markers, key=lambda m: m.value())
+                    p1, p2 = sorted_m[0].value(), sorted_m[1].value()
+                    delta = p2 - p1
+                    g_pos = best_gl.value()
+                    k = (g_pos - p1) / delta if delta != 0.0 else 1.0
+                    
+                    lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
+                    lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
+                    lock_delta = self.marker_panel.btn_lock_delta.isChecked()
+                    lock_center = self.marker_panel.btn_lock_center.isChecked()
+                    
+                    move_p1 = (k < 0.5)
+                    if lock_m1 and not lock_m2: move_p1 = False
+                    elif lock_m2 and not lock_m1: move_p1 = True
+                    
+                    if drag_mode:
+                        self.active_drag_grid_info = {
+                            'k': k,
+                            'moving_marker': sorted_m[0] if move_p1 else sorted_m[1],
+                            'fixed_marker': sorted_m[1] if move_p1 else sorted_m[0],
+                            'is_p1': move_p1,
+                            'is_time': is_time,
+                            'lock_delta': lock_delta,
+                            'lock_center': lock_center
+                        }
+                        self.active_drag_marker = None 
+                    return
+
+            # 4. THIRD PRIORITY: If 2 markers exist and lock is on, shift/teleport the pair
             if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
                 m1_pos, m2_pos = active_markers[0].value(), active_markers[1].value()
                 dist1 = abs(val - m1_pos)
@@ -183,138 +282,62 @@ class MarkerManagerMixin:
                         other.setPos(new_other_p)
                 
                 if drag_mode: self.active_drag_marker = target
+                self.update_marker_info()
+                return
 
-            # 4. THIRD PRIORITY: Hit-test for dragging a single marker
-            else:
-                hit_threshold = 20 # pixels
-                best_marker = None
-                min_dist = float('inf')
+            # 5. LOWEST PRIORITY: Place brand new marker (and replace oldest if needed)
+            if is_endless:
+                theme = self.settings_mgr.get("ui/theme", "Dark").lower()
+                color = self.settings_mgr.get(f"ui/{theme}/time_marker_color") if is_time else self.settings_mgr.get(f"ui/{theme}/freq_marker_color")
                 
-                for m in active_markers:
-                    m_pos = m.value()
-                    p_scene = vb.mapViewToScene(pg.Point(m_pos, 0)) if is_time else vb.mapViewToScene(pg.Point(0, m_pos))
-                    dist = abs(scene_pos.x() - p_scene.x()) if is_time else abs(scene_pos.y() - p_scene.y())
-                    
-                    # Skip the locked marker so only the free one is draggable
-                    if len(active_markers) == 2 and (
-                        self.marker_panel.btn_lock_m1.isChecked() or
-                        self.marker_panel.btn_lock_m2.isChecked()
-                    ):
-                        sorted_m = sorted(active_markers, key=lambda m: m.value())
-                        locked_marker = sorted_m[0] if self.marker_panel.btn_lock_m1.isChecked() else sorted_m[1]
-                        if m is locked_marker:
-                            continue
-
-                    if dist < hit_threshold and dist < min_dist:
-                        min_dist = dist
-                        best_marker = m
-
-                if best_marker:
-                    best_marker.setPos(val)
-                    if drag_mode: self.active_drag_marker = best_marker
+                m_count = len(active_markers)
+                marker = pg.InfiniteLine(
+                    pos=val, angle=angle, movable=False, 
+                    pen=pg.mkPen(color, width=2, style=Qt.PenStyle.SolidLine),
+                    label=f"M{m_count + 1}",
+                    labelOpts={'position': 0.1, 'color': color, 'anchors': [(0,0), (0,0)]}
+                )
+                marker.setZValue(10)
+                self.spectrogram_view.plot_item.addItem(marker, ignoreBounds=True)
+                active_markers.append(marker)
+                if drag_mode: self.active_drag_marker = marker
+            else:
+                # If a marker position is locked and we have 2 markers, move only the free one.
+                lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
+                lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
+                if len(active_markers) == 2 and (lock_m1 or lock_m2):
+                    sorted_m = sorted(active_markers, key=lambda m: m.value())
+                    free_m = sorted_m[1] if lock_m1 else sorted_m[0]
+                    locked_m = sorted_m[0] if lock_m1 else sorted_m[1]
+                    free_m.setPos(val)
+                    if drag_mode: self.active_drag_marker = free_m
+                    # Swap list order and lock if free marker crossed the locked one
+                    if (lock_m1 and val < locked_m.value()) or (lock_m2 and val > locked_m.value()):
+                        active_markers[0], active_markers[1] = active_markers[1], active_markers[0]
+                        self.marker_panel.flip_m_lock()
                 else:
-                    # 4.5 Check for Grid Lines (Shadow Markers)
-                    if self.interaction_mode in ['TIME', 'FREQ']:
-                        grid_lines = getattr(self, 'grid_lines_time' if is_time else 'grid_lines_freq', [])
-                        best_gl = None
-                        min_gl_dist = 20 # pixels
-                        
-                        for gl in grid_lines:
-                            gl_pos = gl.value()
-                            p_scene = vb.mapViewToScene(pg.Point(gl_pos, 0)) if is_time else vb.mapViewToScene(pg.Point(0, gl_pos))
-                            dist = abs(scene_pos.x() - p_scene.x()) if is_time else abs(scene_pos.y() - p_scene.y())
-                            
-                            if dist < min_gl_dist:
-                                min_gl_dist = dist
-                                best_gl = gl
-                        
-                        if best_gl and len(active_markers) == 2:
-                            # We hit a shadow marker! Calculate k and figure out which marker to move.
-                            sorted_m = sorted(active_markers, key=lambda m: m.value())
-                            p1 = sorted_m[0].value()
-                            p2 = sorted_m[1].value()
-                            delta = p2 - p1
-                            g_pos = best_gl.value()
-                            k = (g_pos - p1) / delta if delta != 0.0 else 1.0
-                            
-                            lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
-                            lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
-                            lock_delta = self.marker_panel.btn_lock_delta.isChecked()
-                            lock_center = self.marker_panel.btn_lock_center.isChecked()
-                            
-                            move_p1 = (k < 0.5)
-                            if lock_m1 and not lock_m2: move_p1 = False
-                            elif lock_m2 and not lock_m1: move_p1 = True
-                            
-                            if drag_mode:
-                                self.active_drag_grid_info = {
-                                    'k': k,
-                                    'moving_marker': sorted_m[0] if move_p1 else sorted_m[1],
-                                    'fixed_marker': sorted_m[1] if move_p1 else sorted_m[0],
-                                    'is_p1': move_p1,
-                                    'is_time': is_time,
-                                    'lock_delta': lock_delta,
-                                    'lock_center': lock_center
-                                }
-                                # We also need a marker to pass validation in update_drag, 
-                                # but we might want to handle this specially. 
-                                # Let's set active_drag_marker to None but active_drag_grid_info to something.
-                                self.active_drag_marker = None 
-                            return
+                    if len(active_markers) >= 2:
+                        old_marker = active_markers.pop(0)
+                        self.spectrogram_view.plot_item.removeItem(old_marker)
                     
-                    # 5. LOWEST PRIORITY: Place brand new marker (and replace oldest if needed)
-                    if is_endless:
-                        theme = self.settings_mgr.get("ui/theme", "Dark").lower()
-                        color = self.settings_mgr.get(f"ui/{theme}/time_marker_color") if is_time else self.settings_mgr.get(f"ui/{theme}/freq_marker_color")
-                        
-                        m_count = len(active_markers)
-                        marker = pg.InfiniteLine(
-                            pos=val, angle=angle, movable=False, 
-                            pen=pg.mkPen(color, width=2, style=Qt.PenStyle.SolidLine),
-                            label=f"M{m_count + 1}",
-                            labelOpts={'position': 0.1, 'color': color, 'anchors': [(0,0), (0,0)]}
-                        )
-                        marker.setZValue(10)
-                        self.spectrogram_view.plot_item.addItem(marker, ignoreBounds=True)
-                        active_markers.append(marker)
-                        if drag_mode: self.active_drag_marker = marker
-                    else:
-                        # If a marker position is locked and we have 2 markers, move only the free one.
-                        lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
-                        lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
-                        if len(active_markers) == 2 and (lock_m1 or lock_m2):
-                            # ... (existing code for locked markers)
-                            sorted_m = sorted(active_markers, key=lambda m: m.value())
-                            free_m = sorted_m[1] if lock_m1 else sorted_m[0]
-                            locked_m = sorted_m[0] if lock_m1 else sorted_m[1]
-                            free_m.setPos(val)
-                            if drag_mode: self.active_drag_marker = free_m
-                            # Swap list order and lock if free marker crossed the locked one
-                            if (lock_m1 and val < locked_m.value()) or (lock_m2 and val > locked_m.value()):
-                                active_markers[0], active_markers[1] = active_markers[1], active_markers[0]
-                                self.marker_panel.flip_m_lock()
-                        else:
-                            if len(active_markers) >= 2:
-                                old_marker = active_markers.pop(0)
-                                self.spectrogram_view.plot_item.removeItem(old_marker)
-                            
-                            theme = self.settings_mgr.get("ui/theme", "Dark").lower()
-                            color = self.settings_mgr.get(f"ui/{theme}/time_marker_color") if is_time else self.settings_mgr.get(f"ui/{theme}/freq_marker_color")
-                            style_name = self.settings_mgr.get(f"ui/{theme}/time_marker_style") if is_time else self.settings_mgr.get(f"ui/{theme}/freq_marker_style")
-                            
-                            style_map = {
-                                "SolidLine": Qt.PenStyle.SolidLine,
-                                "DashLine": Qt.PenStyle.DashLine,
-                                "DotLine": Qt.PenStyle.DotLine,
-                                "DashDotLine": Qt.PenStyle.DashDotLine
-                            }
-                            style = style_map.get(str(style_name), Qt.PenStyle.DashLine)
-                            
-                            marker = pg.InfiniteLine(pos=val, angle=angle, movable=False, pen=pg.mkPen(color, width=2, style=style))
-                            marker.setZValue(10)
-                            self.spectrogram_view.plot_item.addItem(marker, ignoreBounds=True)
-                            active_markers.append(marker)
-                            if drag_mode: self.active_drag_marker = marker
+                    theme = self.settings_mgr.get("ui/theme", "Dark").lower()
+                    color = self.settings_mgr.get(f"ui/{theme}/time_marker_color") if is_time else self.settings_mgr.get(f"ui/{theme}/freq_marker_color")
+                    style_name = self.settings_mgr.get(f"ui/{theme}/time_marker_style") if is_time else self.settings_mgr.get(f"ui/{theme}/freq_marker_style")
+                    
+                    style_map = {
+                        "SolidLine": Qt.PenStyle.SolidLine,
+                        "DashLine": Qt.PenStyle.DashLine,
+                        "DotLine": Qt.PenStyle.DotLine,
+                        "DashDotLine": Qt.PenStyle.DashDotLine
+                    }
+                    style = style_map.get(str(style_name), Qt.PenStyle.DashLine)
+                    
+                    marker = pg.InfiniteLine(pos=val, angle=angle, movable=False, pen=pg.mkPen(color, width=2, style=style))
+                    marker.setZValue(10)
+                    self.spectrogram_view.plot_item.addItem(marker, ignoreBounds=True)
+                    active_markers.append(marker)
+                    if drag_mode: self.active_drag_marker = marker
+
             
             self.update_marker_info()
 
@@ -811,11 +834,14 @@ class MarkerManagerMixin:
             self.filter_marker_order = []
             self.filter_placed = False
             self.filter_placing = False
-            self.filter_enabled = False
+            self.filter_mode = None
             
-            # 3. Update UI
-            self.marker_panel.filter_enable_cb.setChecked(False)
-            self.marker_panel.filter_enable_cb.setEnabled(False)
+            if hasattr(self.marker_panel, 'cb_bpf'):
+                self.marker_panel.cb_bpf.setChecked(False)
+                self.marker_panel.cb_bsf.setChecked(False)
+            if hasattr(self.marker_panel, 'cb_bpf'):
+                self.marker_panel.cb_bpf.setEnabled(False)
+                self.marker_panel.cb_bsf.setEnabled(False)
             self.marker_panel._clear_marker_locks(mode)
         elif mode == 'TIME_ENDLESS':
             for marker in self.markers_time_endless:

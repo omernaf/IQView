@@ -3,7 +3,6 @@ from PyQt6.QtCore import Qt, QEvent
 from PyQt6.QtGui import QAction, QKeySequence, QIcon, QPixmap
 import os
 import sys
-import ctypes
 
 from .component_setup import UIComponentsMixin
 from .marker_manager import MarkerManagerMixin
@@ -13,19 +12,19 @@ from ...utils.settings_manager import SettingsManager
 from ..themes import get_main_stylesheet
 
 class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, ViewControllerMixin, DataHandlerMixin):
-    def __init__(self, data_source, data_type, sample_rate, center_freq, fft_size, profile_enabled=False, is_complex=True):
+    def __init__(self, data_source, data_type, sample_rate, center_freq, fft_size, profile_enabled=False, is_complex=True, window_name=None, lazy_rendering=None):
         super().__init__()
         self.settings_mgr = SettingsManager()
+        # Per-instance rendering mode override from CLI (None = use QSettings value).
+        self._lazy_rendering_override = lazy_rendering
+        
+        # Detached Views Management
+        self.detached_views = [] # List of DetachedViewWindow objects
+        
         self.apply_current_theme()
         
-        # --- Application Icon & Taskbar Fix ---
-        try:
-            # Set AppUserModelID so Windows taskbar shows the custom icon instead of Python's
-            if sys.platform == "win32":
-                myappid = 'omernaf.iqview.spectrogram.0.1.2' # arbitrary string
-                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-        except Exception:
-            pass
+        # --- Application Icon ---
+        # Note: AppUserModelID is set in main.py before QApplication is created (correct place).
 
         # Load logo from resources
         pixmap = QPixmap()
@@ -47,7 +46,11 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
 
         # data_source is either a str (file path), bytes (piped from stdin), or None (empty launch)
         self.data_source = data_source
-        if data_source is None:
+        self.custom_window_name = window_name
+        
+        if self.custom_window_name:
+            display_name = self.custom_window_name
+        elif data_source is None:
             display_name = "No File Loaded"
         elif isinstance(data_source, (bytes, bytearray)):
             display_name = "<stdin>"
@@ -89,7 +92,7 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
         self.active_drag_marker = None
         
         # Filter State
-        self.filter_enabled = False
+        self.filter_mode = None
         self.filter_region = None # LinearRegionItem added in setup_ui or on demand
         self.filter_placed = False
         self.filter_placing = False
@@ -118,6 +121,12 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
                 widget = self.tabs.widget(i)
                 if hasattr(widget, 'refresh_theme'):
                     widget.refresh_theme()
+                    
+        # Refresh all detached views
+        if hasattr(self, 'detached_views'):
+            for dv in self.detached_views:
+                if hasattr(dv, 'refresh_theme'):
+                    dv.refresh_theme()
 
     def on_settings_applied(self):
         """Handle settings changes: refresh theme and re-process if filter is active."""
@@ -136,7 +145,7 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
                 if hasattr(widget, 'marker_panel'):
                     widget.marker_panel.update_headers(getattr(widget, 'interaction_mode', 'TIME'), getattr(widget, 'y_label_text', 'Magnitude'))
                     
-        if self.filter_enabled:
+        if self.filter_mode:
             self.start_processing()
 
     def eventFilter(self, obj, event):
@@ -155,12 +164,29 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, View
     def handle_tab_context_menu(self, index, pos):
         """Show context menu for a tab."""
         menu = QMenu(self)
+        
+        if index > 0:
+            undock_action = QAction("Undock", self)
+            undock_action.triggered.connect(lambda: self.undock_tab(index))
+            menu.addAction(undock_action)
+            menu.addSeparator()
+            
         close_action = QAction("Close Tab", self)
         close_action.triggered.connect(lambda: self.close_tab(index))
         menu.addAction(close_action)
         menu.exec(pos)
 
+    def close_detached_view(self, dv_window):
+        """Called when a detached window is closed."""
+        if dv_window in self.detached_views:
+            self.detached_views.remove(dv_window)
+        # Widget is already parented to dv_window and will be destroyed with it.
+
     def closeEvent(self, event):
+        # Close all detached windows first
+        for dv in list(self.detached_views):
+            dv.close()
+            
         if hasattr(self, '_stop_all_workers'):
             self._stop_all_workers()
         elif hasattr(self, 'worker'):

@@ -2,19 +2,26 @@ import os
 import sys
 import subprocess
 def _get_supported_extensions():
+    """
+    Returns a unified list of supported extensions by merging 
+    built-in factory defaults with current settings.
+    """
+    # Baseline factory-supported extensions
+    exts = {
+        ".32f", ".64f", ".16tc", ".16sc", ".64fc", ".32fc", 
+        ".bin", ".iq", ".sigmf", ".sigmf-data", ".mat"
+    }
+    
     try:
         from iqview.utils.settings_manager import SettingsManager
         sm = SettingsManager()
         mapping = sm.get("core/extension_mapping", {})
         if mapping:
-            return list(mapping.keys())
+            exts.update(mapping.keys())
     except Exception:
         pass
-    
-    return [
-        ".32f", ".64f", ".16tc", ".16sc", ".64fc", ".32fc", 
-        ".bin", ".iq", ".sigmf", ".sigmf-data"
-    ]
+        
+    return sorted(list(exts))
 
 APP_NAME = "IQView"
 APP_PROG_ID = "IQView.File"
@@ -22,29 +29,41 @@ APP_DESC = "IQ Data File"
 
 def get_executable_path():
     """
-    Returns the path to the executable.
-    Prefers the windowed iqview-gui.exe to avoid console windows,
-    falling back to iqview.exe if not found.
+    Returns the path to the application executable/script.
     """
     python_dir = os.path.dirname(sys.executable)
-    scripts_dir = os.path.join(python_dir, "Scripts")
     
-    for name in ["iqview-gui.exe", "iqview.exe"]:
-        for d in [python_dir, scripts_dir]:
-            exe_path = os.path.join(d, name)
+    if os.name == "nt":
+        # Windows-specific search: look for .exe in python dir or Scripts
+        scripts_dir = os.path.join(python_dir, "Scripts")
+        for name in ["iqview-gui.exe", "iqview.exe"]:
+            for d in [python_dir, scripts_dir]:
+                exe_path = os.path.join(d, name)
+                if os.path.exists(exe_path):
+                    return exe_path
+        return os.path.join(scripts_dir, "iqview-gui.exe")
+    else:
+        # Linux/POSIX: look for scripts in the same directory as python interpreter
+        for name in ["iqview-gui", "iqview"]:
+            exe_path = os.path.join(python_dir, name)
             if os.path.exists(exe_path):
                 return exe_path
-            
-    return os.path.join(scripts_dir, "iqview-gui.exe")
+        # Fallback to just the command name
+        return "iqview-gui"
 
 def get_icon_path():
-    """Returns the path to the application icon."""
+    """Returns the path to the application icon, preferring PNG on Linux."""
     try:
         import iqview
         pkg_dir = os.path.dirname(iqview.__file__)
-        icon_path = os.path.join(pkg_dir, "resources", "logo.ico")
-        if os.path.exists(icon_path):
-            return icon_path
+        
+        # On Linux, PNG is preferred for .desktop files
+        extensions = [".png", ".ico"] if os.name != "nt" else [".ico", ".png"]
+        
+        for ext in extensions:
+            icon_path = os.path.join(pkg_dir, "resources", f"logo{ext}")
+            if os.path.exists(icon_path):
+                return icon_path
     except ImportError:
         pass
     
@@ -202,20 +221,29 @@ def _install_linux_desktop(exe_path, icon_path):
     content = f"""[Desktop Entry]
 Name={APP_NAME}
 Comment={APP_DESC}
-Exec={exe_path} %f
+Exec="{exe_path}" %f
 Icon={icon_path}
 Terminal=false
 Type=Application
-Categories=Science;Utility;
+Categories=Science;Utility;Engineering;DataVisualization;
 MimeType={''.join(f'application/x-extension-{ext[1:]};' for ext in _get_supported_extensions())}
+StartupWMClass=iqview
 """
     try:
         with open(desktop_file, "w") as f:
             f.write(content)
         # Make the desktop file executable
         os.chmod(desktop_file, 0o755)
+        
         # Update desktop database
         subprocess.run(["update-desktop-database", desktop_dir], capture_output=True)
+        
+        # Set as default for all supported extensions
+        desktop_filename = os.path.basename(desktop_file)
+        for ext in _get_supported_extensions():
+            mime_type = f"application/x-extension-{ext[1:]}"
+            subprocess.run(["xdg-mime", "default", desktop_filename, mime_type], capture_output=True)
+            
         print(f"  \u2713 Desktop file created at {desktop_file}")
     except Exception as e:
         print(f"  \u2717 Failed to create .desktop file: {e}")
@@ -274,9 +302,11 @@ def install_mat_integration():
     
     if os.name == "nt":
         _register_file_associations(exe_path, icon_path, extensions=[".mat"])
+    elif sys.platform.startswith("linux"):
+        # Since _get_supported_extensions() now includes .mat, 
+        # we can just run/rerun the main desktop integration to ensure it's registered.
+        install_desktop_integration()
     else:
-        # On Linux, .desktop file already lists mime types, but we'd need to update it 
-        # specifically if we wanted independent control. For now, focus on Windows.
         print(f".mat association is currently only independently supported on Windows.")
         
     print(".mat association registration complete.")
@@ -286,6 +316,11 @@ def uninstall_mat_integration():
     print(f"Unregistering .mat file association for {APP_NAME}...")
     if os.name == "nt":
         _unregister_file_associations(extensions=[".mat"])
+    elif sys.platform.startswith("linux"):
+        # On Linux, .mat is part of the standard .desktop file.
+        # Rerunning install_desktop_integration would keep it there.
+        # For now, we inform the user it's bundled.
+        print("On Linux, .mat association is bundled with the main desktop integration.")
     else:
         print(f".mat association is currently only independently supported on Windows.")
         

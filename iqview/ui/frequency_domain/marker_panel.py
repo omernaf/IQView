@@ -7,7 +7,8 @@ from ..widgets import FormattedLineEdit, DoubleClickButton
 from ..themes import get_palette
 
 class FrequencyDomainMarkerPanel(QFrame):
-    interactionModeChanged = pyqtSignal(str) # 'FREQ', 'MAG', 'ZOOM', 'MOVE'
+    interactionModeChanged = pyqtSignal(str) # 'FREQ', 'MAG', 'ZOOM', 'MOVE', 'FILTER'
+    filterModeChanged = pyqtSignal(str)       # 'bpf', 'bsf', or '' (disabled)
     resetZoomRequested = pyqtSignal()
     markerClearRequested = pyqtSignal(str)
 
@@ -22,7 +23,7 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.setup_ui()
 
     def setup_ui(self):
-        self.setFixedHeight(100) 
+        self.setFixedHeight(140) 
         self.header_font = QFont("Segoe UI", 9, QFont.Weight.Bold)
         
         self.main_layout = QHBoxLayout(self)
@@ -98,14 +99,23 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.btn_move.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_move, 1, 2)
         
-        # 6. Stats
+        # 6. BPF / Filter Mode
+        self.btn_bpf = DoubleClickButton("")
+        self.btn_bpf.setIcon(self._get_icon("bpf_selection_mode"))
+        self.btn_bpf.setIconSize(QSize(32, 32))
+        self.btn_bpf.setObjectName("mode_btn")
+        self.btn_bpf.setToolTip("BPF / BSF Filter Mode (Double-click to clear)")
+        self.btn_bpf.setCheckable(True)
+        self.mode_btn_layout.addWidget(self.btn_bpf, 1, 3)
+
+        # 7. Stats
         self.btn_stats = DoubleClickButton("")
         self.btn_stats.setIcon(self._get_icon("region_statistics"))
         self.btn_stats.setIconSize(QSize(32, 32))
         self.btn_stats.setObjectName("mode_btn")
         self.btn_stats.setToolTip("Region Statistics (Double-click to clear) [S]")
         self.btn_stats.setCheckable(True)
-        self.mode_btn_layout.addWidget(self.btn_stats, 1, 3)
+        self.mode_btn_layout.addWidget(self.btn_stats, 1, 4)
         self.btn_home.clicked.connect(self.resetZoomRequested.emit)
         
         # Mutual Exclusion Group
@@ -116,6 +126,7 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.mode_group.addButton(self.btn_marker_mag_endless)
         self.mode_group.addButton(self.btn_zoom)
         self.mode_group.addButton(self.btn_move)
+        self.mode_group.addButton(self.btn_bpf)
         self.mode_group.addButton(self.btn_stats)
         self.mode_group.setExclusive(True)
 
@@ -126,12 +137,14 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.btn_marker_mag_endless.clicked.connect(lambda: self.interactionModeChanged.emit('MAG_ENDLESS'))
         self.btn_zoom.clicked.connect(lambda: self.interactionModeChanged.emit('ZOOM'))
         self.btn_move.clicked.connect(lambda: self.interactionModeChanged.emit('MOVE'))
+        self.btn_bpf.clicked.connect(lambda: self.interactionModeChanged.emit('FILTER'))
         self.btn_stats.clicked.connect(lambda: self.interactionModeChanged.emit('STATS'))
         
         self.btn_marker_freq.doubleClicked.connect(lambda: self.markerClearRequested.emit('FREQ'))
         self.btn_marker_freq_endless.doubleClicked.connect(lambda: self.markerClearRequested.emit('FREQ_ENDLESS'))
-        self.btn_marker_mag.doubleClicked.connect(lambda: self.markerClearRequested.emit('Y')) 
+        self.btn_marker_mag.doubleClicked.connect(lambda: self.markerClearRequested.emit('Y'))
         self.btn_marker_mag_endless.doubleClicked.connect(lambda: self.markerClearRequested.emit('MAG_ENDLESS'))
+        self.btn_bpf.doubleClicked.connect(lambda: self.markerClearRequested.emit('FILTER'))
         self.btn_stats.doubleClicked.connect(lambda: self.markerClearRequested.emit('STATS'))
 
         # --- Stacked Widget for Marker Data ---
@@ -149,29 +162,47 @@ class FrequencyDomainMarkerPanel(QFrame):
         # Table Headers
         self.grid.addWidget(QLabel(""), 0, 0) 
         
-        self.btn_lock_m1 = QPushButton("Marker 1 🔓")
+        self.btn_lock_m1 = QPushButton("Marker 1")
         self.btn_lock_m1.setFont(self.header_font)
         self.btn_lock_m1.setCheckable(True)
         self.grid.addWidget(self.btn_lock_m1, 0, 1, Qt.AlignmentFlag.AlignCenter)
 
-        self.btn_lock_m2 = QPushButton("Marker 2 🔓")
+        self.btn_lock_m2 = QPushButton("Marker 2")
         self.btn_lock_m2.setFont(self.header_font)
         self.btn_lock_m2.setCheckable(True)
         self.grid.addWidget(self.btn_lock_m2, 0, 2, Qt.AlignmentFlag.AlignCenter)
 
-        self.btn_lock_delta = QPushButton("Delta (Δ) 🔓")
+        self.btn_lock_delta = QPushButton("Delta (Δ)")
         self.btn_lock_delta.setFont(self.header_font)
         self.btn_lock_delta.setCheckable(True)
         self.grid.addWidget(self.btn_lock_delta, 0, 3)
 
-        self.btn_lock_center = QPushButton("Center 🔓")
+        self.btn_lock_center = QPushButton("Center")
         self.btn_lock_center.setFont(self.header_font)
         self.btn_lock_center.setCheckable(True)
         self.grid.addWidget(self.btn_lock_center, 0, 4)
 
+        # --- Filter BPF/BSF checkboxes (shown only in FILTER mode) ---
+        from PyQt6.QtWidgets import QCheckBox, QVBoxLayout
+        self.filter_container = QWidget()
+        _fl = QVBoxLayout(self.filter_container)
+        _fl.setContentsMargins(0, 0, 0, 0)
+        _fl.setSpacing(2)
+        self.cb_bpf = QCheckBox("BPF")
+        self.cb_bsf = QCheckBox("BSF")
+        self.cb_bpf.setToolTip("Enable Band-Pass Filter")
+        self.cb_bsf.setToolTip("Enable Band-Stop Filter")
+        for cb in [self.cb_bpf, self.cb_bsf]:
+            cb.setEnabled(False)
+            cb.clicked.connect(self._on_filter_clicked)
+            _fl.addWidget(cb)
+        self.filter_container.setFixedWidth(80)
+        self.filter_container.setVisible(False)
+        self.grid.addWidget(self.filter_container, 1, 5, 2, 1)
+
         # Side labels (Row names)
-        self.row_v1_label = QLabel("Frequency (Hz)")
-        self.row_v2_label = QLabel("Index")
+        self.row_v1_label = QLabel("Index")
+        self.row_v2_label = QLabel("Frequency (Hz)")
         self.row_v1_label.setObjectName("header_label")
         self.row_v2_label.setObjectName("header_label")
         self.grid.addWidget(self.row_v1_label, 1, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -180,31 +211,31 @@ class FrequencyDomainMarkerPanel(QFrame):
         # Edit Widgets (3 Rows)
         self.m_widgets = []
         for i in range(2):
-            v1_edit = FormattedLineEdit(); v1_edit.setFixedWidth(130); v1_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
             v2_edit = FormattedLineEdit(); v2_edit.setFixedWidth(130); v2_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            v1_edit = FormattedLineEdit(); v1_edit.setFixedWidth(130); v1_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
             
-            v1_edit.setObjectName(f"m{i}_v1")
             v2_edit.setObjectName(f"m{i}_v2")
+            v1_edit.setObjectName(f"m{i}_v1")
             
             for w in [v1_edit, v2_edit]:
                 w.returnPressed.connect(self.controller.marker_edit_finished)
                 
-            self.grid.addWidget(v1_edit, 1, i + 1)
-            self.grid.addWidget(v2_edit, 2, i + 1)
+            self.grid.addWidget(v2_edit, 1, i + 1)
+            self.grid.addWidget(v1_edit, 2, i + 1)
             self.m_widgets.append({'v1': v1_edit, 'v2': v2_edit})
 
         # Delta/Center Edits
-        self.delta_v1 = FormattedLineEdit(); self.delta_v1.setFixedWidth(130); self.delta_v1.setObjectName("delta_v1"); self.delta_v1.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.delta_v2 = FormattedLineEdit(); self.delta_v2.setFixedWidth(130); self.delta_v2.setObjectName("delta_v2"); self.delta_v2.setAlignment(Qt.AlignmentFlag.AlignCenter); self.delta_v2.setReadOnly(True)
+        self.delta_v1 = FormattedLineEdit(); self.delta_v1.setFixedWidth(130); self.delta_v1.setObjectName("delta_v1"); self.delta_v1.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        self.center_v1 = FormattedLineEdit(); self.center_v1.setFixedWidth(130); self.center_v1.setObjectName("center_v1"); self.center_v1.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.center_v2 = FormattedLineEdit(); self.center_v2.setFixedWidth(130); self.center_v2.setObjectName("center_v2"); self.center_v2.setAlignment(Qt.AlignmentFlag.AlignCenter); self.center_v2.setReadOnly(True)
+        self.center_v1 = FormattedLineEdit(); self.center_v1.setFixedWidth(130); self.center_v1.setObjectName("center_v1"); self.center_v1.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         for w in [self.delta_v1, self.center_v1]:
             w.returnPressed.connect(self.controller.marker_edit_finished)
             
-        self.grid.addWidget(self.delta_v1, 1, 3); self.grid.addWidget(self.delta_v2, 2, 3)
-        self.grid.addWidget(self.center_v1, 1, 4); self.grid.addWidget(self.center_v2, 2, 4)
+        self.grid.addWidget(self.delta_v2, 1, 3); self.grid.addWidget(self.delta_v1, 2, 3)
+        self.grid.addWidget(self.center_v2, 1, 4); self.grid.addWidget(self.center_v1, 2, 4)
         
         # Connect locks
         self.btn_lock_m1.toggled.connect(self.on_lock_m1_toggled)
@@ -234,83 +265,124 @@ class FrequencyDomainMarkerPanel(QFrame):
         # Page 3: Statistics Layout
         self.stats_widget = QWidget()
         self.stacked.addWidget(self.stats_widget)
-        self.stats_layout = QGridLayout(self.stats_widget)
-        self.stats_layout.setContentsMargins(0, 0, 0, 0)
-        self.stats_layout.setHorizontalSpacing(10)
-        self.stats_layout.setVerticalSpacing(4)
+        self.stats_main_layout = QVBoxLayout(self.stats_widget)
+        self.stats_main_layout.setContentsMargins(0, 0, 0, 0)
+        self.stats_main_layout.setSpacing(4)
+
+        # --- Statistics Tab Bar ---
+        self.stats_tab_layout = QHBoxLayout()
+        self.stats_tab_layout.setSpacing(10)
+        self.stats_main_layout.addLayout(self.stats_tab_layout)
+
+        self.btn_stats_def = QPushButton("Definition")
+        self.btn_stats_res = QPushButton("Results")
+        for btn in [self.btn_stats_def, self.btn_stats_res]:
+            btn.setCheckable(True)
+            btn.setObjectName("stats_tab_btn")
+            btn.setFixedHeight(22)
+            self.stats_tab_layout.addWidget(btn)
         
-        # Headers (Row 0)
-        self.stats_layout.addWidget(QLabel(""), 0, 0) 
+        self.stats_tab_group = QButtonGroup(self)
+        self.stats_tab_group.addButton(self.btn_stats_def)
+        self.stats_tab_group.addButton(self.btn_stats_res)
+        self.stats_tab_group.setExclusive(True)
+        self.btn_stats_res.setChecked(True)
+        self.stats_tab_layout.addStretch()
+
+        # --- Sub-Stacked Widget ---
+        self.stats_sub_stack = QStackedWidget()
+        self.stats_main_layout.addWidget(self.stats_sub_stack)
+
+        # Sub-Page 1: Region Definition
+        self.st_def_widget = QWidget()
+        self.stats_sub_stack.addWidget(self.st_def_widget)
+        self.st_layout = QGridLayout(self.st_def_widget)
+        self.st_layout.setContentsMargins(0, 0, 0, 0)
+        self.st_layout.setHorizontalSpacing(10)
+        self.st_layout.setVerticalSpacing(4)
+
+        # Region Definition Content
+        self.st_layout.addWidget(QLabel(""), 0, 0) 
+
+        self.st_widgets = []
+        for i in range(2):
+            v2 = FormattedLineEdit(); v2.setFixedWidth(110); v2.setAlignment(Qt.AlignmentFlag.AlignCenter); v2.setObjectName(f"st_m{i}_v2")
+            v1 = FormattedLineEdit(); v1.setFixedWidth(110); v1.setAlignment(Qt.AlignmentFlag.AlignCenter); v1.setObjectName(f"st_m{i}_v1")
+            for w in [v1, v2]: w.returnPressed.connect(self.controller.marker_edit_finished)
+            self.st_layout.addWidget(v1, 1, i + 1)
+            self.st_layout.addWidget(v2, 2, i + 1)
+            self.st_widgets.append({'v1': v1, 'v2': v2})
+
+        self.st_delta_v2 = FormattedLineEdit(); self.st_delta_v2.setFixedWidth(110); self.st_delta_v2.setAlignment(Qt.AlignmentFlag.AlignCenter); self.st_delta_v2.setObjectName("st_delta_v2"); self.st_delta_v2.setReadOnly(True)
+        self.st_delta_v1 = FormattedLineEdit(); self.st_delta_v1.setFixedWidth(110); self.st_delta_v1.setAlignment(Qt.AlignmentFlag.AlignCenter); self.st_delta_v1.setObjectName("st_delta_v1")
         
-        headers = ["Maximum", "Minimum", "Mean", "Median", "Integrated Power"]
-        for i, h in enumerate(headers):
-            lbl = QLabel(h)
-            lbl.setFont(self.header_font)
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl.setStyleSheet(f"color: #888; text-transform: uppercase; font-size: 10px;")
-            self.stats_layout.addWidget(lbl, 0, i + 1)
-            
-        # Row Labels (Col 0)
+        self.st_center_v2 = FormattedLineEdit(); self.st_center_v2.setFixedWidth(110); self.st_center_v2.setAlignment(Qt.AlignmentFlag.AlignCenter); self.st_center_v2.setObjectName("st_center_v2"); self.st_center_v2.setReadOnly(True)
+        self.st_center_v1 = FormattedLineEdit(); self.st_center_v1.setFixedWidth(110); self.st_center_v1.setAlignment(Qt.AlignmentFlag.AlignCenter); self.st_center_v1.setObjectName("st_center_v1")
+
+        for w in [self.st_delta_v1, self.st_center_v1]: w.returnPressed.connect(self.controller.marker_edit_finished)
+        self.st_layout.addWidget(self.st_delta_v1, 1, 3); self.st_layout.addWidget(self.st_delta_v2, 2, 3)
+        self.st_layout.addWidget(self.st_center_v1, 1, 4); self.st_layout.addWidget(self.st_center_v2, 2, 4)
+
+        self.st_row_v1_lbl = QLabel("Index"); self.st_row_v1_lbl.setObjectName("header_label")
+        self.st_row_v2_lbl = QLabel("Region (Hz)"); self.st_row_v2_lbl.setObjectName("header_label")
+        self.st_layout.addWidget(self.st_row_v1_lbl, 1, 0, Qt.AlignmentFlag.AlignRight)
+        self.st_layout.addWidget(self.st_row_v2_lbl, 2, 0, Qt.AlignmentFlag.AlignRight)
+
+        # Sub-Page 2: Measurement Results
+        self.st_res_widget = QWidget()
+        self.stats_sub_stack.addWidget(self.st_res_widget)
+        self.res_layout = QGridLayout(self.st_res_widget)
+        self.res_layout.setContentsMargins(0, 0, 0, 0)
+        self.res_layout.setHorizontalSpacing(10)
+        self.res_layout.setVerticalSpacing(4)
+
+        res_headers = ["Maximum", "Minimum", "Mean", "Median", "Integrated"]
+        for i, h in enumerate(res_headers):
+            lbl = QLabel(h); lbl.setFont(self.header_font); lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl.setStyleSheet("color: #888; text-transform: uppercase; font-size: 10px;")
+            self.res_layout.addWidget(lbl, 0, i + 1)
+
         lbl_val = QLabel("Value"); lbl_val.setObjectName("header_label")
-        lbl_freq = QLabel("Frequency (Hz)"); lbl_freq.setObjectName("header_label")
         lbl_idx = QLabel("Index"); lbl_idx.setObjectName("header_label")
-        
-        self.stats_layout.addWidget(lbl_val, 1, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.stats_layout.addWidget(lbl_freq, 2, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.stats_layout.addWidget(lbl_idx, 3, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        
-        # Distribution section (Col 6 Labels + Col 7 Values)
-        lbl_dist = QLabel("Distribution")
-        lbl_dist.setFont(self.header_font)
-        lbl_dist.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_dist.setStyleSheet(f"color: #888; text-transform: uppercase; font-size: 10px;")
-        self.stats_layout.addWidget(lbl_dist, 0, 6, 1, 2)
-        
-        lbl_90th = QLabel("90th %")
-        lbl_10th = QLabel("10th %")
-        lbl_diff = QLabel("90-10 Diff")
-        for lbl in [lbl_90th, lbl_10th, lbl_diff]:
-            lbl.setObjectName("header_label")
-        
-        self.stats_layout.addWidget(lbl_90th, 1, 6, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.stats_layout.addWidget(lbl_10th, 2, 6, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.stats_layout.addWidget(lbl_diff, 3, 6, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        
-        # Line Edits
-        self.stats_max_val = FormattedLineEdit(); self.stats_max_val.setFixedWidth(130); self.stats_max_val.setReadOnly(True); self.stats_max_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_min_val = FormattedLineEdit(); self.stats_min_val.setFixedWidth(130); self.stats_min_val.setReadOnly(True); self.stats_min_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_mean_val = FormattedLineEdit(); self.stats_mean_val.setFixedWidth(130); self.stats_mean_val.setReadOnly(True); self.stats_mean_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_median_val = FormattedLineEdit(); self.stats_median_val.setFixedWidth(130); self.stats_median_val.setReadOnly(True); self.stats_median_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_total_power = FormattedLineEdit(); self.stats_total_power.setFixedWidth(130); self.stats_total_power.setReadOnly(True); self.stats_total_power.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        self.stats_max_freq = FormattedLineEdit(); self.stats_max_freq.setFixedWidth(130); self.stats_max_freq.setReadOnly(True); self.stats_max_freq.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_min_freq = FormattedLineEdit(); self.stats_min_freq.setFixedWidth(130); self.stats_min_freq.setReadOnly(True); self.stats_min_freq.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        self.stats_max_idx = FormattedLineEdit(); self.stats_max_idx.setFixedWidth(130); self.stats_max_idx.setReadOnly(True); self.stats_max_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_min_idx = FormattedLineEdit(); self.stats_min_idx.setFixedWidth(130); self.stats_min_idx.setReadOnly(True); self.stats_min_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        # Distribution Line Edits
-        self.stats_90th_val = FormattedLineEdit(); self.stats_90th_val.setFixedWidth(130); self.stats_90th_val.setReadOnly(True); self.stats_90th_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_10th_val = FormattedLineEdit(); self.stats_10th_val.setFixedWidth(130); self.stats_10th_val.setReadOnly(True); self.stats_10th_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_diff_val = FormattedLineEdit(); self.stats_diff_val.setFixedWidth(130); self.stats_diff_val.setReadOnly(True); self.stats_diff_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        # Add to Grid (Row 1: Value)
-        self.stats_layout.addWidget(self.stats_max_val, 1, 1)
-        self.stats_layout.addWidget(self.stats_min_val, 1, 2)
-        self.stats_layout.addWidget(self.stats_mean_val, 1, 3)
-        self.stats_layout.addWidget(self.stats_median_val, 1, 4)
-        self.stats_layout.addWidget(self.stats_total_power, 1, 5)
-        self.stats_layout.addWidget(self.stats_90th_val, 1, 7)
-        
-        # Add to Grid (Row 2: Frequency)
-        self.stats_layout.addWidget(self.stats_max_freq, 2, 1)
-        self.stats_layout.addWidget(self.stats_min_freq, 2, 2)
-        self.stats_layout.addWidget(self.stats_10th_val, 2, 7)
-        
-        # Add to Grid (Row 3: Index)
-        self.stats_layout.addWidget(self.stats_max_idx, 3, 1)
-        self.stats_layout.addWidget(self.stats_min_idx, 3, 2)
-        self.stats_layout.addWidget(self.stats_diff_val, 3, 7)
+        lbl_freq = QLabel("Freq (Hz)"); lbl_freq.setObjectName("header_label")
+        self.res_layout.addWidget(lbl_val, 1, 0, Qt.AlignmentFlag.AlignRight)
+        self.res_layout.addWidget(lbl_idx, 2, 0, Qt.AlignmentFlag.AlignRight)
+        self.res_layout.addWidget(lbl_freq, 3, 0, Qt.AlignmentFlag.AlignRight)
+
+        self.stats_max_val = FormattedLineEdit(); self.stats_max_val.setFixedWidth(110); self.stats_max_val.setReadOnly(True); self.stats_max_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_min_val = FormattedLineEdit(); self.stats_min_val.setFixedWidth(110); self.stats_min_val.setReadOnly(True); self.stats_min_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_mean_val = FormattedLineEdit(); self.stats_mean_val.setFixedWidth(110); self.stats_mean_val.setReadOnly(True); self.stats_mean_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_median_val = FormattedLineEdit(); self.stats_median_val.setFixedWidth(110); self.stats_median_val.setReadOnly(True); self.stats_median_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_total_power = FormattedLineEdit(); self.stats_total_power.setFixedWidth(110); self.stats_total_power.setReadOnly(True); self.stats_total_power.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_max_freq = FormattedLineEdit(); self.stats_max_freq.setFixedWidth(110); self.stats_max_freq.setReadOnly(True); self.stats_max_freq.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_min_freq = FormattedLineEdit(); self.stats_min_freq.setFixedWidth(110); self.stats_min_freq.setReadOnly(True); self.stats_min_freq.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_max_idx = FormattedLineEdit(); self.stats_max_idx.setFixedWidth(110); self.stats_max_idx.setReadOnly(True); self.stats_max_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_min_idx = FormattedLineEdit(); self.stats_min_idx.setFixedWidth(110); self.stats_min_idx.setReadOnly(True); self.stats_min_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.res_layout.addWidget(self.stats_max_val, 1, 1); self.res_layout.addWidget(self.stats_min_val, 1, 2)
+        self.res_layout.addWidget(self.stats_mean_val, 1, 3); self.res_layout.addWidget(self.stats_median_val, 1, 4)
+        self.res_layout.addWidget(self.stats_total_power, 1, 5)
+        self.res_layout.addWidget(self.stats_max_idx, 2, 1); self.res_layout.addWidget(self.stats_min_idx, 2, 2)
+        self.res_layout.addWidget(self.stats_max_freq, 3, 1); self.res_layout.addWidget(self.stats_min_freq, 3, 2)
+
+        lbl_90th = QLabel("90th %"); lbl_10th = QLabel("10th %"); lbl_diff = QLabel("90-10 Diff")
+        for lbl in [lbl_90th, lbl_10th, lbl_diff]: lbl.setObjectName("header_label")
+        self.res_layout.addWidget(lbl_90th, 1, 6, Qt.AlignmentFlag.AlignRight)
+        self.res_layout.addWidget(lbl_10th, 2, 6, Qt.AlignmentFlag.AlignRight)
+        self.res_layout.addWidget(lbl_diff, 3, 6, Qt.AlignmentFlag.AlignRight)
+
+        self.stats_90th_val = FormattedLineEdit(); self.stats_90th_val.setFixedWidth(110); self.stats_90th_val.setReadOnly(True); self.stats_90th_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_10th_val = FormattedLineEdit(); self.stats_10th_val.setFixedWidth(110); self.stats_10th_val.setReadOnly(True); self.stats_10th_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_diff_val = FormattedLineEdit(); self.stats_diff_val.setFixedWidth(110); self.stats_diff_val.setReadOnly(True); self.stats_diff_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.res_layout.addWidget(self.stats_90th_val, 1, 7)
+        self.res_layout.addWidget(self.stats_10th_val, 2, 7)
+        self.res_layout.addWidget(self.stats_diff_val, 3, 7)
+
+        self.stats_sub_stack.setCurrentIndex(1) # Now it's safe to set index 1
+
+        # Connect internal tab switching
+        self.btn_stats_def.clicked.connect(lambda: self.stats_sub_stack.setCurrentIndex(0))
+        self.btn_stats_res.clicked.connect(lambda: self.stats_sub_stack.setCurrentIndex(1))
 
         # Apply theme (must be done AFTER buttons are initialized)
         self.refresh_theme()
@@ -337,83 +409,105 @@ class FrequencyDomainMarkerPanel(QFrame):
     def update_headers(self, mode, y_axis_label="Magnitude"):
         self.row_v1_label.blockSignals(True)
         self.row_v2_label.blockSignals(True)
-        
-        if mode in ['FREQ', 'MAG', 'FREQ_ENDLESS', 'MAG_ENDLESS', 'STATS']:
+
+        if mode in ['FREQ', 'MAG', 'FREQ_ENDLESS', 'MAG_ENDLESS', 'STATS', 'FILTER']:
             self.last_marker_mode = mode
-            
+
         display_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE'] else mode
         actual_ui_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE'] else mode
-        
+
         if actual_ui_mode == 'STATS':
+            if self.stacked.currentIndex() != 2:
+                self.btn_stats_res.setChecked(True)
+                self.stats_sub_stack.setCurrentIndex(1)
             self.stacked.setCurrentIndex(2)
         elif 'ENDLESS' in actual_ui_mode:
             self.stacked.setCurrentIndex(1)
         else:
             self.stacked.setCurrentIndex(0)
 
-        if display_mode in ['FREQ', 'FREQ_ENDLESS']:
-            self.row_v1_label.setText("Frequency (Hz)")
-            self.row_v2_label.setText("Index")
+        if display_mode in ['FREQ', 'FREQ_ENDLESS', 'FILTER']:
+            self.row_v1_label.setText("Index")
+            self.row_v2_label.setText("Frequency (Hz)")
             self.row_v1_label.show()
             self.row_v2_label.show()
-            for i in range(2): 
+            
+            # Reset grid positions
+            self.grid.addWidget(self.row_v1_label, 1, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self.grid.addWidget(self.row_v2_label, 2, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            for i in range(2):
+                self.grid.addWidget(self.m_widgets[i]['v2'], 1, i + 1)
+                self.grid.addWidget(self.m_widgets[i]['v1'], 2, i + 1)
+                self.m_widgets[i]['v1'].show()
                 self.m_widgets[i]['v2'].show()
-            self.delta_v2.show()
-            self.center_v2.show()
+            self.grid.addWidget(self.delta_v2, 1, 3); self.delta_v2.show()
+            self.grid.addWidget(self.delta_v1, 2, 3); self.delta_v1.show()
+            self.grid.addWidget(self.center_v2, 1, 4); self.center_v2.show()
+            self.grid.addWidget(self.center_v1, 2, 4); self.center_v1.show()
         else: # MAG
             self.row_v1_label.setText(y_axis_label)
-            self.row_v2_label.setText("")
+            self.row_v1_label.show()
             self.row_v2_label.hide()
-            for i in range(2): 
+            self.filter_container.hide()
+            
+            # Move Magnitude widgets to Row 1
+            self.grid.addWidget(self.row_v1_label, 1, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            for i in range(2):
+                self.grid.addWidget(self.m_widgets[i]['v1'], 1, i + 1)
+                self.m_widgets[i]['v1'].show()
                 self.m_widgets[i]['v2'].hide()
+            self.grid.addWidget(self.delta_v1, 1, 3); self.delta_v1.show()
+            self.grid.addWidget(self.center_v1, 1, 4); self.center_v1.show()
             self.delta_v2.hide()
             self.center_v2.hide()
             
         self.row_v1_label.blockSignals(False)
         self.row_v2_label.blockSignals(False)
 
-        base_mode = 'FREQ' if 'FREQ' in display_mode else 'MAG'
+        base_mode = display_mode
+        if display_mode in ['FREQ_ENDLESS', 'MAG_ENDLESS']: 
+             base_mode = 'FREQ' if 'FREQ' in display_mode else 'MAG'
+        
         if base_mode in self.lock_states:
-            for key, btn, label_fn in [
-                ('m1',     self.btn_lock_m1,     lambda c: f"Marker 1 {'🔒' if c else '🔓'}"),
-                ('m2',     self.btn_lock_m2,     lambda c: f"Marker 2 {'🔒' if c else '🔓'}"),
-                ('delta',  self.btn_lock_delta,  lambda c: f"Delta (Δ) {'🔒' if c else '🔓'}"),
-                ('center', self.btn_lock_center, lambda c: f"Center {'🔒' if c else '🔓'}"),
+            for key, btn in [
+                ('m1',     self.btn_lock_m1),
+                ('m2',     self.btn_lock_m2),
+                ('delta',  self.btn_lock_delta),
+                ('center', self.btn_lock_center),
             ]:
                 locked = self.lock_states[base_mode].get(key, False)
-                btn.blockSignals(True)
-                btn.setChecked(locked)
-                btn.setText(label_fn(locked))
-                btn.setEnabled('ENDLESS' not in display_mode)
-                btn.blockSignals(False)
+                if btn:
+                    btn.blockSignals(True)
+                    btn.setChecked(locked)
+                    btn.setEnabled('ENDLESS' not in display_mode)
+                    btn.blockSignals(False)
 
     def update_mode_ui(self, mode):
-        self.btn_marker_freq.blockSignals(True)
-        self.btn_marker_freq_endless.blockSignals(True)
-        self.btn_marker_mag.blockSignals(True)
-        self.btn_marker_mag_endless.blockSignals(True)
-        self.btn_zoom.blockSignals(True)
-        self.btn_move.blockSignals(True)
-        self.btn_stats.blockSignals(True)
-        
+        for btn in [self.btn_marker_freq, self.btn_marker_freq_endless,
+                    self.btn_marker_mag, self.btn_marker_mag_endless,
+                    self.btn_zoom, self.btn_move, self.btn_bpf, self.btn_stats]:
+            btn.blockSignals(True)
+
         self.btn_marker_freq.setChecked(mode == 'FREQ')
         self.btn_marker_freq_endless.setChecked(mode == 'FREQ_ENDLESS')
         self.btn_marker_mag.setChecked(mode == 'MAG')
         self.btn_marker_mag_endless.setChecked(mode == 'MAG_ENDLESS')
         self.btn_zoom.setChecked(mode == 'ZOOM')
         self.btn_move.setChecked(mode == 'MOVE')
+        self.btn_bpf.setChecked(mode == 'FILTER')
         self.btn_stats.setChecked(mode == 'STATS')
-        
-        self.btn_marker_freq.blockSignals(False)
-        self.btn_marker_freq_endless.blockSignals(False)
-        self.btn_marker_mag.blockSignals(False)
-        self.btn_marker_mag_endless.blockSignals(False)
-        self.btn_zoom.blockSignals(False)
-        self.btn_move.blockSignals(False)
-        self.btn_stats.blockSignals(False)
-        
+
+        for btn in [self.btn_marker_freq, self.btn_marker_freq_endless,
+                    self.btn_marker_mag, self.btn_marker_mag_endless,
+                    self.btn_zoom, self.btn_move, self.btn_bpf, self.btn_stats]:
+            btn.blockSignals(False)
+
         self.btn_lock_delta.setEnabled(mode in ['FREQ', 'MAG'])
         self.btn_lock_center.setEnabled(mode in ['FREQ', 'MAG'])
+
+        # Show filter container only in FILTER mode
+        if hasattr(self, 'filter_container'):
+            self.filter_container.setVisible(mode == 'FILTER')
 
     def update_endless_list(self, markers, mode):
         is_freq = 'FREQ' in mode
@@ -429,15 +523,15 @@ class FrequencyDomainMarkerPanel(QFrame):
             h_layout.setSpacing(10)
             
             l_id = QLabel("ID"); l_id.setFixedWidth(30); l_id.setObjectName("header_label")
-            l_main = QLabel(f"Pos ({unit_main})"); l_main.setObjectName("header_label")
-            l_main.setProperty("role", "pos_header")
             l_sub = QLabel(unit_sub); l_sub.setObjectName("header_label")
             l_sub.setProperty("role", "sub_header")
+            l_main = QLabel(f"Pos ({unit_main})"); l_main.setObjectName("header_label")
+            l_main.setProperty("role", "pos_header")
             l_del = QLabel(""); l_del.setFixedWidth(24)
             
             h_layout.addWidget(l_id)
-            h_layout.addWidget(l_main, 1)
             h_layout.addWidget(l_sub, 1)
+            h_layout.addWidget(l_main, 1)
             h_layout.addWidget(l_del)
             self.scroll_layout.insertWidget(0, self._header_widget)
             self.refresh_theme() 
@@ -487,8 +581,8 @@ class FrequencyDomainMarkerPanel(QFrame):
             """)
             
             row_layout.addWidget(lbl_id)
-            row_layout.addWidget(edit_pos, 1)
             row_layout.addWidget(edit_sub, 1)
+            row_layout.addWidget(edit_pos, 1)
             row_layout.addWidget(btn_del)
             
             self.scroll_layout.insertWidget(self.scroll_layout.count()-1, row)
@@ -528,21 +622,24 @@ class FrequencyDomainMarkerPanel(QFrame):
             row_data['btn_del'].clicked.connect(lambda _, m=m: self.controller.remove_marker_item(m, mode))
 
     def _clear_marker_locks(self, mode, keep=None):
-        base_mode = 'FREQ' if 'FREQ' in mode else 'MAG'
+        base_mode = mode
+        if base_mode in ['FREQ_ENDLESS', 'MAG_ENDLESS']: 
+             base_mode = 'FREQ' if 'FREQ' in base_mode else 'MAG'
+             
         if base_mode not in self.lock_states: return
 
-        for key, btn, label in [
-            ('m1',     self.btn_lock_m1,     lambda c: f"Marker 1 {'🔒' if c else '🔓'}"),
-            ('m2',     self.btn_lock_m2,     lambda c: f"Marker 2 {'🔒' if c else '🔓'}"),
-            ('delta',  self.btn_lock_delta,  lambda c: f"Delta (Δ) {'🔒' if c else '🔓'}"),
-            ('center', self.btn_lock_center, lambda c: f"Center {'🔒' if c else '🔓'}"),
+        for key, btn in [
+            ('m1',     self.btn_lock_m1),
+            ('m2',     self.btn_lock_m2),
+            ('delta',  self.btn_lock_delta),
+            ('center', self.btn_lock_center),
         ]:
             if key == keep: continue
-            btn.blockSignals(True)
-            btn.setChecked(False)
-            btn.setText(label(False))
+            if btn:
+                btn.blockSignals(True)
+                btn.setChecked(False)
+                btn.blockSignals(False)
             self.lock_states[base_mode][key] = False
-            btn.blockSignals(False)
 
     def set_locks_enabled(self, m1_placed, m2_placed):
         self.btn_lock_m1.setEnabled(m1_placed)
@@ -561,47 +658,71 @@ class FrequencyDomainMarkerPanel(QFrame):
     def on_lock_delta_toggled(self, checked):
         mode = self.controller.interaction_mode
         base_mode = 'FREQ' if 'FREQ' in mode else 'MAG'
+        if base_mode not in self.lock_states: return
         self.lock_states[base_mode]['delta'] = checked
         if checked: self._clear_marker_locks(mode, keep='delta')
-        self.btn_lock_delta.setText(f"Delta (Δ) {'🔒' if checked else '🔓'}")
         self.controller.handle_lock_change('delta', checked)
 
     def on_lock_center_toggled(self, checked):
         mode = self.controller.interaction_mode
         base_mode = 'FREQ' if 'FREQ' in mode else 'MAG'
+        if base_mode not in self.lock_states: return
         self.lock_states[base_mode]['center'] = checked
         if checked: self._clear_marker_locks(mode, keep='center')
-        self.btn_lock_center.setText(f"Center {'🔒' if checked else '🔓'}")
         self.controller.handle_lock_change('center', checked)
 
     def on_lock_m1_toggled(self, checked):
         mode = self.controller.interaction_mode
         base_mode = 'FREQ' if 'FREQ' in mode else 'MAG'
+        if base_mode not in self.lock_states: return
         self.lock_states[base_mode]['m1'] = checked
         if checked: self._clear_marker_locks(mode, keep='m1')
-        self.btn_lock_m1.setText(f"Marker 1 {'🔒' if checked else '🔓'}")
         self.controller.handle_lock_change('m1', checked)
 
     def on_lock_m2_toggled(self, checked):
         mode = self.controller.interaction_mode
         base_mode = 'FREQ' if 'FREQ' in mode else 'MAG'
+        if base_mode not in self.lock_states: return
         self.lock_states[base_mode]['m2'] = checked
         if checked: self._clear_marker_locks(mode, keep='m2')
-        self.btn_lock_m2.setText(f"Marker 2 {'🔒' if checked else '🔓'}")
         self.controller.handle_lock_change('m2', checked)
 
     def flip_m_lock(self, mode):
-        base_mode = 'FREQ' if 'FREQ' in mode else 'MAG'
-        m1 = self.btn_lock_m1.isChecked()
-        m2 = self.btn_lock_m2.isChecked()
+        base_mode = mode
+        if base_mode in ['FREQ_ENDLESS', 'MAG_ENDLESS']: 
+             base_mode = 'FREQ' if 'FREQ' in base_mode else 'MAG'
+
+        m1 = self.lock_states[base_mode]['m1']
+        m2 = self.lock_states[base_mode]['m2']
         if not m1 and not m2: return
-        self.btn_lock_m1.blockSignals(True); self.btn_lock_m2.blockSignals(True)
-        self.btn_lock_m1.setChecked(m2); self.btn_lock_m2.setChecked(m1)
-        self.btn_lock_m1.setText(f"Marker 1 {'🔒' if m2 else '🔓'}")
-        self.btn_lock_m2.setText(f"Marker 2 {'🔒' if m1 else '🔓'}")
+        
         self.lock_states[base_mode]['m1'] = m2
         self.lock_states[base_mode]['m2'] = m1
+        
+        # Update buttons
+        self.btn_lock_m1.blockSignals(True); self.btn_lock_m2.blockSignals(True)
+        self.btn_lock_m1.setChecked(m2);     self.btn_lock_m2.setChecked(m1)
         self.btn_lock_m1.blockSignals(False); self.btn_lock_m2.blockSignals(False)
+
+    def _on_filter_clicked(self):
+        """Enforce BPF/BSF mutual exclusion and emit filterModeChanged."""
+        sender = self.sender()
+        if sender == self.cb_bpf and self.cb_bpf.isChecked():
+            self.cb_bsf.setChecked(False)
+        elif sender == self.cb_bsf and self.cb_bsf.isChecked():
+            self.cb_bpf.setChecked(False)
+        mode = ''
+        if self.cb_bpf.isChecked(): mode = 'bpf'
+        elif self.cb_bsf.isChecked(): mode = 'bsf'
+        self.filterModeChanged.emit(mode)
+
+    def set_filter_checkboxes_enabled(self, enabled):
+        """Enable/disable BPF/BSF checkboxes (enabled only when both bounds placed)."""
+        self.cb_bpf.setEnabled(enabled)
+        self.cb_bsf.setEnabled(enabled)
+        if not enabled:
+            self.cb_bpf.setChecked(False)
+            self.cb_bsf.setChecked(False)
 
     def refresh_theme(self):
         theme = self.controller.parent_window.settings_mgr.get("ui/theme", "Dark")
@@ -614,6 +735,7 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.btn_marker_mag_endless.setIcon(self._get_icon("endless_horizontal_markers", theme))
         self.btn_zoom.setIcon(self._get_icon("zoom_mode", theme))
         self.btn_move.setIcon(self._get_icon("free_move_mode", theme))
+        self.btn_bpf.setIcon(self._get_icon("bpf_selection_mode", theme))
         self.btn_stats.setIcon(self._get_icon("region_statistics", theme))
         self.btn_home.setIcon(self._get_icon("reset_zoom", theme))
         
@@ -632,11 +754,30 @@ class FrequencyDomainMarkerPanel(QFrame):
                 font-size: 16px;
                 padding: 0;
             }}
-            QPushButton#mode_btn:hover {{ background-color: {p.border_light}; }}
+            QPushButton#mode_btn:hover {{ background-color: {p.border}; }}
             QPushButton#mode_btn:checked {{ 
                 background-color: {p.accent_dim}; 
-                border-color: {p.accent};
+                border: 2px solid {p.accent};
                 color: {p.accent};
+            }}
+            QPushButton#stats_tab_btn {{
+                background-color: transparent; 
+                border: 1px solid {p.border};
+                border-radius: 4px;
+                color: {p.text_dim};
+                font-weight: bold;
+                padding: 2px 10px;
+                font-size: 10px;
+                text-transform: uppercase;
+            }}
+            QPushButton#stats_tab_btn:hover {{
+                border-color: {p.accent_dim};
+                color: {p.text_main};
+            }}
+            QPushButton#stats_tab_btn:checked {{
+                background-color: {p.accent};
+                color: {p.bg_widget};
+                border-color: {p.accent};
             }}
             QLineEdit {{
                 background-color: {p.bg_input};
@@ -657,10 +798,23 @@ class FrequencyDomainMarkerPanel(QFrame):
         """)
         
         lock_style = f"""
-            QPushButton {{ background: none; border: none; color: {p.text_dim}; padding: 0; text-transform: uppercase; font-size: 10px; }}
-            QPushButton:hover {{ color: {p.text_header}; }}
-            QPushButton:checked {{ color: {p.accent}; }}
+            QPushButton {{ 
+                background: none; 
+                border: 1px solid transparent; 
+                border-radius: 4px;
+                color: {p.text_dim}; 
+                padding: 1px 4px; 
+                text-transform: uppercase; 
+                font-size: 10px; 
+            }}
+            QPushButton:hover {{ color: {p.text_header}; background-color: {p.border}; }}
+            QPushButton:checked {{ 
+                color: {p.accent}; 
+                border: 1px solid {p.accent};
+                background-color: {p.accent_dim};
+            }}
         """
         if hasattr(self, 'btn_lock_delta'):
-            for btn in [self.btn_lock_m1, self.btn_lock_m2, self.btn_lock_delta, self.btn_lock_center]:
-                btn.setStyleSheet(lock_style)
+            lock_btns = [self.btn_lock_m1, self.btn_lock_m2, self.btn_lock_delta, self.btn_lock_center]
+            for btn in lock_btns:
+                if btn: btn.setStyleSheet(lock_style)

@@ -29,13 +29,13 @@ def postprocess_fft(fft_result, fft_size):
 
 from scipy import signal
 
-def design_filter(fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, **kwargs):
+def design_filter(fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, filter_taps=101, fir_window="hamming", **kwargs):
     """
-    Designs a Second-Order Sections (SOS) low-pass filter representing the target band.
-    Returns (sos, f_center) where f_center is the frequency that was shifted to 0 Hz.
+    Designs a baseband filter representing the target band.
+    Returns (filter_data, f_center, is_fir) where filter_data is either SOS or FIR taps.
     """
     if f_min >= f_max:
-        return None, 0.0
+        return None, 0.0, False
         
     f_center = (f_min + f_max) / 2.0
     bandwidth = f_max - f_min
@@ -44,27 +44,40 @@ def design_filter(fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=
     cutoff = (bandwidth / 2.0) / nyquist
     cutoff = max(0.0001, min(cutoff, 0.9999))
     
+    is_fir = (filter_type == "FIR (Windowed)")
+    
     if filter_type == "Butterworth":
-        sos = signal.butter(order, cutoff, btype='low', output='sos')
+        filter_data = signal.butter(order, cutoff, btype='low', output='sos')
     elif filter_type == "Chebyshev I":
-        sos = signal.cheby1(order, rp, cutoff, btype='low', output='sos')
+        filter_data = signal.cheby1(order, rp, cutoff, btype='low', output='sos')
     elif filter_type == "Chebyshev II":
-        sos = signal.cheby2(order, rs, cutoff, btype='low', output='sos')
+        filter_data = signal.cheby2(order, rs, cutoff, btype='low', output='sos')
     elif filter_type == "Bessel":
         b_norm = kwargs.get('bessel_norm', 'phase')
-        sos = signal.bessel(order, cutoff, btype='low', output='sos', norm=b_norm)
+        filter_data = signal.bessel(order, cutoff, btype='low', output='sos', norm=b_norm)
+    elif is_fir:
+        numtaps = filter_taps
+        fir_win = fir_window.lower()
+        # Design a REAL low-pass FIR filter
+        filter_data = signal.firwin(numtaps, cutoff, window=fir_win)
     else: # Default: Elliptic
-        sos = signal.ellip(order, rp, rs, cutoff, btype='low', output='sos')
+        filter_data = signal.ellip(order, rp, rs, cutoff, btype='low', output='sos')
         
-    return sos, f_center
+    return filter_data, f_center, is_fir
 
-def apply_bpf(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, **kwargs):
+def apply_filter(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, filter_taps=101, fir_window="hamming", mode='bpf', **kwargs):
     """
-    Applies a sharp COMPLEX (Asymmetric) Band-Pass filter to IQ data.
-    Uses Shift-to-Baseband -> Low-Pass Filter -> Shift-Back-Up approach.
+    Applies a sharp COMPLEX (Asymmetric) Band-Pass or Band-Stop filter to IQ data.
+    Uses Shift-to-Baseband -> Zero-Phase Low-Pass Filter -> Shift-Back-Up approach.
+
+    Zero-phase filtering (sosfiltfilt / filtfilt) is used so that:
+      - There is no group delay: filtered output is perfectly time-aligned with input.
+      - There is no phase distortion: every frequency component is preserved in phase.
+    This makes BSF = (Original - BPF_result) exact: the target band is cleanly cancelled
+    rather than leaving residuals from a misaligned or phase-distorted causal BPF.
     """
-    sos, f_center = design_filter(fs, f_min, f_max, filter_type, order, rp, rs, **kwargs)
-    if sos is None or len(data) == 0:
+    filter_data, f_center, is_fir = design_filter(fs, f_min, f_max, filter_type, order, rp, rs, filter_taps, fir_window, **kwargs)
+    if filter_data is None or len(data) == 0:
         return data
         
     # 1. Shift target band to 0 Hz
@@ -72,11 +85,34 @@ def apply_bpf(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, r
     shift_vector = np.exp(-2j * np.pi * f_center * t)
     data_shifted = data * shift_vector
     
-    # 2. Apply Filter
-    data_filtered = signal.sosfilt(sos, data_shifted)
-    
+    # 2. Apply zero-phase Low-Pass Filter
+    #    filtfilt / sosfiltfilt filter forward then backward: zero net phase, zero group delay.
+    try:
+        if is_fir:
+            data_filtered = signal.filtfilt(filter_data, [1.0], data_shifted)
+        else:
+            data_filtered = signal.sosfiltfilt(filter_data, data_shifted)
+    except ValueError:
+        # Data segment shorter than ~3x filter length — fall back to causal (BSF will be approximate).
+        if is_fir:
+            data_filtered = signal.lfilter(filter_data, [1.0], data_shifted)
+        else:
+            data_filtered = signal.sosfilt(filter_data, data_shifted)
+
     # 3. Shift back to original frequency band
-    return data_filtered * np.conj(shift_vector)
+    #    Zero-phase filtering has no delay, so a simple conjugate reversal is exact.
+    shift_back = np.conj(shift_vector)
+    bpf_result = data_filtered * shift_back
+
+    if mode == 'bsf':
+        # BSF = Original - BPF  (exact: both signals have identical time alignment and phase)
+        return data - bpf_result
+    else:
+        return bpf_result
+
+def apply_bpf(data, fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=60.0, filter_taps=101, fir_window="hamming", **kwargs):
+    """Backwards compatibility wrapper for apply_filter(mode='bpf')."""
+    return apply_filter(data, fs, f_min, f_max, filter_type, order, rp, rs, filter_taps, fir_window, mode='bpf', **kwargs)
 
 def compute_psd(samples, fs=1.0, method='Welch', **kwargs):
     """

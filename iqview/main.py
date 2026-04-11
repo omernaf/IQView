@@ -15,6 +15,17 @@ from iqview.ui import SpectrogramWindow
 from iqview.utils.settings_manager import SettingsManager
 from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext, detect_params_from_filename
 
+# Canonical AppUserModelID — must match exactly across main.py, main_window, and any .lnk shortcut
+APP_USER_MODEL_ID = "OmerNaf.IQView.0.1.4"
+
+# Fix taskbar grouping on Windows (must be done before creating QApplication)
+if sys.platform == "win32":
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
+    except Exception:
+        pass
+
 def load_mat_file(path):
     """
     Loads a .mat file containing Y, XDelta, and InputCenter fields.
@@ -68,6 +79,7 @@ def parse_args():
     parser.add_argument('-c', '--fc', type=float, default=float(sm.get("core/fc", 0.0)), help='Center frequency in Hz')
     parser.add_argument('-s', '--fft', type=int, default=int(sm.get("core/fft_size", 1024)), help='FFT bin size')
     parser.add_argument('--profile', action='store_true', help='Enable cProfile profiling')
+    parser.add_argument('-n', '--name', type=str, default=None, help='Custom window name')
 
     # Desktop integration flags
     parser.add_argument('--install-desktop', action='store_true', help='Install Start Menu shortcut and File associations')
@@ -181,15 +193,41 @@ def main():
 
     pg.setConfigOptions(useOpenGL=True, enableExperimental=True, imageAxisOrder='row-major')
     
-    # Resolve rendering mode: CLI flag > settings default
-    # args.lazy_rendering is True (--lazy), False (--full), or None (not specified)
+    # Resolve rendering mode: CLI flag > settings default.
+    # NOTE: do NOT write this back to QSettings — that would affect every other
+    # open window since QSettings is shared process-wide. Instead we pass the
+    # resolved value directly to SpectrogramWindow as an in-memory override.
+    lazy_override = None   # None = use whatever QSettings says
     if args.lazy_rendering is not None:
-        sm.set("core/lazy_rendering", args.lazy_rendering)
+        lazy_override = args.lazy_rendering
         mode_label = "lazy" if args.lazy_rendering else "full-file"
         print(f"Rendering mode forced by CLI: {mode_label}")
     
     app = QApplication(sys.argv)
-    window = SpectrogramWindow(data_source, dtype, fs, fc, args.fft, args.profile, is_complex=is_complex)
+    # Fix taskbar/dock grouping on Linux
+    app.setDesktopFileName("iqview")
+
+    # Set the application-level icon so the taskbar always uses it (not just the window icon)
+    from PyQt6.QtGui import QIcon, QPixmap
+    try:
+        from importlib.resources import files
+        logo_resource = files("iqview.resources").joinpath("logo.png")
+        with logo_resource.open("rb") as _f:
+            _px = QPixmap()
+            _px.loadFromData(_f.read())
+        if not _px.isNull():
+            app.setWindowIcon(QIcon(_px))
+    except Exception:
+        import os as _os
+        _base = _os.path.dirname(_os.path.abspath(__file__))
+        _local_logo = _os.path.join(_base, "resources", "logo.png")
+        _px = QPixmap(_local_logo)
+        if not _px.isNull():
+            app.setWindowIcon(QIcon(_px))
+    
+    window = SpectrogramWindow(data_source, dtype, fs, fc, args.fft, args.profile,
+                               is_complex=is_complex, window_name=args.name,
+                               lazy_rendering=lazy_override)
     window.show()
     
     if args.profile:

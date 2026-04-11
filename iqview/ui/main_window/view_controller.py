@@ -4,6 +4,7 @@ import numpy as np
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QFileDialog
 from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext
+from ..detached_window import DetachedViewWindow
 
 class ViewControllerMixin:
     def on_parameters_changed(self, params):
@@ -91,10 +92,10 @@ class ViewControllerMixin:
             else:
                 self.filter_line.hide()
 
-    def on_filter_toggled(self, checked):
-        self.filter_enabled = checked
+    def on_filter_changed(self, mode):
+        self.filter_mode = mode
         if self.filter_region:
-            if checked and self.interaction_mode == 'FILTER' and getattr(self, 'filter_placed', False):
+            if mode and self.interaction_mode == 'FILTER' and getattr(self, 'filter_placed', False):
                 self.filter_region.show()
             elif self.interaction_mode != 'FILTER' or not getattr(self, 'filter_placed', False):
                 self.filter_region.hide()
@@ -126,7 +127,7 @@ class ViewControllerMixin:
             self.filter_bounds = new_bounds
             
         # Trigger reprocessing when the user finishes dragging the region
-        if getattr(self, 'filter_enabled', False) and self._has_data():
+        if getattr(self, 'filter_mode', None) and self._has_data():
             self.start_processing()
 
     def refresh_cursor(self):
@@ -185,6 +186,61 @@ class ViewControllerMixin:
             self.tabs.setCurrentWidget(view)
             self.update_tab_names()
 
+    def undock_tab(self, index, initial_pos=None):
+        """Moves a tab from the QTabWidget to a standalone window.
+        
+        Args:
+            index:       Tab index to undock (must be > 0).
+            initial_pos: Optional QPoint for the new window's top-left corner.
+                         When provided the window is positioned before show() so
+                         it appears exactly where the user released the drag.
+        """
+        if index <= 0: return  # Don't undock spectrogram
+
+        widget = self.tabs.widget(index)
+        if not widget: return
+
+        # Remove from tabs without deleting
+        self.tabs.removeTab(index)
+
+        # Create detached window — position is applied inside __init__ before show()
+        dv = DetachedViewWindow(widget, self, initial_pos=initial_pos)
+        self.detached_views.append(dv)
+
+        self.update_tab_names()
+
+    def dock_view(self, widget):
+        """Moves a view from a standalone window back to the QTabWidget."""
+        # Find the detached window containing this widget
+        target_dv = None
+        for dv in self.detached_views:
+            if dv.view == widget:
+                target_dv = dv
+                break
+
+        if not target_dv: return
+
+        # IMPORTANT: reparent the widget away from the detached window BEFORE
+        # closing it.  QMainWindow takes ownership of its central widget, so
+        # calling close() (or setCentralWidget(None)) would delete the widget.
+        # setParent(None) breaks the parent-child link so Qt won't destroy it.
+        widget.hide()
+        widget.setParent(None)
+
+        # Close the now-empty detached window (closeEvent is a no-op because
+        # we already removed it from detached_views before close()).
+        self.detached_views.remove(target_dv)
+        target_dv.close()
+
+        # Add back to tabs
+        from ..time_domain.view import TimeDomainView
+        from ..frequency_domain.view import FrequencyDomainView
+
+        label = "Time Domain" if isinstance(widget, TimeDomainView) else "Freq Domain"
+        self.tabs.addTab(widget, label)
+        self.tabs.setCurrentWidget(widget)
+        self.update_tab_names()
+
     def reset_zoom(self):
         active_tab = self.tabs.currentWidget()
         if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'reset_zoom'):
@@ -235,6 +291,41 @@ class ViewControllerMixin:
             v_min, v_max = min(v1, v2), max(v1, v2)
             if is_freq: self.spectrogram_view.plot_item.setYRange(v_min, v_max, padding=0)
             else: self.spectrogram_view.plot_item.setXRange(v_min, v_max, padding=0)
+
+    def clear_all_markers(self):
+        # Clear time / freq markers (regular and endless)
+        all_markers = self.markers_time + self.markers_freq + self.markers_time_endless + self.markers_freq_endless
+        for m in all_markers:
+            self.spectrogram_view.plot_item.removeItem(m)
+        self.markers_time.clear()
+        self.markers_freq.clear()
+        self.markers_time_endless.clear()
+        self.markers_freq_endless.clear()
+        
+        # Reset filter state
+        if self.filter_region:
+            self.filter_region.hide()
+        if hasattr(self, 'filter_line') and self.filter_line:
+            self.filter_line.hide()
+            
+        self.filter_mode    = None
+        self.filter_placed  = False
+        self.filter_placing = False
+        self.filter_bounds  = []
+        self.filter_marker_order = []
+        if hasattr(self.marker_panel, 'cb_bpf'):
+            self.marker_panel.cb_bpf.setChecked(False)
+            self.marker_panel.cb_bsf.setChecked(False)
+
+        # Update displays
+        self.marker_panel.update_headers(self.interaction_mode)
+        self.update_marker_info()
+        self.update_grid('TIME', force=True)
+        self.update_grid('FREQ', force=True)
+        
+        # Refresh processing if filter was removed
+        if self._has_data():
+            self.start_processing()
 
     def toggle_grid(self, axis, enabled):
         if axis == 'TIME': self.grid_time_enabled = enabled
@@ -413,7 +504,10 @@ class ViewControllerMixin:
         # Update data source
         self.data_source = path
         self.file_path   = path
-        self.setWindowTitle(f"IQView - {path}")
+        if getattr(self, 'custom_window_name', None):
+            self.setWindowTitle(f"IQView - {self.custom_window_name}")
+        else:
+            self.setWindowTitle(f"IQView - {path}")
 
         # Priority: 1. Auto-detection from filename, 2. App Settings
         auto_type = detect_type_from_ext(path)
@@ -435,36 +529,10 @@ class ViewControllerMixin:
         # Save to recent files list
         self._add_recent_file(path)
 
-        # Clear all markers
-        for m in self.markers_time:
-            self.spectrogram_view.plot_item.removeItem(m)
-        for m in self.markers_freq:
-            self.spectrogram_view.plot_item.removeItem(m)
-        self.markers_time.clear()
-        self.markers_freq.clear()
-        if hasattr(self, 'marker_panel'):
-            self.marker_panel.update_headers(self.interaction_mode)
+        # Clear all markers using refactored method
+        self.clear_all_markers()
 
         # Close all Time Domain tabs (keep index 0 = Spectrogram)
-        while self.tabs.count() > 1:
-            widget = self.tabs.widget(1)
-            self.tabs.removeTab(1)
-            widget.deleteLater()
-
-        # Reset zoom history and first-load flag
-        self.zoom_history.clear()
-        self.is_first_load = True
-
-        # Reset filter state
-        if self.filter_region:
-            self.filter_region.hide()
-        self.filter_enabled  = False
-        self.filter_placed   = False
-        self.filter_placing  = False
-        self.filter_bounds   = []
-        self.filter_marker_order = []
-        if hasattr(self.marker_panel, 'filter_on_btn'):
-            self.marker_panel.filter_on_btn.setChecked(False)
 
         # Update sidebar file info
         self.update_sidebar_file_info(path, type_str)

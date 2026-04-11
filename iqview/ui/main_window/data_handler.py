@@ -13,6 +13,18 @@ class DataHandlerMixin:
         """True when a data source has been loaded (works in both lazy and full-file modes)."""
         return self.data_source is not None
 
+    @property
+    def _lazy_enabled(self):
+        """Per-instance lazy mode flag.
+        Priority: CLI override stored in self._lazy_rendering_override
+                  > QSettings 'core/lazy_rendering'
+        Using a property (not a cached value) so Settings-dialog changes take effect
+        immediately without restarting, while CLI flags still win."""
+        override = getattr(self, '_lazy_rendering_override', None)
+        if override is not None:
+            return bool(override)
+        return bool(self.settings_mgr.get("core/lazy_rendering", True))
+
     def start_processing(self):
         if self.data_source is None:
             return  # nothing loaded yet — waiting for user to open a file
@@ -35,7 +47,7 @@ class DataHandlerMixin:
         f_min_rel = (f_min - self.fc) if f_min is not None else None
         f_max_rel = (f_max - self.fc) if f_max is not None else None
 
-        lazy_enabled = bool(self.settings_mgr.get("core/lazy_rendering", True))
+        lazy_enabled = self._lazy_enabled
 
         # Lazy mode only applies to file-path sources, not in-memory bytes
         if lazy_enabled and isinstance(self.data_source, str):
@@ -48,12 +60,14 @@ class DataHandlerMixin:
             self.worker = FileReaderThread(
                 self.data_source, self.data_type, self.fft_size, self.overlap_percent,
                 self.rate, self.profile_enabled, self.window_type,
-                filter_enabled=self.filter_enabled, f_min=f_min_rel, f_max=f_max_rel,
+                filter_mode=self.filter_mode, f_min=f_min_rel, f_max=f_max_rel,
                 is_complex=self.is_complex,
                 filter_type=str(self.settings_mgr.get("core/filter_type", "Elliptic")),
                 filter_order=int(self.settings_mgr.get("core/filter_order", 8)),
                 filter_ripple=float(self.settings_mgr.get("core/filter_ripple", 0.1)),
                 filter_stopband=float(self.settings_mgr.get("core/filter_stopband", 60.0)),
+                filter_taps=int(self.settings_mgr.get("core/filter_taps", 101)),
+                fir_window=str(self.settings_mgr.get("core/fir_window", "Hamming")),
                 filter_bessel_norm=str(self.settings_mgr.get("core/filter_bessel_norm", "phase"))
             )
             self.worker.progress.connect(self.update_progress)
@@ -83,7 +97,7 @@ class DataHandlerMixin:
         """Called by SpectrogramView whenever the visible range changes."""
         if self.data_source is None:
             return
-        lazy_enabled = bool(self.settings_mgr.get("core/lazy_rendering", True))
+        lazy_enabled = self._lazy_enabled
         if not lazy_enabled or not isinstance(self.data_source, str):
             return
         self._schedule_lazy_render()
@@ -129,12 +143,14 @@ class DataHandlerMixin:
             is_complex=self.is_complex,
             window_type=self.window_type,
             overlap_percent=self.overlap_percent,
-            filter_enabled=self.filter_enabled,
+            filter_mode=self.filter_mode,
             f_min=f_min_rel, f_max=f_max_rel,
             filter_type=str(self.settings_mgr.get("core/filter_type", "Elliptic")),
             filter_order=int(self.settings_mgr.get("core/filter_order", 8)),
             filter_ripple=float(self.settings_mgr.get("core/filter_ripple", 0.1)),
             filter_stopband=float(self.settings_mgr.get("core/filter_stopband", 60.0)),
+            filter_taps=int(self.settings_mgr.get("core/filter_taps", 101)),
+            fir_window=str(self.settings_mgr.get("core/fir_window", "Hamming")),
             filter_bessel_norm=str(self.settings_mgr.get("core/filter_bessel_norm", "phase"))
         )
         self.lazy_worker.progress.connect(self.update_progress)
@@ -274,8 +290,8 @@ class DataHandlerMixin:
                 complex_data = raw_data.astype(np.complex64)
 
             # Apply Filter if enabled
-            if hasattr(self, 'filter_enabled') and self.filter_enabled and self.filter_region:
-                from iqview.dsp import apply_bpf
+            if hasattr(self, 'filter_mode') and self.filter_mode and self.filter_region:
+                from iqview.dsp import apply_filter
                 v_low, v_high = self.filter_region.getRegion()
                 f_min, f_max = min(v_low, v_high), max(v_low, v_high)
 
@@ -285,10 +301,13 @@ class DataHandlerMixin:
                 f_stopband = float(self.settings_mgr.get("core/filter_stopband", 60.0))
                 f_bessel_norm = str(self.settings_mgr.get("core/filter_bessel_norm", "phase"))
 
-                complex_data = apply_bpf(
+                complex_data = apply_filter(
                     complex_data, self.rate, f_min - self.fc, f_max - self.fc,
                     filter_type=f_type, order=f_order,
                     rp=f_ripple, rs=f_stopband,
+                    filter_taps=int(self.settings_mgr.get("core/filter_taps", 101)),
+                    fir_window=str(self.settings_mgr.get("core/fir_window", "Hamming")),
+                    mode=self.filter_mode,
                     bessel_norm=f_bessel_norm
                 )
 

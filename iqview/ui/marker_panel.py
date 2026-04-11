@@ -156,31 +156,31 @@ class MarkerPanel(QFrame):
         # same style as the Delta and Center buttons.
         self.grid.addWidget(QLabel(""), 0, 0) # Top-left empty
 
-        self.btn_lock_m1 = QPushButton("Marker 1 🔓")
+        self.btn_lock_m1 = QPushButton("Marker 1")
         self.btn_lock_m1.setFont(self.header_font)
         self.btn_lock_m1.setCheckable(True)
         self.grid.addWidget(self.btn_lock_m1, 0, 1, Qt.AlignmentFlag.AlignCenter)
 
-        self.btn_lock_m2 = QPushButton("Marker 2 🔓")
+        self.btn_lock_m2 = QPushButton("Marker 2")
         self.btn_lock_m2.setFont(self.header_font)
         self.btn_lock_m2.setCheckable(True)
         self.grid.addWidget(self.btn_lock_m2, 0, 2, Qt.AlignmentFlag.AlignCenter)
 
         # Delta Header (Combined with Lock)
-        self.btn_lock_delta = QPushButton("Delta (Δ) 🔓")
+        self.btn_lock_delta = QPushButton("Delta (Δ)")
         self.btn_lock_delta.setFont(self.header_font)
         self.btn_lock_delta.setCheckable(True)
         self.grid.addWidget(self.btn_lock_delta, 0, 3)
 
         # Center Header (Combined with Lock)
-        self.btn_lock_center = QPushButton("Center 🔓")
+        self.btn_lock_center = QPushButton("Center")
         self.btn_lock_center.setFont(self.header_font)
         self.btn_lock_center.setCheckable(True)
         self.grid.addWidget(self.btn_lock_center, 0, 4)
 
         # Side labels (Row names)
-        self.row1_label = QLabel("Time (sec)")
-        self.row2_label = QLabel("Samples")
+        self.row1_label = QLabel("Samples")
+        self.row2_label = QLabel("Time (sec)")
         self.row3_label = QLabel("1/T (Hz)")
         self.row1_label.setObjectName("header_label")
         self.row2_label.setObjectName("header_label")
@@ -192,37 +192,37 @@ class MarkerPanel(QFrame):
         # Edit Widgets
         self.widgets = []
         for i in range(2):
-            sec_edit = FormattedLineEdit(); sec_edit.setFixedWidth(130); sec_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
             sam_edit = FormattedLineEdit(); sam_edit.setFixedWidth(130); sam_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            sec_edit = FormattedLineEdit(); sec_edit.setFixedWidth(130); sec_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
             inv_edit = FormattedLineEdit(); inv_edit.setFixedWidth(130); inv_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
             
-            sec_edit.setObjectName(f"m{i}_sec")
             sam_edit.setObjectName(f"m{i}_sam")
+            sec_edit.setObjectName(f"m{i}_sec")
             inv_edit.setObjectName(f"m{i}_inv")
             
-            sec_edit.returnPressed.connect(self.parent_window.marker_edit_finished)
             sam_edit.returnPressed.connect(self.parent_window.marker_edit_finished)
-            inv_edit.setReadOnly(True)  # Generally 1/T is informational, but we could make it editable later if desired
+            sec_edit.returnPressed.connect(self.parent_window.marker_edit_finished)
+            inv_edit.setReadOnly(True)  
             
-            self.grid.addWidget(sec_edit, 1, i + 1)
-            self.grid.addWidget(sam_edit, 2, i + 1)
+            self.grid.addWidget(sam_edit, 1, i + 1)
+            self.grid.addWidget(sec_edit, 2, i + 1)
             self.grid.addWidget(inv_edit, 3, i + 1)
-            self.widgets.append({'sec': sec_edit, 'sam': sam_edit, 'inv': inv_edit})
+            self.widgets.append({'sam': sam_edit, 'sec': sec_edit, 'inv': inv_edit})
 
         # Delta/Center Edits
-        self.delta_sec = FormattedLineEdit(); self.delta_sec.setFixedWidth(130); self.delta_sec.setObjectName("delta_sec"); self.delta_sec.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.delta_sam = FormattedLineEdit(); self.delta_sam.setFixedWidth(130); self.delta_sam.setObjectName("delta_sam"); self.delta_sam.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.delta_sec = FormattedLineEdit(); self.delta_sec.setFixedWidth(130); self.delta_sec.setObjectName("delta_sec"); self.delta_sec.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.delta_inv = FormattedLineEdit(); self.delta_inv.setFixedWidth(130); self.delta_inv.setObjectName("delta_inv"); self.delta_inv.setAlignment(Qt.AlignmentFlag.AlignCenter); self.delta_inv.setReadOnly(True)
         
-        self.center_sec = FormattedLineEdit(); self.center_sec.setFixedWidth(130); self.center_sec.setObjectName("center_sec"); self.center_sec.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.center_sam = FormattedLineEdit(); self.center_sam.setFixedWidth(130); self.center_sam.setObjectName("center_sam"); self.center_sam.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.center_sec = FormattedLineEdit(); self.center_sec.setFixedWidth(130); self.center_sec.setObjectName("center_sec"); self.center_sec.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.center_inv = FormattedLineEdit(); self.center_inv.setFixedWidth(130); self.center_inv.setObjectName("center_inv"); self.center_inv.setAlignment(Qt.AlignmentFlag.AlignCenter); self.center_inv.setReadOnly(True)
         
-        for w in [self.delta_sec, self.delta_sam, self.center_sec, self.center_sam]:
+        for w in [self.delta_sam, self.delta_sec, self.center_sam, self.center_sec]:
             w.returnPressed.connect(self.parent_window.marker_edit_finished)
             
-        self.grid.addWidget(self.delta_sec, 1, 3); self.grid.addWidget(self.delta_sam, 2, 3); self.grid.addWidget(self.delta_inv, 3, 3)
-        self.grid.addWidget(self.center_sec, 1, 4); self.grid.addWidget(self.center_sam, 2, 4); self.grid.addWidget(self.center_inv, 3, 4)
+        self.grid.addWidget(self.delta_sam, 1, 3); self.grid.addWidget(self.delta_sec, 2, 3); self.grid.addWidget(self.delta_inv, 3, 3)
+        self.grid.addWidget(self.center_sam, 1, 4); self.grid.addWidget(self.center_sec, 2, 4); self.grid.addWidget(self.center_inv, 3, 4)
 
         # Connect locks to parent
         self.btn_lock_m1.toggled.connect(self.on_lock_m1_toggled)
@@ -230,23 +230,25 @@ class MarkerPanel(QFrame):
         self.btn_lock_delta.toggled.connect(self.on_lock_delta_toggled)
         self.btn_lock_center.toggled.connect(self.on_lock_center_toggled)
 
-        # Filter Activation Checkbox (Moved next to table)
+        # Filter Activation Checkboxes (BPF / BSF)
         self.filter_container = QWidget()
         self.filter_layout = QVBoxLayout(self.filter_container)
         self.filter_layout.setContentsMargins(0, 0, 0, 0)
-        self.filter_layout.setSpacing(0)
+        self.filter_layout.setSpacing(2)
         
-        self.filter_enable_cb = QCheckBox("Filter On")
-        self.filter_enable_cb.setToolTip("Enable Band-Pass Filter")
-        self.filter_layout.addStretch()
-        self.filter_layout.addWidget(self.filter_enable_cb)
-        self.filter_layout.addStretch()
+        self.cb_bpf = QCheckBox("BPF")
+        self.cb_bsf = QCheckBox("BSF")
+        self.cb_bpf.setToolTip("Enable Band-Pass Filter")
+        self.cb_bsf.setToolTip("Enable Band-Stop Filter")
         
+        for cb in [self.cb_bpf, self.cb_bsf]:
+            cb.setEnabled(False)
+            cb.clicked.connect(self.on_filter_clicked)
+            self.filter_layout.addWidget(cb)
+            
         self.filter_container.setFixedWidth(80)
-        self.filter_enable_cb.setEnabled(False)
         self.filter_container.setVisible(False)
         self.grid.addWidget(self.filter_container, 1, 5, 2, 1)
-        self.filter_enable_cb.toggled.connect(self.parent_window.on_filter_toggled)
         
         # Page 1: Endless Marker List
         self.endless_widget = QWidget()
@@ -301,17 +303,16 @@ class MarkerPanel(QFrame):
         target_mode = mode if mode else self.current_mode
         if target_mode not in self.lock_states: return
 
-        for key, btn, label in [
-            ('m1',     self.btn_lock_m1,     lambda c: f"Marker 1 {'🔒' if c else '🔓'}"),
-            ('m2',     self.btn_lock_m2,     lambda c: f"Marker 2 {'🔒' if c else '🔓'}"),
-            ('delta',  self.btn_lock_delta,  lambda c: f"Delta (Δ) {'🔒' if c else '🔓'}"),
-            ('center', self.btn_lock_center, lambda c: f"Center {'🔒' if c else '🔓'}"),
+        for key, btn in [
+            ('m1',     self.btn_lock_m1),
+            ('m2',     self.btn_lock_m2),
+            ('delta',  self.btn_lock_delta),
+            ('center', self.btn_lock_center),
         ]:
             if key == keep:
                 continue
             btn.blockSignals(True)
             btn.setChecked(False)
-            btn.setText(label(False))
             self.lock_states[target_mode][key] = False
             btn.blockSignals(False)
 
@@ -335,29 +336,40 @@ class MarkerPanel(QFrame):
         self.lock_states[self.current_mode]['delta'] = checked
         if checked:
             self._clear_marker_locks(keep='delta')
-        self.btn_lock_delta.setText(f"Delta (Δ) {'🔒' if checked else '🔓'}")
         self.parent_window.handle_lock_change('delta', checked)
 
     def on_lock_center_toggled(self, checked):
         self.lock_states[self.current_mode]['center'] = checked
         if checked:
             self._clear_marker_locks(keep='center')
-        self.btn_lock_center.setText(f"Center {'🔒' if checked else '🔓'}")
         self.parent_window.handle_lock_change('center', checked)
 
     def on_lock_m1_toggled(self, checked):
         self.lock_states[self.current_mode]['m1'] = checked
         if checked:
             self._clear_marker_locks(keep='m1')
-        self.btn_lock_m1.setText(f"Marker 1 {'🔒' if checked else '🔓'}")
         self.parent_window.handle_lock_change('m1', checked)
 
     def on_lock_m2_toggled(self, checked):
         self.lock_states[self.current_mode]['m2'] = checked
         if checked:
             self._clear_marker_locks(keep='m2')
-        self.btn_lock_m2.setText(f"Marker 2 {'🔒' if checked else '🔓'}")
         self.parent_window.handle_lock_change('m2', checked)
+
+    def on_filter_clicked(self):
+        """Handle BPF/BSF exclusivity and notify parent."""
+        sender = self.sender()
+        if sender == self.cb_bpf and self.cb_bpf.isChecked():
+            self.cb_bsf.setChecked(False)
+        elif sender == self.cb_bsf and self.cb_bsf.isChecked():
+            self.cb_bpf.setChecked(False)
+            
+        # Determine mode
+        mode = None
+        if self.cb_bpf.isChecked(): mode = 'bpf'
+        elif self.cb_bsf.isChecked(): mode = 'bsf'
+        
+        self.parent_window.on_filter_changed(mode)
 
     def flip_m_lock(self):
         """Silently swap the m1/m2 lock buttons when markers cross each other."""
@@ -369,8 +381,6 @@ class MarkerPanel(QFrame):
         self.btn_lock_m2.blockSignals(True)
         self.btn_lock_m1.setChecked(m2)
         self.btn_lock_m2.setChecked(m1)
-        self.btn_lock_m1.setText(f"Marker 1 {'🔒' if m2 else '🔓'}")
-        self.btn_lock_m2.setText(f"Marker 2 {'🔒' if m1 else '🔓'}")
         self.lock_states[self.current_mode]['m1'] = m2
         self.lock_states[self.current_mode]['m2'] = m1
         self.btn_lock_m1.blockSignals(False)
@@ -416,16 +426,47 @@ class MarkerPanel(QFrame):
             self.stack.setCurrentIndex(0)
 
         if display_mode in ['FREQ', 'FREQ_ENDLESS', 'FILTER']:
-            self.row1_label.setText("Freq (Hz)")
-            self.row2_label.setText("Bin")
-            self.row3_label.setText("1/F (sec)")
+            self.row1_label.setText("Bin")
+            self.row2_label.setText("Freq (Hz)")
+            self.row1_label.show()
+            self.row2_label.show()
+            
+            # Move Frequency widgets back to Row 2
+            self.grid.addWidget(self.row1_label, 1, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self.grid.addWidget(self.row2_label, 2, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            for i in range(2):
+                self.grid.addWidget(self.widgets[i]['sam'], 1, i + 1)
+                self.grid.addWidget(self.widgets[i]['sec'], 2, i + 1)
+                self.widgets[i]['sam'].show()
+                self.widgets[i]['sec'].show()
+            self.grid.addWidget(self.delta_sam, 1, 3); self.delta_sam.show()
+            self.grid.addWidget(self.delta_sec, 2, 3); self.delta_sec.show()
+            self.grid.addWidget(self.center_sam, 1, 4); self.center_sam.show()
+            self.grid.addWidget(self.center_sec, 2, 4); self.center_sec.show()
+
+            if display_mode == 'FILTER':
+                # Enable checkboxes only if 2 bounds are placed
+                has_bounds = getattr(self.parent_window, 'filter_placed', False)
+                self.cb_bpf.setEnabled(has_bounds)
+                self.cb_bsf.setEnabled(has_bounds)
         elif display_mode in ['TIME', 'TIME_ENDLESS']:
-            self.row1_label.setText("Time (sec)")
-            self.row2_label.setText("Samples")
-            self.row3_label.setText("1/T (Hz)")
-            # Enable checkbox only if 2 bounds are placed
-            has_bounds = getattr(self.parent_window, 'filter_placed', False)
-            self.filter_enable_cb.setEnabled(has_bounds)
+            self.row1_label.setText("Samples")
+            self.row2_label.setText("Time (sec)")
+            self.row1_label.show()
+            self.row2_label.show()
+            
+            # Move Time widgets back to Row 2
+            self.grid.addWidget(self.row1_label, 1, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self.grid.addWidget(self.row2_label, 2, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            for i in range(2):
+                self.grid.addWidget(self.widgets[i]['sam'], 1, i + 1)
+                self.grid.addWidget(self.widgets[i]['sec'], 2, i + 1)
+                self.widgets[i]['sam'].show()
+                self.widgets[i]['sec'].show()
+            self.grid.addWidget(self.delta_sam, 1, 3); self.delta_sam.show()
+            self.grid.addWidget(self.delta_sec, 2, 3); self.delta_sec.show()
+            self.grid.addWidget(self.center_sam, 1, 4); self.center_sam.show()
+            self.grid.addWidget(self.center_sec, 2, 4); self.center_sec.show()
             
         show_inv = self.parent_window.settings_mgr.get("ui/show_inv_time", False)
         is_time_mode = display_mode in ['TIME', 'TIME_ENDLESS']
@@ -437,16 +478,15 @@ class MarkerPanel(QFrame):
             
         # Sync lock UI with saved state for this display mode
         if display_mode in self.lock_states:
-            for key, btn, label_fn in [
-                ('m1',     self.btn_lock_m1,     lambda c: f"Marker 1 {'🔒' if c else '🔓'}"),
-                ('m2',     self.btn_lock_m2,     lambda c: f"Marker 2 {'🔒' if c else '🔓'}"),
-                ('delta',  self.btn_lock_delta,  lambda c: f"Delta (Δ) {'🔒' if c else '🔓'}"),
-                ('center', self.btn_lock_center, lambda c: f"Center {'🔒' if c else '🔓'}"),
+            for key, btn in [
+                ('m1',     self.btn_lock_m1),
+                ('m2',     self.btn_lock_m2),
+                ('delta',  self.btn_lock_delta),
+                ('center', self.btn_lock_center),
             ]:
                 locked = self.lock_states[display_mode].get(key, False)
                 btn.blockSignals(True)
                 btn.setChecked(locked)
-                btn.setText(label_fn(locked))
                 btn.setEnabled(True)
                 btn.blockSignals(False)
         else:
@@ -469,17 +509,17 @@ class MarkerPanel(QFrame):
             h_layout.setSpacing(10)
             
             l_id = QLabel("ID"); l_id.setFixedWidth(30); l_id.setObjectName("header_label")
-            l_main = QLabel(f"Pos ({unit_main})")
-            l_main.setObjectName("header_label")
-            l_main.setProperty("role", "pos_header")
             l_sub = QLabel(unit_sub)
             l_sub.setObjectName("header_label")
             l_sub.setProperty("role", "sub_header")
+            l_main = QLabel(f"Pos ({unit_main})")
+            l_main.setObjectName("header_label")
+            l_main.setProperty("role", "pos_header")
             l_del = QLabel(""); l_del.setFixedWidth(24)
             
             h_layout.addWidget(l_id)
-            h_layout.addWidget(l_main, 1)
             h_layout.addWidget(l_sub, 1)
+            h_layout.addWidget(l_main, 1)
             h_layout.addWidget(l_del)
             self.scroll_layout.insertWidget(0, self._header_widget)
 
@@ -508,13 +548,13 @@ class MarkerPanel(QFrame):
             lbl_id.setFixedWidth(30)
             lbl_id.setStyleSheet("color: #ff6400; font-weight: bold;")
             
-            edit_pos = FormattedLineEdit()
-            edit_pos.setFixedHeight(24)
-            edit_pos.returnPressed.connect(self.parent_window.marker_edit_finished)
-            
             edit_sub = FormattedLineEdit()
             edit_sub.setFixedHeight(24)
             edit_sub.returnPressed.connect(self.parent_window.marker_edit_finished)
+
+            edit_pos = FormattedLineEdit()
+            edit_pos.setFixedHeight(24)
+            edit_pos.returnPressed.connect(self.parent_window.marker_edit_finished)
             
             btn_del = QPushButton("×")
             btn_del.setFixedWidth(24); btn_del.setFixedHeight(24)
@@ -525,8 +565,8 @@ class MarkerPanel(QFrame):
             """)
             
             row_layout.addWidget(lbl_id)
-            row_layout.addWidget(edit_pos, 1)
             row_layout.addWidget(edit_sub, 1)
+            row_layout.addWidget(edit_pos, 1)
             row_layout.addWidget(btn_del)
             
             # Insert into layout (before the stretch)
@@ -635,9 +675,21 @@ class MarkerPanel(QFrame):
         """)
         
         lock_style = f"""
-            QPushButton {{ background: none; border: none; color: {p.text_dim}; padding: 0; text-transform: uppercase; font-size: 10px; }}
-            QPushButton:hover {{ color: {p.text_header}; }}
-            QPushButton:checked {{ color: {p.accent}; }}
+            QPushButton {{ 
+                background: none; 
+                border: 1px solid transparent; 
+                border-radius: 4px;
+                color: {p.text_dim}; 
+                padding: 1px 4px; 
+                text-transform: uppercase; 
+                font-size: 10px; 
+            }}
+            QPushButton:hover {{ color: {p.text_header}; background-color: {p.border}; }}
+            QPushButton:checked {{ 
+                color: {p.accent}; 
+                border: 1px solid {p.accent};
+                background-color: {p.accent_dim};
+            }}
         """
         if hasattr(self, 'btn_lock_delta'):
             for btn in [self.btn_lock_m1, self.btn_lock_m2, self.btn_lock_delta, self.btn_lock_center]:

@@ -32,6 +32,15 @@ class FrequencyDomainView(QWidget):
         self._marker_age = {}
         self._marker_age_counter = 0
         self.active_drag_stats_bound_idx = -1
+
+        # Filter state
+        self.filter_bounds = []
+        self.filter_marker_order = []
+        self.filter_placed = False
+        self.filter_mode = None
+        self.filter_line = None
+        self.active_drag_filter_bound_idx = -1
+        self._filtered_samples = None
         
         # Endless Markers
         self.markers_freq_endless = []
@@ -42,6 +51,7 @@ class FrequencyDomainView(QWidget):
         self.markers_y_dict = {
             "magnitude": [], "magnitude [dB]": [], 
             "magnitude^2": [],
+            "power spectrum density (PSD)": [], "PSD [dB]": [],
             "real": [], "real [dB]": [], 
             "imag": [], "imag [dB]": [],
             "phase": [], "unwrapped phase": []
@@ -71,6 +81,7 @@ class FrequencyDomainView(QWidget):
         self.marker_panel.interactionModeChanged.connect(self.set_interaction_mode)
         self.marker_panel.resetZoomRequested.connect(self.reset_zoom)
         self.marker_panel.markerClearRequested.connect(self.handle_marker_clear)
+        self.marker_panel.filterModeChanged.connect(self.on_filter_mode_changed)
         self.main_layout.addWidget(self.marker_panel)
         
         # --- Toolbar ---
@@ -138,11 +149,21 @@ class FrequencyDomainView(QWidget):
         self.stats_markers.setZValue(10)
         self.stats_markers.hide()
         self.plot_item.addItem(self.stats_markers)
+
+        # --- Filter Region ---
+        self.filter_region = pg.LinearRegionItem(
+            orientation='vertical',
+            brush=pg.mkBrush(255, 165, 0, 30),
+            movable=False)
+        self.filter_region.setZValue(8)
+        self.filter_region.hide()
+        self.plot_item.addItem(self.filter_region)
+        self.filter_region.sigRegionChangeFinished.connect(self.on_filter_region_finished)
         
         # --- Process Data ---
         self.compute_fft()
         
-        self.available_modes = {
+        raw_modes = {
             "magnitude": self.plot_magnitude,
             "magnitude [dB]": self.plot_magnitude_db,
             "magnitude^2": self.plot_magnitude_squared,
@@ -155,6 +176,15 @@ class FrequencyDomainView(QWidget):
             "unwrapped phase": self.plot_unwrapped_phase
         }
         
+        # Track the actual requested mode key, since y_label_text might change dynamically (e.g., PSD [dB])
+        self._current_plot_mode_key = 'magnitude'
+        def _track(key, fn):
+            def wrapper(*args, **kwargs):
+                self._current_plot_mode_key = key
+                fn()
+            return wrapper
+        self.available_modes = {k: _track(k, fn) for k, fn in raw_modes.items()}
+
         self.rebuild_plot_buttons()
         self.set_interaction_mode('FREQ')
 
@@ -164,17 +194,25 @@ class FrequencyDomainView(QWidget):
 
     def compute_fft(self):
         """Perform FFT processing on the sample segment using signal length N."""
-        n = len(self.samples)
+        # Use filtered samples if a filter is active, otherwise raw samples
+        src = self._filtered_samples if (self._filtered_samples is not None) else self.samples
+        n = len(src)
         if n == 0: return
 
         # Rectangular window (no window at all)
         window = np.ones(n)
 
-        fft_res = np.fft.fft(self.samples * window) / n
+        fft_res = np.fft.fft(src * window) / n
         self.fft_data = np.fft.fftshift(fft_res)
 
-        self.fft_freq_axis = np.fft.fftshift(np.fft.fftfreq(n, 1/self.rate)) + self.center_freq
+        # freq_axis is always based on raw sample count so zooming works consistently
+        n_raw = len(self.samples) if len(self.samples) > 0 else n
+        self.fft_freq_axis = np.fft.fftshift(np.fft.fftfreq(n_raw, 1/self.rate)) + self.center_freq
         self.freq_axis = self.fft_freq_axis
+        self.stats_region.setBounds([self.freq_axis[0], self.freq_axis[-1]])
+        if hasattr(self, 'filter_region'):
+            self.filter_region.setBounds([self.freq_axis[0], self.freq_axis[-1]])
+
         self.current_plot_data = np.nan_to_num(np.abs(self.fft_data), nan=0.0, posinf=1e-15, neginf=0.0)
         self.y_label_text = "magnitude"
 
@@ -214,7 +252,8 @@ class FrequencyDomainView(QWidget):
         if mode == 'Y': mode = 'MAG'
         self.interaction_mode = mode
         self.zoom_mode = (mode == 'ZOOM')
-        
+
+        # --- Stats region visibility ---
         if mode == 'STATS':
             if len(self.stats_bounds) == 2:
                 self.stats_region.show()
@@ -229,9 +268,28 @@ class FrequencyDomainView(QWidget):
             self.stats_region.hide()
             self.stats_markers.hide()
             if self.stats_line: self.stats_line.hide()
-            
+
+        # --- Filter region visibility ---
+        if mode == 'FILTER':
+            b_len = len(self.filter_bounds)
+            if b_len == 2:
+                self.filter_region.setRegion(sorted(self.filter_bounds))
+                self.filter_region.show()
+                if self.filter_line: self.filter_line.hide()
+            elif b_len == 1:
+                self.filter_region.hide()
+                if self.filter_line: self.filter_line.show()
+            else:
+                self.filter_region.hide()
+                if self.filter_line: self.filter_line.hide()
+            if hasattr(self.marker_panel, 'set_filter_checkboxes_enabled'):
+                self.marker_panel.set_filter_checkboxes_enabled(b_len == 2)
+        else:
+            self.filter_region.hide()
+            if self.filter_line: self.filter_line.hide()
+
         self.refresh_cursor()
-        
+
         self.marker_panel.update_mode_ui(mode)
         self.marker_panel.update_headers(mode, self.y_label_text)
         self.update_marker_info()
@@ -311,7 +369,9 @@ class FrequencyDomainView(QWidget):
         nperseg = 4096 if len(self.samples) > 4096 else 1024
         
         # Fix: Use fs=1.0 density and divide by N to get Power per Bin
-        freqs, psd = compute_psd(self.samples, fs=1.0, method=method, nperseg=nperseg)
+        # Use filtered samples for PSD if a filter is active
+        src = self._filtered_samples if (getattr(self, '_filtered_samples', None) is not None) else self.samples
+        freqs, psd = compute_psd(src, fs=1.0, method=method, nperseg=nperseg)
         # Power per Bin (independent of fs)
         psd_bin_power = psd / len(psd)
         
@@ -353,6 +413,14 @@ class FrequencyDomainView(QWidget):
         self.stats_region.setZValue(50)
         self.plot_item.addItem(self.stats_markers)
         self.stats_markers.setZValue(100)
+        # Always re-add filter overlays — plot_item.clear() removes them from the scene;
+        # visibility is controlled by show()/hide(), not scene membership.
+        if hasattr(self, 'filter_region'):
+            self.plot_item.addItem(self.filter_region)
+            self.filter_region.setZValue(8)
+        if hasattr(self, 'filter_line') and self.filter_line:
+            self.plot_item.addItem(self.filter_line)
+            self.filter_line.setZValue(9)
         self.plot_item.getAxis('left').setLabel(y_label)
         
         theme = self.settings_mgr.get("ui/theme", "Dark")
@@ -422,6 +490,14 @@ class FrequencyDomainView(QWidget):
         self.stats_region.setZValue(50)
         self.plot_item.addItem(self.stats_markers)
         self.stats_markers.setZValue(100)
+        # Always re-add filter overlays — plot_item.clear() removes them from the scene;
+        # visibility is controlled by show()/hide(), not scene membership.
+        if hasattr(self, 'filter_region'):
+            self.plot_item.addItem(self.filter_region)
+            self.filter_region.setZValue(8)
+        if hasattr(self, 'filter_line') and self.filter_line:
+            self.plot_item.addItem(self.filter_line)
+            self.filter_line.setZValue(9)
         self.plot_item.getAxis('left').setLabel(y_label)
         
         theme = self.settings_mgr.get("ui/theme", "Dark")
@@ -495,6 +571,34 @@ class FrequencyDomainView(QWidget):
         f_max, f_min = self.freq_axis[idx_max], self.freq_axis[idx_min]
         panel = self.marker_panel
         
+        # --- Update Marker Panel Region Definition ---
+        prec1 = int(self.settings_mgr.get("ui/label_precision", 9))
+        self.marker_panel.st_row_v1_lbl.setText("Region (Hz)")
+        self.marker_panel.st_row_v2_lbl.setText("Index")
+        
+        # In case they were swapped during drag
+        b1, b2 = sorted([r_min, r_max])
+        
+        # Bounds (M1, M2)
+        for i, val in enumerate([b1, b2]):
+            w = self.marker_panel.st_widgets[i]
+            w['v1'].blockSignals(True); w['v1'].setText(f"{val:.{prec1}f}"); w['v1'].blockSignals(False)
+            
+            idx = self.freq_to_index(val)
+            w['v2'].blockSignals(True); w['v2'].setText(f"{idx}"); w['v2'].blockSignals(False)
+
+        # Delta/Center
+        dv = abs(b2 - b1)
+        cv = (b1 + b2) / 2
+        
+        self.marker_panel.st_delta_v1.blockSignals(True); self.marker_panel.st_delta_v1.setText(f"{dv:.{prec1}f}"); self.marker_panel.st_delta_v1.blockSignals(False)
+        self.marker_panel.st_center_v1.blockSignals(True); self.marker_panel.st_center_v1.setText(f"{cv:.{prec1}f}"); self.marker_panel.st_center_v1.blockSignals(False)
+        
+        idx1, idx2 = self.freq_to_index(b1), self.freq_to_index(b2)
+        self.marker_panel.st_delta_v2.blockSignals(True); self.marker_panel.st_delta_v2.setText(f"{abs(idx2-idx1)+1}"); self.marker_panel.st_delta_v2.blockSignals(False)
+        self.marker_panel.st_center_v2.blockSignals(True); self.marker_panel.st_center_v2.setText(f"{self.freq_to_index(cv)}"); self.marker_panel.st_center_v2.blockSignals(False)
+
+        # --- Update Statistics Results ---
         # 1. Convert slice_data to Linear Power
         if "[dB]" in self.y_label_text:
             # slice_data is either 20*log10(mag) or 10*log10(psd).
@@ -510,15 +614,17 @@ class FrequencyDomainView(QWidget):
         p_mean_lin = np.mean(lin_pow_slice)
         
         # 3. Calculate Integrated Power in selection
-        # (Since all modes now store linear 'Power per Bin', this is just a sum)
         total_p_lin = np.sum(lin_pow_slice)
         
         # Update UI text
         if "[dB]" in self.y_label_text:
             p_mean_db = 10 * np.log10(p_mean_lin + 1e-18)
             panel.stats_mean_val.setText(f"{p_mean_db:.2f} dB")
+            total_p_db = 10 * np.log10(total_p_lin + 1e-15)
+            panel.stats_total_power.setText(f"{total_p_db:.2f} dB")
         else:
             panel.stats_mean_val.setText(f"{p_mean_lin:.4g}")
+            panel.stats_total_power.setText(f"{total_p_lin:.4g}")
             
         panel.stats_max_val.setText(f"{p_max:.4g}"); panel.stats_min_val.setText(f"{p_min:.4g}")
         panel.stats_median_val.setText(f"{p_median:.4g}")
@@ -526,12 +632,6 @@ class FrequencyDomainView(QWidget):
         panel.stats_10th_val.setText(f"{p_10:.4g}")
         panel.stats_diff_val.setText(f"{p_diff:.4g}")
         
-        if "[dB]" in self.y_label_text:
-            total_p_db = 10 * np.log10(total_p_lin + 1e-15)
-            panel.stats_total_power.setText(f"{total_p_db:.2f} dB")
-        else:
-            panel.stats_total_power.setText(f"{total_p_lin:.4g}")
-
         panel.stats_max_freq.setText(f"{f_max:,.0f}"); panel.stats_min_freq.setText(f"{f_min:,.0f}")
         panel.stats_max_idx.setText(f"{idx_max:,}"); panel.stats_min_idx.setText(f"{idx_min:,}")
         
@@ -543,8 +643,49 @@ class FrequencyDomainView(QWidget):
     def freq_to_index(self, freq):
         return np.searchsorted(self.freq_axis, freq)
 
+    def clear_all_markers(self):
+        # 1. Clear regular and endless frequency markers
+        for m in (self.markers_freq + self.markers_freq_endless):
+            self.plot_item.removeItem(m)
+        self.markers_freq.clear()
+        self.markers_freq_endless.clear()
+        
+        # 2. Clear magnitude (Y) markers for all modes
+        for y_label in self.markers_y_dict:
+            for m in self.markers_y_dict[y_label]:
+                self.plot_item.removeItem(m)
+            self.markers_y_dict[y_label].clear()
+            
+        for y_label in self.markers_y_endless_dict:
+            for m in self.markers_y_endless_dict[y_label]:
+                self.plot_item.removeItem(m)
+            self.markers_y_endless_dict[y_label].clear()
+
+        # 3. Clear stats region and markers
+        self.stats_bounds.clear()
+        self.stats_marker_order.clear()
+        if getattr(self, 'stats_region', None): self.stats_region.hide()
+        if getattr(self, 'stats_line', None): self.stats_line.hide()
+        if getattr(self, 'stats_markers', None): self.stats_markers.clear()
+
+        # 4. Clear filter bounds and replot unfiltered
+        self._clear_filter_state(replot=True)
+
+        # 5. Clear grid lines
+        self.toggle_grid('FREQ', False)
+        self.toggle_grid('MAG', False)
+
+        # 6. Reset UI
+        self.update_marker_info()
+
     def place_marker(self, scene_pos, drag_mode=False):
         v_pos = self.view_box.mapSceneToView(scene_pos)
+
+        # --- FILTER mode: place/drag filter bounds ---
+        if self.interaction_mode == 'FILTER':
+            self._place_filter_bound(scene_pos, v_pos, drag_mode)
+            return
+
         is_freq = (self.interaction_mode in ['FREQ', 'FREQ_ENDLESS', 'STATS'])
         is_endless = 'ENDLESS' in self.interaction_mode
         
@@ -573,14 +714,11 @@ class FrequencyDomainView(QWidget):
                         min_dist = dist; best_idx = i
                 
                 if best_idx != -1:
-                    old_v = self.stats_bounds[best_idx]
                     self.stats_bounds[best_idx] = val
-                    if old_v in self.stats_marker_order:
-                        oidx = self.stats_marker_order.index(old_v)
-                        self.stats_marker_order[oidx] = val
+                        
                     self.stats_bounds.sort()
-                    if drag_mode:
-                        self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
+                    self.stats_marker_order = list(self.stats_bounds)
+                    self.active_drag_stats_bound_idx = self.stats_bounds.index(val) if val in self.stats_bounds else 0
                     
                     if len(self.stats_bounds) == 1:
                         if self.stats_line: self.stats_line.setPos(val)
@@ -630,72 +768,47 @@ class FrequencyDomainView(QWidget):
         for i, m in enumerate(active_markers):
             pi = self.view_box.mapViewToScene(pg.Point(m.value(), 0) if is_freq else pg.Point(0, m.value()))
             dist = abs(scene_pos.x() - pi.x()) if is_freq else abs(scene_pos.y() - pi.y())
-            if dist < 10:
+            if dist < 20: # Match time domain distance
                 found_marker = m
                 break
         
         if found_marker:
-            self.active_drag_marker = found_marker
-            return
-
-        # 2. Add or RE-PLACE Marker
-        if not is_endless and len(active_markers) == 2:
-            # Teleport/Swap logic (like in Time Domain)
-            lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
-            lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
-            lock_delta = self.marker_panel.btn_lock_delta.isChecked()
-            lock_center = self.marker_panel.btn_lock_center.isChecked()
-
-            # Decide which marker to move
-            if lock_m1 and not lock_m2:
-                target, other = active_markers[1], active_markers[0]
-            elif lock_m2 and not lock_m1:
-                target, other = active_markers[0], active_markers[1]
+            if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+                old_v = found_marker.value()
+                shift = val - old_v
+                other = active_markers[0] if active_markers[1] == found_marker else active_markers[1]
+                
+                if self.marker_panel.btn_lock_delta.isChecked():
+                    new_o = other.value() + shift
+                    if is_freq:
+                        f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+                        if f_min <= val <= f_max and f_min <= new_o <= f_max:
+                            found_marker.setValue(val); other.setValue(new_o)
+                    else:
+                        y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
+                        if y_min <= val <= y_max and y_min <= new_o <= y_max:
+                            found_marker.setValue(val); other.setValue(new_o)
+                elif self.marker_panel.btn_lock_center.isChecked():
+                    ct = (old_v + other.value()) / 2
+                    new_o = 2 * ct - val
+                    if is_freq:
+                        f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+                        if f_min <= val <= f_max and f_min <= new_o <= f_max:
+                            found_marker.setValue(val); other.setValue(new_o)
+                    else:
+                        y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
+                        if y_min <= val <= y_max and y_min <= new_o <= y_max:
+                            found_marker.setValue(val); other.setValue(new_o)
             else:
-                # Move oldest
-                target = min(active_markers, key=lambda m: self._marker_age.get(m, 0))
-                other = active_markers[1] if target == active_markers[0] else active_markers[0]
-            
-            # If target is locked, verify if we can move it via delta/center
-            is_m1 = (target == active_markers[0])
-            if (is_m1 and lock_m1) or (not is_m1 and lock_m2):
-                if not (lock_delta or lock_center): return
-
-            shift = val - target.value()
-            if lock_delta:
-                new_t, new_o = val, other.value() + shift
-                if is_freq:
-                    f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
-                    if f_min <= new_t <= f_max and f_min <= new_o <= f_max:
-                        target.setValue(new_t); other.setValue(new_o)
-                else:
-                    y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
-                    if y_min <= new_t <= y_max and y_min <= new_o <= y_max:
-                        target.setValue(new_t); other.setValue(new_o)
-            elif lock_center:
-                ct = (active_markers[0].value() + active_markers[1].value()) / 2
-                new_o = 2 * ct - val
-                if is_freq:
-                    f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
-                    if f_min <= val <= f_max and f_min <= new_o <= f_max:
-                        target.setValue(val); other.setValue(new_o)
-                else:
-                    y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
-                    if y_min <= val <= y_max and y_min <= new_o <= y_max:
-                        target.setValue(val); other.setValue(new_o)
-            else:
-                target.setValue(val)
-                self._marker_age_counter += 1
-                self._marker_age[target] = self._marker_age_counter
-
-            if drag_mode:
-                self.active_drag_marker = target
-
+                found_marker.setValue(val)
+                
+            if drag_mode: self.active_drag_marker = found_marker
             self.update_marker_info()
             return
 
-        # 1.5 Hit test GRID LINES (Shadow Markers)
-        if not is_endless and len(active_markers) == 2:
+        # 1.5 Check for Grid Lines (Shadow Markers)
+        lock_delta = self.marker_panel.btn_lock_delta.isChecked()
+        if not lock_delta and (self.interaction_mode in ['FREQ', 'MAG', 'Y']):
             grid_lines = self.grid_lines_freq if is_freq else self.grid_lines_mag
             best_gl = None
             min_gl_dist = 20 # pixels
@@ -707,15 +820,15 @@ class FrequencyDomainView(QWidget):
                 if dist < min_gl_dist:
                     min_gl_dist = dist; best_gl = gl
             
-            if best_gl:
+            if best_gl and len(active_markers) == 2:
                 sorted_m = sorted(active_markers, key=lambda m: m.value())
                 p1, p2 = sorted_m[0].value(), sorted_m[1].value()
                 delta = p2 - p1
-                k = (best_gl.value() - p1) / delta if delta != 0 else 0.5
+                g_pos = best_gl.value()
+                k = (g_pos - p1) / delta if delta != 0.0 else 1.0
                 
                 lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
                 lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
-                lock_delta = self.marker_panel.btn_lock_delta.isChecked()
                 lock_center = self.marker_panel.btn_lock_center.isChecked()
                 
                 move_p1 = (k < 0.5)
@@ -735,24 +848,94 @@ class FrequencyDomainView(QWidget):
                     self.active_drag_marker = None
                 return
 
-        # 2. Add NEW Marker
+        # 2. Teleport existing markers if clicked outside
+        if not is_endless and len(active_markers) == 2:
+            m1_pos, m2_pos = active_markers[0].value(), active_markers[1].value()
+            lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
+            lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
+            lock_delta = self.marker_panel.btn_lock_delta.isChecked()
+            lock_center = self.marker_panel.btn_lock_center.isChecked()
+
+            # Decide which marker to move
+            if lock_m1 and not lock_m2:
+                target, other = active_markers[1], active_markers[0]
+                target_idx = 1
+            elif lock_m2 and not lock_m1:
+                target, other = active_markers[0], active_markers[1]
+                target_idx = 0
+            else:
+                # Move oldest
+                target = min(active_markers, key=lambda m: self._marker_age.get(m, 0))
+                other = active_markers[1] if target == active_markers[0] else active_markers[0]
+                target_idx = 0 if target is active_markers[0] else 1
+            
+            if (target_idx == 0 and lock_m1) or (target_idx == 1 and lock_m2):
+                if not (lock_delta or lock_center): return
+
+            shift = val - target.value()
+            if lock_delta:
+                new_t, new_o = val, other.value() + shift
+                if is_freq:
+                    f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+                    if f_min <= new_t <= f_max and f_min <= new_o <= f_max:
+                        target.setValue(new_t); other.setValue(new_o)
+                else:
+                    y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
+                    if y_min <= new_t <= y_max and y_min <= new_o <= y_max:
+                        target.setValue(new_t); other.setValue(new_o)
+            elif lock_center:
+                ct = (m1_pos + m2_pos) / 2
+                new_o = 2 * ct - val
+                if is_freq:
+                    f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+                    if f_min <= val <= f_max and f_min <= new_o <= f_max:
+                        target.setValue(val); other.setValue(new_o)
+                else:
+                    y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
+                    if y_min <= val <= y_max and y_min <= new_o <= y_max:
+                        target.setValue(val); other.setValue(new_o)
+            else:
+                target.setValue(val)
+                # Swap logic
+                if (val > other.value() and target_idx == 0) or (val < other.value() and target_idx == 1):
+                    active_markers[0], active_markers[1] = active_markers[1], active_markers[0]
+                    self.marker_panel.flip_m_lock(self.interaction_mode)
+
+            # Age update
+            if not drag_mode:
+                self._marker_age[target] = self._marker_age_counter
+                self._marker_age_counter += 1
+            else:
+                self.active_drag_marker = target
+
+            self.update_marker_info()
+            return
+
+        # 3. Add brand new
         if len(active_markers) < (100 if is_endless else 2):
-            p = get_palette(self.settings_mgr.get("ui/theme", "Dark"))
+            theme = self.settings_mgr.get("ui/theme", "Dark")
+            p = get_palette(theme)
             color = p.marker_freq if (is_freq and hasattr(p, 'marker_freq')) else \
                     p.marker_mag if not is_freq else p.marker_time
+            orient = 90 if is_freq else 0
             
-            m = pg.InfiniteLine(pos=val, angle=90 if is_freq else 0, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine), movable=False)
-            m.setZValue(20)
+            new_m = pg.InfiniteLine(pos=val, angle=orient, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine), movable=False)
+            new_m.setHoverPen(pg.mkPen(255, 0, 0, width=2))
+            new_m.setAcceptHoverEvents(True)
+            new_m.setZValue(100)
+            self._marker_age[new_m] = self._marker_age_counter
+            self._marker_age_counter += 1
+            
             if is_endless:
                 from PyQt6.QtWidgets import QGraphicsTextItem
-                label = pg.InfLineLabel(m, text=f"M{len(active_markers)+1}", position=0.9, color=color)
-                m.label = label
+                label_text = f"M{len(active_markers)+1}"
+                new_m.label = pg.InfLineLabel(new_m, text=label_text, position=0.9, color=color)
             
-            self.plot_item.addItem(m)
-            active_markers.append(m)
-            if drag_mode:
-                self.active_drag_marker = m
+            self.plot_item.addItem(new_m, ignoreBounds=True)
+            active_markers.append(new_m)
+            if drag_mode: self.active_drag_marker = new_m
             self.update_marker_info()
+
 
     def handle_lock_change(self, lock_type, checked):
         # View just needs to react if necessary (e.g. for grid sync)
@@ -799,10 +982,37 @@ class FrequencyDomainView(QWidget):
                             new_p = np.clip(self.freq_axis[max(0, min(len(self.freq_axis)-1, int(val)))], curr_min, curr_max)
                         else:
                             new_p = np.clip(val, curr_min, curr_max)
-                    else:
-                        new_p = np.clip(val, curr_min, curr_max)
-                    m.setValue(new_p)
-                self.update_marker_info()
+            if name.startswith('st_'):
+                # Stats bound/region edit
+                if not self.stats_bounds: return
+                
+                if 'm' in name:
+                    idx = int(name[4]) 
+                    if idx >= len(self.stats_bounds): return
+                    new_p = val
+                    if 'v2' in name: # Index
+                        idx_val = max(0, min(len(self.freq_axis)-1, int(val)))
+                        new_p = self.freq_axis[idx_val]
+                    new_p = np.clip(new_p, curr_min, curr_max)
+                    
+                    if idx < len(self.stats_bounds):
+                        self.stats_bounds[idx] = new_p
+                elif 'delta' in name:
+                    if len(self.stats_bounds) != 2: return
+                    dv = val
+                    if 'v2' in name: dv = val * (self.freq_axis[1] - self.freq_axis[0]) # Approx Hz from Bins
+                    ct = sum(self.stats_bounds) / 2
+                    self.stats_bounds = [ct - dv/2, ct + dv/2]
+                elif 'center' in name:
+                    if len(self.stats_bounds) != 2: return
+                    ct = val
+                    if 'v2' in name: ct = self.freq_axis[max(0, min(len(self.freq_axis)-1, int(val)))]
+                    dv = abs(self.stats_bounds[1] - self.stats_bounds[0])
+                    self.stats_bounds = [ct - dv/2, ct + dv/2]
+                
+                self.stats_bounds.sort()
+                self.stats_region.setRegion(self.stats_bounds)
+                self.update_statistics()
                 return
 
             active_markers = self.markers_freq if is_freq else self.markers_y_dict[self.y_label_text]
@@ -944,33 +1154,43 @@ class FrequencyDomainView(QWidget):
 
     def update_drag(self, scene_pos):
         v_pos = self.plot_item.vb.mapSceneToView(scene_pos)
-        
+
+        # 0. Handle FILTER bound dragging
+        if getattr(self, 'active_drag_filter_bound_idx', -1) != -1:
+            idx = self.active_drag_filter_bound_idx
+            f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+            val = max(f_min, min(f_max, v_pos.x()))
+            if len(self.filter_bounds) == 2:
+                self.filter_bounds[idx] = val
+                self.filter_bounds.sort()
+                try:
+                    self.active_drag_filter_bound_idx = self.filter_bounds.index(val)
+                except ValueError:
+                    pass
+                self.filter_region.setRegion(self.filter_bounds)
+            elif len(self.filter_bounds) == 1:
+                self.filter_bounds[0] = val
+                if self.filter_line: self.filter_line.setPos(val)
+            self.update_marker_info()
+            return
+
         # 1. Handle STATS Region dragging (Boundaries)
         if getattr(self, 'active_drag_stats_bound_idx', -1) != -1:
             idx = self.active_drag_stats_bound_idx
             f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
             val = max(f_min, min(f_max, v_pos.x()))
-            self.stats_bounds[idx] = val
-            
+
             if len(self.stats_bounds) == 2:
-                other_idx = 1 - idx
-                other_v = self.stats_bounds[other_idx]
-                
+                self.stats_bounds[idx] = val
+
                 self.stats_bounds.sort()
-                self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
-                
-                # Update order to track which one is 'oldest' for future replacements
-                if self.stats_marker_order[0] == self.stats_bounds[1 - self.active_drag_stats_bound_idx]:
-                    self.stats_marker_order = [other_v, val]
-                else:
-                    self.stats_marker_order = [val, other_v]
-                
+                if val in self.stats_bounds:
+                    self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
                 self.stats_region.setRegion(self.stats_bounds)
             else:
+                self.stats_bounds[0] = val
                 if self.stats_line: self.stats_line.setPos(val)
-                if self.stats_marker_order:
-                    self.stats_marker_order[-1] = val
-            
+                
             self.update_statistics()
             return
 
@@ -1114,6 +1334,49 @@ class FrequencyDomainView(QWidget):
         self.update_marker_info()
 
     def update_marker_info(self):
+        if self.interaction_mode == 'FILTER':
+            # Show filter bounds in the marker table
+            prec = int(self.settings_mgr.get("ui/label_precision", 9))
+            sorted_bounds = sorted(self.filter_bounds)
+            for i in range(2):
+                if i < len(sorted_bounds):
+                    val = sorted_bounds[i]
+                    self.marker_panel.m_widgets[i]['v1'].blockSignals(True)
+                    self.marker_panel.m_widgets[i]['v1'].setText(f"{val:.{prec}f}")
+                    self.marker_panel.m_widgets[i]['v1'].blockSignals(False)
+                    idx = self.freq_to_index(val)
+                    self.marker_panel.m_widgets[i]['v2'].blockSignals(True)
+                    self.marker_panel.m_widgets[i]['v2'].setText(str(idx))
+                    self.marker_panel.m_widgets[i]['v2'].blockSignals(False)
+                else:
+                    for k in ['v1', 'v2']:
+                        self.marker_panel.m_widgets[i][k].blockSignals(True)
+                        self.marker_panel.m_widgets[i][k].setText("")
+                        self.marker_panel.m_widgets[i][k].blockSignals(False)
+            if len(sorted_bounds) == 2:
+                v1, v2 = sorted_bounds[0], sorted_bounds[1]
+                self.marker_panel.delta_v1.blockSignals(True)
+                self.marker_panel.delta_v1.setText(f"{abs(v2-v1):.{prec}f}")
+                self.marker_panel.delta_v1.blockSignals(False)
+                self.marker_panel.center_v1.blockSignals(True)
+                self.marker_panel.center_v1.setText(f"{(v1+v2)/2:.{prec}f}")
+                self.marker_panel.center_v1.blockSignals(False)
+                idx1, idx2 = self.freq_to_index(v1), self.freq_to_index(v2)
+                self.marker_panel.delta_v2.blockSignals(True)
+                self.marker_panel.delta_v2.setText(f"{abs(idx2-idx1)+1}")
+                self.marker_panel.delta_v2.blockSignals(False)
+                cv = (v1 + v2) / 2
+                self.marker_panel.center_v2.blockSignals(True)
+                self.marker_panel.center_v2.setText(f"{self.freq_to_index(cv)}")
+                self.marker_panel.center_v2.blockSignals(False)
+            else:
+                for w in [self.marker_panel.delta_v1, self.marker_panel.delta_v2,
+                          self.marker_panel.center_v1, self.marker_panel.center_v2]:
+                    w.setText("")
+            self.update_grid('FREQ')
+            self.update_grid('MAG')
+            return
+
         is_freq = 'FREQ' in self.interaction_mode
         active_markers = (self.markers_freq + self.markers_freq_endless) if is_freq else \
                          (self.markers_y_dict.get(self.y_label_text, []) + self.markers_y_endless_dict.get(self.y_label_text, []))
@@ -1122,11 +1385,14 @@ class FrequencyDomainView(QWidget):
             self.marker_panel.update_endless_list(active_markers, self.interaction_mode)
         else:
             sorted_markers = sorted(active_markers, key=lambda m: m.value())
+            
+            prec1 = int(self.settings_mgr.get("ui/label_precision", 9)) if is_freq else int(self.settings_mgr.get("ui/label_precision", 6))
+            
             for i in range(2):
                 if i < len(sorted_markers):
                     val = sorted_markers[i].value()
                     self.marker_panel.m_widgets[i]['v1'].blockSignals(True)
-                    self.marker_panel.m_widgets[i]['v1'].setText(f"{val:.3f}" if is_freq else f"{val:.6g}")
+                    self.marker_panel.m_widgets[i]['v1'].setText(f"{val:.{prec1}f}")
                     self.marker_panel.m_widgets[i]['v1'].blockSignals(False)
                     if is_freq:
                         idx = self.freq_to_index(val)
@@ -1142,12 +1408,13 @@ class FrequencyDomainView(QWidget):
             if len(sorted_markers) == 2:
                 v1, v2 = sorted_markers[0].value(), sorted_markers[1].value()
                 self.marker_panel.delta_v1.blockSignals(True)
-                self.marker_panel.delta_v1.setText(f"{abs(v2-v1):.1f}" if is_freq else f"{abs(v2-v1):.6g}")
+                self.marker_panel.delta_v1.setText(f"{abs(v2-v1):.{prec1}f}")
                 self.marker_panel.delta_v1.blockSignals(False)
                 
                 self.marker_panel.center_v1.blockSignals(True)
-                self.marker_panel.center_v1.setText(f"{(v1+v2)/2:.1f}" if is_freq else f"{(v1+v2)/2:.6g}")
+                self.marker_panel.center_v1.setText(f"{(v1+v2)/2:.{prec1}f}")
                 self.marker_panel.center_v1.blockSignals(False)
+
 
                 if is_freq:
                     idx1 = self.freq_to_index(v1)
@@ -1207,6 +1474,8 @@ class FrequencyDomainView(QWidget):
                 self.stats_line = None
             self.stats_region.hide()
             self.stats_markers.hide()
+        elif mode == 'FILTER':
+            self._clear_filter_state(replot=True)
         self.update_marker_info()
 
     def update_scrollbars(self): pass # Simplified for now
@@ -1270,12 +1539,161 @@ class FrequencyDomainView(QWidget):
         if hasattr(self, 'y_label_text') and self.y_label_text in self.available_modes:
             self.available_modes[self.y_label_text]()
 
+    # -----------------------------------------------------------------------
+    # Filter (BPF / BSF) helpers
+    # -----------------------------------------------------------------------
+
+    def _place_filter_bound(self, scene_pos, v_pos, drag_mode):
+        """Click-to-place / hit-test logic for filter bounds."""
+        f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+        val = max(f_min, min(f_max, v_pos.x()))
+
+        # Hit-test existing bounds within ~20 screen-pixels
+        if self.filter_bounds:
+            view_range = self.plot_item.viewRange()[0]
+            view_width = self.plot_item.vb.width()
+            if view_width > 0:
+                px_per_hz = view_width / max(view_range[1] - view_range[0], 1e-20)
+                HIT_PX = 20.0
+                best_idx, best_dist = -1, float('inf')
+                for i, bv in enumerate(self.filter_bounds):
+                    dist = abs(val - bv) * px_per_hz
+                    if dist < HIT_PX and dist < best_dist:
+                        best_dist, best_idx = dist, i
+                if best_idx != -1:
+                    self.active_drag_filter_bound_idx = best_idx
+                    return
+
+        # FIFO: remove oldest when both bounds already placed
+        if len(self.filter_bounds) >= 2:
+            oldest_v = self.filter_marker_order[0]
+            if oldest_v in self.filter_bounds:
+                self.filter_bounds.remove(oldest_v)
+            self.filter_marker_order.pop(0)
+
+        # Add new bound
+        self.filter_bounds.append(val)
+        self.filter_marker_order.append(val)
+        self.filter_bounds.sort()
+        try:
+            self.active_drag_filter_bound_idx = self.filter_bounds.index(val)
+        except ValueError:
+            self.active_drag_filter_bound_idx = 0
+
+        # Update visuals
+        theme = self.settings_mgr.get("ui/theme", "Dark")
+        from ..themes import get_palette as _gp
+        p = _gp(theme)
+
+        if len(self.filter_bounds) == 1:
+            if self.filter_line is None:
+                self.filter_line = pg.InfiniteLine(
+                    pos=val, angle=90,
+                    pen=pg.mkPen(p.accent, width=2, style=Qt.PenStyle.DashLine),
+                    movable=False)
+                self.filter_line.setZValue(9)
+                self.plot_item.addItem(self.filter_line)
+            else:
+                self.filter_line.setPos(val)
+                self.filter_line.show()
+            self.filter_region.hide()
+            self.filter_placed = False
+        elif len(self.filter_bounds) == 2:
+            if self.filter_line: self.filter_line.hide()
+            self.filter_region.setRegion(self.filter_bounds)
+            self.filter_region.show()
+            self.filter_placed = True
+            if hasattr(self.marker_panel, 'set_filter_checkboxes_enabled'):
+                self.marker_panel.set_filter_checkboxes_enabled(True)
+
+        self.update_marker_info()
+
+    def _clear_filter_state(self, replot=False):
+        """Remove all filter state and optionally replot unfiltered data."""
+        self.filter_bounds.clear()
+        self.filter_marker_order.clear()
+        self.filter_placed = False
+        self.filter_mode = None
+        self._filtered_samples = None
+        self.active_drag_filter_bound_idx = -1
+        if self.filter_region: self.filter_region.hide()
+        if self.filter_line: self.filter_line.hide()
+        if hasattr(self.marker_panel, 'set_filter_checkboxes_enabled'):
+            self.marker_panel.set_filter_checkboxes_enabled(False)
+        if hasattr(self.marker_panel, 'cb_bpf'):
+            self.marker_panel.cb_bpf.setChecked(False)
+            self.marker_panel.cb_bsf.setChecked(False)
+        if replot:
+            self._apply_filter_and_replot()
+
+    def on_filter_mode_changed(self, mode):
+        """Called when BPF/BSF checkboxes toggle."""
+        self.filter_mode = mode if mode else None
+        self._apply_filter_and_replot()
+
+    def _apply_filter_and_replot(self):
+        """Apply BPF/BSF to samples then recompute and replot the FFT.
+
+        Calls apply_filter() which now uses zero-phase filtering (sosfiltfilt/filtfilt),
+        making BSF = (Original - BPF) mathematically exact.
+        """
+        # Use _current_plot_mode_key (always the available_modes key, unlike y_label_text
+        # which may differ, e.g. PSD key='power spectrum density (PSD)' vs label='PSD [dB]')
+        saved_mode = getattr(self, '_current_plot_mode_key', 'magnitude')
+
+        if (self.filter_mode in ('bpf', 'bsf')
+                and len(self.filter_bounds) == 2
+                and hasattr(self, 'samples') and len(self.samples) > 0):
+            from iqview.dsp import apply_filter
+            sb = sorted(self.filter_bounds)
+            f1_rel = sb[0] - self.center_freq
+            f2_rel = sb[1] - self.center_freq
+            try:
+                self._filtered_samples = apply_filter(
+                    self.samples.astype(np.complex64),
+                    self.rate, f1_rel, f2_rel,
+                    filter_type=str(self.settings_mgr.get("core/filter_type", "Elliptic")),
+                    order=int(self.settings_mgr.get("core/filter_order", 8)),
+                    rp=float(self.settings_mgr.get("core/filter_ripple", 0.1)),
+                    rs=float(self.settings_mgr.get("core/filter_stopband", 60.0)),
+                    filter_taps=int(self.settings_mgr.get("core/filter_taps", 101)),
+                    fir_window=str(self.settings_mgr.get("core/fir_window", "Hamming")),
+                    mode=self.filter_mode,
+                    bessel_norm=str(self.settings_mgr.get("core/filter_bessel_norm", "phase"))
+                )
+            except Exception as e:
+                print(f"[FD Filter] apply_filter error: {e}")
+                self._filtered_samples = None
+        else:
+            self._filtered_samples = None
+
+        self.compute_fft()
+
+        # Restore the user's chosen display mode (not the 'magnitude' default)
+        available = getattr(self, 'available_modes', {})
+        target = saved_mode if saved_mode in available else 'magnitude'
+        if target in available:
+            available[target]()
+
+
+    def on_filter_region_finished(self):
+        """Replot after the user finishes dragging the filter region."""
+        if len(self.filter_bounds) == 2:
+            new_region = sorted(self.filter_region.getRegion())
+            if len(new_region) == 2:
+                self.filter_bounds = list(new_region)
+        if self.filter_mode:
+            self._apply_filter_and_replot()
+        self.update_marker_info()
+
+    # -----------------------------------------------------------------------
 
     def keyPressEvent(self, event):
+
         if event.isAutoRepeat(): return
         key_name = QKeySequence(event.key()).toString()
-        if key_name == "F": self.set_interaction_mode('FREQ')
-        elif key_name == "M": self.set_interaction_mode('MAG')
+        if key_name == "T": self.set_interaction_mode('FREQ') # Vertical
+        elif key_name == "F": self.set_interaction_mode('MAG')  # Horizontal
         elif key_name == "Ctrl": 
             self._prev_mode = self.interaction_mode
             self.set_interaction_mode('ZOOM')

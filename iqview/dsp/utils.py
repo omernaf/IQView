@@ -3,7 +3,7 @@ import os
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
 from scipy import signal
-from .dsp import preprocess_chunk, postprocess_fft, apply_bpf, design_filter
+from .dsp import preprocess_chunk, postprocess_fft, apply_filter, design_filter
 
 class FileReaderThread(QThread):
     """
@@ -19,7 +19,7 @@ class FileReaderThread(QThread):
     
     def __init__(self, source, dtype, fft_size, overlap_percent, sample_rate, 
                  profile_enabled=False, window_type="Hanning",
-                 filter_enabled=False, f_min=None, f_max=None, is_complex=True, **kwargs):
+                 filter_mode=None, f_min=None, f_max=None, is_complex=True, **kwargs):
         super().__init__()
         self.source = source
         self.dtype = dtype
@@ -31,15 +31,26 @@ class FileReaderThread(QThread):
         
         self.filter_bessel_norm = kwargs.get('filter_bessel_norm', 'phase')
         
-        # Precompute frequency-domain BPF response for consistent visuals and performance
+        # Precompute frequency-domain BPF/BSF response mask
         self.freq_mask = None
-        if filter_enabled and f_min is not None and f_max is not None:
-            sos, f_center = design_filter(sample_rate, f_min, f_max, **kwargs)
-            if sos is not None:
+        if filter_mode in ['bpf', 'bsf'] and f_min is not None and f_max is not None:
+            filter_data, f_center, is_fir = design_filter(sample_rate, f_min, f_max, **kwargs)
+            if filter_data is not None:
                 bin_freqs = np.fft.fftshift(np.fft.fftfreq(fft_size, 1.0 / sample_rate))
                 f_eval = bin_freqs - f_center
-                _, h = signal.sosfreqz(sos, f_eval, fs=sample_rate)
-                self.freq_mask = np.abs(h).astype(np.float32)
+                
+                if is_fir:
+                    # filter_data contains taps
+                    _, h = signal.freqz(filter_data, [1.0], f_eval, fs=sample_rate)
+                else:
+                    # filter_data contains SOS
+                    _, h = signal.sosfreqz(filter_data, f_eval, fs=sample_rate)
+                    
+                h_abs = np.abs(h).astype(np.float32)
+                if filter_mode == 'bsf':
+                    self.freq_mask = 1.0 - h_abs
+                else:
+                    self.freq_mask = h_abs
         
         # Select Window Function
         if window_type == "Hanning":
@@ -203,8 +214,8 @@ class FileReaderThread(QThread):
                     
                     # Overhead
                     overhead_start = time.time()
-                    self.progress.emit(row_idx, self.num_rows)
-                    QThread.msleep(1)
+                    if row_idx == self.num_rows or row_idx % max(1, self.num_rows // 20) == 0:
+                        self.progress.emit(row_idx, self.num_rows)
                     overhead_time += (time.time() - overhead_start)
                     
                 total_time = time.time() - start_time
@@ -275,8 +286,8 @@ class ViewportAwareReader(QThread):
     def __init__(self, source, dtype, fft_size, sample_rate, t_start, t_end,
                  pixel_width, is_complex=True, window_type="Hanning",
                  overlap_percent=0.0,
-                 filter_enabled=False, f_min=None, f_max=None,
-                 max_rows=20000, **kwargs):
+                 filter_mode=None, f_min=None, f_max=None,
+                 **kwargs):
         super().__init__()
         self.source        = source
         self.dtype         = dtype
@@ -289,7 +300,7 @@ class ViewportAwareReader(QThread):
         self.running       = True
 
         # Filter settings
-        self.filter_enabled   = filter_enabled
+        self.filter_mode      = filter_mode
         self.f_min            = f_min
         self.f_max            = f_max
         self.filter_type      = kwargs.get('filter_type', 'Elliptic')
@@ -330,45 +341,47 @@ class ViewportAwareReader(QThread):
             self.num_rows = 0
             return
 
-        # How many rows do we need? One per pixel width, but at most one per
-        # fft_size worth of samples (can't have more rows than samples).
-        # We also honour the overlap setting if provided.
-        req_step = int(fft_size * (1.0 - overlap_percent / 100.0))
-        req_step = max(1, req_step)
+        # --- Row count & step size ---
+        # Goal: produce multiple rows per pixel width — enough to make the image perceptually
+        # richer and detailed via automatic downsampling, but keeping runtime strictly bounded.
+        #
+        # By targeting ~4x pixel_width rows, we rely on the Qt backend's autoDownsample
+        # to compress fine signal components visually, delivering excellent "overlap"
+        # appearance while completely dodging the 20,000+ row read bottlenecks.
+        target_rows = max(1, self.pixel_width * 4)
 
-        # How many rows to compute:
-        #   - max_rows caps computation (same as FileReaderThread's 20,000 limit)
-        #   - req_step implements the requested overlap_percent as a minimum step
-        #   - pixe_width is a secondary floor: never compute fewer rows than pixels
-        #     (so the image always fills the display without upscaling artefacts)
-        max_possible_rows = max(1, (view_samples - fft_size) // max(1, req_step) + 1)
-        # Use at least pixel_width rows so the image fills the screen,
-        # up to max_rows (like FileReaderThread) to bound computation time.
-        self.num_rows = min(max(self.pixel_width, max_possible_rows), max_rows)
-        self.num_rows = min(self.num_rows, max_possible_rows)  # can't exceed what data supports
+        req_step     = max(1, int(fft_size * (1.0 - overlap_percent / 100.0)))
+        natural_step = max(1, (view_samples - fft_size) // max(target_rows - 1, 1))
+        self.step_size = max(req_step, natural_step)
 
-        if self.num_rows > 1:
-            # Natural step to fill the view, but never smaller than req_step
-            # (so the requested overlap is honoured as a minimum quality bar).
-            natural_step = (view_samples - fft_size) // (self.num_rows - 1)
-            self.step_size = max(req_step, natural_step)
-        else:
-            self.step_size = view_samples
+        max_possible_rows = max(1, (view_samples - fft_size) // self.step_size + 1)
+        self.num_rows = min(max_possible_rows, target_rows)
 
         # Precompute frequency-domain BPF response (much better than binary mask).
         # We use the same filter design as the time-domain path, then evaluate
         # its frequency response (roll-off) at each FFT bin.
         self.freq_mask = None
-        if filter_enabled and f_min is not None and f_max is not None:
-            sos, f_center = design_filter(sample_rate, f_min, f_max, **kwargs)
-            if sos is not None:
+        if filter_mode in ['bpf', 'bsf'] and f_min is not None and f_max is not None:
+            filter_data, f_center, is_fir = design_filter(sample_rate, f_min, f_max, **kwargs)
+            if filter_data is not None:
                 # Get bins relative to fc (baseband)
                 bin_freqs = np.fft.fftshift(np.fft.fftfreq(fft_size, 1.0 / sample_rate))
                 # Evaluate at (bin_freq - f_center) because the filter is designed as a low-pass 
                 # on a signals that was shifted by -f_center in the time domain.
                 f_eval = bin_freqs - f_center
-                _, h = signal.sosfreqz(sos, f_eval, fs=sample_rate)
-                self.freq_mask = np.abs(h).astype(np.float32)
+                
+                if is_fir:
+                    # filter_data contains taps
+                    _, h = signal.freqz(filter_data, [1.0], f_eval, fs=sample_rate)
+                else:
+                    # filter_data contains SOS
+                    _, h = signal.sosfreqz(filter_data, f_eval, fs=sample_rate)
+                    
+                h_abs = np.abs(h).astype(np.float32)
+                if filter_mode == 'bsf':
+                    self.freq_mask = 1.0 - h_abs
+                else:
+                    self.freq_mask = h_abs
 
         # No guard region needed — we no longer filter in time-domain
         self.s_read_start = self.s_start
@@ -384,7 +397,6 @@ class ViewportAwareReader(QThread):
 
         item_size   = np.dtype(self.dtype).itemsize
         read_mult   = 2 if self.is_complex else 1
-        batch_size  = 500
 
         if isinstance(self.source, (bytes, bytearray)):
             data_file = io.BytesIO(self.source)
@@ -393,70 +405,92 @@ class ViewportAwareReader(QThread):
 
         try:
             with data_file as f:
-                # --- Single read: load the entire slice + guard into RAM ---
-                offset = self.s_read_start * read_mult * item_size
-                n_to_read = (self.s_read_end - self.s_read_start) * read_mult
-                f.seek(offset)
-                raw_bytes = f.read(n_to_read * item_size)
+                spectrogram = np.zeros((self.num_rows, self.fft_size), dtype=np.float32)
+                row_idx = 0
+                max_read_samples = 1_000_000  # Cap memory usage per batch to ~8MB (1M complex64)
+                
+                while self.running and row_idx < self.num_rows:
+                    batch_now = self.num_rows - row_idx
+                    
+                    # Logic: If step_size >= fft_size, we just read one row at a time.
+                    if self.step_size >= self.fft_size:
+                        batch_now = 1
+                    else:
+                        # Limit batch size to keep reads under max_read_samples
+                        span_samples = (batch_now - 1) * self.step_size + self.fft_size
+                        if span_samples > max_read_samples:
+                            batch_now = max(1, (max_read_samples - self.fft_size) // self.step_size + 1)
+                            
+                    samples_to_read = (batch_now - 1) * self.step_size + self.fft_size
+                    
+                    # Read directly into buffer
+                    start_sample = self.s_read_start + row_idx * self.step_size
+                    offset_bytes = start_sample * read_mult * item_size
+                    
+                    f.seek(offset_bytes)
+                    raw_bytes = f.read(samples_to_read * read_mult * item_size)
+                    
+                    if not raw_bytes or len(raw_bytes) < (samples_to_read * read_mult * item_size):
+                        if not raw_bytes: break
 
-            raw_array = np.frombuffer(raw_bytes, dtype=self.dtype).astype(np.float32)
-            if self.dtype == np.int16:
-                raw_array /= 32768.0
+                    raw_array = np.frombuffer(raw_bytes, dtype=self.dtype).astype(np.float32)
+                    if self.dtype == np.int16:
+                        raw_array /= 32768.0
 
-            if self.is_complex:
-                full_complex = raw_array[0::2] + 1j * raw_array[1::2]
-            else:
-                full_complex = raw_array.astype(np.complex64)
+                    if self.is_complex:
+                        valid_complex = raw_array[0::2] + 1j * raw_array[1::2]
+                    else:
+                        valid_complex = raw_array.astype(np.complex64)
 
-            # No time-domain filtering — BPF is applied in the frequency domain
-            # below (after fftshift) as a bin mask, which is essentially free.
-            valid_complex = full_complex
+                    if len(valid_complex) < self.fft_size:
+                        padded = np.zeros(self.fft_size, dtype=np.complex64)
+                        padded[:len(valid_complex)] = valid_complex
+                        valid_complex = padded
 
-            if len(valid_complex) < self.fft_size:
-                padded = np.zeros(self.fft_size, dtype=np.complex64)
-                padded[:len(valid_complex)] = valid_complex
-                valid_complex = padded
+                    if batch_now == 1:
+                        # Single row
+                        windowed  = valid_complex[:self.fft_size] * self.window
+                        # Expand dimensions to make it 2D so fft functions behave like batch processing
+                        windowed  = windowed[np.newaxis, :]
+                        fft_out   = np.fft.fft(windowed, axis=1)
+                        shifted   = np.fft.fftshift(fft_out, axes=1)
+                        if self.freq_mask is not None:
+                            shifted *= self.freq_mask
+                        mag       = np.abs(shifted)
+                        mag       = np.maximum(mag, np.float32(1e-10))
+                        db        = 20.0 * np.log10(mag)
+                        spectrogram[row_idx] = db[0]
+                    else:
+                        # Batch rows using as_strided
+                        from numpy.lib.stride_tricks import as_strided
+                        itemsize_c = valid_complex.itemsize
+                        
+                        required = (batch_now - 1) * self.step_size + self.fft_size
+                        if len(valid_complex) < required:
+                            padded = np.zeros(required, dtype=valid_complex.dtype)
+                            padded[:len(valid_complex)] = valid_complex
+                            valid_complex = padded
+                            
+                        batch = as_strided(
+                            valid_complex,
+                            shape=(batch_now, self.fft_size),
+                            strides=(self.step_size * itemsize_c, itemsize_c),
+                            writeable=False
+                        )
+                        
+                        windowed  = batch * self.window
+                        fft_out   = np.fft.fft(windowed, axis=1)
+                        shifted   = np.fft.fftshift(fft_out, axes=1)
+                        if self.freq_mask is not None:
+                            shifted *= self.freq_mask  # broadcast across rows, zero-cost
+                        mag       = np.abs(shifted)
+                        mag       = np.maximum(mag, np.float32(1e-10))
+                        db        = 20.0 * np.log10(mag)
+                        spectrogram[row_idx:row_idx + batch_now] = db
 
-            # --- Batch-process FFT rows ---
-            from numpy.lib.stride_tricks import as_strided
-            spectrogram = np.zeros((self.num_rows, self.fft_size), dtype=np.float32)
-            itemsize = valid_complex.itemsize
-
-            row_idx = 0
-            while self.running and row_idx < self.num_rows:
-                rows_now = min(batch_size, self.num_rows - row_idx)
-
-                required = (rows_now - 1) * self.step_size + self.fft_size
-                if row_idx * self.step_size + required > len(valid_complex):
-                    # Pad to avoid striding past the end
-                    needed_total = row_idx * self.step_size + required
-                    padded = np.zeros(needed_total, dtype=valid_complex.dtype)
-                    padded[:len(valid_complex)] = valid_complex
-                    valid_complex = padded
-
-                batch = as_strided(
-                    valid_complex[row_idx * self.step_size:],
-                    shape=(rows_now, self.fft_size),
-                    strides=(self.step_size * itemsize, itemsize),
-                    writeable=False
-                )
-
-                windowed  = batch * self.window
-                fft_out   = np.fft.fft(windowed, axis=1)
-                shifted   = np.fft.fftshift(fft_out, axes=1)
-
-                # Apply frequency-domain BPF mask (zero out out-of-band bins)
-                if self.freq_mask is not None:
-                    shifted *= self.freq_mask  # broadcast across rows, zero-cost
-
-                mag       = np.abs(shifted)
-                mag       = np.maximum(mag, np.float32(1e-10))
-                db        = 20.0 * np.log10(mag)
-
-                spectrogram[row_idx:row_idx + rows_now] = db
-                row_idx += rows_now
-                self.progress.emit(row_idx, self.num_rows)
-                QThread.msleep(1)
+                    row_idx += batch_now
+                    if row_idx == self.num_rows or row_idx % max(1, self.num_rows // 20) == 0:
+                        self.progress.emit(row_idx, self.num_rows)
 
             if self.running:
                 self.finished_processing.emit(
