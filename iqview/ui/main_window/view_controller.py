@@ -141,6 +141,8 @@ class ViewControllerMixin:
             self.spectrogram_view.setCursor(Qt.CursorShape.CrossCursor)
         elif self.interaction_mode in ['TIME', 'FREQ', 'FILTER']:
             self.spectrogram_view.setCursor(Qt.CursorShape.CrossCursor)
+        elif self.interaction_mode == 'OVERLAY':
+            self.spectrogram_view.setCursor(Qt.CursorShape.CrossCursor)
         elif self.interaction_mode == 'MOVE':
             self.spectrogram_view.setCursor(Qt.CursorShape.SizeAllCursor)
         else:

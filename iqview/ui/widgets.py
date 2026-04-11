@@ -387,6 +387,35 @@ class CustomViewBox(pg.ViewBox):
                 else:
                     self.ui_controller.handle_move_drag(ev.scenePos())
                 ev.accept()
+            elif self.ui_controller.interaction_mode == 'OVERLAY':
+                # Rubber-band drag to place a RECT overlay
+                if ev.isStart():
+                    self._overlay_drag_start = self.mapSceneToView(ev.buttonDownScenePos())
+                    self._overlay_preview = pg.QtWidgets.QGraphicsPathItem()
+                    bc = self.ui_controller.settings_mgr.get(
+                        f"ui/{self.ui_controller.settings_mgr.get('ui/theme','Dark').lower()}/time_marker_color",
+                        '#00aaff')
+                    self._overlay_preview.setPen(pg.mkPen(bc, width=2, style=Qt.PenStyle.DashLine))
+                    c = QtGui.QColor(bc); c.setAlpha(30)
+                    self._overlay_preview.setBrush(QtGui.QBrush(c))
+                    self.addItem(self._overlay_preview)
+                elif ev.isFinish():
+                    if self._overlay_preview:
+                        self.removeItem(self._overlay_preview)
+                        self._overlay_preview = None
+                    if hasattr(self, '_overlay_drag_start') and self._overlay_drag_start is not None:
+                        end = self.mapSceneToView(ev.scenePos())
+                        self.ui_controller.place_overlay_by_drag(
+                            self._overlay_drag_start, end)
+                        self._overlay_drag_start = None
+                else:
+                    if self._overlay_preview and hasattr(self, '_overlay_drag_start'):
+                        curr = self.mapSceneToView(ev.scenePos())
+                        p1, p2 = self._overlay_drag_start, curr
+                        path = pg.QtGui.QPainterPath()
+                        path.addRect(pg.QtCore.QRectF(p1, p2))
+                        self._overlay_preview.setPath(path)
+                ev.accept()
             else:
                 # --- Marker Logic ---
                 if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS', 'STATS']:
@@ -408,8 +437,13 @@ class CustomViewBox(pg.ViewBox):
 
     def mouseClickEvent(self, ev):
         if ev.button() == Qt.MouseButton.LeftButton:
-            if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS', 'STATS']:
+            mode = self.ui_controller.interaction_mode
+            if mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS', 'STATS']:
                 self.ui_controller.place_marker(ev.scenePos(), drag_mode=False)
+            elif mode == 'OVERLAY':
+                # Single click → place a vertical LINE overlay at this time position
+                pos = self.mapSceneToView(ev.scenePos())
+                self.ui_controller.place_overlay_by_click(pos)
             ev.accept()
         elif ev.button() == Qt.MouseButton.RightButton:
             self.raise_custom_menu(ev)
@@ -437,15 +471,11 @@ class CustomViewBox(pg.ViewBox):
             fd_popup_act.triggered.connect(self.ui_controller.open_frequency_domain_tab)
 
             menu.addSeparator()
-            overlay_act = menu.addAction("Overlays…")
-            def _open_overlay_panel():
-                panel = getattr(self.ui_controller, 'overlay_panel', None)
-                if panel is not None:
-                    if not panel._expanded:
-                        panel._toggle()
-                    # Open Add dialog directly
-                    panel._on_add()
-            overlay_act.triggered.connect(_open_overlay_panel)
+            overlay_act = menu.addAction("Switch to Overlay Mode")
+            def _switch_to_overlay():
+                self.ui_controller.set_interaction_mode('OVERLAY')
+                self.ui_controller.marker_panel.update_headers('OVERLAY')
+            overlay_act.triggered.connect(_switch_to_overlay)
 
         # Add Dock Back if detached
         # To avoid circular imports, check if the window class name is DetachedViewWindow

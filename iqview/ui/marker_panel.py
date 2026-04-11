@@ -7,7 +7,7 @@ from .widgets import FormattedLineEdit, DoubleClickButton
 from .themes import get_palette
 
 class MarkerPanel(QFrame):
-    interactionModeChanged = pyqtSignal(str) # 'TIME', 'FREQ', 'ZOOM'
+    interactionModeChanged = pyqtSignal(str) # 'TIME', 'FREQ', 'ZOOM', 'OVERLAY', …
     resetZoomRequested = pyqtSignal()
     markerClearRequested = pyqtSignal(str)
 
@@ -106,11 +106,21 @@ class MarkerPanel(QFrame):
         # 6. BPF Mode
         self.btn_bpf = DoubleClickButton("")
         self.btn_bpf.setIcon(self._get_icon("bpf_selection_mode"))
-        self.btn_bpf.setIconSize(QSize(32, 32)) # Added this line
+        self.btn_bpf.setIconSize(QSize(32, 32))
         self.btn_bpf.setObjectName("mode_btn")
         self.btn_bpf.setToolTip("BPF Selection Mode (Double-click to clear)")
         self.btn_bpf.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_bpf, 1, 3)
+
+        # 7. Overlay Mode
+        self.btn_overlay = QPushButton("⬛")
+        self.btn_overlay.setObjectName("mode_btn")
+        self.btn_overlay.setToolTip("Overlay Mode — click or drag to place a shape")
+        self.btn_overlay.setCheckable(True)
+        self.btn_overlay.setFont(QFont("Segoe UI", 13))
+        self.mode_btn_layout.addWidget(self.btn_overlay, 0, 3)
+
+        # Re-assign BPF to row 1, col 3 (push it down) — already done above
 
         self.btn_home.clicked.connect(self.resetZoomRequested.emit)
         
@@ -123,6 +133,7 @@ class MarkerPanel(QFrame):
         self.mode_group.addButton(self.btn_zoom)
         self.mode_group.addButton(self.btn_move)
         self.mode_group.addButton(self.btn_bpf)
+        self.mode_group.addButton(self.btn_overlay)
         self.mode_group.setExclusive(True)
 
         # Connections
@@ -133,6 +144,7 @@ class MarkerPanel(QFrame):
         self.btn_zoom.clicked.connect(lambda: self.interactionModeChanged.emit('ZOOM'))
         self.btn_move.clicked.connect(lambda: self.interactionModeChanged.emit('MOVE'))
         self.btn_bpf.clicked.connect(lambda: self.interactionModeChanged.emit('FILTER'))
+        self.btn_overlay.clicked.connect(lambda: self.interactionModeChanged.emit('OVERLAY'))
         
         self.btn_marker_time.doubleClicked.connect(lambda: self.markerClearRequested.emit('TIME'))
         self.btn_marker_freq.doubleClicked.connect(lambda: self.markerClearRequested.emit('FREQ'))
@@ -395,6 +407,7 @@ class MarkerPanel(QFrame):
         self.btn_zoom.blockSignals(True)
         self.btn_move.blockSignals(True)
         self.btn_bpf.blockSignals(True)
+        self.btn_overlay.blockSignals(True)
         
         self.btn_marker_time.setChecked(mode == 'TIME')
         self.btn_marker_freq.setChecked(mode == 'FREQ')
@@ -403,6 +416,7 @@ class MarkerPanel(QFrame):
         self.btn_zoom.setChecked(mode == 'ZOOM')
         self.btn_move.setChecked(mode == 'MOVE')
         self.btn_bpf.setChecked(mode == 'FILTER')
+        self.btn_overlay.setChecked(mode == 'OVERLAY')
         
         self.btn_marker_time.blockSignals(False)
         self.btn_marker_freq.blockSignals(False)
@@ -411,16 +425,17 @@ class MarkerPanel(QFrame):
         self.btn_zoom.blockSignals(False)
         self.btn_move.blockSignals(False)
         self.btn_bpf.blockSignals(False)
+        self.btn_overlay.blockSignals(False)
 
         self.current_mode = mode
         
         # Track the last valid marker mode to display in the table
-        if mode in ['TIME', 'FREQ', 'TIME_ENDLESS', 'FREQ_ENDLESS']:
+        if mode in ['TIME', 'FREQ', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'OVERLAY']:
             self.last_marker_mode = mode
             
         display_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE'] else mode
 
-        if display_mode in ['TIME_ENDLESS', 'FREQ_ENDLESS']:
+        if display_mode in ['TIME_ENDLESS', 'FREQ_ENDLESS', 'OVERLAY']:
             self.stack.setCurrentIndex(1)
         else:
             self.stack.setCurrentIndex(0)
@@ -493,11 +508,166 @@ class MarkerPanel(QFrame):
             for btn in [self.btn_lock_m1, self.btn_lock_m2, self.btn_lock_delta, self.btn_lock_center]:
                 btn.setEnabled(False)
 
+    def update_overlay_list(self, overlays):
+        """
+        Populate the shared scroll area with overlay rows.
+        Each row: index-label | shape | display-tag | Edit btn | Del btn
+        No dialog is shown on Add — the overlay was already placed via click/drag.
+        Edit opens the full OverlayDialog.
+        """
+        if not hasattr(self, '_overlay_rows'):
+            self._overlay_rows = []
+
+        # Build / rebuild header once
+        if not hasattr(self, '_overlay_header_widget'):
+            hw = QWidget()
+            hl = QHBoxLayout(hw)
+            hl.setContentsMargins(5, 2, 5, 2)
+            hl.setSpacing(8)
+            l_id   = QLabel("#");          l_id.setFixedWidth(22);  l_id.setObjectName("header_label")
+            l_sh   = QLabel("Shape");      l_sh.setObjectName("header_label")
+            l_tag  = QLabel("Tag");        l_tag.setObjectName("header_label")
+            l_ed   = QLabel("");           l_ed.setFixedWidth(28)
+            l_dl   = QLabel("");           l_dl.setFixedWidth(28)
+            hl.addWidget(l_id)
+            hl.addWidget(l_sh)
+            hl.addWidget(l_tag, 1)
+            hl.addWidget(l_ed)
+            hl.addWidget(l_dl)
+            self._overlay_header_widget = hw
+            self.scroll_layout.insertWidget(0, hw)
+
+        # Sync row count
+        while len(self._overlay_rows) > len(overlays):
+            rd = self._overlay_rows.pop()
+            rd['widget'].deleteLater()
+        while len(self._overlay_rows) < len(overlays):
+            i   = len(self._overlay_rows)
+            row = QWidget()
+            rl  = QHBoxLayout(row)
+            rl.setContentsMargins(5, 0, 5, 0)
+            rl.setSpacing(8)
+
+            lbl_id  = QLabel(f"{i+1}")
+            lbl_id.setFixedWidth(22)
+            lbl_id.setStyleSheet("color: #00aaff; font-weight: bold;")
+
+            lbl_shape = QLabel("RECT")
+            lbl_shape.setFixedWidth(60)
+
+            lbl_tag = QLabel("")
+
+            btn_edit = QPushButton("✎")
+            btn_edit.setFixedWidth(28); btn_edit.setFixedHeight(24)
+            btn_edit.setToolTip("Edit overlay properties")
+
+            btn_del = QPushButton("×")
+            btn_del.setFixedWidth(28); btn_del.setFixedHeight(24)
+            btn_del.setToolTip("Delete overlay")
+            btn_del.setStyleSheet("""
+                QPushButton { background: none; color: #ff4444; font-weight: bold;
+                              font-size: 16px; border-radius: 12px; }
+                QPushButton:hover { background: rgba(255,68,68,0.2); }
+            """)
+
+            rl.addWidget(lbl_id)
+            rl.addWidget(lbl_shape)
+            rl.addWidget(lbl_tag, 1)
+            rl.addWidget(btn_edit)
+            rl.addWidget(btn_del)
+
+            self.scroll_layout.insertWidget(self.scroll_layout.count()-1, row)
+            self._overlay_rows.append({
+                'widget': row, 'lbl_id': lbl_id,
+                'lbl_shape': lbl_shape, 'lbl_tag': lbl_tag,
+                'btn_edit': btn_edit, 'btn_del': btn_del,
+            })
+
+        # Show/hide headers
+        if hasattr(self, '_header_widget'):
+            self._header_widget.setVisible(False)
+        if hasattr(self, '_overlay_header_widget'):
+            self._overlay_header_widget.setVisible(True)
+
+        # Hide endless rows
+        for rd in getattr(self, '_endless_rows', []):
+            rd['widget'].setVisible(False)
+
+        # Update data
+        for i, overlay in enumerate(overlays):
+            rd = self._overlay_rows[i]
+            rd['widget'].setVisible(True)
+            rd['lbl_id'].setText(str(i + 1))
+            rd['lbl_id'].setStyleSheet(
+                f"color: {overlay.border_color or overlay.color or '#00aaff'}; font-weight: bold;"
+            )
+            rd['lbl_shape'].setText(overlay.shape.value)
+            rd['lbl_tag'].setText(overlay.display_str or "(no tag)")
+            rd['lbl_tag'].setToolTip(overlay.hover_str or "")
+
+            oid = overlay.id
+            try: rd['btn_edit'].clicked.disconnect()
+            except: pass
+            try: rd['btn_del'].clicked.disconnect()
+            except: pass
+            rd['btn_edit'].clicked.connect(lambda _, o=oid: self._on_overlay_edit(o))
+            rd['btn_del'].clicked.connect(lambda _, o=oid: self.parent_window.remove_overlay(o))
+
+        # Hide extra overlay rows that don't correspond to any overlay
+        for rd in self._overlay_rows[len(overlays):]:
+            rd['widget'].setVisible(False)
+
+    def _show_endless_rows(self):
+        """Switch the scroll area back to showing endless-marker rows."""
+        if hasattr(self, '_overlay_header_widget'):
+            self._overlay_header_widget.setVisible(False)
+        for rd in getattr(self, '_overlay_rows', []):
+            rd['widget'].setVisible(False)
+        if hasattr(self, '_header_widget'):
+            self._header_widget.setVisible(True)
+        for rd in getattr(self, '_endless_rows', []):
+            rd['widget'].setVisible(True)
+
+    def _on_overlay_edit(self, overlay_id):
+        overlay = self.parent_window._get_overlay_by_id(overlay_id)
+        if overlay is None:
+            return
+        from PyQt6.QtWidgets import QDialog
+        from .overlay_dialog import OverlayDialog
+        dlg = OverlayDialog(
+            parent=self,
+            parent_window=self.parent_window,
+            overlay=overlay,
+        )
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            updated = dlg.get_overlay()
+            self.parent_window.update_overlay(
+                overlay_id,
+                shape=updated.shape,
+                points=updated.points,
+                center=updated.center,
+                radii=updated.radii,
+                color=updated.color,
+                alpha=updated.alpha,
+                border_width=updated.border_width,
+                border_color=updated.border_color,
+                border_style=updated.border_style,
+                display_str=updated.display_str,
+                hover_str=updated.hover_str,
+                tag_pos=updated.tag_pos,
+                visible=updated.visible,
+                z_order=updated.z_order,
+                source=updated.source,
+            )
+
     def update_endless_list(self, markers, mode):
         """Update the scroll area with rows for each endless marker, reusing widgets where possible."""
+        # Switch header/rows to endless view
+        self._show_endless_rows()
         is_freq = 'FREQ' in mode
         unit_main = "Hz" if is_freq else "sec"
         unit_sub = "Bin" if is_freq else "Sam"
+
         
         # 1. Initialize or find internal row storage
         if not hasattr(self, '_endless_rows'):
@@ -635,6 +805,8 @@ class MarkerPanel(QFrame):
         self.btn_bpf.setIcon(self._get_icon("bpf_selection_mode", theme))
         self.btn_marker_time_endless.setIcon(self._get_icon("endless_vertical_markers", theme))
         self.btn_marker_freq_endless.setIcon(self._get_icon("endless_horizontal_markers", theme))
+        # Overlay button has no icon, but update font colour from theme
+        self.btn_overlay.setStyleSheet(f"""QPushButton#mode_btn {{ color: {p.get('accent', '#00aaff') if isinstance(p, dict) else p.accent}; }}""")
         
         self.setStyleSheet(f"""
             MarkerPanel {{ 

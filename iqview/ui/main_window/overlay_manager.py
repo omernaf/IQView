@@ -58,9 +58,70 @@ class OverlayManagerMixin:
         self.overlays.append(overlay)
         self._sync_overlay_item(overlay)
 
-        if hasattr(self, 'overlay_panel'):
-            self.overlay_panel.refresh()
+        if hasattr(self, 'marker_panel') and self.interaction_mode == 'OVERLAY':
+            if hasattr(self.marker_panel, 'update_overlay_list'):
+                self.marker_panel.update_overlay_list(self.overlays)
         return overlay.id
+
+    # ------------------------------------------------------------------
+    # Placement via click / drag (called from CustomViewBox)
+    # ------------------------------------------------------------------
+
+    def place_overlay_by_click(self, view_pos) -> None:
+        """
+        Single-click in OVERLAY mode → place a vertical LINE at the clicked
+        time position with default styling.
+        """
+        t = view_pos.x()
+        overlay = Overlay(
+            shape=OverlayShape.LINE,
+            points=[(t, 0.0)],
+            color='#00aaff',
+            alpha=0.0,
+            border_width=2,
+            border_style='solid',
+            display_str='',
+            hover_str='',
+            z_order=8,
+            source='user',
+        )
+        self.add_overlay(overlay)
+        if hasattr(self, 'update_marker_info'):
+            self.update_marker_info()
+
+    def place_overlay_by_drag(self, start_view, end_view) -> None:
+        """
+        Drag in OVERLAY mode → place a RECT overlay spanning the dragged region.
+        start_view / end_view are QPointF in data/view coordinates.
+        """
+        t0, f0 = start_view.x(), start_view.y()
+        t1, f1 = end_view.x(),   end_view.y()
+        # Require a minimum drag distance to avoid accidental placements
+        xr, yr = self.spectrogram_view.plot_item.viewRange()
+        min_w = abs(xr[1] - xr[0]) * 0.005
+        min_h = abs(yr[1] - yr[0]) * 0.005
+        if abs(t1 - t0) < min_w and abs(f1 - f0) < min_h:
+            # Too small — treat as a click instead
+            import pyqtgraph as pg
+            self.place_overlay_by_click(start_view)
+            return
+        overlay = Overlay(
+            shape=OverlayShape.RECT,
+            points=[(min(t0, t1), min(f0, f1)), (max(t0, t1), max(f0, f1))],
+            color='#00aaff',
+            alpha=0.20,
+            border_width=2,
+            border_style='solid',
+            display_str='',
+            hover_str='',
+            z_order=8,
+            source='user',
+        )
+        self.add_overlay(overlay)
+        if hasattr(self, 'update_marker_info'):
+            self.update_marker_info()
+
+
 
     def remove_overlay(self, overlay_id: str) -> None:
         """Remove an overlay by id, cleaning up its graphics item."""
@@ -72,8 +133,9 @@ class OverlayManagerMixin:
 
         self.overlays = [o for o in self.overlays if o.id != overlay_id]
 
-        if hasattr(self, 'overlay_panel'):
-            self.overlay_panel.refresh()
+        if hasattr(self, 'marker_panel') and self.interaction_mode == 'OVERLAY':
+            if hasattr(self.marker_panel, 'update_overlay_list'):
+                self.marker_panel.update_overlay_list(self.overlays)
         if hasattr(self, 'update_marker_info'):
             self.update_marker_info()
 
@@ -93,8 +155,9 @@ class OverlayManagerMixin:
         # Re-sync the graphics item (may re-create if shape changed)
         self._sync_overlay_item(overlay)
 
-        if hasattr(self, 'overlay_panel'):
-            self.overlay_panel.refresh()
+        if hasattr(self, 'marker_panel') and self.interaction_mode == 'OVERLAY':
+            if hasattr(self.marker_panel, 'update_overlay_list'):
+                self.marker_panel.update_overlay_list(self.overlays)
 
     def clear_overlays(self, source: Optional[str] = None) -> None:
         """
@@ -110,8 +173,9 @@ class OverlayManagerMixin:
         self.overlays = [o for o in self.overlays
                          if source is not None and o.source != source]
 
-        if hasattr(self, 'overlay_panel'):
-            self.overlay_panel.refresh()
+        if hasattr(self, 'marker_panel') and self.interaction_mode == 'OVERLAY':
+            if hasattr(self.marker_panel, 'update_overlay_list'):
+                self.marker_panel.update_overlay_list(self.overlays)
 
     def get_overlays(self, source: Optional[str] = None) -> List[Overlay]:
         """Return overlays filtered by source, or all if source is None."""

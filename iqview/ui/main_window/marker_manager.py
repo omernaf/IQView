@@ -580,10 +580,18 @@ class MarkerManagerMixin:
         is_endless = 'ENDLESS' in display_mode
         is_filter = (display_mode == 'FILTER')
         
+        if display_mode == 'OVERLAY':
+            overlays = getattr(self, 'overlays', [])
+            if hasattr(self.marker_panel, 'update_overlay_list'):
+                self.marker_panel.update_overlay_list(overlays)
+            if self.interaction_mode not in ['ZOOM', 'MOVE']:
+                return
+
         if is_endless:
             markers = self.markers_time_endless if is_time else self.markers_freq_endless
             self.marker_panel.update_endless_list(markers, display_mode)
             if self.interaction_mode not in ['ZOOM', 'MOVE']: return
+
 
         if is_filter:
             if not getattr(self, 'filter_placed', False) and not getattr(self, 'filter_placing', False):

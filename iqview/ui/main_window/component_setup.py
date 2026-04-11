@@ -5,7 +5,6 @@ from PyQt6.QtGui import QAction, QKeySequence, QPainter, QPixmap
 from ..marker_panel import MarkerPanel
 from ..spectrogram_view import SpectrogramView
 from ..side_panel import SidePanel
-from ..overlay_panel import OverlayPanel
 
 
 class DetachableTabBar(QTabBar):
@@ -277,9 +276,6 @@ class UIComponentsMixin:
         self.marker_panel.resetZoomRequested.connect(self.reset_zoom)
         self.marker_panel.markerClearRequested.connect(self.handle_marker_clear)
         self.spec_v_layout.addWidget(self.marker_panel)
-
-        self.overlay_panel = OverlayPanel(self)
-        self.spec_v_layout.addWidget(self.overlay_panel)
 
         self.spectrogram_view = SpectrogramView(self)
         self.spec_v_layout.addWidget(self.spectrogram_view)
