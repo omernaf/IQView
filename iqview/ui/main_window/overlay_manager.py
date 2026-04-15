@@ -102,7 +102,6 @@ class OverlayManagerMixin:
         min_h = abs(yr[1] - yr[0]) * 0.005
         if abs(t1 - t0) < min_w and abs(f1 - f0) < min_h:
             # Too small — treat as a click instead
-            import pyqtgraph as pg
             self.place_overlay_by_click(start_view)
             return
         overlay = Overlay(
@@ -158,6 +157,8 @@ class OverlayManagerMixin:
         if hasattr(self, 'marker_panel') and self.interaction_mode == 'OVERLAY':
             if hasattr(self.marker_panel, 'update_overlay_list'):
                 self.marker_panel.update_overlay_list(self.overlays)
+        if hasattr(self, 'update_marker_info'):
+            self.update_marker_info()
 
     def clear_overlays(self, source: Optional[str] = None) -> None:
         """

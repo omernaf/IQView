@@ -136,6 +136,8 @@ class CustomViewBox(pg.ViewBox):
         super().__init__(*args, **kwds)
         self.ui_controller = ui_controller
         self.zoom_rect = None
+        self._overlay_preview = None
+        self._overlay_drag_start = None
         self.setMenuEnabled(False) # Disable default pg menu
         self.setAcceptHoverEvents(True)
 

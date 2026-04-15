@@ -624,7 +624,8 @@ class MarkerPanel(QFrame):
             except: pass
             
             rd['edit_tag'].editingFinished.connect(lambda r=rd, o=oid: self.parent_window.update_overlay(o, display_str=r['edit_tag'].text()))
-            rd['btn_vis'].clicked.connect(lambda _, o=oid, v=overlay.visible: self.parent_window.update_overlay(o, visible=not v))
+            rd['btn_vis'].clicked.connect(lambda _, o=oid: self.parent_window.update_overlay(
+                o, visible=not self.parent_window._get_overlay_by_id(o).visible))
             rd['btn_edit'].clicked.connect(lambda _, o=oid: self._on_overlay_edit(o))
             rd['btn_del'].clicked.connect(lambda _, o=oid: self.parent_window.remove_overlay(o))
 
