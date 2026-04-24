@@ -87,7 +87,7 @@ class FormattedLineEdit(QtWidgets.QLineEdit):
     def focusInEvent(self, event):
         super().setText(self._raw_text)
         super().focusInEvent(event)
-        self.selectAll()
+        QtCore.QTimer.singleShot(0, self.selectAll)
 
     def focusOutEvent(self, event):
         # Re-format on focus loss
