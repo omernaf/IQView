@@ -122,13 +122,28 @@ class DataHandlerMixin:
         if self.is_first_load:
             # Before the first render we don't know the duration; use the whole file
             t_start, t_end = 0.0, self._estimate_file_duration()
+            pixel_width = self.spectrogram_view.get_pixel_width()
         else:
             xr, _ = self.spectrogram_view.view_box.viewRange()
-            t_start = max(0.0, xr[0])
-            t_end   = t_start + max(xr[1] - xr[0], 1.0 / max(self.rate, 1))
-
-        # Number of pixels wide the plot is right now
-        pixel_width = self.spectrogram_view.get_pixel_width()
+            view_width = max(xr[1] - xr[0], 1.0 / max(self.rate, 1))
+            
+            # Pre-generate exactly another screen width in each direction (3x total)
+            file_duration = getattr(self, 'time_duration', self._estimate_file_duration())
+            
+            ideal_start = xr[0] - view_width
+            ideal_end = xr[1] + view_width
+            
+            t_start = max(0.0, ideal_start)
+            t_end = min(file_duration, ideal_end)
+            
+            # Scale pixel width proportionally so resolution remains constant
+            base_pixel_width = self.spectrogram_view.get_pixel_width()
+            rendered_width = t_end - t_start
+            
+            if rendered_width > 0 and view_width > 0:
+                pixel_width = int(base_pixel_width * (rendered_width / view_width))
+            else:
+                pixel_width = base_pixel_width
 
         f_min, f_max = None, None
         if self.filter_region:
