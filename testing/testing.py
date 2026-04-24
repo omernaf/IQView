@@ -48,8 +48,8 @@ def main():
     args, unknown = parser.parse_known_args()
 
     # filename = "samples/temp_10Msps_433MHz.32fc"
-    filename = "samples/mavic_air_2.16tc"
-    # filename = "samples/long_sweep.32fc"
+    # filename = "samples/mavic_air_2.16tc"
+    filename = "samples/long_sweep.32fc"
     # filename = "samples/very_long_sweep.32fc"
     # filename = "samples/long_cw.32fc"
     # filename = "samples/chirp_rate_3MHz.32fc";
