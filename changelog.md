@@ -16,6 +16,8 @@
 - **Frequency Domain Filtering**: Added real-time Band-Pass (BPF) and Band-Stop (BSF) filter overlays to the Frequency Domain view, identical in function to the Spectrogram filters.
 
 ### Changed
+- **Marker Value Auto-Select**: Clicking any value in the marker tables now automatically selects the full unformatted text, making it instantly ready for copying or manual entry.
+- **Smooth Lazy Scrolling**: The lazy rendering engine now pre-generates an additional screen width of spectrogram data in both directions to eliminate blank edges during panning and scrolling.
 - **Unified Circle/Ellipse Handling**: Simplified shape geometries by removing the ambiguous `CIRCLE` type. Circular features are now expressed as `ELLIPSE` types with independent physical units (seconds vs. Hz radii) preventing disproportionate visual scaling.
 - **Marker Data Alignment**: Standardized Marker and Overlay table layouts mapping sample/bin values strictly in the top row and metric data (seconds/Hz) immediately below it.
 
