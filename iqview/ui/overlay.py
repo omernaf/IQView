@@ -4,7 +4,7 @@ Core data model and custom pyqtgraph GraphicsObject for the Overlay feature.
 
 Overlays are transparent, annotated shapes rendered in world-space (time × freq)
 on top of the spectrogram.  LINE / HLINE shapes are handled via pg.InfiniteLine
-in the OverlayManagerMixin; this module covers RECT, POLYGON, CIRCLE, ELLIPSE.
+in the OverlayManagerMixin; this module covers RECT, POLYGON, ELLIPSE.
 """
 
 from __future__ import annotations
@@ -29,7 +29,6 @@ from PyQt6.QtWidgets import QGraphicsItem
 class OverlayShape(Enum):
     RECT    = "RECT"
     POLYGON = "POLYGON"
-    CIRCLE  = "CIRCLE"   # equal radius in data coords (rt == rf by convention)
     ELLIPSE = "ELLIPSE"  # separate time-radius and freq-radius
     LINE    = "LINE"     # vertical infinite line (time axis)
     HLINE   = "HLINE"   # horizontal infinite line (frequency axis)
@@ -47,7 +46,6 @@ _BORDER_STYLE_MAP = {
 SHAPE_LABELS: Dict[str, OverlayShape] = {
     "Rectangle":       OverlayShape.RECT,
     "Polygon":         OverlayShape.POLYGON,
-    "Circle":          OverlayShape.CIRCLE,
     "Ellipse":         OverlayShape.ELLIPSE,
     "Vertical Line":   OverlayShape.LINE,
     "Horizontal Line": OverlayShape.HLINE,
@@ -70,8 +68,6 @@ class Overlay:
     --------------------
     RECT    : points = [(t_min, f_min), (t_max, f_max)]
     POLYGON : points = [(t0, f0), (t1, f1), …]  (≥ 3 vertices, auto-closed)
-    CIRCLE  : center = (t, f),  radii = (r, r)   r in Hz (appears elliptical when
-              time and freq axes have different scales — this is physically correct)
     ELLIPSE : center = (t, f),  radii = (rt, rf)
     LINE    : points = [(t, 0.0)]   only x (time) matters
     HLINE   : points = [(0.0, f)]   only y (freq) matters
@@ -175,7 +171,7 @@ class Overlay:
             return QRectF(min(xs), min(ys),
                           max(xs) - min(xs), max(ys) - min(ys))
 
-        if (self.shape in (OverlayShape.CIRCLE, OverlayShape.ELLIPSE)
+        if (self.shape == OverlayShape.ELLIPSE
                 and self.center and self.radii):
             cx, cy = self.center
             rx, ry = self.radii
@@ -215,7 +211,7 @@ HIT_PX    = 10  # hit-test radius in screen pixels
 
 class OverlayItem(pg.GraphicsObject):
     """
-    Renders a single non-line Overlay (RECT, POLYGON, CIRCLE, ELLIPSE) inside a
+    Renders a single non-line Overlay (RECT, POLYGON, ELLIPSE) inside a
     pyqtgraph PlotItem.  Supports interactive drag-to-move and handle-based resize
     unless overlay.locked is True.
 
@@ -292,7 +288,7 @@ class OverlayItem(pg.GraphicsObject):
                 ('br', QPointF(t1, f0)), ('bm', QPointF(tm, f0)), ('bl', QPointF(t0, f0)),
                 ('ml', QPointF(t0, fm)),
             ]
-        if o.shape in (OverlayShape.CIRCLE, OverlayShape.ELLIPSE) and o.center and o.radii:
+        if o.shape == OverlayShape.ELLIPSE and o.center and o.radii:
             cx, cy = o.center
             rx, ry = o.radii
             return [
@@ -328,7 +324,7 @@ class OverlayItem(pg.GraphicsObject):
                     path.lineTo(*p)
                 path.closeSubpath()
                 return path.contains(pos)
-        if o.shape in (OverlayShape.CIRCLE, OverlayShape.ELLIPSE):
+        if o.shape == OverlayShape.ELLIPSE:
             if o.center and o.radii:
                 cx, cy = o.center
                 rx, ry = o.radii
@@ -353,7 +349,7 @@ class OverlayItem(pg.GraphicsObject):
             # Normalise to always keep min/max ordering
             o.points = [(min(t0, t1), min(f0, f1)), (max(t0, t1), max(f0, f1))]
 
-        elif o.shape in (OverlayShape.CIRCLE, OverlayShape.ELLIPSE):
+        elif o.shape == OverlayShape.ELLIPSE:
             if o.center and o.radii:
                 rx, ry = o.radii
                 if role == 'n': ry = max(1e-9, ry + dy)
@@ -519,7 +515,6 @@ class OverlayItem(pg.GraphicsObject):
         {
             OverlayShape.RECT:    self._paint_rect,
             OverlayShape.POLYGON: self._paint_polygon,
-            OverlayShape.CIRCLE:  self._paint_ellipse,
             OverlayShape.ELLIPSE: self._paint_ellipse,
         }.get(overlay.shape, lambda p: None)(painter)
 

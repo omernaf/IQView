@@ -103,7 +103,6 @@ class OverlayDialog(QDialog):
         self._panes: dict[str, QWidget] = {}
         self._panes["rect"]    = self._make_rect_pane()
         self._panes["polygon"] = self._make_polygon_pane()
-        self._panes["circle"]  = self._make_circle_pane()
         self._panes["ellipse"] = self._make_ellipse_pane()
         self._panes["line"]    = self._make_line_pane()
         self._panes["hline"]   = self._make_hline_pane()
@@ -254,21 +253,6 @@ class OverlayDialog(QDialog):
         lay.addLayout(btn_row)
         return w
 
-    def _make_circle_pane(self) -> QWidget:
-        w = QWidget()
-        f = QFormLayout(w)
-        t_c, f_c = self._default_center()
-        _, _, f_lo, f_hi = self._default_view_range()
-        default_r = abs(f_hi - f_lo) / 8
-
-        self.circ_ct = self._dspin(t_c, -_BIG, _BIG, "s")
-        self.circ_cf = self._dspin(f_c, -_BIG, _BIG, "Hz")
-        self.circ_r  = self._dspin(default_r, 0, _BIG, "Hz")
-        f.addRow("Center Time:", self.circ_ct)
-        f.addRow("Center Freq:", self.circ_cf)
-        f.addRow("Radius:",      self.circ_r)
-        return w
-
     def _make_ellipse_pane(self) -> QWidget:
         w = QWidget()
         f = QFormLayout(w)
@@ -397,11 +381,6 @@ class OverlayDialog(QDialog):
                 self.poly_table.setItem(r, 0, QTableWidgetItem(str(tx)))
                 self.poly_table.setItem(r, 1, QTableWidgetItem(str(fy)))
 
-        elif shape == OverlayShape.CIRCLE and overlay.center and overlay.radii:
-            self.circ_ct.setValue(overlay.center[0])
-            self.circ_cf.setValue(overlay.center[1])
-            self.circ_r.setValue(overlay.radii[0])
-
         elif shape == OverlayShape.ELLIPSE and overlay.center and overlay.radii:
             self.ell_ct.setValue(overlay.center[0])
             self.ell_cf.setValue(overlay.center[1])
@@ -475,12 +454,6 @@ class OverlayDialog(QDialog):
                     pass
             o.points = pts
             o.center = o.radii = None
-
-        elif o.shape == OverlayShape.CIRCLE:
-            o.center = (self.circ_ct.value(), self.circ_cf.value())
-            r = self.circ_r.value()
-            o.radii  = (r, r)
-            o.points = []
 
         elif o.shape == OverlayShape.ELLIPSE:
             o.center = (self.ell_ct.value(), self.ell_cf.value())

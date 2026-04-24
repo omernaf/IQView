@@ -8,7 +8,7 @@ pyqtgraph graphics items on the spectrogram PlotItem.
 
 LINE / HLINE overlays use pg.InfiniteLine so they integrate correctly with
 the endless-marker system that already relies on those objects.
-All other shapes (RECT, POLYGON, CIRCLE, ELLIPSE) use OverlayItem.
+All other shapes (RECT, POLYGON, ELLIPSE) use OverlayItem.
 """
 
 from __future__ import annotations
