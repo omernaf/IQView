@@ -11,6 +11,8 @@ iqview.egg-info/top_level.txt
 iqview/dsp/__init__.py
 iqview/dsp/dsp.py
 iqview/dsp/utils.py
+iqview/plugins/__init__.py
+iqview/plugins/plugin_manager.py
 iqview/resources/logo.ico
 iqview/resources/logo.png
 iqview/resources/assets/bpf_selection_mode.png
@@ -35,6 +37,8 @@ iqview/ui/__init__.py
 iqview/ui/detached_window.py
 iqview/ui/export_dialog.py
 iqview/ui/marker_panel.py
+iqview/ui/overlay.py
+iqview/ui/overlay_dialog.py
 iqview/ui/settings_dialog.py
 iqview/ui/side_panel.py
 iqview/ui/spectrogram_view.py
@@ -46,6 +50,7 @@ iqview/ui/main_window/__init__.py
 iqview/ui/main_window/component_setup.py
 iqview/ui/main_window/data_handler.py
 iqview/ui/main_window/marker_manager.py
+iqview/ui/main_window/overlay_manager.py
 iqview/ui/main_window/view_controller.py
 iqview/ui/time_domain/__init__.py
 iqview/ui/time_domain/marker_panel.py
