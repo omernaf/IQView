@@ -41,7 +41,7 @@ def run(samples: np.ndarray, info: dict) -> list[dict]:
             "border_style": "dash",
             "display_str":  "View region",
             "hover_str":    (
-                f"t: {info['t_start']:.4f}s – {info['t_end']:.4f}s  |  "
+                f"t: {info['t_start']:.4f}s – {info['t_end']:.4f}s  \n  "
                 f"f: {info['f_start']/1e6:.3f} – {info['f_end']/1e6:.3f} MHz"
             ),
             "tag_pos":      "top-left",

@@ -57,11 +57,44 @@ def get_main_stylesheet(theme_name):
             font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif; 
         }}
         QToolTip {{ 
-            background-color: #1a1a1a; 
-            color: #ffffff; 
+            background-color: {p.bg_widget}; 
+            color: {p.text_main}; 
             border: 1px solid {p.accent}; 
             padding: 4px;
             border-radius: 4px;
+        }}
+        
+        QMenuBar {{
+            background-color: {p.bg_main};
+            color: {p.text_main};
+        }}
+        QMenuBar::item {{
+            background-color: transparent;
+            color: {p.text_main};
+            padding: 4px 8px;
+        }}
+        QMenuBar::item:selected {{
+            background-color: {p.bg_widget};
+            color: {p.accent};
+        }}
+        QMenu {{
+            background-color: {p.bg_widget};
+            color: {p.text_main};
+            border: 1px solid {p.border};
+        }}
+        QMenu::item {{
+            background-color: transparent;
+            color: {p.text_main};
+            padding: 4px 20px 4px 20px;
+        }}
+        QMenu::item:selected {{
+            background-color: {p.accent_dim};
+            color: {p.accent};
+        }}
+        QMenu::separator {{
+            height: 1px;
+            background: {p.border};
+            margin: 4px 0px;
         }}
         QLabel {{ color: {p.text_dim}; }}
         QPushButton {{ 

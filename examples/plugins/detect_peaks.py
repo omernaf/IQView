@@ -30,7 +30,7 @@ PLUGIN_DESCRIPTION = "Mark spectral peaks in the current view with HLINE overlay
 # Tuning parameters (edit as needed)
 # ---------------------------------------------------------------------------
 
-THRESHOLD_DB = 10.0   # peak must be at least this many dB above the median
+THRESHOLD_DB = 20.0   # peak must be at least this many dB above the median
 MAX_PEAKS    = 20     # maximum number of overlays to add
 MIN_SPACING  = 0.02   # minimum spacing between peaks, as fraction of bandwidth
 
