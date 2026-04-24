@@ -217,7 +217,7 @@ class OverlayManagerMixin:
             plot_item.addItem(item, ignoreBounds=True)
             self._overlay_items[overlay.id] = item
         else:
-            item = OverlayItem(overlay)
+            item = OverlayItem(overlay, on_geometry_changed=self._persist_overlay_drag)
             item.setZValue(overlay.z_order)
             item.setVisible(overlay.visible)
             plot_item.addItem(item)
@@ -232,6 +232,7 @@ class OverlayManagerMixin:
         is_time = (overlay.shape == OverlayShape.LINE)
         angle   = 90 if is_time else 0
         pos     = overlay.points[0][0] if is_time else overlay.points[0][1]
+        movable = not overlay.locked
 
         bc = overlay.border_color or overlay.color
         pen = pg.mkPen(
@@ -239,6 +240,7 @@ class OverlayManagerMixin:
             width=overlay.border_width,
             style=_BORDER_STYLE_MAP.get(overlay.border_style, Qt.PenStyle.SolidLine),
         )
+        hover_pen = pg.mkPen(bc, width=overlay.border_width + 1)
 
         label_opts = {
             'position': 0.1,
@@ -248,15 +250,50 @@ class OverlayManagerMixin:
         line = pg.InfiniteLine(
             pos=pos,
             angle=angle,
-            movable=False,
+            movable=movable,
             pen=pen,
+            hoverPen=hover_pen,
             label=overlay.display_str or None,
             labelOpts=label_opts if overlay.display_str else {},
         )
         if overlay.hover_str:
             line.setToolTip(overlay.hover_str)
 
+        if movable:
+            oid = overlay.id
+            def _on_line_moved(line=line, overlay=overlay, oid=oid):
+                pos_val = line.value()
+                if overlay.shape == OverlayShape.LINE:
+                    overlay.points = [(pos_val, 0.0)]
+                else:
+                    overlay.points = [(0.0, pos_val)]
+                self._persist_overlay_drag(oid, points=overlay.points)
+            line.sigPositionChangeFinished.connect(_on_line_moved)
+
         return line
+
+    def _persist_overlay_drag(self, overlay_id: str, **kwargs) -> None:
+        """
+        Called when an interactive drag/resize finishes on an OverlayItem or
+        InfiniteLine.  Geometry is already mutated in-place; this just refreshes
+        the panel and (optionally) triggers save, without recreating graphics.
+        """
+        overlay = self._get_overlay_by_id(overlay_id)
+        if overlay is None:
+            return
+        # Synchronise any kwargs that differ (safety guard)
+        for key, value in kwargs.items():
+            if hasattr(overlay, key):
+                setattr(overlay, key, value)
+        # Refresh label position on OverlayItem without recreating it
+        item = self._overlay_items.get(overlay_id)
+        if isinstance(item, OverlayItem):
+            item.prepareGeometryChange()
+            item._update_label_pos()
+            item.update()
+        if hasattr(self, 'marker_panel') and self.interaction_mode == 'OVERLAY':
+            if hasattr(self.marker_panel, 'update_overlay_list'):
+                self.marker_panel.update_overlay_list(self.overlays)
 
     def _remove_graphics_item(self, overlay_id: str, overlay: Overlay) -> None:
         """Remove the graphics item from the scene and clean up side effects."""

@@ -560,6 +560,10 @@ class MarkerPanel(QFrame):
             btn_vis.setFixedHeight(28)
             btn_vis.setToolTip("Toggle Visibility")
 
+            btn_lock = QPushButton("Lock")
+            btn_lock.setFixedHeight(28)
+            btn_lock.setToolTip("Lock overlay (prevent move/resize)")
+
             btn_edit = QPushButton("Edit")
             btn_edit.setFixedHeight(28)
             btn_edit.setToolTip("Edit overlay properties")
@@ -577,6 +581,7 @@ class MarkerPanel(QFrame):
             rl.addWidget(lbl_shape)
             rl.addWidget(edit_tag, 1)
             rl.addWidget(btn_vis)
+            rl.addWidget(btn_lock)
             rl.addWidget(btn_edit)
             rl.addWidget(btn_del)
 
@@ -584,7 +589,8 @@ class MarkerPanel(QFrame):
             self._overlay_rows.append({
                 'widget': row, 'lbl_id': lbl_id,
                 'lbl_shape': lbl_shape, 'edit_tag': edit_tag,
-                'btn_vis': btn_vis, 'btn_edit': btn_edit, 'btn_del': btn_del,
+                'btn_vis': btn_vis, 'btn_lock': btn_lock,
+                'btn_edit': btn_edit, 'btn_del': btn_del,
             })
 
         # Show/hide headers
@@ -613,10 +619,21 @@ class MarkerPanel(QFrame):
 
             rd['btn_vis'].setText("Hide" if overlay.visible else "Show")
 
+            # Lock button — highlight when locked
+            is_locked = getattr(overlay, 'locked', False)
+            rd['btn_lock'].setText("Unlk" if is_locked else "Lock")
+            rd['btn_lock'].setStyleSheet(
+                "QPushButton { border: 1px solid #ffaa00; color: #ffaa00; border-radius:4px; }"
+                "QPushButton:hover { background: rgba(255,170,0,0.15); }"
+                if is_locked else ""
+            )
+
             oid = overlay.id
             try: rd['edit_tag'].editingFinished.disconnect()
             except: pass
             try: rd['btn_vis'].clicked.disconnect()
+            except: pass
+            try: rd['btn_lock'].clicked.disconnect()
             except: pass
             try: rd['btn_edit'].clicked.disconnect()
             except: pass
@@ -626,6 +643,8 @@ class MarkerPanel(QFrame):
             rd['edit_tag'].editingFinished.connect(lambda r=rd, o=oid: self.parent_window.update_overlay(o, display_str=r['edit_tag'].text()))
             rd['btn_vis'].clicked.connect(lambda _, o=oid: self.parent_window.update_overlay(
                 o, visible=not self.parent_window._get_overlay_by_id(o).visible))
+            rd['btn_lock'].clicked.connect(lambda _, o=oid: self.parent_window.update_overlay(
+                o, locked=not getattr(self.parent_window._get_overlay_by_id(o), 'locked', False)))
             rd['btn_edit'].clicked.connect(lambda _, o=oid: self._on_overlay_edit(o))
             rd['btn_del'].clicked.connect(lambda _, o=oid: self.parent_window.remove_overlay(o))
 
