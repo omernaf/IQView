@@ -319,6 +319,12 @@ class UIComponentsMixin:
         export_action.triggered.connect(self.export_overlays)
         overlays_menu.addAction(export_action)
 
+        # --- Plugins Menu ---
+        self._plugins_menu = mb.addMenu("&Plugins")
+        # Initial population is handled by PluginManagerMixin._rebuild_plugins_menu()
+        if hasattr(self, '_rebuild_plugins_menu'):
+            self._rebuild_plugins_menu()
+
     def _rebuild_recent_menu(self):
         """Populate the Open Recent sub-menu from settings."""
         self.recent_menu.clear()

@@ -9,10 +9,11 @@ from .marker_manager import MarkerManagerMixin
 from .overlay_manager import OverlayManagerMixin
 from .view_controller import ViewControllerMixin
 from .data_handler import DataHandlerMixin
+from ...plugins.plugin_manager import PluginManagerMixin
 from ...utils.settings_manager import SettingsManager
 from ..themes import get_main_stylesheet
 
-class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, OverlayManagerMixin, ViewControllerMixin, DataHandlerMixin):
+class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, OverlayManagerMixin, ViewControllerMixin, DataHandlerMixin, PluginManagerMixin):
     def __init__(self, data_source, data_type, sample_rate, center_freq, fft_size, profile_enabled=False, is_complex=True, window_name=None, lazy_rendering=None):
         super().__init__()
         self.settings_mgr = SettingsManager()
@@ -102,6 +103,7 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
         self.filter_line = None # pg.InfiniteLine for the first bound
         
         self._init_overlays()
+        self._init_plugins()
         self.setup_ui()
         if data_source is not None:
             self.update_sidebar_file_info(data_source)
