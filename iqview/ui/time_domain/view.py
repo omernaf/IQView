@@ -211,6 +211,10 @@ class TimeDomainView(QWidget):
 
     def keyPressEvent(self, event):
         if event.isAutoRepeat(): return
+        from PyQt6.QtWidgets import QApplication, QLineEdit
+        if isinstance(QApplication.focusWidget(), QLineEdit):
+            super().keyPressEvent(event)
+            return
         key_name = QKeySequence(event.key()).toString()
         if key_name == "Control": key_name = "Ctrl"
         
@@ -225,6 +229,10 @@ class TimeDomainView(QWidget):
 
     def keyReleaseEvent(self, event):
         if event.isAutoRepeat(): return
+        from PyQt6.QtWidgets import QApplication, QLineEdit
+        if isinstance(QApplication.focusWidget(), QLineEdit):
+            super().keyReleaseEvent(event)
+            return
         key_name = QKeySequence(event.key()).toString()
         if key_name == "Control": key_name = "Ctrl"
 

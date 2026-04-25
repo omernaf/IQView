@@ -201,6 +201,10 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
 
     def keyPressEvent(self, event):
         if event.isAutoRepeat(): return
+        from PyQt6.QtWidgets import QApplication, QLineEdit
+        if isinstance(QApplication.focusWidget(), QLineEdit):
+            super().keyPressEvent(event)
+            return
         s = self.settings_mgr
         key_name = QKeySequence(event.key()).toString()
         if key_name == "Control": key_name = "Ctrl"
@@ -223,6 +227,10 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
 
     def keyReleaseEvent(self, event):
         if event.isAutoRepeat(): return
+        from PyQt6.QtWidgets import QApplication, QLineEdit
+        if isinstance(QApplication.focusWidget(), QLineEdit):
+            super().keyReleaseEvent(event)
+            return
         s = self.settings_mgr
         key_name = QKeySequence(event.key()).toString()
         if key_name == "Control": key_name = "Ctrl"

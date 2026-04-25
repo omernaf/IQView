@@ -201,6 +201,10 @@ class SpectrogramView(QWidget):
 
     def keyPressEvent(self, ev):
         if ev.isAutoRepeat(): return
+        from PyQt6.QtWidgets import QApplication, QLineEdit
+        if isinstance(QApplication.focusWidget(), QLineEdit):
+            super().keyPressEvent(ev)
+            return
         s = self.parent_window.settings_mgr
         key_name = QKeySequence(ev.key()).toString()
         if key_name == "Control": key_name = "Ctrl"
@@ -221,6 +225,10 @@ class SpectrogramView(QWidget):
 
     def keyReleaseEvent(self, ev):
         if ev.isAutoRepeat(): return
+        from PyQt6.QtWidgets import QApplication, QLineEdit
+        if isinstance(QApplication.focusWidget(), QLineEdit):
+            super().keyReleaseEvent(ev)
+            return
         s = self.parent_window.settings_mgr
         key_name = QKeySequence(ev.key()).toString()
         if key_name == "Control": key_name = "Ctrl"

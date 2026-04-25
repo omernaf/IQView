@@ -1691,6 +1691,10 @@ class FrequencyDomainView(QWidget):
     def keyPressEvent(self, event):
 
         if event.isAutoRepeat(): return
+        from PyQt6.QtWidgets import QApplication, QLineEdit
+        if isinstance(QApplication.focusWidget(), QLineEdit):
+            super().keyPressEvent(event)
+            return
         key_name = QKeySequence(event.key()).toString()
         if key_name == "T": self.set_interaction_mode('FREQ') # Vertical
         elif key_name == "F": self.set_interaction_mode('MAG')  # Horizontal
@@ -1701,6 +1705,10 @@ class FrequencyDomainView(QWidget):
 
     def keyReleaseEvent(self, event):
         if event.isAutoRepeat(): return
+        from PyQt6.QtWidgets import QApplication, QLineEdit
+        if isinstance(QApplication.focusWidget(), QLineEdit):
+            super().keyReleaseEvent(event)
+            return
         key_name = QKeySequence(event.key()).toString()
         if key_name == "Ctrl": self.set_interaction_mode(getattr(self, '_prev_mode', 'FREQ'))
         super().keyReleaseEvent(event)
