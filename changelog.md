@@ -22,6 +22,7 @@
 - **Marker Data Alignment**: Standardized Marker and Overlay table layouts mapping sample/bin values strictly in the top row and metric data (seconds/Hz) immediately below it.
 
 ### Fixed
+- **Global Hotkey Interference**: Fixed an issue where global keyboard shortcuts (e.g., `Ctrl` for Zoom, `T` for Time mode) would intercept inputs while typing in text boxes, preventing actions like `Ctrl+C` from working correctly inside marker tables.
 - **OS Theme Visibility Bugs**: Overhauled top menu `QMenuBar` and `QMenu` styling to strictly adhere to dark mode palettes, fixing OS black-on-black text blending bugs.
 - **Adaptive Tooltip Engine**: Forced tooltip `QToolTip` backgrounds to explicitly track and invert on light/dark theme toggle, fixing text washout under bright environments.
 - **Taskbar Icon Consistency**: Unified the `AppUserModelID` strings and ensured the application icon is set on the `QApplication` instance. This ensures the custom logo consistently appears in the Windows taskbar instead of the default Python icon.

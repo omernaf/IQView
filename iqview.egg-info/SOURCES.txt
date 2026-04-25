@@ -25,6 +25,8 @@ iqview/resources/assets/free_move_mode.png
 iqview/resources/assets/free_move_mode_dark.png
 iqview/resources/assets/horizontal_markers.png
 iqview/resources/assets/horizontal_markers_dark.png
+iqview/resources/assets/overlays.png
+iqview/resources/assets/overlays_dark.png
 iqview/resources/assets/region_statistics.png
 iqview/resources/assets/region_statistics_dark.png
 iqview/resources/assets/reset_zoom.png
