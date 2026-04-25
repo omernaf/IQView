@@ -113,11 +113,12 @@ class MarkerPanel(QFrame):
         self.mode_btn_layout.addWidget(self.btn_bpf, 1, 3)
 
         # 7. Overlay Mode
-        self.btn_overlay = QPushButton("⬛")
+        self.btn_overlay = QPushButton("")
+        self.btn_overlay.setIcon(self._get_icon("overlays"))
+        self.btn_overlay.setIconSize(QSize(32, 32))
         self.btn_overlay.setObjectName("mode_btn")
         self.btn_overlay.setToolTip("Overlay Mode — click or drag to place a shape")
         self.btn_overlay.setCheckable(True)
-        self.btn_overlay.setFont(QFont("Segoe UI", 13))
         self.mode_btn_layout.addWidget(self.btn_overlay, 0, 4)
 
         # Re-assign BPF to row 1, col 3 (push it down) — already done above
@@ -838,8 +839,7 @@ class MarkerPanel(QFrame):
         self.btn_bpf.setIcon(self._get_icon("bpf_selection_mode", theme))
         self.btn_marker_time_endless.setIcon(self._get_icon("endless_vertical_markers", theme))
         self.btn_marker_freq_endless.setIcon(self._get_icon("endless_horizontal_markers", theme))
-        # Overlay button has no icon, but update font colour from theme
-        self.btn_overlay.setStyleSheet(f"""QPushButton#mode_btn {{ color: {p.get('accent', '#00aaff') if isinstance(p, dict) else p.accent}; }}""")
+        self.btn_overlay.setIcon(self._get_icon("overlays", theme))
         
         self.setStyleSheet(f"""
             MarkerPanel {{ 
