@@ -420,8 +420,8 @@ class TimeDomainView(QWidget):
         # Update Marker Panel readouts
         # --- Update Marker Panel Region Definition ---
         prec1 = int(self.settings_mgr.get("ui/label_precision", 9))
-        self.marker_panel.st_row_v1_lbl.setText("Region (s)")
-        self.marker_panel.st_row_v2_lbl.setText("Samples")
+        self.marker_panel.st_row_v1_lbl.setText("Samples")
+        self.marker_panel.st_row_v2_lbl.setText("Region (s)")
         self.marker_panel.st_row_v3_lbl.setText("1/T (Hz)")
         
         # In case they were swapped during drag
