@@ -11,6 +11,7 @@ iqview.egg-info/top_level.txt
 iqview/dsp/__init__.py
 iqview/dsp/dsp.py
 iqview/dsp/utils.py
+iqview/overlays/__init__.py
 iqview/plugins/__init__.py
 iqview/plugins/plugin_manager.py
 iqview/resources/logo.ico
