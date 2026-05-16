@@ -9,8 +9,10 @@
 - **Smart Drag & Click Placement**: Interactions dynamically adapt to the selected shape, meaning single clicks now generate proportional default-sized regions or shapes, and drag actions cleanly bound ellipses, polygons, or band regions.
 - **Polygon Vertex Manipulation**: Unlocked Polygon overlays now render independent resize handles at each vertex, allowing users to drag and adjust corners individually.
 - **Axis-Specific Unzoom**: Added dedicated context menu actions ("Unzoom Time", "Unzoom Frequency", etc.) that selectively reset only the X or Y axis zoom level independently, dynamically labeled based on the active domain view.
+- **Plugin API Developer Guide**: Added a comprehensive `plugin_guide.md` to the repository detailing plugin architecture, threading rules, and providing advanced code examples.
 
 ### Changed
+- **Plugin Overlay API**: Refactored the plugin rendering engine to support returning strongly-typed Python objects (e.g. `Rect`, `VerticalLine`, `Polygon`) from the `iqview.overlays` module instead of requiring raw dictionaries. Legacy dictionary returns remain fully supported for backwards compatibility.
 - **Context Menu Cleanup**: Removed the redundant "Switch to Overlay Mode" from the right-click menu, as it is already cleanly accessible from the main top panel.
 
 ### Fixed
