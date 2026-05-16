@@ -305,6 +305,8 @@ class OverlayItem(pg.GraphicsObject):
                 ('e', QPointF(cx + rx, cy)),
                 ('w', QPointF(cx - rx, cy)),
             ]
+        if o.shape == OverlayShape.POLYGON and len(o.points) >= 3:
+            return [(f'p{i}', QPointF(x, y)) for i, (x, y) in enumerate(o.points)]
         return []
 
     def _hit_handle(self, pos: QPointF) -> Optional[str]:
@@ -365,6 +367,15 @@ class OverlayItem(pg.GraphicsObject):
                 if role == 'e': rx = max(1e-9, rx + dx)
                 if role == 'w': rx = max(1e-9, rx - dx)
                 o.radii = (rx, ry)
+                
+        elif o.shape == OverlayShape.POLYGON and role.startswith('p'):
+            try:
+                idx = int(role[1:])
+                if 0 <= idx < len(o.points):
+                    old_x, old_y = o.points[idx]
+                    o.points[idx] = (old_x + dx, old_y + dy)
+            except ValueError:
+                pass
 
     def _apply_move_drag(self, delta: QPointF) -> None:
         o = self.overlay
@@ -457,6 +468,8 @@ class OverlayItem(pg.GraphicsObject):
                 self.setCursor(Qt.CursorShape.SizeHorCursor)
             elif handle in vert:
                 self.setCursor(Qt.CursorShape.SizeVerCursor)
+            elif handle.startswith('p'):
+                self.setCursor(Qt.CursorShape.CrossCursor)
         elif self._inside_shape(pos):
             self.setCursor(Qt.CursorShape.SizeAllCursor)
         else:
