@@ -284,6 +284,50 @@ class MarkerPanel(QFrame):
         self.scroll.setWidget(self.scroll_content)
         self.endless_layout.addWidget(self.scroll)
 
+        # Page 2: Overlay Mode
+        self.overlay_widget = QWidget()
+        self.stack.addWidget(self.overlay_widget)
+        self.overlay_layout = QVBoxLayout(self.overlay_widget)
+        self.overlay_layout.setContentsMargins(0, 0, 0, 0)
+        self.overlay_layout.setSpacing(2)
+        
+        # --- Overlay Control Header ---
+        self.overlay_control_widget = QWidget()
+        self.overlay_control_layout = QHBoxLayout(self.overlay_control_widget)
+        self.overlay_control_layout.setContentsMargins(5, 2, 5, 2)
+        self.overlay_control_layout.setSpacing(10)
+        
+        from PyQt6.QtWidgets import QComboBox
+        from .overlay import SHAPE_LABELS
+        self.cb_overlay_shape = QComboBox()
+        for label, shape in SHAPE_LABELS.items():
+            self.cb_overlay_shape.addItem(label, userData=shape)
+            
+        self.btn_manual_overlay = QPushButton("+ Manual Add")
+        self.btn_manual_overlay.setFixedHeight(24)
+        self.btn_manual_overlay.clicked.connect(self._on_manual_overlay_add)
+        
+        self.overlay_control_layout.addWidget(QLabel("Place Shape:"))
+        self.overlay_control_layout.addWidget(self.cb_overlay_shape, 1)
+        self.overlay_control_layout.addWidget(self.btn_manual_overlay)
+        
+        self.overlay_layout.addWidget(self.overlay_control_widget)
+        
+        # --- Overlay Scroll Area ---
+        self.overlay_scroll = QScrollArea()
+        self.overlay_scroll.setWidgetResizable(True)
+        self.overlay_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.overlay_scroll.setStyleSheet("background: transparent;")
+        
+        self.overlay_scroll_content = QWidget()
+        self.overlay_scroll_layout = QVBoxLayout(self.overlay_scroll_content)
+        self.overlay_scroll_layout.setContentsMargins(0, 0, 10, 0)
+        self.overlay_scroll_layout.setSpacing(4)
+        self.overlay_scroll_layout.addStretch()
+        
+        self.overlay_scroll.setWidget(self.overlay_scroll_content)
+        self.overlay_layout.addWidget(self.overlay_scroll)
+
         # Explicit Default Force
         self.btn_marker_time.setChecked(True)
         self.interactionModeChanged.emit('TIME')
@@ -436,7 +480,9 @@ class MarkerPanel(QFrame):
             
         display_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE'] else mode
 
-        if display_mode in ['TIME_ENDLESS', 'FREQ_ENDLESS', 'OVERLAY']:
+        if display_mode == 'OVERLAY':
+            self.stack.setCurrentIndex(2)
+        elif display_mode in ['TIME_ENDLESS', 'FREQ_ENDLESS']:
             self.stack.setCurrentIndex(1)
         else:
             self.stack.setCurrentIndex(0)
@@ -532,7 +578,7 @@ class MarkerPanel(QFrame):
             hl.addWidget(l_sh)
             hl.addWidget(l_tag, 1)
             self._overlay_header_widget = hw
-            self.scroll_layout.insertWidget(0, hw)
+            self.overlay_scroll_layout.insertWidget(0, hw)
 
         # Sync row count
         while len(self._overlay_rows) > len(overlays):
@@ -586,23 +632,13 @@ class MarkerPanel(QFrame):
             rl.addWidget(btn_edit)
             rl.addWidget(btn_del)
 
-            self.scroll_layout.insertWidget(self.scroll_layout.count()-1, row)
+            self.overlay_scroll_layout.insertWidget(self.overlay_scroll_layout.count()-1, row)
             self._overlay_rows.append({
                 'widget': row, 'lbl_id': lbl_id,
                 'lbl_shape': lbl_shape, 'edit_tag': edit_tag,
                 'btn_vis': btn_vis, 'btn_lock': btn_lock,
                 'btn_edit': btn_edit, 'btn_del': btn_del,
             })
-
-        # Show/hide headers
-        if hasattr(self, '_header_widget'):
-            self._header_widget.setVisible(False)
-        if hasattr(self, '_overlay_header_widget'):
-            self._overlay_header_widget.setVisible(True)
-
-        # Hide endless rows
-        for rd in getattr(self, '_endless_rows', []):
-            rd['widget'].setVisible(False)
 
         # Update data
         for i, overlay in enumerate(overlays):
@@ -655,14 +691,27 @@ class MarkerPanel(QFrame):
 
     def _show_endless_rows(self):
         """Switch the scroll area back to showing endless-marker rows."""
-        if hasattr(self, '_overlay_header_widget'):
-            self._overlay_header_widget.setVisible(False)
-        for rd in getattr(self, '_overlay_rows', []):
-            rd['widget'].setVisible(False)
-        if hasattr(self, '_header_widget'):
-            self._header_widget.setVisible(True)
-        for rd in getattr(self, '_endless_rows', []):
-            rd['widget'].setVisible(True)
+        # Now handled by QStackedWidget, no-op
+        pass
+
+    def _on_manual_overlay_add(self):
+        from PyQt6.QtWidgets import QDialog
+        from .overlay_dialog import OverlayDialog
+        from .overlay import Overlay
+        
+        # Pre-select the combo box shape by creating a dummy overlay
+        dummy = Overlay()
+        dummy.shape = self.cb_overlay_shape.currentData() or dummy.shape
+        
+        dlg = OverlayDialog(
+            parent=self,
+            parent_window=self.parent_window,
+            overlay=dummy,
+        )
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            new_overlay = dlg.get_overlay()
+            self.parent_window.add_overlay(new_overlay)
+
 
     def _on_overlay_edit(self, overlay_id):
         overlay = self.parent_window._get_overlay_by_id(overlay_id)
