@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.5] - 2026-05-16
+
+### Added
+- **Marker Grid Customization**: Added dedicated width, color, opacity, and line style settings for the cyclic continuation marker lines, completely decoupling them from the background axis grid appearance.
+
+### Fixed
+- **Settings Live Update**: All marker grids now update their appearance instantly across the spectrogram and all detached domain windows when changes are applied in the settings dialog.
+- **Settings Dialog Reset Crash**: Fixed a bug where attempting to use reset buttons within the settings dialog would crash the application due to a missing `QDoubleSpinBox` import.
+
 ## [0.1.4] - 2026-04-24
 
 ### Added

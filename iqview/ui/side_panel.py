@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QLineEdit, QVBoxLayout, QComboBox, QPushButton
+from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QLineEdit, QVBoxLayout, QHBoxLayout, QComboBox, QPushButton
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QFont, QPixmap
 from PyQt6 import QtGui
@@ -50,9 +50,24 @@ class SidePanel(QFrame):
         self.layout.setSpacing(2)
         self.layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
+        title_layout = QHBoxLayout()
+        title_layout.setContentsMargins(0, 0, 0, 0)
         title = QLabel("IQView")
         title.setObjectName("title")
-        self.layout.addWidget(title)
+        title_layout.addWidget(title)
+
+        try:
+            from importlib.metadata import version
+            ver = version('iqview')
+        except Exception:
+            ver = "0.1.5"
+
+        version_lbl = QLabel(f"v{ver}")
+        version_lbl.setStyleSheet("color: #888; font-size: 11px; margin-bottom: 10px; margin-left: 5px;")
+        title_layout.addWidget(version_lbl, alignment=Qt.AlignmentFlag.AlignBottom)
+        title_layout.addStretch()
+
+        self.layout.addLayout(title_layout)
 
         # --- CORE SETTINGS ---
         core_header = QLabel("Core Settings")
