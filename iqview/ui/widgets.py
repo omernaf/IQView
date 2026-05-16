@@ -507,13 +507,6 @@ class CustomViewBox(pg.ViewBox):
             fd_popup_act = menu.addAction("Frequency Domain Popup")
             fd_popup_act.triggered.connect(self.ui_controller.open_frequency_domain_tab)
 
-            menu.addSeparator()
-            overlay_act = menu.addAction("Switch to Overlay Mode")
-            def _switch_to_overlay():
-                self.ui_controller.set_interaction_mode('OVERLAY')
-                self.ui_controller.marker_panel.update_headers('OVERLAY')
-            overlay_act.triggered.connect(_switch_to_overlay)
-
         # Add Dock Back if detached
         # To avoid circular imports, check if the window class name is DetachedViewWindow
         if self.ui_controller.window().__class__.__name__ == "DetachedViewWindow":

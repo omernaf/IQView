@@ -5,6 +5,9 @@
 ### Added
 - **Marker Grid Customization**: Added dedicated width, color, opacity, and line style settings for the cyclic continuation marker lines, completely decoupling them from the background axis grid appearance.
 - **Region Overlays**: Added `X-Region` and `Y-Region` overlay shapes. These act as infinite bands (e.g. spanning the entire frequency range between two time points) and support interactive dragging and resizing.
+- **Overlay Shape Selector & Manual Add**: Upgraded the Marker Panel with a shape selection dropdown and a "+ Manual Add" button, letting users easily construct overlays through the UI dialog or place specific geometries directly via mouse interactions.
+- **Smart Drag & Click Placement**: Interactions dynamically adapt to the selected shape, meaning single clicks now generate proportional default-sized regions or shapes, and drag actions cleanly bound ellipses, polygons, or band regions.
+- **Polygon Vertex Manipulation**: Unlocked Polygon overlays now render independent resize handles at each vertex, allowing users to drag and adjust corners individually.
 
 ### Fixed
 - **Settings Live Update**: All marker grids now update their appearance instantly across the spectrogram and all detached domain windows when changes are applied in the settings dialog.
