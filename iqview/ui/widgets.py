@@ -390,7 +390,7 @@ class CustomViewBox(pg.ViewBox):
                     self.ui_controller.handle_move_drag(ev.scenePos())
                 ev.accept()
             elif self.ui_controller.interaction_mode == 'OVERLAY':
-                # Rubber-band drag to place a RECT overlay
+                # Rubber-band drag to place an overlay
                 if ev.isStart():
                     self._overlay_drag_start = self.mapSceneToView(ev.buttonDownScenePos())
                     self._overlay_preview = pg.QtWidgets.QGraphicsPathItem()
@@ -414,8 +414,43 @@ class CustomViewBox(pg.ViewBox):
                     if self._overlay_preview and hasattr(self, '_overlay_drag_start'):
                         curr = self.mapSceneToView(ev.scenePos())
                         p1, p2 = self._overlay_drag_start, curr
+                        
+                        shape_val = 'RECT'
+                        if hasattr(self.ui_controller, 'marker_panel') and hasattr(self.ui_controller.marker_panel, 'cb_overlay_shape'):
+                            os_obj = self.ui_controller.marker_panel.cb_overlay_shape.currentData()
+                            if os_obj:
+                                shape_val = os_obj.value
+
+                        t0, f0 = p1.x(), p1.y()
+                        t1, f1 = p2.x(), p2.y()
+                        
                         path = pg.QtGui.QPainterPath()
-                        path.addRect(pg.QtCore.QRectF(p1, p2))
+                        if shape_val == 'RECT':
+                            path.addRect(pg.QtCore.QRectF(p1, p2))
+                        elif shape_val == 'ELLIPSE':
+                            path.addEllipse(pg.QtCore.QRectF(p1, p2))
+                        elif shape_val == 'POLYGON':
+                            t_min, t_max = min(t0, t1), max(t0, t1)
+                            f_min, f_max = min(f0, f1), max(f0, f1)
+                            path.moveTo((t_min + t_max) / 2, f_max)
+                            path.lineTo(t_max, f_min)
+                            path.lineTo(t_min, f_min)
+                            path.closeSubpath()
+                        elif shape_val == 'X_REGION':
+                            yr = self.viewRange()[1]
+                            path.addRect(pg.QtCore.QRectF(pg.QtCore.QPointF(t0, yr[0]), pg.QtCore.QPointF(t1, yr[1])))
+                        elif shape_val == 'Y_REGION':
+                            xr = self.viewRange()[0]
+                            path.addRect(pg.QtCore.QRectF(pg.QtCore.QPointF(xr[0], f0), pg.QtCore.QPointF(xr[1], f1)))
+                        elif shape_val == 'LINE':
+                            yr = self.viewRange()[1]
+                            path.moveTo(t0, yr[0])
+                            path.lineTo(t0, yr[1])
+                        elif shape_val == 'HLINE':
+                            xr = self.viewRange()[0]
+                            path.moveTo(xr[0], f0)
+                            path.lineTo(xr[1], f0)
+                            
                         self._overlay_preview.setPath(path)
                 ev.accept()
             else:
