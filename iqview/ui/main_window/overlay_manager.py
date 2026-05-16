@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 
 import pyqtgraph as pg
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
 
 from ..overlay import Overlay, OverlayItem, OverlayShape, _BORDER_STYLE_MAP
 
@@ -216,6 +217,14 @@ class OverlayManagerMixin:
             item.setVisible(overlay.visible)
             plot_item.addItem(item, ignoreBounds=True)
             self._overlay_items[overlay.id] = item
+        elif overlay.shape in (OverlayShape.X_REGION, OverlayShape.Y_REGION):
+            item = self._create_region_item(overlay)
+            if item is None:
+                return
+            item.setZValue(overlay.z_order)
+            item.setVisible(overlay.visible)
+            plot_item.addItem(item)
+            self._overlay_items[overlay.id] = item
         else:
             item = OverlayItem(overlay, on_geometry_changed=self._persist_overlay_drag)
             item.setZValue(overlay.z_order)
@@ -271,6 +280,56 @@ class OverlayManagerMixin:
             line.sigPositionChangeFinished.connect(_on_line_moved)
 
         return line
+
+    def _create_region_item(self, overlay: Overlay):
+        """Build a pg.LinearRegionItem for an X_REGION or Y_REGION overlay."""
+        if not overlay.points or len(overlay.points) < 2:
+            return None
+
+        is_x = (overlay.shape == OverlayShape.X_REGION)   # vertical band
+        orientation = 'vertical' if is_x else 'horizontal'
+
+        if is_x:
+            v0 = overlay.points[0][0]   # t_start
+            v1 = overlay.points[1][0]   # t_end
+        else:
+            v0 = overlay.points[0][1]   # f_start
+            v1 = overlay.points[1][1]   # f_end
+
+        bc = QColor(overlay.border_color or overlay.color)
+        fc = QColor(overlay.color)
+        fc.setAlphaF(max(0.0, min(1.0, overlay.alpha)))
+
+        pen = pg.mkPen(
+            bc,
+            width=overlay.border_width,
+            style=_BORDER_STYLE_MAP.get(overlay.border_style, Qt.PenStyle.SolidLine),
+        )
+        brush = pg.mkBrush(fc)
+
+        movable = not overlay.locked
+        region = pg.LinearRegionItem(
+            values=[min(v0, v1), max(v0, v1)],
+            orientation=orientation,
+            brush=brush,
+            pen=pen,
+            movable=movable,
+        )
+        if overlay.hover_str:
+            region.setToolTip(overlay.hover_str)
+
+        if movable:
+            oid = overlay.id
+            def _on_region_changed(region=region, overlay=overlay, oid=oid):
+                r0, r1 = region.getRegion()
+                if overlay.shape == OverlayShape.X_REGION:
+                    overlay.points = [(r0, 0.0), (r1, 0.0)]
+                else:
+                    overlay.points = [(0.0, r0), (0.0, r1)]
+                self._persist_overlay_drag(oid, points=overlay.points)
+            region.sigRegionChangeFinished.connect(_on_region_changed)
+
+        return region
 
     def _persist_overlay_drag(self, overlay_id: str, **kwargs) -> None:
         """

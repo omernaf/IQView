@@ -27,11 +27,13 @@ from PyQt6.QtWidgets import QGraphicsItem
 # ---------------------------------------------------------------------------
 
 class OverlayShape(Enum):
-    RECT    = "RECT"
-    POLYGON = "POLYGON"
-    ELLIPSE = "ELLIPSE"  # separate time-radius and freq-radius
-    LINE    = "LINE"     # vertical infinite line (time axis)
-    HLINE   = "HLINE"   # horizontal infinite line (frequency axis)
+    RECT     = "RECT"
+    POLYGON  = "POLYGON"
+    ELLIPSE  = "ELLIPSE"  # separate time-radius and freq-radius
+    LINE     = "LINE"     # vertical infinite line (time axis)
+    HLINE    = "HLINE"   # horizontal infinite line (frequency axis)
+    X_REGION = "X_REGION"  # vertical band: full freq extent between two time bounds
+    Y_REGION = "Y_REGION"  # horizontal band: full time extent between two freq bounds
 
 
 # Map from border_style string to Qt pen style
@@ -49,6 +51,8 @@ SHAPE_LABELS: Dict[str, OverlayShape] = {
     "Ellipse":         OverlayShape.ELLIPSE,
     "Vertical Line":   OverlayShape.LINE,
     "Horizontal Line": OverlayShape.HLINE,
+    "X-Region (time band)":  OverlayShape.X_REGION,
+    "Y-Region (freq band)":  OverlayShape.Y_REGION,
 }
 
 TAG_POSITIONS = ["center", "top-left", "top-right", "bottom-left", "bottom-right"]
@@ -71,6 +75,8 @@ class Overlay:
     ELLIPSE : center = (t, f),  radii = (rt, rf)
     LINE    : points = [(t, 0.0)]   only x (time) matters
     HLINE   : points = [(0.0, f)]   only y (freq) matters
+    X_REGION: points = [(t_start, 0.0), (t_end, 0.0)]  fills full freq range
+    Y_REGION: points = [(0.0, f_start), (0.0, f_end)]  fills full time range
     """
 
     shape: OverlayShape = OverlayShape.RECT
@@ -158,7 +164,7 @@ class Overlay:
     # ------------------------------------------------------------------
 
     def bounding_rect(self) -> Optional[QRectF]:
-        """Bounding box in world-space; None for infinite shapes (LINE/HLINE)."""
+        """Bounding box in world-space; None for infinite shapes (LINE/HLINE/X_REGION/Y_REGION)."""
         if self.shape == OverlayShape.RECT and len(self.points) >= 2:
             x0, y0 = self.points[0]
             x1, y1 = self.points[1]
@@ -177,6 +183,8 @@ class Overlay:
             rx, ry = self.radii
             return QRectF(cx - rx, cy - ry, 2 * rx, 2 * ry)
 
+        # X_REGION / Y_REGION: bounding rect cannot be determined without the
+        # current view extents, so return None (the manager handles rendering).
         return None
 
     def tag_anchor(self) -> Optional[QPointF]:

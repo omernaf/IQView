@@ -106,6 +106,8 @@ class OverlayDialog(QDialog):
         self._panes["ellipse"] = self._make_ellipse_pane()
         self._panes["line"]    = self._make_line_pane()
         self._panes["hline"]   = self._make_hline_pane()
+        self._panes["xregion"] = self._make_xregion_pane()
+        self._panes["yregion"] = self._make_yregion_pane()
 
         for pane in self._panes.values():
             self._geo_stack.addWidget(pane)
@@ -287,6 +289,39 @@ class OverlayDialog(QDialog):
         f.addRow("Freq Position:", self.hline_f)
         return w
 
+    def _make_xregion_pane(self) -> QWidget:
+        """X-Region: two time bounds — covers the full frequency range."""
+        w = QWidget()
+        f = QFormLayout(w)
+        t_min, t_max, _, _ = self._default_view_range()
+        t_q = (t_max - t_min) / 4
+        self.xreg_t0 = self._dspin(t_min + t_q,     -_BIG, _BIG, "s")
+        self.xreg_t1 = self._dspin(t_min + 3 * t_q, -_BIG, _BIG, "s")
+        f.addRow("Time Start:", self.xreg_t0)
+        f.addRow("Time End:",   self.xreg_t1)
+        note = QLabel("Fills the entire frequency axis between the two time bounds.")
+        note.setStyleSheet("color: #888; font-size: 10px;")
+        note.setWordWrap(True)
+        f.addRow(note)
+        return w
+
+    def _make_yregion_pane(self) -> QWidget:
+        """Y-Region: two frequency bounds — covers the full time range."""
+        w = QWidget()
+        f = QFormLayout(w)
+        _, _, f_lo, f_hi = self._default_view_range()
+        f_q = (f_hi - f_lo) / 4
+        self.yreg_f0 = self._dspin(f_lo + f_q,     -_BIG, _BIG, "Hz")
+        self.yreg_f1 = self._dspin(f_lo + 3 * f_q, -_BIG, _BIG, "Hz")
+        f.addRow("Freq Start:", self.yreg_f0)
+        f.addRow("Freq End:",   self.yreg_f1)
+        note = QLabel("Fills the entire time axis between the two frequency bounds.")
+        note.setStyleSheet("color: #888; font-size: 10px;")
+        note.setWordWrap(True)
+        f.addRow(note)
+        return w
+
+
     # ── Helpers ────────────────────────────────────────────────────────
 
     @staticmethod
@@ -393,6 +428,14 @@ class OverlayDialog(QDialog):
         elif shape == OverlayShape.HLINE and overlay.points:
             self.hline_f.setValue(overlay.points[0][1])
 
+        elif shape == OverlayShape.X_REGION and len(overlay.points) >= 2:
+            self.xreg_t0.setValue(overlay.points[0][0])
+            self.xreg_t1.setValue(overlay.points[1][0])
+
+        elif shape == OverlayShape.Y_REGION and len(overlay.points) >= 2:
+            self.yreg_f0.setValue(overlay.points[0][1])
+            self.yreg_f1.setValue(overlay.points[1][1])
+
         # Style
         self._fill_color = overlay.color
         self._update_color_btn(self.btn_color, overlay.color)
@@ -466,6 +509,16 @@ class OverlayDialog(QDialog):
 
         elif o.shape == OverlayShape.HLINE:
             o.points = [(0.0, self.hline_f.value())]
+            o.center = o.radii = None
+
+        elif o.shape == OverlayShape.X_REGION:
+            t0, t1 = self.xreg_t0.value(), self.xreg_t1.value()
+            o.points = [(min(t0, t1), 0.0), (max(t0, t1), 0.0)]
+            o.center = o.radii = None
+
+        elif o.shape == OverlayShape.Y_REGION:
+            f0, f1 = self.yreg_f0.value(), self.yreg_f1.value()
+            o.points = [(0.0, min(f0, f1)), (0.0, max(f0, f1))]
             o.center = o.radii = None
 
         # Style
