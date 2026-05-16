@@ -495,6 +495,19 @@ class CustomViewBox(pg.ViewBox):
         view_all_act = menu.addAction("View All")
         view_all_act.triggered.connect(self.ui_controller.reset_zoom)
         
+        if is_spec:
+            uz_x = menu.addAction("Unzoom Time")
+            uz_y = menu.addAction("Unzoom Freq")
+        elif type(self.ui_controller).__name__ == "TimeDomainView":
+            uz_x = menu.addAction("Unzoom Time")
+            uz_y = menu.addAction("Unzoom Amplitude")
+        else:
+            uz_x = menu.addAction("Unzoom Freq")
+            uz_y = menu.addAction("Unzoom Magnitude")
+            
+        uz_x.triggered.connect(self.ui_controller.reset_zoom_x)
+        uz_y.triggered.connect(self.ui_controller.reset_zoom_y)
+        
         clear_markers_act = menu.addAction("Clear All Markers")
         clear_markers_act.triggered.connect(self.ui_controller.clear_all_markers)
         

@@ -284,6 +284,14 @@ class TimeDomainView(QWidget):
         self.zoom_history.append(self.plot_item.viewRect())
         self.plot_item.autoRange()
 
+    def reset_zoom_x(self):
+        self.zoom_history.append(self.plot_item.viewRect())
+        self.plot_item.enableAutoRange(axis='x')
+
+    def reset_zoom_y(self):
+        self.zoom_history.append(self.plot_item.viewRect())
+        self.plot_item.enableAutoRange(axis='y')
+
     def handle_zoom_rectangle(self, rect, zoom_type='BOTH'):
         self.zoom_history.append(self.plot_item.viewRect())
         if rect.width() <= 0 and zoom_type != 'Y_ONLY': return

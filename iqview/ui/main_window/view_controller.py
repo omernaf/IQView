@@ -251,6 +251,32 @@ class ViewControllerMixin:
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             self._zoom_to_full_range()
 
+    def reset_zoom_x(self):
+        active_tab = self.tabs.currentWidget()
+        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'reset_zoom_x'):
+            active_tab.reset_zoom_x()
+        else:
+            self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
+            sv = self.spectrogram_view
+            t0, t1 = sv.full_t_range
+            if t1 > t0:
+                sv.plot_item.setXRange(t0, t1, padding=0)
+            else:
+                sv.plot_item.enableAutoRange(axis='x')
+
+    def reset_zoom_y(self):
+        active_tab = self.tabs.currentWidget()
+        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'reset_zoom_y'):
+            active_tab.reset_zoom_y()
+        else:
+            self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
+            sv = self.spectrogram_view
+            f0, f1 = sv.full_f_range
+            if f1 > f0:
+                sv.plot_item.setYRange(f0, f1, padding=0)
+            else:
+                sv.plot_item.enableAutoRange(axis='y')
+
     def _zoom_to_full_range(self):
         """Zoom to the full file extent using full_t_range / full_f_range.
         Falls back to autoRange() if the ranges aren't set yet."""
