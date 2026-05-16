@@ -36,7 +36,9 @@ MAX_OVERLAYS         = 30     # Maximum number of polygons to draw
 # Entry point
 # ---------------------------------------------------------------------------
 
-def run(samples: np.ndarray, info: dict) -> list[dict]:
+from iqview.overlays import VerticalLine
+
+def run(samples: np.ndarray, info: dict) -> list:
     if samples is None or len(samples) < 100:
         return []
 
@@ -91,48 +93,27 @@ def run(samples: np.ndarray, info: dict) -> list[dict]:
         # Calculate time (in seconds world-coordinates relative to the file start)
         burst_t_start = t_start + (idx_start * block_size / sample_rate)
         burst_t_end   = t_start + (idx_end   * block_size / sample_rate)
-        burst_t_mid   = (burst_t_start + burst_t_end) / 2.0
         
         # 1. Start Line (Green)
-        overlays.append({
-            "shape":        "VLINE",
-            "points":       [[burst_t_start, 0.0]],
-            "center":       None,
-            "radii":        None,
-            "color":        "#00ff88",    # Bright green
-            "alpha":        1.0, 
-            "border_width": 2,
-            "border_color": "#00ff88",
-            "border_style": "dash",
-            "display_str":  f"Burst Start",
-            "hover_str":    f"Burst START\nDuration: {burst_duration*1000:.1f} ms",
-            "tag_pos":      "top",
-            "visible":      True,
-            "locked":       False,
-            "z_order":      10,
-            "source":       "plugin:mark_bursts",
-            "metadata":     {"burst_duration_sec": burst_duration, "type": "start"},
-        })
+        overlays.append(VerticalLine(
+            t=burst_t_start,
+            color="#00ff88",
+            border_width=2,
+            border_style="dash",
+            display_str="Burst Start",
+            hover_str=f"Burst START\nDuration: {burst_duration*1000:.1f} ms",
+            metadata={"burst_duration_sec": burst_duration, "type": "start"}
+        ))
         
         # 2. End Line (Red)
-        overlays.append({
-            "shape":        "VLINE",
-            "points":       [[burst_t_end, 0.0]],
-            "center":       None,
-            "radii":        None,
-            "color":        "#ff3355",    # Bright red
-            "alpha":        1.0, 
-            "border_width": 2,
-            "border_color": "#ff3355",
-            "border_style": "dash",
-            "display_str":  f"Burst End",
-            "hover_str":    f"Burst END\nDuration: {burst_duration*1000:.1f} ms",
-            "tag_pos":      "bottom",
-            "visible":      True,
-            "locked":       False,
-            "z_order":      10,
-            "source":       "plugin:mark_bursts",
-            "metadata":     {"burst_duration_sec": burst_duration, "type": "end"},
-        })
+        overlays.append(VerticalLine(
+            t=burst_t_end,
+            color="#ff3355",
+            border_width=2,
+            border_style="dash",
+            display_str="Burst End",
+            hover_str=f"Burst END\nDuration: {burst_duration*1000:.1f} ms",
+            metadata={"burst_duration_sec": burst_duration, "type": "end"}
+        ))
 
     return overlays

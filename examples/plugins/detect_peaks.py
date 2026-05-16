@@ -39,7 +39,9 @@ MIN_SPACING  = 0.02   # minimum spacing between peaks, as fraction of bandwidth
 # Entry point
 # ---------------------------------------------------------------------------
 
-def run(samples: np.ndarray, info: dict) -> list[dict]:
+from iqview.overlays import HorizontalLine
+
+def run(samples: np.ndarray, info: dict) -> list:
     """
     Parameters
     ----------
@@ -50,8 +52,8 @@ def run(samples: np.ndarray, info: dict) -> list[dict]:
 
     Returns
     -------
-    list[dict]
-        Overlay dicts (HLINE shapes) at detected peak frequencies.
+    list
+        Overlay objects (HorizontalLine) at detected peak frequencies.
     """
     if samples is None or len(samples) == 0:
         return []
@@ -99,25 +101,17 @@ def run(samples: np.ndarray, info: dict) -> list[dict]:
         intensity = float((db - p_min) / (p_max - p_min + 1e-9))
         color     = _intensity_to_hex(intensity)
 
-        overlays.append({
-            "shape":        "HLINE",
-            "points":       [[0.0, freq]],
-            "center":       None,
-            "radii":        None,
-            "color":        color,
-            "alpha":        0.0,
-            "border_width": 1,
-            "border_color": color,
-            "border_style": "dash",
-            "display_str":  f"{freq/1e6:.4f} MHz  ({db:.1f} dB)",
-            "hover_str":    f"Peak at {freq:.1f} Hz  |  {db:.1f} dB above median",
-            "tag_pos":      "center",
-            "visible":      True,
-            "locked":       False,
-            "z_order":      9,
-            "source":       "plugin:detect_peaks",
-            "metadata":     {"freq_hz": freq, "power_db": float(db)},
-        })
+        overlays.append(HorizontalLine(
+            f=freq,
+            color=color,
+            alpha=0.0,
+            border_width=1,
+            border_style="dash",
+            display_str=f"{freq/1e6:.4f} MHz  ({db:.1f} dB)",
+            hover_str=f"Peak at {freq:.1f} Hz  |  {db:.1f} dB above median",
+            tag_pos="center",
+            metadata={"freq_hz": freq, "power_db": float(db)}
+        ))
 
     return overlays
 

@@ -337,9 +337,13 @@ class PluginManagerMixin:
 
         added = 0
         from iqview.ui.overlay import Overlay
-        for d in result:
+        for item in result:
             try:
-                o = Overlay.from_dict(d)
+                if isinstance(item, Overlay):
+                    o = item
+                else:
+                    o = Overlay.from_dict(item)
+                    
                 o.id     = str(uuid.uuid4())   # fresh ID — never collide
                 o.source = f"plugin:{name}"
                 self.add_overlay(o)

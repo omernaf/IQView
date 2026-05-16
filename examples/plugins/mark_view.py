@@ -12,7 +12,9 @@ PLUGIN_NAME        = "mark_view"
 PLUGIN_DESCRIPTION = "Draw a rectangle around the current view"
 
 
-def run(samples: np.ndarray, info: dict) -> list[dict]:
+from iqview.overlays import Rect
+
+def run(samples: np.ndarray, info: dict) -> list:
     """
     Parameters
     ----------
@@ -23,32 +25,26 @@ def run(samples: np.ndarray, info: dict) -> list[dict]:
 
     Returns
     -------
-    list[dict]  — one RECT overlay covering the current view.
+    list  — one Rect overlay covering the current view.
     """
     return [
-        {
-            "shape":        "RECT",
-            "points":       [
-                [info["t_start"], info["f_start"]],
-                [info["t_end"],   info["f_end"]],
-            ],
-            "center":       None,
-            "radii":        None,
-            "color":        "#004400",
-            "alpha":        0.08,
-            "border_width": 2,
-            "border_color": "#00cc00",
-            "border_style": "dash",
-            "display_str":  "View region",
-            "hover_str":    (
+        Rect(
+            t_start=info["t_start"],
+            f_start=info["f_start"],
+            t_end=info["t_end"],
+            f_end=info["f_end"],
+            color="#004400",
+            alpha=0.08,
+            border_width=2,
+            border_color="#00cc00",
+            border_style="dash",
+            display_str="View region",
+            hover_str=(
                 f"t: {info['t_start']:.4f}s – {info['t_end']:.4f}s  \n  "
                 f"f: {info['f_start']/1e6:.3f} – {info['f_end']/1e6:.3f} MHz"
             ),
-            "tag_pos":      "top-left",
-            "visible":      True,
-            "locked":       True,   # lock it so it can't be accidentally moved
-            "z_order":      5,
-            "source":       "plugin:mark_view",
-            "metadata":     {},
-        }
+            tag_pos="top-left",
+            locked=True,   # lock it so it can't be accidentally moved
+            z_order=5
+        )
     ]
