@@ -60,20 +60,32 @@ class SettingsManager:
         "ui/light/zoom_box_color": "#000000",
         "ui/light/zoom_box_style": "DashLine",
 
-        # Grid Settings
+        # Grid Settings (axis background grid)
         "ui/grid_enabled": False,
         "ui/grid_alpha": 30,
         "ui/axis_font_size": 10,
         "ui/label_precision": 6,
         "ui/show_inv_time": False,
         
-        # Dark Grid
+        # Dark Axis Grid
         "ui/dark/grid_color": "#c8c8ff",
         "ui/dark/grid_style": "SolidLine",
         
-        # Light Grid
+        # Light Axis Grid
         "ui/light/grid_color": "#000000",
         "ui/light/grid_style": "SolidLine",
+
+        # Marker Grid (cyclic continuation lines)
+        "ui/marker_grid_alpha": 50,
+        "ui/marker_grid_width": 1,
+
+        # Dark Marker Grid
+        "ui/dark/marker_grid_color": "#c8c8ff",
+        "ui/dark/marker_grid_style": "SolidLine",
+
+        # Light Marker Grid
+        "ui/light/marker_grid_color": "#0000cc",
+        "ui/light/marker_grid_style": "SolidLine",
 
         "keybinds/time_markers": "T",
         "keybinds/mag_markers": "F",

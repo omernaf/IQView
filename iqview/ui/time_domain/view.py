@@ -1472,9 +1472,10 @@ class TimeDomainView(QWidget):
         
         angle = 90 if is_time else 0
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
-        color = self.parent_window.settings_mgr.get(f"ui/{theme}/grid_color", "#c8c8ff")
-        style_name = self.parent_window.settings_mgr.get(f"ui/{theme}/grid_style", "SolidLine")
-        alpha = int(self.parent_window.settings_mgr.get("ui/grid_alpha", 30))
+        color = self.parent_window.settings_mgr.get(f"ui/{theme}/marker_grid_color", "#c8c8ff")
+        style_name = self.parent_window.settings_mgr.get(f"ui/{theme}/marker_grid_style", "SolidLine")
+        alpha = int(self.parent_window.settings_mgr.get("ui/marker_grid_alpha", 50))
+        width = int(self.parent_window.settings_mgr.get("ui/marker_grid_width", 1))
         
         style_map = {
             "SolidLine": Qt.PenStyle.SolidLine,
@@ -1488,7 +1489,7 @@ class TimeDomainView(QWidget):
         qcolor = QColor(color)
         qcolor.setAlphaF(alpha / 100.0)
         
-        pen = pg.mkPen(qcolor, width=1, style=style)
+        pen = pg.mkPen(qcolor, width=width, style=style)
         
         # Start from first visible multiple of delta relative to p1
         start_count = np.ceil((v_min_visible - p1) / delta)

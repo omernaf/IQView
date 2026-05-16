@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QStackedWidget, 
                              QWidget, QLabel, QLineEdit, QComboBox, QPushButton, 
                              QFormLayout, QDialogButtonBox, QKeySequenceEdit, QCheckBox,
-                             QColorDialog, QSlider, QSpinBox, QListWidget, QListWidgetItem,
+                             QColorDialog, QSlider, QSpinBox, QDoubleSpinBox, QListWidget, QListWidgetItem,
                              QAbstractItemView, QTableWidget, QTableWidgetItem, QHeaderView,
                              QScrollArea, QFrame)
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
@@ -371,6 +371,45 @@ class SettingsDialog(QDialog):
         self._add_reset_row(self.appearance_form, "Grid Style:", self.grid_style_combo, lambda: f"ui/{self.theme_combo.currentText().lower()}/grid_style")
         self.appearance_form.addRow("Grid Opacity:", grid_alpha_layout)
 
+        # ── Marker Grid Section ──────────────────────────────────────────────
+        self.appearance_form.addRow(QLabel(" "))
+        self.appearance_form.addRow(QLabel("<b>Marker Grid Customization</b>"))
+        self.appearance_form.addRow(QLabel(
+            "<i>Controls the cyclic continuation lines drawn from your time/frequency markers.</i>"
+        ))
+
+        self.marker_grid_color_btn = ColorButton("#c8c8ff")
+        self.marker_grid_style_combo = QComboBox()
+        self.marker_grid_style_combo.addItems(["SolidLine", "DashLine", "DotLine", "DashDotLine"])
+
+        self.marker_grid_alpha_slider = QSlider(Qt.Orientation.Horizontal)
+        self.marker_grid_alpha_slider.setRange(0, 100)
+        self.marker_grid_alpha_slider.setTickInterval(10)
+        self.marker_grid_alpha_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.marker_grid_alpha_label = QLabel("50%")
+        self.marker_grid_alpha_slider.valueChanged.connect(
+            lambda v: self.marker_grid_alpha_label.setText(f"{v}%")
+        )
+        marker_grid_alpha_layout = QHBoxLayout()
+        marker_grid_alpha_layout.addWidget(self.marker_grid_alpha_slider)
+        marker_grid_alpha_layout.addWidget(self.marker_grid_alpha_label)
+
+        self.marker_grid_width_spin = QSpinBox()
+        self.marker_grid_width_spin.setRange(1, 10)
+        self.marker_grid_width_spin.setValue(1)
+        self.marker_grid_width_spin.setSuffix(" px")
+
+        self._add_reset_row(self.appearance_form, "Marker Grid Color:",
+                            self.marker_grid_color_btn,
+                            lambda: f"ui/{self.theme_combo.currentText().lower()}/marker_grid_color")
+        self._add_reset_row(self.appearance_form, "Marker Grid Style:",
+                            self.marker_grid_style_combo,
+                            lambda: f"ui/{self.theme_combo.currentText().lower()}/marker_grid_style")
+        self.appearance_form.addRow("Marker Grid Opacity:", marker_grid_alpha_layout)
+        self._add_reset_row(self.appearance_form, "Marker Grid Width:",
+                            self.marker_grid_width_spin, "ui/marker_grid_width")
+
+
         self.appearance_form.addRow(QLabel(" "))
         self.appearance_form.addRow(QLabel("<b>Font & Scaling</b>"))
         
@@ -639,6 +678,13 @@ class SettingsDialog(QDialog):
             self.mgr.set("ui/grid_alpha", self.grid_alpha_slider.value())
             self.mgr.set(f"ui/{theme}/grid_color", self.grid_color_btn.color())
             self.mgr.set(f"ui/{theme}/grid_style", self.grid_style_combo.currentText())
+
+            # Marker Grid Settings
+            self.mgr.set("ui/marker_grid_alpha", self.marker_grid_alpha_slider.value())
+            self.mgr.set("ui/marker_grid_width", self.marker_grid_width_spin.value())
+            self.mgr.set(f"ui/{theme}/marker_grid_color", self.marker_grid_color_btn.color())
+            self.mgr.set(f"ui/{theme}/marker_grid_style", self.marker_grid_style_combo.currentText())
+
             
             # Font & Scaling
             self.mgr.set("ui/axis_font_size", self.axis_font_spin.value())
@@ -795,13 +841,22 @@ class SettingsDialog(QDialog):
         
         self.grid_color_btn.setColor(str(self.mgr.get(f"ui/{theme}/grid_color")))
         self.grid_style_combo.setCurrentText(str(self.mgr.get(f"ui/{theme}/grid_style")))
+
+        self.marker_grid_color_btn.setColor(str(self.mgr.get(f"ui/{theme}/marker_grid_color", "#c8c8ff")))
+        self.marker_grid_style_combo.setCurrentText(str(self.mgr.get(f"ui/{theme}/marker_grid_style", "SolidLine")))
+
         
         # Load non-theme specific but related to appearance
         self.grid_enabled_cb.setChecked(bool(self.mgr.get("ui/grid_enabled", True)))
         alpha = int(self.mgr.get("ui/grid_alpha", 30))
         self.grid_alpha_slider.setValue(alpha)
         self.grid_alpha_label.setText(f"{alpha}%")
-        
+
+        mg_alpha = int(self.mgr.get("ui/marker_grid_alpha", 50))
+        self.marker_grid_alpha_slider.setValue(mg_alpha)
+        self.marker_grid_alpha_label.setText(f"{mg_alpha}%")
+        self.marker_grid_width_spin.setValue(int(self.mgr.get("ui/marker_grid_width", 1)))
+
         self.axis_font_spin.setValue(int(self.mgr.get("ui/axis_font_size", 10)))
         self.precision_spin.setValue(int(self.mgr.get("ui/label_precision", 6)))
 

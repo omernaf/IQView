@@ -150,9 +150,25 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
                     widget.rebuild_plot_buttons()
                 if hasattr(widget, 'marker_panel'):
                     widget.marker_panel.update_headers(getattr(widget, 'interaction_mode', 'TIME'), getattr(widget, 'y_label_text', 'Magnitude'))
-                    
+
+        # Force-redraw all active marker grids so style/color/width changes apply immediately
+        self.update_grid('TIME', force=True)
+        self.update_grid('FREQ', force=True)
+
+        # Also refresh grids in any open Time/Freq Domain tabs and detached views
+        all_views = []
+        if hasattr(self, 'tabs'):
+            all_views += [self.tabs.widget(i) for i in range(1, self.tabs.count())]
+        if hasattr(self, 'detached_views'):
+            all_views += [dv.view for dv in self.detached_views if hasattr(dv, 'view')]
+        for view in all_views:
+            if hasattr(view, 'update_grid'):
+                for axis in ('TIME', 'MAG', 'FREQ'):
+                    view.update_grid(axis, force=True)
+
         if self.filter_mode:
             self.start_processing()
+
 
     def eventFilter(self, obj, event):
         """Handle middle-click and right-click on the tab bar."""
