@@ -12,6 +12,8 @@
 - **Plugin API Developer Guide**: Added a comprehensive `plugin_guide.md` to the repository detailing plugin architecture, threading rules, and providing advanced code examples.
 - **Background Update Version Checker**: Added an automatic background version checker that runs `pip index versions` in a non-blocking daemon thread on startup, showing a highlighted update notification directly below the version number in the SidePanel if a newer version is available. It automatically respects local pip repository configurations (e.g. private servers, mirrors, and custom credentials) and handles offline/unreachable conditions gracefully.
 - **WAV Audio File Support**: IQView can now load `.wav` audio files as signal data. Multi-channel audio is automatically averaged to mono and integer samples (int8, int16, int32) are normalised to float32 in the range `[-1.0, 1.0]`. The sample rate is read directly from the WAV header with no manual input required. Supported via CLI (`iqview -f audio.wav` or `iqview -f audio.wav -t aud`) and via **File → Open** in the GUI. No new dependencies are required — uses the existing `scipy.io.wavfile` reader.
+- **Offline Debian Package Wheels Bundling**: Added `--offline-wheels` support to the build scripts (`build_project.py` and `make_deb.py`) to package pre-downloaded dependency wheels inside the Debian `.deb` archive. The installation process detects the bundle and executes completely offline using local wheel files via `--no-index --find-links`.
+- **System Package Dependencies**: Added explicit `python3-pip` and `libxcb-cursor0` package requirements to the Debian package dependencies to guarantee successful virtual environment configuration and GUI execution on X11 targets.
 
 ### Changed
 - **Plugin Overlay API**: Refactored the plugin rendering engine to support returning strongly-typed Python objects (e.g. `Rect`, `VerticalLine`, `Polygon`) from the `iqview.overlays` module instead of requiring raw dictionaries. Legacy dictionary returns remain fully supported for backwards compatibility.
@@ -25,6 +27,7 @@
 - **.mat File Window Title and Association**: Fixed a bug where loading a `.mat` file displayed `<stdin>` in the window title instead of the actual file name/path. This also restores proper saving and loading of overlay sidecars (`.mat.overlays`) for MATLAB files.
 - **Dynamic .mat Loading & SidePanel Integration**: Enabled opening `.mat` files dynamically via the File menu or Recent Files list, automatically parsing their structures and updating the spectrogram data, sample rate, center frequency, and SidePanel controls.
 - **Dynamic Filename Parameter Auto-detection**: Enabled automatic extraction of sample rate and center frequency from the filename (e.g. `_10Msps_433MHz`) when loading any binary files dynamically in the UI.
+- **Debian Package Post-Installation Network Hangs**: Removed the unnecessary `pip install --upgrade pip` step from the Debian `postinst` script, preventing installation hangs and timeouts on private, restricted, or offline networks.
 
 
 ## [0.1.4] - 2026-04-24

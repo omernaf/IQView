@@ -63,7 +63,7 @@ def find_wheel():
     # Return the latest one
     return sorted(wheels)[-1]
 
-def make_deb():
+def make_deb(offline_wheels=None):
     version = get_project_version()
     wheel_path = find_wheel()
     
@@ -71,7 +71,8 @@ def make_deb():
         print("Error: No .whl found in dist/. Run 'python -m build' first.")
         sys.exit(1)
         
-    print(f"Building .deb for IQView v{version} using {wheel_path.name}...")
+    suffix = "_offline" if offline_wheels else ""
+    print(f"Building .deb for IQView v{version}{suffix} using {wheel_path.name}...")
     
     # 1. Create Control Tarball
     control_buf = io.BytesIO()
@@ -85,7 +86,7 @@ Priority: {PRIORITY}
 Architecture: {ARCHITECTURE}
 Maintainer: {MAINTAINER}
 Description: {DESCRIPTION}
-Depends: python3, python3-venv, libgl1
+Depends: python3, python3-pip, python3-venv, libgl1, libxcb-cursor0
 """
         c_info = tarfile.TarInfo("control")
         c_info.size = len(control_content)
@@ -103,8 +104,14 @@ WHEEL_PATH="$APP_DIR/{wheel_path.name}"
 echo "Setting up IQView virtual environment in $VENV_DIR..."
 mkdir -p "$APP_DIR"
 python3 -m venv "$VENV_DIR"
-"$VENV_DIR/bin/pip" install --upgrade pip
-"$VENV_DIR/bin/pip" install "$WHEEL_PATH"
+
+if [ -d "$APP_DIR/wheels" ]; then
+    echo "Installing IQView and dependencies from local wheels..."
+    "$VENV_DIR/bin/pip" install --no-index --find-links="$APP_DIR/wheels" "$WHEEL_PATH"
+else
+    echo "Installing IQView from wheel..."
+    "$VENV_DIR/bin/pip" install "$WHEEL_PATH"
+fi
 
 echo "Creating symbolic link..."
 ln -sf "$VENV_DIR/bin/iqview" /usr/bin/iqview
@@ -148,7 +155,11 @@ exit 0
     data_buf = io.BytesIO()
     with tarfile.open(fileobj=data_buf, mode='w:gz', format=tarfile.GNU_FORMAT) as tar:
         # Explicitly add directories. dpkg needs these entries to create parent folders.
-        for d in ["opt/", "opt/iqview/"]:
+        dirs_to_add = ["opt/", "opt/iqview/"]
+        if offline_wheels:
+            dirs_to_add.append("opt/iqview/wheels/")
+            
+        for d in dirs_to_add:
             d_info = tarfile.TarInfo(d)
             d_info.type = tarfile.DIRTYPE
             d_info.mtime = int(time.time())
@@ -158,8 +169,22 @@ exit 0
         # Add the wheel
         tar.add(wheel_path, arcname=f"opt/iqview/{wheel_path.name}")
         
+        # Add offline wheels if specified
+        if offline_wheels:
+            offline_path = Path(offline_wheels)
+            if not offline_path.exists() or not offline_path.is_dir():
+                print(f"Error: Offline wheels directory '{offline_wheels}' does not exist.")
+                sys.exit(1)
+                
+            print(f"Packaging offline wheels from '{offline_wheels}'...")
+            for w in offline_path.glob("*.whl"):
+                if w.name.startswith("iqview-"):
+                    # Avoid duplicate packaging of iqview wheel
+                    continue
+                tar.add(w, arcname=f"opt/iqview/wheels/{w.name}")
+        
     # 3. Create the .deb
-    output_filename = f"dist/{PACKAGE_NAME}_{version}_{ARCHITECTURE}.deb"
+    output_filename = f"dist/{PACKAGE_NAME}_{version}{suffix}_{ARCHITECTURE}.deb"
     create_ar_archive(output_filename, [
         ("debian-binary", b"2.0\n"),
         ("control.tar.gz", control_buf.getvalue()),
@@ -168,5 +193,13 @@ exit 0
     
     print(f"Successfully created {output_filename}")
 
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Build IQView Debian Package")
+    parser.add_argument("--offline-wheels", type=str, default=None,
+                        help="Path to directory containing pre-downloaded offline wheels (e.g. offline_dist/linux/py312)")
+    args = parser.parse_args()
+    make_deb(offline_wheels=args.offline_wheels)
+
 if __name__ == "__main__":
-    make_deb()
+    main()
