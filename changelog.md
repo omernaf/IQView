@@ -18,6 +18,10 @@
 ### Fixed
 - **Settings Live Update**: All marker grids now update their appearance instantly across the spectrogram and all detached domain windows when changes are applied in the settings dialog.
 - **Settings Dialog Reset Crash**: Fixed a bug where attempting to use reset buttons within the settings dialog would crash the application due to a missing `QDoubleSpinBox` import.
+- **.mat File Window Title and Association**: Fixed a bug where loading a `.mat` file displayed `<stdin>` in the window title instead of the actual file name/path. This also restores proper saving and loading of overlay sidecars (`.mat.overlays`) for MATLAB files.
+- **Dynamic .mat Loading & SidePanel Integration**: Enabled opening `.mat` files dynamically via the File menu or Recent Files list, automatically parsing their structures and updating the spectrogram data, sample rate, center frequency, and SidePanel controls.
+- **Dynamic Filename Parameter Auto-detection**: Enabled automatic extraction of sample rate and center frequency from the filename (e.g. `_10Msps_433MHz`) when loading any binary files dynamically in the UI.
+
 
 ## [0.1.4] - 2026-04-24
 
