@@ -7,6 +7,7 @@ if __name__ == "__main__" and __package__ is None:
     __package__ = "iqview"
 
 import sys
+import os
 import argparse
 import numpy as np
 import pyqtgraph as pg
@@ -215,9 +216,8 @@ def main():
         if not _px.isNull():
             app.setWindowIcon(QIcon(_px))
     except Exception:
-        import os as _os
-        _base = _os.path.dirname(_os.path.abspath(__file__))
-        _local_logo = _os.path.join(_base, "resources", "logo.png")
+        _base = os.path.dirname(os.path.abspath(__file__))
+        _local_logo = os.path.join(_base, "resources", "logo.png")
         _px = QPixmap(_local_logo)
         if not _px.isNull():
             app.setWindowIcon(QIcon(_px))
@@ -231,7 +231,6 @@ def main():
         import cProfile
         import pstats
         import io
-        import os
         
         # Ensure profiler directory exists
         os.makedirs("profiler", exist_ok=True)

@@ -16,7 +16,7 @@
 ### Changed
 - **Plugin Overlay API**: Refactored the plugin rendering engine to support returning strongly-typed Python objects (e.g. `Rect`, `VerticalLine`, `Polygon`) from the `iqview.overlays` module instead of requiring raw dictionaries. Legacy dictionary returns remain fully supported for backwards compatibility.
 - **Context Menu Cleanup**: Removed the redundant "Switch to Overlay Mode" from the right-click menu, as it is already cleanly accessible from the main top panel.
-- **Instantaneous Frequency for Real Signals**: The "instant frequency" plot in the Time Domain popup now produces meaningful output for real-valued signals (e.g. WAV files, real-sampled SDR). Previously, the naive `diff(angle())` approach yielded erratic 0/π phase jumps. The signal is now converted to an analytic signal via a Hilbert transform, followed by a very wide DC-blocking HPF (to remove any Hilbert-induced DC offset), before computing the instantaneous frequency — identical to the path used for complex IQ signals. Complex signals are unaffected.
+- **Instantaneous Frequency for Real Signals**: The "instant frequency" plot in the Time Domain popup now produces meaningful output for real-valued signals (e.g. WAV files, real-sampled SDR). Previously, the naive `diff(angle())` approach yielded erratic 0/π phase jumps. The signal is now converted to an analytic signal via a Hilbert transform, followed by a very wide DC-blocking HPF (to remove any Hilbert-induced DC offset), before computing the instantaneous frequency using modulo phase difference wrapping — identical to the path used for complex IQ signals. Complex signals are unaffected.
 
 
 ### Fixed
