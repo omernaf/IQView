@@ -20,17 +20,39 @@ Where:
 
 ### 2. Windowing Functions
 Windowing reduces "spectral leakage" caused by the finite length of segments. IQView supports:
-- **Hamming**: Balanced resolution and dynamic range.
+- **Hamming**: Balanced resolution and dynamic range (default).
 - **Hann**: Smoother roll-off, lower side-lobes.
 - **Blackman**: Very low side-lobes but wider main-lobe (lower frequency resolution).
-- **Rectangular**: Highest frequency resolution but severe leakage (default).
+- **Rectangular**: Highest frequency resolution but severe leakage.
 
 ### 3. Logarithmic Scaling (dB)
 To visualize signals with massive power differences (e.g., a strong transmitter vs. background noise), IQView maps linear magnitude to decibels:
 
 $$P_{\text{dB}}(m, k) = 20 \log_{10}\left( \frac{|X(m, k)|}{N} + \epsilon \right)$$
 
-*Normalizing by $N$ ensures that the peak level of a full-scale sinusoid is 0 dBFS.*
+*Normalizing by $N$ ensures that the peak level of a full-scale sinusoid is 0 dBFS. $\epsilon$ is a small constant ($10^{-10}$) to prevent $\log(0)$.*
+
+---
+
+## ⚡ High-Performance Rendering & Filtering
+
+To maintain fluid UI interactions on gigabyte-sized files, IQView employs two key performance optimizations:
+
+### 1. Lazy (On-Demand) Rendering Engine
+Instead of processing an entire capture into RAM on startup (which causes significant delays and memory crashes), IQView utilizes a viewport-aware background worker (`ViewportAwareReader`):
+- It reads only the time segment $[t_{\text{start}}, t_{\text{end}}]$ currently visible in the UI viewport.
+- It dynamically calculates the necessary step size to compute exactly $4 \times \text{pixel\_width}$ FFT rows, where `pixel_width` is the horizontal width of the UI canvas in pixels.
+- This bounds the computational complexity to $O(W \cdot N \log N)$ where $W \propto \text{pixel\_width}$, making view adjustments nearly instant regardless of file size.
+- Zooming in triggers an automatic high-resolution re-render, displaying fine signal details seamlessly.
+
+### 2. Zero-Cost Frequency-Domain BPF/BSF Mask
+When a filter is configured for the spectrogram display, instead of applying a computationally heavy time-domain convolution (filter taps) to millions of samples, IQView designs the filter and evaluates its frequency response:
+1. The complex response $H(f)$ of the desired filter (Elliptic, Butterworth, etc.) is pre-computed at each FFT bin frequency $f_k$.
+2. The absolute response magnitude $|H(f_k)|$ is multiplied directly with each FFT bin of the spectrogram row:
+   $$X_{\text{filt}}(m, k) = X(m, k) \cdot |H(f_k)|$$
+3. For Band-Stop filtering (BSF), the mask is inverted:
+   $$X_{\text{filt}}(m, k) = X(m, k) \cdot (1 - |H(f_k)|)$$
+This results in instantaneous filtering without time-domain overhead.
 
 ---
 
@@ -51,16 +73,38 @@ IQView uses perceptually uniform colormaps (like **Turbo** or **Viridis**) to en
 
 ---
 
+## 📐 Region Overlays & Marker Tools
+
+IQView offers advanced markers and shape overlays for documenting and measuring signals:
+
+### 1. Interactive Overlays
+Users can place overlay shapes directly on the spectrogram:
+- **X-Region (Time Band)**: Spans the entire frequency axis between two time points.
+- **Y-Region (Frequency Band)**: Spans the entire time axis between two frequency points.
+- **Rectangle**: Spans specific time and frequency bounds.
+- **Ellipse**: Circular or elliptical shapes centered at specific coordinate values.
+- **Polygon**: A custom shape defined by multiple coordinate points.
+
+### 2. UI Actions & Manual Creation
+- **Shape Selector**: Choose the active shape from the dropdown menu in the Marker Panel.
+- **Add / Drag Placement**: A single click places a default-sized region. Clicking and dragging draws custom sizes.
+- **Manual Add Button (`+ Manual Add`)**: Allows manual coordinate input for placing precise shapes.
+- **Vertex Manipulation**: Polygon overlays render independent resize handles at each vertex, allowing users to stretch and modify complex polygons interactively.
+- **Locked Delta / Center**: When adjusting boundaries, users can lock the delta (retaining width) or lock the center (expanding/shrinking symmetrically).
+
+---
+
 ## 🖱️ Interactive Navigation
 
 - **Box Zoom**: Hold **Ctrl** and drag a rectangle with the left mouse button to zoom into a specific time-frequency region.
 - **Panning**: Use the horizontal and vertical scrollbars that appear when zoomed.
-- **Reset View**: Double-click (or use the button in the side panel) to fit the entire capture to the window.
+- **Axis-Specific Unzoom**: Right-click the spectrogram view to open the context menu. You can choose to unzoom the time axis (`Unzoom Time`) or frequency axis (`Unzoom Frequency`) independently, or select `Reset View` to zoom out completely.
 - **Middle-Click Tab**: Quickly close current analysis tabs from the top bar.
 
 ---
 
 ## 📤 Exporting
+
 Right-click the spectrogram to access export options:
 - **Capture Raw Image**: Saves the spectrogram pixels exactly as rendered, without axes or markers.
 - **Capture Full Plot**: Uses a high-quality renderer to export the entire plot area, including frequency/time labels and active markers.

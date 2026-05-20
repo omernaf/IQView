@@ -9,21 +9,39 @@ IQView is a streamlined, high-performance GUI application designed for deep anal
 ## 🚀 Key Features
 
 - **Lazy Rendering Engine**: Explore ultra-long captures (e.g. 1 hour+) without RAM exhaustion by computing FFTs on-demand only for the visible viewport.
-- **Dynamic Filtering**: Zero-cost frequency-domain BPF with realistic roll-offs for real-time signal isolation.
-- **Advanced Markers**: Locked delta and center markers for precise timing and frequency measurements.
-- **Statistical Analysis**: Instant computation of Min, Max, Mean, Median, and Integrated Power for selected segments.
-- **Export Capabilities**: Capture raw spectrogram images or full plots with axes for reports.
-- **Desktop Integration**: One-click installation of shortcuts and file associations for `.iq`, `.bin`, and `.mat` files.
+- **Dynamic Filtering**: Zero-cost frequency-domain BPF/BSF with realistic roll-offs for real-time spectrogram isolation. Zero-phase time-domain BPF/BSF in detail pop-ups for perfect phase alignment and exact band cancellation.
+- **WAV Audio File Support**: Native loading of `.wav` files with automatic channel downmixing and float32 normalization (`[-1.0, 1.0]`) without any external audio dependencies.
+- **Advanced Markers & Region Overlays**: Locked delta and center markers for precise timing and frequency measurements. Drag-and-drop interactive Region Overlays (`X-Region`, `Y-Region`, `Rect`, `Polygon`, `Ellipse`) with manual add capabilities and independent vertex manipulation for polygons.
+- **Statistical Analysis**: Instant computation of Min, Max, Mean, Median, and Integrated Power for selected segments, with linear/logarithmic power-domain averaging.
+- **Desktop Integration & Dynamic Loading**: One-click installation of desktop shortcuts and file associations for `.iq`, `.bin`, and `.mat` files. Drag-and-drop / dynamic loading of `.mat` files from Recent Files with support for `.mat.overlays` sidecar files.
+- **Background Version Checker**: Non-blocking background checks for updates on startup via PyPI to alert users of newer versions without UI lag.
+- **Offline Debian Packaging**: Support for bundling dependencies locally (wheels) to enable offline installation in isolated environments.
 
 ---
 
 ## 💻 Installation
 
 ### For Users
-Download the latest `.whl` or `.exe` (if available) and install via pip:
+Install the latest package directly from PyPI:
 ```bash
 pip install iqview
 ```
+*Note: Under Linux/Debian systems, ensure system packages `python3-pip` and `libxcb-cursor0` (required for Qt rendering) are installed.*
+
+### Offline Debian Installation (for Isolated Environments)
+For secure or offline environments, you can bundle dependencies into the Debian package. Build the offline wheels and package using the scripts:
+```bash
+# 1. Build project with offline wheels bundled
+python scripts/build_project.py --offline-wheels
+
+# 2. Build the .deb package incorporating offline wheels
+python scripts/make_deb.py --offline-wheels
+```
+Then install the resulting `.deb` using:
+```bash
+sudo apt install ./dist/iqview_*.deb
+```
+The installer automatically uses the bundled offline wheels to satisfy pip dependencies without calling out to the internet.
 
 ### For Developers
 Clone the repository and install in editable mode:
@@ -47,13 +65,20 @@ iqview --install-mat
 
 ## 📖 Quick Start
 
-Open a file directly from the command line:
+Open an IQ file directly from the command line:
 ```bash
 iqview -f signals.iq -r 20e6 -c 2.44e9 -t complex64
 ```
+Or open an audio file (e.g. WAV):
+```bash
+iqview -f audio.wav -t audio
+```
 *   `-r`: Sample Rate ($f_s$)
 *   `-c`: Center Frequency ($f_c$)
-*   `-t`: Data Type
+*   `-t`: Data Type (e.g. `complex64`, `int16`, `float32`, or `audio` / `aud` for WAV audio)
+
+### Dynamic Filename Parameter Auto-detection
+If you omit the sample rate (`-r`) or center frequency (`-c`) flags, IQView will automatically parse the file name for standard notation. For example, a file named `capture_10Msps_433MHz.bin` will be auto-loaded with a sample rate of $10\text{ MHz}$ and a center frequency of $433\text{ MHz}$.
 
 ---
 
@@ -115,11 +140,11 @@ This provides **zero-cost** filtering with realistic visual roll-offs. For time-
 
 | Flag | Description | Default |
 | :--- | :--- | :--- |
-| `-f`, `--file` | Path to binary IQ file | None |
+| `-f`, `--file` | Path to binary IQ or audio (.wav) file | None |
 | `--stdin` | Read binary IQ data from stdin pipe | False |
 | `-r`, `--rate` | Sample rate in Hz | 1 MHz |
 | `-c`, `--fc` | Center frequency in Hz | 0 Hz |
-| `-t`, `--type` | Data type (`int16`, `float32`, `complex64`, etc.) | `complex64` |
+| `-t`, `--type` | Data type (`int16`, `float32`, `complex64`, `complex128`, `audio`, `aud`) | `complex64` |
 | `-s`, `--fft` | FFT bin size (Power of 2) | 1024 |
 | `--lazy` | Force on-demand viewport rendering | Settings |
 | `--full` | Force full-file upfront rendering | Settings |
