@@ -354,11 +354,35 @@ class TimeDomainView(QWidget):
         self._update_plot(10 * np.log10(data), "magnitude^2 [dB]")
 
     def plot_inst_freq(self):
-        dphi = np.diff(np.angle(self.samples))
-        # Wrap dphi to [-pi, pi]
+        from scipy.signal import hilbert, butter, sosfiltfilt
+
+        samples = self.samples
+
+        # Detect real signal: imaginary part is negligible
+        is_real_signal = not np.any(np.iscomplex(samples)) or np.max(np.abs(samples.imag)) < 1e-9 * (np.max(np.abs(samples.real)) + 1e-30)
+
+        if is_real_signal:
+            # For real signals, phase is only 0 or π which makes naive
+            # instantaneous frequency meaningless.  Convert to analytic signal
+            # via Hilbert transform to get a meaningful single-sided phase.
+            real_part = samples.real.astype(np.float64)
+            analytic = hilbert(real_part)
+
+            # DC-block: very wide HPF (0.5 % of Nyquist) to remove any DC
+            # offset that the Hilbert path may introduce, without affecting
+            # the actual signal content.
+            try:
+                sos = butter(2, 0.005, btype='high', output='sos')
+                analytic = sosfiltfilt(sos, analytic.real) + 1j * sosfiltfilt(sos, analytic.imag)
+            except Exception:
+                pass  # Fall back without DC-blocking if filter fails
+
+            samples = analytic
+
+        dphi = np.diff(np.angle(samples))
         wrapped_dphi = (dphi + np.pi) % (2 * np.pi) - np.pi
         freq = wrapped_dphi / (2 * np.pi) * self.rate
-        
+
         # Apply Moving Median Filter to reduce noise
         filter_len = int(self.settings_mgr.get("core/inst_freq_filter_len", 7))
         if filter_len > 1:
@@ -367,9 +391,10 @@ class TimeDomainView(QWidget):
             if filter_len % 2 == 0:
                 filter_len += 1
             freq = medfilt(freq, kernel_size=filter_len)
-            
+
         pad_freq = np.concatenate(([freq[0]], freq))
         self._update_plot(pad_freq, "instant frequency")
+
 
     def plot_phase(self):
         self._update_plot(np.angle(self.samples), "Phase")
