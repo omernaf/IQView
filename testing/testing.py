@@ -76,7 +76,7 @@ def main():
         "-f", filename,
         "-r", str(sample_rate),
         "--lazy",
-        "--name", "lazy"
+        # "--name", "lazy"
         # "--full",
         # "--name", "full"
     ]

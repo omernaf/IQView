@@ -231,3 +231,13 @@ class SidePanel(QFrame):
             self.parametersChanged.emit(params)
         except ValueError:
             pass
+
+    def update_params(self, fs=None, fc=None):
+        if fs is not None:
+            self.fs = fs
+            self.fs_edit.setText(str(fs))
+        if fc is not None:
+            self.fc = fc
+            self.fc_edit.setText(str(fc))
+        self.update_derived_values()
+

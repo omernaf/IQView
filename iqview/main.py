@@ -13,7 +13,7 @@ import pyqtgraph as pg
 from PyQt6.QtWidgets import QApplication
 from iqview.ui import SpectrogramWindow
 from iqview.utils.settings_manager import SettingsManager
-from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext, detect_params_from_filename
+from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext, detect_params_from_filename, load_mat_file
 
 # Canonical AppUserModelID — must match exactly across main.py, main_window, and any .lnk shortcut
 APP_USER_MODEL_ID = "OmerNaf.IQView.0.1.4"
@@ -26,42 +26,6 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-def load_mat_file(path):
-    """
-    Loads a .mat file containing Y, XDelta, and InputCenter fields.
-    Returns:
-        tuple: (data_bytes, type_str, fs, fc, is_complex)
-    """
-    import scipy.io
-    import numpy as np
-    
-    try:
-        data = scipy.io.loadmat(path)
-        if 'Y' not in data or 'XDelta' not in data or 'InputCenter' not in data:
-            print(f"Error: .mat file {path} is missing required fields (Y, XDelta, InputCenter).")
-            return None
-            
-        y = data['Y'].flatten()
-        # Handle potential 1x1 arrays from loadmat
-        x_delta = float(data['XDelta'].item()) if hasattr(data['XDelta'], 'item') else float(data['XDelta'])
-        input_center = float(data['InputCenter'].item()) if hasattr(data['InputCenter'], 'item') else float(data['InputCenter'])
-        
-        # Normalization: samples = Y * sqrt(10)
-        # Ensure we are using complex64 (32-bit float real/imag)
-        samples = (y * np.sqrt(10)).astype(np.complex64)
-        
-        dtype_str = 'complex64'
-        is_complex = True
-            
-        fs = 1.0 / x_delta
-        fc = input_center
-        
-        print(f"Successfully loaded .mat file: {len(samples):,} samples, Fs={fs/1e6:g} MHz, Fc={fc/1e6:g} MHz")
-        return samples.tobytes(), dtype_str, fs, fc, is_complex
-        
-    except Exception as e:
-        print(f"Error loading .mat file {path}: {e}")
-        return None
 
 def parse_args():
     sm = SettingsManager()
@@ -227,7 +191,7 @@ def main():
     
     window = SpectrogramWindow(data_source, dtype, fs, fc, args.fft, args.profile,
                                is_complex=is_complex, window_name=args.name,
-                               lazy_rendering=lazy_override)
+                               lazy_rendering=lazy_override, file_path=file_path)
     window.show()
     
     if args.profile:

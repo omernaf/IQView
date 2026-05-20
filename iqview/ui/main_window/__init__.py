@@ -14,7 +14,7 @@ from ...utils.settings_manager import SettingsManager
 from ..themes import get_main_stylesheet
 
 class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, OverlayManagerMixin, ViewControllerMixin, DataHandlerMixin, PluginManagerMixin):
-    def __init__(self, data_source, data_type, sample_rate, center_freq, fft_size, profile_enabled=False, is_complex=True, window_name=None, lazy_rendering=None):
+    def __init__(self, data_source, data_type, sample_rate, center_freq, fft_size, profile_enabled=False, is_complex=True, window_name=None, lazy_rendering=None, file_path=None):
         super().__init__()
         self.settings_mgr = SettingsManager()
         # Per-instance rendering mode override from CLI (None = use QSettings value).
@@ -49,9 +49,12 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
         # data_source is either a str (file path), bytes (piped from stdin), or None (empty launch)
         self.data_source = data_source
         self.custom_window_name = window_name
+        self.file_path = file_path or (data_source if isinstance(data_source, str) else None)
         
         if self.custom_window_name:
             display_name = self.custom_window_name
+        elif self.file_path:
+            display_name = self.file_path
         elif data_source is None:
             display_name = "No File Loaded"
         elif isinstance(data_source, (bytes, bytearray)):
@@ -71,7 +74,6 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
         self.profile_enabled = profile_enabled
         
         # Keep file_path as an alias for backwards-compat with any mixin that reads it
-        self.file_path = data_source
 
         self.markers_time = []
         self.markers_freq = []
@@ -106,7 +108,7 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
         self._init_plugins()
         self.setup_ui()
         if data_source is not None:
-            self.update_sidebar_file_info(data_source)
+            self.update_sidebar_file_info(self.file_path or data_source)
             self.start_processing()
 
     def apply_current_theme(self):

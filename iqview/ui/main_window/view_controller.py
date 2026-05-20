@@ -3,7 +3,7 @@ import pyqtgraph as pg
 import numpy as np
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QFileDialog
-from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext
+from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext, detect_params_from_filename, load_mat_file
 from ..detached_window import DetachedViewWindow
 
 class ViewControllerMixin:
@@ -544,30 +544,70 @@ class ViewControllerMixin:
         if hasattr(self, 'clear_overlays'):
             self.clear_overlays(source='user')
 
-        # Update data source
-        self.data_source = path
-        self.file_path   = path
+        # Update window title
         if getattr(self, 'custom_window_name', None):
             self.setWindowTitle(f"IQView - {self.custom_window_name}")
         else:
             self.setWindowTitle(f"IQView - {path}")
 
-        # Priority: 1. Auto-detection from filename, 2. App Settings
-        auto_type = detect_type_from_ext(path)
-        if auto_type:
-            type_str = auto_type
+        # Check if it's a .mat file
+        if path.lower().endswith('.mat'):
+            mat_data = load_mat_file(path)
+            if mat_data:
+                data_source, type_str, fs, fc, is_complex = mat_data
+                self.data_source = data_source
+                self.file_path = path
+                self.rate = fs
+                self.fc = fc
+                self.is_complex = is_complex
+                
+                # Update sidebar parameters
+                if hasattr(self, 'sidebar'):
+                    self.sidebar.update_params(fs=fs, fc=fc)
+                
+                dtype = DTYPE_MAP.get(type_str, np.complex64)
+                if dtype == np.complex64:
+                    self.data_type = np.float32
+                elif dtype == np.complex128:
+                    self.data_type = np.float64
+                else:
+                    self.data_type = dtype
+            else:
+                # Error loading .mat file, return early
+                return
         else:
-            type_str = str(self.settings_mgr.get("core/type", "complex64"))
+            # Update data source and file path
+            self.data_source = path
+            self.file_path   = path
+            
+            # Detect fs and fc from filename if possible
+            params = detect_params_from_filename(path)
+            fs_detected = params.get('fs')
+            fc_detected = params.get('fc')
+            if fs_detected is not None or fc_detected is not None:
+                if fs_detected is not None:
+                    self.rate = fs_detected
+                if fc_detected is not None:
+                    self.fc = fc_detected
+                if hasattr(self, 'sidebar'):
+                    self.sidebar.update_params(fs=fs_detected, fc=fc_detected)
 
-        dtype = DTYPE_MAP.get(type_str, np.complex64)
-        self.is_complex = dtype in [np.complex64, np.complex128, np.int16]
-        
-        if dtype == np.complex64:
-            self.data_type = np.float32
-        elif dtype == np.complex128:
-            self.data_type = np.float64
-        else:
-            self.data_type = dtype
+            # Priority: 1. Auto-detection from filename, 2. App Settings
+            auto_type = detect_type_from_ext(path)
+            if auto_type:
+                type_str = auto_type
+            else:
+                type_str = str(self.settings_mgr.get("core/type", "complex64"))
+
+            dtype = DTYPE_MAP.get(type_str, np.complex64)
+            self.is_complex = dtype in [np.complex64, np.complex128, np.int16]
+            
+            if dtype == np.complex64:
+                self.data_type = np.float32
+            elif dtype == np.complex128:
+                self.data_type = np.float64
+            else:
+                self.data_type = dtype
 
         # Save to recent files list
         self._add_recent_file(path)
@@ -582,3 +622,4 @@ class ViewControllerMixin:
 
         # Reprocess with the new file
         self.start_processing()
+
