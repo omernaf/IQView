@@ -1,10 +1,75 @@
 from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QLineEdit, QVBoxLayout, QHBoxLayout, QComboBox, QPushButton
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal, Qt, QObject
 from PyQt6.QtGui import QFont, QPixmap
 from PyQt6 import QtGui
 import numpy as np
 import importlib.resources
 import os
+import threading
+import subprocess
+import sys
+import re
+
+class VersionChecker(QObject):
+    version_checked = pyqtSignal(str)
+
+    def __init__(self, current_version):
+        super().__init__()
+        self.current_version = current_version
+
+    def start(self):
+        thread = threading.Thread(target=self._run, daemon=True)
+        thread.start()
+
+    def _run(self):
+        try:
+            # Run pip index versions iqview using the current python executable
+            cmd = [sys.executable, "-m", "pip", "index", "versions", "iqview"]
+            startupinfo = None
+            if sys.platform == "win32":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=8,
+                startupinfo=startupinfo
+            )
+            
+            if result.returncode == 0:
+                output = result.stdout
+                # Parse LATEST: x.y.z
+                match = re.search(r'LATEST:\s+(\S+)', output)
+                if not match:
+                    # Fallback to package (x.y.z) parsing on first line
+                    first_line = output.strip().split('\n')[0]
+                    match = re.search(r'^[a-zA-Z0-9_-]+\s+\(([^)]+)\)', first_line)
+                
+                if match:
+                    latest = match.group(1).strip()
+                    if self._is_newer(latest, self.current_version):
+                        self.version_checked.emit(latest)
+                        return
+        except Exception as e:
+            # Fail silently to avoid interrupting the user
+            print(f"Error checking version: {e}")
+        
+        self.version_checked.emit("")
+
+    def _is_newer(self, latest, current):
+        try:
+            from packaging.version import parse as parse_version
+            return parse_version(latest) > parse_version(current)
+        except Exception:
+            try:
+                l_parts = [int(x) for x in re.findall(r'\d+', latest)]
+                c_parts = [int(x) for x in re.findall(r'\d+', current)]
+                return tuple(l_parts) > tuple(c_parts)
+            except Exception:
+                return latest != current
+
 
 class SidePanel(QFrame):
     parametersChanged = pyqtSignal(dict)
@@ -20,6 +85,11 @@ class SidePanel(QFrame):
         
         self.setup_ui()
         self.update_derived_values()
+        
+        # Start background version checker
+        self.checker = VersionChecker(self.current_version)
+        self.checker.version_checked.connect(self.on_version_checked)
+        self.checker.start()
 
     def setup_ui(self):
         self.setFixedWidth(240)
@@ -62,12 +132,19 @@ class SidePanel(QFrame):
         except Exception:
             ver = "0.1.5"
 
+        self.current_version = ver
         version_lbl = QLabel(f"v{ver}")
         version_lbl.setStyleSheet("color: #888; font-size: 11px; margin-bottom: 10px; margin-left: 5px;")
         title_layout.addWidget(version_lbl, alignment=Qt.AlignmentFlag.AlignBottom)
         title_layout.addStretch()
 
         self.layout.addLayout(title_layout)
+
+        # Update available label
+        self.update_lbl = QLabel("")
+        self.update_lbl.setStyleSheet("color: #ffaa00; font-size: 11px; font-weight: bold; margin-bottom: 5px;")
+        self.update_lbl.setVisible(False)
+        self.layout.addWidget(self.update_lbl)
 
         # --- CORE SETTINGS ---
         core_header = QLabel("Core Settings")
@@ -240,4 +317,10 @@ class SidePanel(QFrame):
             self.fc = fc
             self.fc_edit.setText(str(fc))
         self.update_derived_values()
+
+    def on_version_checked(self, latest_version):
+        if latest_version:
+            self.update_lbl.setText(f"Update available: v{latest_version}")
+            self.update_lbl.setVisible(True)
+
 
