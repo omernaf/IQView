@@ -13,7 +13,7 @@ import pyqtgraph as pg
 from PyQt6.QtWidgets import QApplication
 from iqview.ui import SpectrogramWindow
 from iqview.utils.settings_manager import SettingsManager
-from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext, detect_params_from_filename, load_mat_file
+from iqview.utils.helpers import DTYPE_MAP, AUDIO_EXTENSIONS, detect_type_from_ext, detect_params_from_filename, load_mat_file, load_audio_file
 
 # Canonical AppUserModelID — must match exactly across main.py, main_window, and any .lnk shortcut
 APP_USER_MODEL_ID = "OmerNaf.IQView.0.1.4"
@@ -127,33 +127,66 @@ def main():
     if not type_str:
         type_str = sm.get("core/type", "complex64")
 
-    if type_str not in DTYPE_MAP:
-        print(f"Error: Unsupported data type {type_str}.")
+    # Normalise audio type aliases
+    if type_str in ('aud', 'audio'):
+        type_str = 'audio'
+
+    is_audio = (type_str == 'audio')
+
+    if not is_audio and type_str not in DTYPE_MAP:
+        print(f"Error: Unsupported data type '{type_str}'. "
+              f"Valid types: {', '.join(DTYPE_MAP)} or 'aud'/'audio' for WAV files.")
         sys.exit(1)
-        
-    dtype = DTYPE_MAP[type_str]
-    is_complex = dtype in [np.complex64, np.complex128, np.int16]
-    
-    if dtype == np.complex64:
-        # Cast to float32 internally to de-interleave properly across numpy logic
+
+    if is_audio:
+        # Audio files carry their own dtype and fs — handled like .mat
         dtype = np.float32
-    elif dtype == np.complex128:
-        # Cast to float64 internally to de-interleave properly
-        dtype = np.float64
+        is_complex = False
+    else:
+        dtype = DTYPE_MAP[type_str]
+        is_complex = dtype in [np.complex64, np.complex128, np.int16]
+
+        if dtype == np.complex64:
+            # Cast to float32 internally to de-interleave properly across numpy logic
+            dtype = np.float32
+        elif dtype == np.complex128:
+            # Cast to float64 internally to de-interleave properly
+            dtype = np.float64
 
     # Resolve the data source: file path (str), in-memory bytes from stdin, or None (open empty)
     if args.stdin:
         print("Reading IQ data from stdin...", flush=True)
         data_source = sys.stdin.buffer.read()
         print(f"Read {len(data_source):,} bytes from stdin.", flush=True)
+    elif file_path and (is_audio or os.path.splitext(file_path)[1].lower() in AUDIO_EXTENSIONS):
+        audio_data = load_audio_file(file_path)
+        if audio_data:
+            data_source, type_str, fs, fc, is_complex = audio_data
+            dtype = np.float32
+            # CLI flags take priority over values read from the file
+            if user_rate:
+                fs = args.rate
+                print(f"Sample rate overridden by -r: {fs/1e3:g} kHz")
+            if user_fc:
+                fc = args.fc
+        else:
+            sys.exit(1)
     elif file_path and file_path.lower().endswith('.mat'):
         mat_data = load_mat_file(file_path)
         if mat_data:
             data_source, type_str, fs, fc, is_complex = mat_data
+            # CLI flags take priority over values read from the file
+            if user_rate:
+                fs = args.rate
+                print(f"Sample rate overridden by -r: {fs/1e6:g} MHz")
+            if user_fc:
+                fc = args.fc
+                print(f"Center frequency overridden by -c: {fc/1e6:g} MHz")
         else:
             sys.exit(1)
     else:
         data_source = file_path  # may be None if no source given
+
 
     pg.setConfigOptions(useOpenGL=True, enableExperimental=True, imageAxisOrder='row-major')
     

@@ -15,15 +15,23 @@ DTYPE_MAP = {
     'np.complex128': np.complex128
 }
 
+# Audio file extensions supported natively (via scipy.io.wavfile, no extra deps)
+AUDIO_EXTENSIONS = {'.wav'}
+
 def detect_type_from_ext(path):
     """
     Detects the data type based on the file extension.
-    Returns the string key (e.g. 'float32') or None if unknown.
+    Returns the string key (e.g. 'float32'), 'audio' for audio files,
+    or None if unknown.
     """
     if not path:
         return None
         
     ext = os.path.splitext(path)[1].lower()
+
+    # Audio files are handled by a dedicated loader, not raw binary
+    if ext in AUDIO_EXTENSIONS:
+        return 'audio'
     
     # Load mapping from settings manager dynamically
     from iqview.utils.settings_manager import SettingsManager
@@ -31,6 +39,7 @@ def detect_type_from_ext(path):
     mapping = sm.get("core/extension_mapping", {})
     
     return mapping.get(ext)
+
 
 def detect_params_from_filename(filename):
     """
@@ -155,3 +164,51 @@ def load_mat_file(path):
         print(f"Error loading .mat file {path}: {e}")
         return None
 
+
+def load_audio_file(path):
+    """
+    Loads a .wav audio file using scipy.io.wavfile (no extra dependencies).
+    Multi-channel audio is averaged to a single mono channel.
+    Integer samples are normalized to float32 in [-1.0, 1.0].
+
+    Returns:
+        tuple: (data_bytes, type_str, fs, fc, is_complex)
+               data_bytes — raw bytes of float32 samples
+               type_str   — always 'float32'
+               fs         — sample rate in Hz (from the file header)
+               fc         — always 0.0 (no carrier info in audio files)
+               is_complex — always False
+        None on error.
+    """
+    try:
+        from scipy.io import wavfile
+        fs, data = wavfile.read(path)
+
+        # Convert to float32, normalizing integers to [-1.0, 1.0]
+        if data.dtype == np.int16:
+            samples = data.astype(np.float32) / 32768.0
+        elif data.dtype == np.int32:
+            samples = data.astype(np.float32) / 2147483648.0
+        elif data.dtype == np.uint8:
+            # uint8 WAV is offset-binary: 0–255, centre at 128
+            samples = (data.astype(np.float32) - 128.0) / 128.0
+        else:
+            # float32 or float64 already — just ensure float32
+            samples = data.astype(np.float32)
+
+        # Average multi-channel (stereo, etc.) to mono
+        if samples.ndim > 1:
+            samples = samples.mean(axis=1).astype(np.float32)
+
+        fc = 0.0
+        is_complex = False
+        dtype_str = 'float32'
+
+        n_ch = data.shape[1] if data.ndim > 1 else 1
+        print(f"Successfully loaded audio file: {len(samples):,} samples, "
+              f"Fs={fs/1e3:g} kHz, {n_ch} channel(s) averaged to mono")
+        return samples.tobytes(), dtype_str, float(fs), fc, is_complex
+
+    except Exception as e:
+        print(f"Error loading audio file {path}: {e}")
+        return None

@@ -3,7 +3,7 @@ import pyqtgraph as pg
 import numpy as np
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QFileDialog
-from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext, detect_params_from_filename, load_mat_file
+from iqview.utils.helpers import DTYPE_MAP, AUDIO_EXTENSIONS, detect_type_from_ext, detect_params_from_filename, load_mat_file, load_audio_file
 from ..detached_window import DetachedViewWindow
 
 class ViewControllerMixin:
@@ -495,12 +495,15 @@ class ViewControllerMixin:
         exts = " ".join([f"*{ext}" for ext in mapping.keys()])
         if not exts:
             exts = "*.32f *.64f *.16tc *.16sc *.64fc *.32fc *.bin *.iq *.raw"
-            
+
+        # Always include audio extensions in the dialog
+        audio_exts = " ".join([f"*{e}" for e in sorted(AUDIO_EXTENSIONS)])
+
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Open IQ File",
+            "Open IQ / Audio File",
             os.path.dirname(self.file_path) if isinstance(self.file_path, str) else "",
-            f"IQ Files ({exts});;All Files (*)"
+            f"IQ Files ({exts});;Audio Files ({audio_exts});;All Files (*)"
         )
         if path:
             self.load_new_file(path)
@@ -550,8 +553,26 @@ class ViewControllerMixin:
         else:
             self.setWindowTitle(f"IQView - {path}")
 
+        # Check if it's an audio file (.wav etc.)
+        if os.path.splitext(path)[1].lower() in AUDIO_EXTENSIONS:
+            audio_data = load_audio_file(path)
+            if audio_data:
+                data_source, type_str, fs, fc, is_complex = audio_data
+                self.data_source = data_source
+                self.file_path = path
+                self.rate = fs
+                self.fc = fc
+                self.is_complex = is_complex
+                self.data_type = np.float32
+
+                # Update sidebar parameters
+                if hasattr(self, 'sidebar'):
+                    self.sidebar.update_params(fs=fs, fc=fc)
+            else:
+                return  # Error loading audio file
+
         # Check if it's a .mat file
-        if path.lower().endswith('.mat'):
+        elif path.lower().endswith('.mat'):
             mat_data = load_mat_file(path)
             if mat_data:
                 data_source, type_str, fs, fc, is_complex = mat_data
