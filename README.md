@@ -98,9 +98,9 @@ IQView provides several ways to visualize raw samples $x[n] = I[n] + jQ[n]$:
 
 | Mode | Formula |
 | :--- | :--- |
-| **Magnitude** | $|x[n]| = \sqrt{I[n]^2 + Q[n]^2}$ |
-| **Magnitude [dB]** | $20 \log_{10}(|x[n]|)$ |
-| **Magnitude² [dB]**| $10 \log_{10}(|x[n]|^2)$ |
+| **Magnitude** | $\|x[n]\| = \sqrt{I[n]^2 + Q[n]^2}$ |
+| **Magnitude [dB]** | $20 \log_{10}(\|x[n]\|)$ |
+| **Magnitude² [dB]**| $10 \log_{10}(\|x[n]\|^2)$ |
 | **Phase** | $\phi[n] = \arctan2(Q[n], I[n])$ |
 | **Inst. Frequency**| $f_{\text{inst}}[n] = \frac{\phi[n] - \phi[n-1]}{2\pi} \cdot f_s$ |
 

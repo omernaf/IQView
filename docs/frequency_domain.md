@@ -37,8 +37,8 @@ Applying a window function $w[n]$ (e.g. Hamming, Hann) attenuates signal power a
 
 | Mode | Formula / Description |
 | :--- | :--- |
-| **Magnitude [dB]** | $20 \log_{10}(|X[k]| + \epsilon)$ |
-| **Magnitude²** | $|X[k]|^2$ (Linear Power) |
+| **Magnitude [dB]** | $20 \log_{10}(\|X[k]\| + \epsilon)$ |
+| **Magnitude²** | $\|X[k]\|^2$ (Linear Power) |
 | **PSD [dB]** | $10 \log_{10}(P(f) + \epsilon)$ |
 | **Real / Imag** | $Re\{X[k]\}$ and $Im\{X[k]\}$ components. |
 | **Phase** | $\text{atan2}(Im\{X[k]\}, Re\{X[k]\})$ (Spectral phase in radians). |
