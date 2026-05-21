@@ -201,6 +201,7 @@ For a deep dive into the specific features and mathematical foundations of each 
 - [🌌 **Spectrogram View**](docs/spectrogram.md): STFT, windowing, colormaps, and OpenGL rendering.
 - [⏳ **Time Domain View**](docs/time_domain.md): Plot modes, marker locking logic, and statistics.
 - [📶 **Frequency Domain View**](docs/frequency_domain.md): FFT analysis, PSD estimation, and integrated power.
+- [👁️ **Eye Diagram View**](docs/eye_diagram.md): Symbol timing visualization, fractional Nsps, and phase alignment.
 
 ---
 

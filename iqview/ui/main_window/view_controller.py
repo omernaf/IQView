@@ -188,6 +188,24 @@ class ViewControllerMixin:
             self.tabs.setCurrentWidget(view)
             self.update_tab_names()
 
+    def open_eye_diagram_tab(self):
+        """Extracts IQ data for the selected time range and opens an Eye Diagram tab."""
+        markers = self.markers_time
+        if len(markers) < 2:
+            xr, _ = self.spectrogram_view.view_box.viewRange()
+            start_t, end_t = xr
+        else:
+            sorted_m = sorted(markers, key=lambda m: m.value())
+            start_t, end_t = sorted_m[0].value(), sorted_m[1].value()
+
+        segment = self.extract_iq_segment(start_t, end_t)
+        if segment is not None:
+            from ..eye_diagram_dialog import EyeDiagramView
+            view = EyeDiagramView(segment, self.rate, parent_window=self)
+            self.tabs.addTab(view, "Eye Diagram")
+            self.tabs.setCurrentWidget(view)
+            self.update_tab_names()
+
     def undock_tab(self, index, initial_pos=None):
         """Moves a tab from the QTabWidget to a standalone window.
         
@@ -237,8 +255,14 @@ class ViewControllerMixin:
         # Add back to tabs
         from ..time_domain.view import TimeDomainView
         from ..frequency_domain.view import FrequencyDomainView
+        from ..eye_diagram_dialog import EyeDiagramView
 
-        label = "Time Domain" if isinstance(widget, TimeDomainView) else "Freq Domain"
+        if isinstance(widget, TimeDomainView):
+            label = "Time Domain"
+        elif isinstance(widget, EyeDiagramView):
+            label = "Eye Diagram"
+        else:
+            label = "Freq Domain"
         self.tabs.addTab(widget, label)
         self.tabs.setCurrentWidget(widget)
         self.update_tab_names()

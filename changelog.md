@@ -3,6 +3,7 @@
 ## [0.1.5] - 2026-05-16
 
 ### Added
+- **Eye Diagram Popup**: Added an interactive Eye Diagram analysis tab accessible via right-click on the spectrogram. Includes signal-type selectors (Real, Imaginary, Phase, Inst. Freq, Magnitude), fractional Nsps support with three-tier sliders (Main, Coarse, Fine) for precise symbol timing, an offset slider, and a mini waveform overview with draggable range handles for isolating specific signal segments.
 - **Marker Grid Customization**: Added dedicated width, color, opacity, and line style settings for the cyclic continuation marker lines, completely decoupling them from the background axis grid appearance.
 - **Region Overlays**: Added `X-Region` and `Y-Region` overlay shapes. These act as infinite bands (e.g. spanning the entire frequency range between two time points) and support interactive dragging and resizing.
 - **Overlay Shape Selector & Manual Add**: Upgraded the Marker Panel with a shape selection dropdown and a "+ Manual Add" button, letting users easily construct overlays through the UI dialog or place specific geometries directly via mouse interactions.
