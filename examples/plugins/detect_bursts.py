@@ -36,11 +36,12 @@ MAX_OVERLAYS         = 30     # Maximum number of polygons to draw
 # Entry point
 # ---------------------------------------------------------------------------
 
+from iqview import PluginResult
 from iqview.overlays import VerticalLine
 
-def run(samples: np.ndarray, info: dict) -> list:
+def run(samples: np.ndarray, info: dict) -> PluginResult:
     if samples is None or len(samples) < 100:
-        return []
+        return PluginResult()
 
     sample_rate = info["sample_rate"]
     t_start     = info["t_start"]
@@ -82,7 +83,7 @@ def run(samples: np.ndarray, info: dict) -> list:
     # Zip together the block indices
     burst_intervals = list(zip(starts, ends))
     
-    overlays = []
+    result = PluginResult()
     
     # 3. For each burst, create a polygon
     for (idx_start, idx_end) in burst_intervals[:MAX_OVERLAYS]:
@@ -95,7 +96,7 @@ def run(samples: np.ndarray, info: dict) -> list:
         burst_t_end   = t_start + (idx_end   * block_size / sample_rate)
         
         # 1. Start Line (Green)
-        overlays.append(VerticalLine(
+        result.add(VerticalLine(
             t=burst_t_start,
             color="#00ff88",
             border_width=2,
@@ -106,7 +107,7 @@ def run(samples: np.ndarray, info: dict) -> list:
         ))
         
         # 2. End Line (Red)
-        overlays.append(VerticalLine(
+        result.add(VerticalLine(
             t=burst_t_end,
             color="#ff3355",
             border_width=2,
@@ -116,4 +117,4 @@ def run(samples: np.ndarray, info: dict) -> list:
             metadata={"burst_duration_sec": burst_duration, "type": "end"}
         ))
 
-    return overlays
+    return result

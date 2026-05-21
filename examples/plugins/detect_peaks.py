@@ -39,9 +39,10 @@ MIN_SPACING  = 0.02   # minimum spacing between peaks, as fraction of bandwidth
 # Entry point
 # ---------------------------------------------------------------------------
 
+from iqview import PluginResult
 from iqview.overlays import HorizontalLine
 
-def run(samples: np.ndarray, info: dict) -> list:
+def run(samples: np.ndarray, info: dict) -> PluginResult:
     """
     Parameters
     ----------
@@ -52,11 +53,11 @@ def run(samples: np.ndarray, info: dict) -> list:
 
     Returns
     -------
-    list
+    PluginResult
         Overlay objects (HorizontalLine) at detected peak frequencies.
     """
     if samples is None or len(samples) == 0:
-        return []
+        return PluginResult()
 
     sample_rate = info["sample_rate"]
     center_freq = info["center_freq"]
@@ -83,13 +84,13 @@ def run(samples: np.ndarray, info: dict) -> list:
     peak_indices = peak_indices[:MAX_PEAKS]
 
     if len(peak_indices) == 0:
-        return []
+        return PluginResult()
 
-    # ── 3. Colour map: louder peaks → brighter green ──────────────────────────
+    # ── 3. Colour map: louder peaks → brighter green ──────────────────────────────────────
     peak_powers = power_db[peak_indices]
     p_min, p_max = peak_powers.min(), peak_powers.max()
 
-    overlays = []
+    result = PluginResult()
     for idx, db in zip(peak_indices, peak_powers):
         freq = float(freqs[idx])
 
@@ -101,7 +102,7 @@ def run(samples: np.ndarray, info: dict) -> list:
         intensity = float((db - p_min) / (p_max - p_min + 1e-9))
         color     = _intensity_to_hex(intensity)
 
-        overlays.append(HorizontalLine(
+        result.add(HorizontalLine(
             f=freq,
             color=color,
             alpha=0.0,
@@ -113,7 +114,7 @@ def run(samples: np.ndarray, info: dict) -> list:
             metadata={"freq_hz": freq, "power_db": float(db)}
         ))
 
-    return overlays
+    return result
 
 
 # ---------------------------------------------------------------------------

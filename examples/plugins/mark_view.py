@@ -12,9 +12,10 @@ PLUGIN_NAME        = "mark_view"
 PLUGIN_DESCRIPTION = "Draw a rectangle around the current view"
 
 
+from iqview import PluginResult
 from iqview.overlays import Rect
 
-def run(samples: np.ndarray, info: dict) -> list:
+def run(samples: np.ndarray, info: dict) -> PluginResult:
     """
     Parameters
     ----------
@@ -25,9 +26,9 @@ def run(samples: np.ndarray, info: dict) -> list:
 
     Returns
     -------
-    list  — one Rect overlay covering the current view.
+    PluginResult  — one Rect overlay covering the current view.
     """
-    return [
+    return PluginResult().add(
         Rect(
             t_start=info["t_start"],
             f_start=info["f_start"],
@@ -40,11 +41,11 @@ def run(samples: np.ndarray, info: dict) -> list:
             border_style="dash",
             display_str="View region",
             hover_str=(
-                f"t: {info['t_start']:.4f}s – {info['t_end']:.4f}s  \n  "
-                f"f: {info['f_start']/1e6:.3f} – {info['f_end']/1e6:.3f} MHz"
+                f"t: {info['t_start']:.4f}s \u2013 {info['t_end']:.4f}s  \n  "
+                f"f: {info['f_start']/1e6:.3f} \u2013 {info['f_end']/1e6:.3f} MHz"
             ),
             tag_pos="top-left",
             locked=True,   # lock it so it can't be accidentally moved
             z_order=5
         )
-    ]
+    )

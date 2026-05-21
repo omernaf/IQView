@@ -6,7 +6,7 @@ Plugin contract
 ---------------
 A plugin is a plain .py file that exposes a top-level function:
 
-    def run(samples: np.ndarray, info: dict) -> list[dict]:
+    def run(samples: np.ndarray, info: dict) -> PluginResult:
         ...
 
 `samples`  — complex64 numpy array of IQ samples for the current view window.
@@ -17,10 +17,12 @@ A plugin is a plain .py file that exposes a top-level function:
                t_end        (seconds, end of current view)
                f_start      (Hz, bottom of current view)
                f_end        (Hz, top of current view)
-               overlays     (list of Overlay.to_dict() dicts currently on screen)
-Return     — list of Overlay.to_dict()-compatible dicts to *add* to the spectrogram.
-             IDs are reassigned automatically so running a plugin twice appends rather
-             than collides.
+               overlays     (list[Overlay] — deep copies of all overlays currently
+                             on screen; read-only snapshot; safe to inspect from a
+                             background thread)
+Return     — a PluginResult instance (from `from iqview import PluginResult`).
+             Use .add(), .update(), .remove(), .replace() to express operations.
+             Returning anything other than a PluginResult raises an error dialog.
 
 Optional module-level metadata strings:
     PLUGIN_NAME        = "Human readable name"
@@ -29,6 +31,7 @@ Optional module-level metadata strings:
 
 from __future__ import annotations
 
+import copy
 import importlib.util
 import sys
 import traceback
@@ -46,8 +49,8 @@ from PyQt6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
 # ---------------------------------------------------------------------------
 
 class _PluginWorker(QObject):
-    finished = pyqtSignal(list)   # list[dict]  — overlay dicts to add
-    error    = pyqtSignal(str)    # error message string
+    finished = pyqtSignal(object)  # PluginResult — passed straight through
+    error    = pyqtSignal(str)     # error message string
 
     def __init__(self, func, samples: np.ndarray, info: dict) -> None:
         super().__init__()
@@ -58,8 +61,6 @@ class _PluginWorker(QObject):
     def run(self) -> None:
         try:
             result = self._func(self._samples, self._info)
-            if not isinstance(result, list):
-                result = list(result) if result is not None else []
             self.finished.emit(result)
         except Exception:
             self.error.emit(traceback.format_exc())
@@ -268,7 +269,9 @@ class PluginManagerMixin:
             "t_end":       t_end,
             "f_start":     f_start,
             "f_end":       f_end,
-            "overlays":    [o.to_dict() for o in self.overlays],
+            # Deep copies — the background thread gets a safe, immutable snapshot.
+            # Plugins can read .id, .shape, .points etc. directly on these objects.
+            "overlays":    [copy.deepcopy(o) for o in self.overlays],
         }
 
         # Run on background thread
@@ -330,33 +333,82 @@ class PluginManagerMixin:
         self._plugin_worker = worker
         thread.start()
 
-    def _on_plugin_finished(self, name: str, result: list) -> None:
+    def _on_plugin_finished(self, name: str, result: object) -> None:
         """Called on the main thread when a plugin completes successfully."""
-        if not isinstance(result, list):
-            result = []
+        from iqview.plugins.plugin_result import PluginResult
 
-        added = 0
-        from iqview.ui.overlay import Overlay
-        for item in result:
+        if not isinstance(result, PluginResult):
+            QMessageBox.critical(
+                self, f"Plugin Error — {name}",
+                f"Plugin '{name}' did not return a PluginResult object.\n\n"
+                f"Got: {type(result).__name__}\n\n"
+                f"Make sure your run() function returns a PluginResult:\n"
+                f"    from iqview import PluginResult\n"
+                f"    def run(samples, info):\n"
+                f"        result = PluginResult()\n"
+                f"        ...\n"
+                f"        return result"
+            )
+            return
+
+        plugin_source = f"plugin:{name}"
+        n_added = n_updated = n_removed = n_replaced = 0
+
+        # 1. Removes — source-restricted: only overlays this plugin owns
+        for oid in result._removes:
+            existing = self._get_overlay_by_id(oid)
+            if existing is None:
+                print(f"[IQView Plugin] remove: overlay {oid!r} not found, skipping.")
+                continue
+            if existing.source != plugin_source:
+                print(
+                    f"[IQView Plugin] remove: overlay {oid!r} is owned by "
+                    f"{existing.source!r}, not {plugin_source!r} — skipping."
+                )
+                continue
+            self.remove_overlay(oid)
+            n_removed += 1
+
+        # 2. Replaces — remove old, add new (inheriting original source)
+        for old_id, new_overlay in result._replaces:
+            original = self._get_overlay_by_id(old_id)
+            original_source = original.source if original is not None else plugin_source
+            if original is not None:
+                self.remove_overlay(old_id)
+            new_overlay.id     = str(uuid.uuid4())
+            new_overlay.source = original_source   # preserve provenance
+            self.add_overlay(new_overlay)
+            n_replaced += 1
+
+        # 3. Updates — patch fields on existing overlays
+        for oid, fields in result._updates:
+            existing = self._get_overlay_by_id(oid)
+            if existing is None:
+                print(f"[IQView Plugin] update: overlay {oid!r} not found, skipping.")
+                continue
+            self.update_overlay(oid, **fields)
+            n_updated += 1
+
+        # 4. Adds — always allowed; fresh UUID + plugin source
+        for overlay in result._adds:
             try:
-                if isinstance(item, Overlay):
-                    o = item
-                else:
-                    o = Overlay.from_dict(item)
-                    
-                o.id     = str(uuid.uuid4())   # fresh ID — never collide
-                o.source = f"plugin:{name}"
-                self.add_overlay(o)
-                added += 1
+                overlay.id     = str(uuid.uuid4())
+                overlay.source = plugin_source
+                self.add_overlay(overlay)
+                n_added += 1
             except Exception as exc:
-                print(f"[IQView Plugin] Skipping malformed overlay: {exc}")
+                print(f"[IQView Plugin] add: skipping malformed overlay: {exc}")
 
         self.statusBar().showMessage(
-            f"Plugin '{name}' added {added} overlay(s).", 4000
+            f"Plugin '{name}' — "
+            f"{n_added} added, {n_updated} updated, "
+            f"{n_removed} removed, {n_replaced} replaced.",
+            4000,
         )
 
         # Switch to OVERLAY mode so the user immediately sees the results
-        if added > 0 and hasattr(self, 'set_interaction_mode'):
+        any_change = n_added + n_updated + n_removed + n_replaced
+        if any_change > 0 and hasattr(self, 'set_interaction_mode'):
             self.set_interaction_mode('OVERLAY')
 
     def _on_plugin_error(self, name: str, msg: str) -> None:

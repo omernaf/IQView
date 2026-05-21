@@ -1,5 +1,8 @@
 # IQView package
 import numpy as np
+from iqview.plugins.plugin_result import PluginResult
+
+__all__ = ["view", "PluginResult"]
 
 def view(data, fs, fc=0.0, fft_size=1024, dtype='complex64'):
     """
