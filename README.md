@@ -82,6 +82,43 @@ If you omit the sample rate (`-r`) or center frequency (`-c`) flags, IQView will
 
 ---
 
+## 🐍 Python API & Plugin Debugging
+
+You can launch IQView directly from a Python script or IDE using the `iqview.view()` function. This is especially useful for **plugin development**, as it allows you to set breakpoints in your IDE and debug plugins interactively.
+
+### Opening a File
+```python
+import iqview
+
+# Opens the file and auto-detects sample rate and center frequency from the filename
+iqview.view("path/to/capture_20Msps_2.4GHz.cf32")
+```
+
+### Passing Raw Arrays (Great for Synthetic Signals)
+```python
+import numpy as np
+import iqview
+
+fs = 2e6
+t  = np.arange(int(fs * 0.5)) / fs
+x  = np.exp(2j * np.pi * 250e3 * t)   # CW tone at +250 kHz
+
+iqview.view(x, fs=fs, fc=2.4e9, name="Test Signal")
+```
+
+### Full Signature
+```python
+iqview.view(source=None, fs=1e6, fc=0.0, fft_size=1024, dtype='complex64', name=None, lazy=None)
+```
+*   `source`: File path (`str`), NumPy array (`np.ndarray`), or `None` (empty canvas).
+*   `fs` / `fc`: Sample rate and center frequency (ignored if auto-detected from filename).
+*   `fft_size`: Spectrogram frequency resolution (default 1024).
+*   `dtype`: Data type (e.g., `'complex64'`, `'int16'`) if not auto-detected.
+*   `name`: Custom window title.
+*   `lazy`: Override lazy rendering mode (`True` / `False`).
+
+---
+
 ## 🧪 Mathematical Foundations
 
 ### 1. Spectrogram Rendering
