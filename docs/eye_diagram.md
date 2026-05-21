@@ -1,6 +1,6 @@
 # Eye Diagram View
 
-The **Eye Diagram View** provides an interactive environment for visualizing symbol timing, phase alignment, and signal quality of digital modulations. It mirrors the exact functionality of standard MATLAB-based eye diagram analysis while running natively within IQView.
+The **Eye Diagram View** provides an interactive environment for visualizing symbol timing, phase alignment, and signal quality of digital modulations.
 
 ## 🚀 Opening the View
 
