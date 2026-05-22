@@ -423,6 +423,9 @@ class CustomViewBox(pg.ViewBox):
 
                         t0, f0 = p1.x(), p1.y()
                         t1, f1 = p2.x(), p2.y()
+                        waterfall = getattr(
+                            getattr(self.ui_controller, 'spectrogram_view', None),
+                            'is_waterfall', False)
                         
                         path = pg.QtGui.QPainterPath()
                         if shape_val == 'RECT':
@@ -437,19 +440,60 @@ class CustomViewBox(pg.ViewBox):
                             path.lineTo(t_min, f_min)
                             path.closeSubpath()
                         elif shape_val == 'X_REGION':
-                            yr = self.viewRange()[1]
-                            path.addRect(pg.QtCore.QRectF(pg.QtCore.QPointF(t0, yr[0]), pg.QtCore.QPointF(t1, yr[1])))
+                            # X_REGION = time band
+                            # Standard: drag left-right (x carries time) → vertical stripe
+                            # Waterfall: drag up-down  (y carries time) → horizontal stripe
+                            xr_v = self.viewRange()[0]
+                            yr_v = self.viewRange()[1]
+                            if waterfall:
+                                # Drag span is in y; fill full x
+                                y_lo, y_hi = min(f0, f1), max(f0, f1)
+                                path.addRect(pg.QtCore.QRectF(
+                                    pg.QtCore.QPointF(xr_v[0], y_lo),
+                                    pg.QtCore.QPointF(xr_v[1], y_hi)))
+                            else:
+                                # Drag span is in x; fill full y
+                                yr_v = self.viewRange()[1]
+                                path.addRect(pg.QtCore.QRectF(
+                                    pg.QtCore.QPointF(t0, yr_v[0]),
+                                    pg.QtCore.QPointF(t1, yr_v[1])))
                         elif shape_val == 'Y_REGION':
-                            xr = self.viewRange()[0]
-                            path.addRect(pg.QtCore.QRectF(pg.QtCore.QPointF(xr[0], f0), pg.QtCore.QPointF(xr[1], f1)))
+                            # Y_REGION = freq band
+                            # Standard: drag up-down (y carries freq) → horizontal stripe
+                            # Waterfall: drag left-right (x carries freq) → vertical stripe
+                            xr_v = self.viewRange()[0]
+                            yr_v = self.viewRange()[1]
+                            if waterfall:
+                                # Drag span is in x; fill full y
+                                x_lo, x_hi = min(t0, t1), max(t0, t1)
+                                path.addRect(pg.QtCore.QRectF(
+                                    pg.QtCore.QPointF(x_lo, yr_v[0]),
+                                    pg.QtCore.QPointF(x_hi, yr_v[1])))
+                            else:
+                                # Drag span is in y; fill full x
+                                path.addRect(pg.QtCore.QRectF(
+                                    pg.QtCore.QPointF(xr_v[0], f0),
+                                    pg.QtCore.QPointF(xr_v[1], f1)))
                         elif shape_val == 'LINE':
-                            yr = self.viewRange()[1]
-                            path.moveTo(t0, yr[0])
-                            path.lineTo(t0, yr[1])
+                            # LINE = time line: vertical in standard, horizontal in waterfall
+                            xr_v = self.viewRange()[0]
+                            yr_v = self.viewRange()[1]
+                            if waterfall:
+                                path.moveTo(xr_v[0], t0)
+                                path.lineTo(xr_v[1], t0)
+                            else:
+                                path.moveTo(t0, yr_v[0])
+                                path.lineTo(t0, yr_v[1])
                         elif shape_val == 'HLINE':
-                            xr = self.viewRange()[0]
-                            path.moveTo(xr[0], f0)
-                            path.lineTo(xr[1], f0)
+                            # HLINE = freq line: horizontal in standard, vertical in waterfall
+                            xr_v = self.viewRange()[0]
+                            yr_v = self.viewRange()[1]
+                            if waterfall:
+                                path.moveTo(f0, yr_v[0])
+                                path.lineTo(f0, yr_v[1])
+                            else:
+                                path.moveTo(xr_v[0], f0)
+                                path.lineTo(xr_v[1], f0)
                             
                         self._overlay_preview.setPath(path)
                 ev.accept()

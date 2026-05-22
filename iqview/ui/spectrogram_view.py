@@ -190,6 +190,9 @@ class SpectrogramView(QWidget):
         # Update angles of any already-placed markers
         if hasattr(self.parent_window, 'refresh_spectrogram_markers'):
             self.parent_window.refresh_spectrogram_markers()
+        # Update marker button icons/tooltips in the panel
+        if hasattr(self.parent_window, 'marker_panel'):
+            self.parent_window.marker_panel.refresh_waterfall_ui()
 
     # ---- Level / Gradient ----
 

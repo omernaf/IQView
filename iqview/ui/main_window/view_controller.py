@@ -171,17 +171,16 @@ class ViewControllerMixin:
 
     def open_time_domain_tab(self):
         """Extracts the IQ data between the two time markers (or full range) and opens it in a new tab."""
-        # Find time markers in spectrogram
         markers = self.markers_time
         if len(markers) < 2:
-            # Fallback to current view range if < 2 markers
-            xr, _ = self.spectrogram_view.view_box.viewRange()
-            start_t, end_t = xr
+            # Fallback to current view range. In waterfall mode, time is on Y.
+            xr, yr = self.spectrogram_view.view_box.viewRange()
+            time_range = yr if self.spectrogram_view.is_waterfall else xr
+            start_t, end_t = time_range
         else:
             sorted_m = sorted(markers, key=lambda m: m.value())
             start_t, end_t = sorted_m[0].value(), sorted_m[1].value()
         
-        # Extract IQ segment
         segment = self.extract_iq_segment(start_t, end_t)
         if segment is not None:
             from ..time_domain.view import TimeDomainView
@@ -194,8 +193,9 @@ class ViewControllerMixin:
         """Extracts IQ data for the selected time range and opens a Frequency Domain analysis tab."""
         markers = self.markers_time
         if len(markers) < 2:
-            xr, _ = self.spectrogram_view.view_box.viewRange()
-            start_t, end_t = xr
+            xr, yr = self.spectrogram_view.view_box.viewRange()
+            time_range = yr if self.spectrogram_view.is_waterfall else xr
+            start_t, end_t = time_range
         else:
             sorted_m = sorted(markers, key=lambda m: m.value())
             start_t, end_t = sorted_m[0].value(), sorted_m[1].value()
@@ -203,7 +203,6 @@ class ViewControllerMixin:
         segment = self.extract_iq_segment(start_t, end_t)
         if segment is not None:
             from ..frequency_domain.view import FrequencyDomainView
-            # Use center frequency from current state
             view = FrequencyDomainView(segment, self.fc, self.rate, parent_window=self)
             self.tabs.addTab(view, "Freq Domain")
             self.tabs.setCurrentWidget(view)
@@ -213,8 +212,9 @@ class ViewControllerMixin:
         """Extracts IQ data for the selected time range and opens an Eye Diagram tab."""
         markers = self.markers_time
         if len(markers) < 2:
-            xr, _ = self.spectrogram_view.view_box.viewRange()
-            start_t, end_t = xr
+            xr, yr = self.spectrogram_view.view_box.viewRange()
+            time_range = yr if self.spectrogram_view.is_waterfall else xr
+            start_t, end_t = time_range
         else:
             sorted_m = sorted(markers, key=lambda m: m.value())
             start_t, end_t = sorted_m[0].value(), sorted_m[1].value()

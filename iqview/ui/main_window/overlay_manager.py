@@ -72,8 +72,14 @@ class OverlayManagerMixin:
         """
         Single-click in OVERLAY mode → place a default-sized shape centered at the click.
         """
-        t = view_pos.x()
-        f = view_pos.y()
+        waterfall = self.spectrogram_view.is_waterfall
+        # In standard mode: X=time, Y=freq. In waterfall: X=freq, Y=time.
+        if waterfall:
+            t = view_pos.y()
+            f = view_pos.x()
+        else:
+            t = view_pos.x()
+            f = view_pos.y()
         
         shape = OverlayShape.LINE
         if hasattr(self, 'marker_panel') and hasattr(self.marker_panel, 'cb_overlay_shape'):
@@ -82,6 +88,13 @@ class OverlayManagerMixin:
         xr, yr = self.spectrogram_view.plot_item.viewRange()
         w = abs(xr[1] - xr[0]) * 0.1
         h = abs(yr[1] - yr[0]) * 0.1
+        # Convert view-space w/h to logical time/freq extents
+        if waterfall:
+            t_span = h   # Y carries time
+            f_span = w   # X carries freq
+        else:
+            t_span = w
+            f_span = h
         
         points = []
         center = None
@@ -94,18 +107,17 @@ class OverlayManagerMixin:
         elif shape == OverlayShape.HLINE:
             points = [(0.0, f)]
             alpha = 0.0
-        elif shape == OverlayShape.X_REGION:
-            points = [(t - w/2, 0.0), (t + w/2, 0.0)]
-        elif shape == OverlayShape.Y_REGION:
-            points = [(0.0, f - h/2), (0.0, f + h/2)]
+        elif shape == OverlayShape.X_REGION:   # time band
+            points = [(t - t_span/2, 0.0), (t + t_span/2, 0.0)]
+        elif shape == OverlayShape.Y_REGION:   # freq band
+            points = [(0.0, f - f_span/2), (0.0, f + f_span/2)]
         elif shape == OverlayShape.RECT:
-            points = [(t - w/2, f - h/2), (t + w/2, f + h/2)]
+            points = [(t - t_span/2, f - f_span/2), (t + t_span/2, f + f_span/2)]
         elif shape == OverlayShape.ELLIPSE:
             center = (t, f)
-            radii = (w/2, h/2)
+            radii = (t_span/2, f_span/2)
         elif shape == OverlayShape.POLYGON:
-            # Default triangle
-            points = [(t, f + h/2), (t + w/2, f - h/2), (t - w/2, f - h/2)]
+            points = [(t, f + f_span/2), (t + t_span/2, f - f_span/2), (t - t_span/2, f - f_span/2)]
 
         overlay = Overlay(
             shape=shape,
@@ -130,14 +142,21 @@ class OverlayManagerMixin:
         Drag in OVERLAY mode → place a shape spanning the dragged region.
         start_view / end_view are QPointF in data/view coordinates.
         """
-        t0, f0 = start_view.x(), start_view.y()
-        t1, f1 = end_view.x(),   end_view.y()
+        waterfall = self.spectrogram_view.is_waterfall
+        if waterfall:
+            # X=freq, Y=time in view space
+            t0, f0 = start_view.y(), start_view.x()
+            t1, f1 = end_view.y(),   end_view.x()
+        else:
+            t0, f0 = start_view.x(), start_view.y()
+            t1, f1 = end_view.x(),   end_view.y()
+
         # Require a minimum drag distance to avoid accidental placements
         xr, yr = self.spectrogram_view.plot_item.viewRange()
         min_w = abs(xr[1] - xr[0]) * 0.005
         min_h = abs(yr[1] - yr[0]) * 0.005
-        if abs(t1 - t0) < min_w and abs(f1 - f0) < min_h:
-            # Too small — treat as a click instead
+        # Use view-space drag for the threshold check
+        if abs(end_view.x() - start_view.x()) < min_w and abs(end_view.y() - start_view.y()) < min_h:
             self.place_overlay_by_click(start_view)
             return
 
@@ -156,9 +175,9 @@ class OverlayManagerMixin:
         elif shape == OverlayShape.HLINE:
             points = [(0.0, f0)]
             alpha = 0.0
-        elif shape == OverlayShape.X_REGION:
+        elif shape == OverlayShape.X_REGION:   # time band
             points = [(min(t0, t1), 0.0), (max(t0, t1), 0.0)]
-        elif shape == OverlayShape.Y_REGION:
+        elif shape == OverlayShape.Y_REGION:   # freq band
             points = [(0.0, min(f0, f1)), (0.0, max(f0, f1))]
         elif shape == OverlayShape.RECT:
             points = [(min(t0, t1), min(f0, f1)), (max(t0, t1), max(f0, f1))]
@@ -166,7 +185,6 @@ class OverlayManagerMixin:
             center = ((t0 + t1) / 2, (f0 + f1) / 2)
             radii = (abs(t1 - t0) / 2, abs(f1 - f0) / 2)
         elif shape == OverlayShape.POLYGON:
-            # Triangle fitting the drag rect
             t_min, t_max = min(t0, t1), max(t0, t1)
             f_min, f_max = min(f0, f1), max(f0, f1)
             points = [((t_min + t_max) / 2, f_max), (t_max, f_min), (t_min, f_min)]
@@ -302,13 +320,24 @@ class OverlayManagerMixin:
             self._overlay_items[overlay.id] = item
 
     def _create_line_item(self, overlay: Overlay) -> Optional[pg.InfiniteLine]:
-        """Build a pg.InfiniteLine for a LINE or HLINE overlay."""
+        """Build a pg.InfiniteLine for a LINE or HLINE overlay.
+
+        LINE  = time marker (vertical in standard, horizontal in waterfall)
+        HLINE = freq marker (horizontal in standard, vertical in waterfall)
+        """
         if not overlay.points:
             return None
 
+        waterfall = self.spectrogram_view.is_waterfall
         is_time = (overlay.shape == OverlayShape.LINE)
-        angle   = 90 if is_time else 0
-        pos     = overlay.points[0][0] if is_time else overlay.points[0][1]
+
+        # Standard: time=90°, freq=0°  |  Waterfall: time=0°, freq=90°
+        if waterfall:
+            angle = 0 if is_time else 90
+        else:
+            angle = 90 if is_time else 0
+
+        pos = overlay.points[0][0] if is_time else overlay.points[0][1]
         movable = not overlay.locked
 
         bc = overlay.border_color or overlay.color
@@ -350,14 +379,26 @@ class OverlayManagerMixin:
         return line
 
     def _create_region_item(self, overlay: Overlay):
-        """Build a pg.LinearRegionItem for an X_REGION or Y_REGION overlay."""
+        """Build a pg.LinearRegionItem for an X_REGION or Y_REGION overlay.
+
+        X_REGION = time band (vertical stripe in standard, horizontal in waterfall)
+        Y_REGION = freq band (horizontal stripe in standard, vertical in waterfall)
+        """
         if not overlay.points or len(overlay.points) < 2:
             return None
 
-        is_x = (overlay.shape == OverlayShape.X_REGION)   # vertical band
-        orientation = 'vertical' if is_x else 'horizontal'
+        waterfall = self.spectrogram_view.is_waterfall
+        is_time_band = (overlay.shape == OverlayShape.X_REGION)
 
-        if is_x:
+        # Standard: time band = vertical strip (orientation='vertical')
+        #           freq band = horizontal strip (orientation='horizontal')
+        # Waterfall: axes swap, so orientations invert
+        if waterfall:
+            orientation = 'horizontal' if is_time_band else 'vertical'
+        else:
+            orientation = 'vertical' if is_time_band else 'horizontal'
+
+        if is_time_band:
             v0 = overlay.points[0][0]   # t_start
             v1 = overlay.points[1][0]   # t_end
         else:
