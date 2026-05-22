@@ -226,9 +226,10 @@ class OverlayItem(pg.GraphicsObject):
     Geometry is expressed in world-space (seconds × Hz).
     """
 
-    def __init__(self, overlay: Overlay, on_geometry_changed=None) -> None:
+    def __init__(self, overlay: Overlay, waterfall: bool = False, on_geometry_changed=None) -> None:
         super().__init__()
         self.overlay = overlay
+        self.waterfall = waterfall
         # Callable(overlay_id, points=…, center=…, radii=…) — fired on mouse release
         self._on_geometry_changed = on_geometry_changed
 
@@ -261,8 +262,16 @@ class OverlayItem(pg.GraphicsObject):
             self.setAcceptedMouseButtons(Qt.MouseButton.LeftButton)
 
     # ------------------------------------------------------------------
-    # View-space scale helper
+    # View-space scale helper & coordinates
     # ------------------------------------------------------------------
+
+    def _to_view(self, t: float, f: float) -> Tuple[float, float]:
+        """Convert logical (time, freq) to view coordinates."""
+        return (f, t) if getattr(self, 'waterfall', False) else (t, f)
+        
+    def _from_view(self, x: float, y: float) -> Tuple[float, float]:
+        """Convert view coordinates to logical (time, freq)."""
+        return (y, x) if getattr(self, 'waterfall', False) else (x, y)
 
     def _get_scale(self):
         """Returns (sx, sy) = screen-pixels per world-unit for the current view."""
@@ -282,31 +291,43 @@ class OverlayItem(pg.GraphicsObject):
     # ------------------------------------------------------------------
 
     def _handle_positions(self) -> list:
-        """Returns [(role, QPointF world-pos), …] for all resize handles."""
+        """Returns [(role, QPointF view-pos), …] for all resize handles."""
         o = self.overlay
         if o.shape == OverlayShape.RECT and len(o.points) >= 2:
-            x0, y0 = o.points[0]
-            x1, y1 = o.points[1]
-            t0, t1 = min(x0, x1), max(x0, x1)
-            f0, f1 = min(y0, y1), max(y0, y1)
-            tm, fm = (t0 + t1) / 2, (f0 + f1) / 2
+            t0, f0 = o.points[0]
+            t1, f1 = o.points[1]
+            t0, t1 = min(t0, t1), max(t0, t1)
+            f0, f1 = min(f0, f1), max(f0, f1)
+            
+            x0, y0 = self._to_view(t0, f0)
+            x1, y1 = self._to_view(t1, f1)
+            
+            vx_min, vx_max = min(x0, x1), max(x0, x1)
+            vy_min, vy_max = min(y0, y1), max(y0, y1)
+            
+            vx_mid = (vx_min + vx_max) / 2
+            vy_mid = (vy_min + vy_max) / 2
+            
             return [
-                ('tl', QPointF(t0, f1)), ('tm', QPointF(tm, f1)), ('tr', QPointF(t1, f1)),
-                ('mr', QPointF(t1, fm)),
-                ('br', QPointF(t1, f0)), ('bm', QPointF(tm, f0)), ('bl', QPointF(t0, f0)),
-                ('ml', QPointF(t0, fm)),
+                ('tl', QPointF(vx_min, vy_max)), ('tm', QPointF(vx_mid, vy_max)), ('tr', QPointF(vx_max, vy_max)),
+                ('mr', QPointF(vx_max, vy_mid)),
+                ('br', QPointF(vx_max, vy_min)), ('bm', QPointF(vx_mid, vy_min)), ('bl', QPointF(vx_min, vy_min)),
+                ('ml', QPointF(vx_min, vy_mid)),
             ]
         if o.shape == OverlayShape.ELLIPSE and o.center and o.radii:
-            cx, cy = o.center
-            rx, ry = o.radii
+            ct, cf = o.center
+            rt, rf = o.radii
+            def pt(t, f):
+                x, y = self._to_view(t, f)
+                return QPointF(x, y)
             return [
-                ('n', QPointF(cx,      cy + ry)),
-                ('s', QPointF(cx,      cy - ry)),
-                ('e', QPointF(cx + rx, cy)),
-                ('w', QPointF(cx - rx, cy)),
+                ('n', pt(ct,      cf + rf)),
+                ('s', pt(ct,      cf - rf)),
+                ('e', pt(ct + rt, cf)),
+                ('w', pt(ct - rt, cf)),
             ]
         if o.shape == OverlayShape.POLYGON and len(o.points) >= 3:
-            return [(f'p{i}', QPointF(x, y)) for i, (x, y) in enumerate(o.points)]
+            return [(f'p{i}', QPointF(*self._to_view(t, f))) for i, (t, f) in enumerate(o.points)]
         return []
 
     def _hit_handle(self, pos: QPointF) -> Optional[str]:
@@ -320,11 +341,13 @@ class OverlayItem(pg.GraphicsObject):
         return None
 
     def _inside_shape(self, pos: QPointF) -> bool:
-        """Return True if pos (world) is inside the overlay shape."""
+        """Return True if pos (view coordinates) is inside the overlay shape."""
+        logical_pos = QPointF(*self._from_view(pos.x(), pos.y()))
+        
         o = self.overlay
         if o.shape == OverlayShape.RECT:
             br = o.bounding_rect()
-            return br is not None and br.contains(pos)
+            return br is not None and br.contains(logical_pos)
         if o.shape == OverlayShape.POLYGON:
             pts = o.points
             if len(pts) >= 3:
@@ -333,13 +356,13 @@ class OverlayItem(pg.GraphicsObject):
                 for p in pts[1:]:
                     path.lineTo(*p)
                 path.closeSubpath()
-                return path.contains(pos)
+                return path.contains(logical_pos)
         if o.shape == OverlayShape.ELLIPSE:
             if o.center and o.radii:
                 cx, cy = o.center
                 rx, ry = o.radii
                 if rx > 0 and ry > 0:
-                    return ((pos.x() - cx) / rx) ** 2 + ((pos.y() - cy) / ry) ** 2 <= 1.0
+                    return ((logical_pos.x() - cx) / rx) ** 2 + ((logical_pos.y() - cy) / ry) ** 2 <= 1.0
         return False
 
     # ------------------------------------------------------------------
@@ -349,41 +372,54 @@ class OverlayItem(pg.GraphicsObject):
     def _apply_handle_drag(self, role: str, delta: QPointF) -> None:
         o = self.overlay
         dx, dy = delta.x(), delta.y()
+        
         if o.shape == OverlayShape.RECT and len(o.points) >= 2:
-            t0, f0 = list(o.points[0])
-            t1, f1 = list(o.points[1])
-            if 'l' in role: t0 += dx
-            if 'r' in role: t1 += dx
-            if 'b' in role: f0 += dy
-            if 't' in role: f1 += dy
-            # Normalise to always keep min/max ordering
-            o.points = [(min(t0, t1), min(f0, f1)), (max(t0, t1), max(f0, f1))]
+            x0, y0 = self._to_view(*o.points[0])
+            x1, y1 = self._to_view(*o.points[1])
+            if 'l' in role:
+                if x0 <= x1: x0 += dx
+                else: x1 += dx
+            if 'r' in role:
+                if x0 > x1: x0 += dx
+                else: x1 += dx
+            if 'b' in role:
+                if y0 <= y1: y0 += dy
+                else: y1 += dy
+            if 't' in role:
+                if y0 > y1: y0 += dy
+                else: y1 += dy
+            
+            t_new_0, f_new_0 = self._from_view(x0, y0)
+            t_new_1, f_new_1 = self._from_view(x1, y1)
+            o.points = [(min(t_new_0, t_new_1), min(f_new_0, f_new_1)), (max(t_new_0, t_new_1), max(f_new_0, f_new_1))]
 
         elif o.shape == OverlayShape.ELLIPSE:
             if o.center and o.radii:
-                rx, ry = o.radii
+                rx, ry = self._to_view(*o.radii)
+                rx, ry = abs(rx), abs(ry)
                 if role == 'n': ry = max(1e-9, ry + dy)
                 if role == 's': ry = max(1e-9, ry - dy)
                 if role == 'e': rx = max(1e-9, rx + dx)
                 if role == 'w': rx = max(1e-9, rx - dx)
-                o.radii = (rx, ry)
+                rt, rf = self._from_view(rx, ry)
+                o.radii = (abs(rt), abs(rf))
                 
         elif o.shape == OverlayShape.POLYGON and role.startswith('p'):
             try:
                 idx = int(role[1:])
                 if 0 <= idx < len(o.points):
-                    old_x, old_y = o.points[idx]
-                    o.points[idx] = (old_x + dx, old_y + dy)
+                    px, py = self._to_view(*o.points[idx])
+                    o.points[idx] = self._from_view(px + dx, py + dy)
             except ValueError:
                 pass
 
     def _apply_move_drag(self, delta: QPointF) -> None:
         o = self.overlay
-        dx, dy = delta.x(), delta.y()
+        dt, df = self._from_view(delta.x(), delta.y())
         if o.points:
-            o.points = [(p[0] + dx, p[1] + dy) for p in o.points]
+            o.points = [(p[0] + dt, p[1] + df) for p in o.points]
         if o.center:
-            o.center = (o.center[0] + dx, o.center[1] + dy)
+            o.center = (o.center[0] + dt, o.center[1] + df)
 
     # ------------------------------------------------------------------
     # Qt mouse events
@@ -507,7 +543,10 @@ class OverlayItem(pg.GraphicsObject):
             return
         anchor = self.overlay.tag_anchor()
         if anchor:
-            self._label.setPos(anchor.x(), anchor.y())
+            if getattr(self, 'waterfall', False):
+                self._label.setPos(anchor.y(), anchor.x())
+            else:
+                self._label.setPos(anchor.x(), anchor.y())
 
     # ------------------------------------------------------------------
     # GraphicsObject interface
@@ -517,6 +556,8 @@ class OverlayItem(pg.GraphicsObject):
         br = self.overlay.bounding_rect()
         if br is None:
             return QRectF()
+        if getattr(self, 'waterfall', False):
+            return QRectF(br.y(), br.x(), br.height(), br.width()).adjusted(-1e-15, -1e-15, 1e-15, 1e-15)
         return br.adjusted(-1e-15, -1e-15, 1e-15, 1e-15)
 
     def paint(self, painter: QPainter, option, widget=None) -> None:
@@ -564,16 +605,21 @@ class OverlayItem(pg.GraphicsObject):
     def _paint_rect(self, painter: QPainter) -> None:
         br = self.overlay.bounding_rect()
         if br:
-            painter.drawRect(br)
+            if getattr(self, 'waterfall', False):
+                painter.drawRect(QRectF(br.y(), br.x(), br.height(), br.width()))
+            else:
+                painter.drawRect(br)
 
     def _paint_polygon(self, painter: QPainter) -> None:
         pts = self.overlay.points
         if len(pts) < 3:
             return
         path = QPainterPath()
-        path.moveTo(pts[0][0], pts[0][1])
-        for x, y in pts[1:]:
-            path.lineTo(x, y)
+        p0 = self._to_view(*pts[0])
+        path.moveTo(p0[0], p0[1])
+        for t, f in pts[1:]:
+            px, py = self._to_view(t, f)
+            path.lineTo(px, py)
         path.closeSubpath()
         painter.drawPath(path)
 
@@ -582,7 +628,10 @@ class OverlayItem(pg.GraphicsObject):
         if o.center and o.radii:
             cx, cy = o.center
             rx, ry = o.radii
-            painter.drawEllipse(QPointF(cx, cy), rx, ry)
+            if getattr(self, 'waterfall', False):
+                painter.drawEllipse(QPointF(cy, cx), ry, rx)
+            else:
+                painter.drawEllipse(QPointF(cx, cy), rx, ry)
 
     # ------------------------------------------------------------------
     # Visibility
