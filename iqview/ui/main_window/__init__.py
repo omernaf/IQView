@@ -140,6 +140,10 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
         """Handle settings changes: refresh theme and re-process if filter is active."""
         self.apply_current_theme()
         
+        # Re-render spectrogram in the new orientation (waterfall toggle, etc.)
+        if hasattr(self, 'spectrogram_view'):
+            self.spectrogram_view.apply_waterfall_mode()
+        
         # Immediately push setting changes to marker panel layouts
         if hasattr(self, 'marker_panel'):
             self.marker_panel.update_headers(getattr(self, 'interaction_mode', 'TIME'))

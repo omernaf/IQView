@@ -43,6 +43,7 @@ class SettingsManager:
         "ui/theme": "Light",
         "ui/colormap": "turbo",
         "ui/colormap_reversed": False,
+        "ui/waterfall": False,
         
         # Dark Theme Styles
         "ui/dark/time_marker_color": "#00ff00",
