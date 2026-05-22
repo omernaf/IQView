@@ -306,8 +306,9 @@ class UIComponentsMixin:
         self.recent_menu = file_menu.addMenu("Open &Recent")
         self._rebuild_recent_menu()
 
-        # --- Overlays Menu ---
-        overlays_menu = mb.addMenu("&Overlays")
+        # --- Overlays Section ---
+        file_menu.addSeparator()
+        overlays_menu = file_menu.addMenu("&Overlays")
         
         import_action = QAction("&Import Overlays...", self)
         import_action.setStatusTip("Import overlays from a JSON file and add them to the current view")
@@ -334,11 +335,26 @@ class UIComponentsMixin:
             placeholder.setEnabled(False)
             self.recent_menu.addAction(placeholder)
             return
-        for path in recent:
+        for item in recent:
             import os
+            path = item[0]
+            t_str = item[1]
+            fs = item[2] if len(item) > 2 else None
+            fc = item[3] if len(item) > 3 else None
+            
             action = QAction(os.path.basename(path), self)
-            action.setToolTip(path)
-            action.triggered.connect(lambda checked, p=path: self.load_new_file(p))
+            
+            tooltip_parts = []
+            if t_str: tooltip_parts.append(t_str)
+            if fs: tooltip_parts.append(f"fs={fs}")
+            if fc: tooltip_parts.append(f"fc={fc}")
+            
+            if tooltip_parts:
+                action.setToolTip(f"{path} ({', '.join(tooltip_parts)})")
+            else:
+                action.setToolTip(path)
+                
+            action.triggered.connect(lambda checked, p=path, t=t_str, r=fs, c=fc: self.load_new_file(p, type_str=t, fs=r, fc=c))
             self.recent_menu.addAction(action)
         self.recent_menu.addSeparator()
         clear_action = QAction("Clear Recent", self)
@@ -347,12 +363,42 @@ class UIComponentsMixin:
 
     def _get_recent_files(self):
         raw = self.settings_mgr.get("ui/recent_files", "")
-        return [p for p in raw.split(";;") if p.strip()] if raw else []
+        if not raw: return []
+        items = []
+        for p in raw.split(";;"):
+            if not p.strip(): continue
+            parts = p.split("|")
+            path = parts[0]
+            t_str = parts[1] if len(parts) > 1 and parts[1] else None
+            fs = float(parts[2]) if len(parts) > 2 and parts[2] else None
+            fc = float(parts[3]) if len(parts) > 3 and parts[3] else None
+            items.append((path, t_str, fs, fc))
+        return items
 
-    def _add_recent_file(self, path):
-        recent = [p for p in self._get_recent_files() if p != path]
-        recent.insert(0, path)
-        self.settings_mgr.set("ui/recent_files", ";;".join(recent[:10]))
+    def _serialize_recent_items(self, items):
+        serialized = []
+        for item in items[:10]:
+            path = item[0]
+            t_str = item[1] or ""
+            fs = str(item[2]) if len(item) > 2 and item[2] is not None else ""
+            fc = str(item[3]) if len(item) > 3 and item[3] is not None else ""
+            
+            # Trim trailing empty fields
+            parts = [path, t_str, fs, fc]
+            while len(parts) > 1 and not parts[-1]:
+                parts.pop()
+            serialized.append("|".join(parts))
+        return ";;".join(serialized)
+
+    def _add_recent_file(self, path, type_str=None, fs=None, fc=None):
+        recent = [item for item in self._get_recent_files() if item[0] != path]
+        recent.insert(0, (path, type_str, fs, fc))
+        self.settings_mgr.set("ui/recent_files", self._serialize_recent_items(recent))
+        self._rebuild_recent_menu()
+
+    def _remove_recent_file(self, path):
+        recent = [item for item in self._get_recent_files() if item[0] != path]
+        self.settings_mgr.set("ui/recent_files", self._serialize_recent_items(recent))
         self._rebuild_recent_menu()
 
     def _clear_recent_files(self):

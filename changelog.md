@@ -21,6 +21,8 @@
 - **Plugin Overlay API**: Completely redesigned the plugin return mechanism. Plugins must now return a `PluginResult` object to express overlay operations (`.add()`, `.update()`, `.remove()`, `.replace()`). This allows plugins to non-destructively modify or remove existing overlays (e.g., snapping rectangles to a grid) rather than just adding new ones. The `info["overlays"]` dictionary now provides safe, deep-copied `Overlay` objects for easy attribute access.
 - **Context Menu Cleanup**: Removed the redundant "Switch to Overlay Mode" from the right-click menu, as it is already cleanly accessible from the main top panel.
 - **Instantaneous Frequency for Real Signals**: The "instant frequency" plot in the Time Domain popup now produces meaningful output for real-valued signals (e.g. WAV files, real-sampled SDR). Previously, the naive `diff(angle())` approach yielded erratic 0/π phase jumps. The signal is now converted to an analytic signal via a Hilbert transform, followed by a very wide DC-blocking HPF (to remove any Hilbert-induced DC offset), before computing the instantaneous frequency using modulo phase difference wrapping — identical to the path used for complex IQ signals. Complex signals are unaffected.
+- **Top Menu Restructure**: Moved the standalone "Overlays" top-level menu into the "File" menu as a dedicated sub-menu.
+- **Open Recent Enhancements**: The "Open Recent" files feature now stores and restores the specific Sample Rate (`fs`), Center Frequency (`fc`), and Data Type that were active when the file was last opened, instead of falling back to default or auto-detected settings.
 
 
 ### Fixed
@@ -30,6 +32,8 @@
 - **Dynamic .mat Loading & SidePanel Integration**: Enabled opening `.mat` files dynamically via the File menu or Recent Files list, automatically parsing their structures and updating the spectrogram data, sample rate, center frequency, and SidePanel controls.
 - **Dynamic Filename Parameter Auto-detection**: Enabled automatic extraction of sample rate and center frequency from the filename (e.g. `_10Msps_433MHz`) when loading any binary files dynamically in the UI.
 - **Debian Package Post-Installation Network Hangs**: Removed the unnecessary `pip install --upgrade pip` step from the Debian `postinst` script, preventing installation hangs and timeouts on private, restricted, or offline networks.
+- **Open Recent Colormap Scaling**: Fixed a bug where loading a file from the "Open Recent" menu would inherit the colormap bounds and view ranges of the previously open file. It now correctly resets the view as if a fresh file was loaded.
+- **Open Recent Missing Files**: Fixed an issue where clicking a missing or deleted file from the "Open Recent" list would silently fail. It now displays a warning message and automatically removes the dead entry from the menu.
 
 
 ## [0.1.4] - 2026-04-24

@@ -16,6 +16,9 @@ class ViewControllerMixin:
         self.rate, self.fc = params['fs'], params['fc']
         self.fft_size, self.window_type, self.overlap_percent = params['fft_size'], params['window_type'], params['overlap_percent']
         
+        if hasattr(self, '_add_recent_file') and getattr(self, 'file_path', None):
+            self._add_recent_file(self.file_path, type_str=getattr(self, 'current_type_str', None), fs=self.rate, fc=self.fc)
+        
         if needs_reprocess:
             self.start_processing()
             
@@ -557,9 +560,13 @@ class ViewControllerMixin:
         except Exception:
             self.sidebar.set_file_info(type_str, None)
 
-    def load_new_file(self, path):
+    def load_new_file(self, path, type_str=None, fs=None, fc=None):
         """Swap the data source to a new file and reprocess everything."""
         if not os.path.isfile(path):
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "File Not Found", f"The file could not be found:\n{path}")
+            if hasattr(self, '_remove_recent_file'):
+                self._remove_recent_file(path)
             return
 
         # Save current user overlays before switching
@@ -581,13 +588,14 @@ class ViewControllerMixin:
         if os.path.splitext(path)[1].lower() in AUDIO_EXTENSIONS:
             audio_data = load_audio_file(path)
             if audio_data:
-                data_source, type_str, fs, fc, is_complex = audio_data
+                data_source, loaded_type_str, loaded_fs, loaded_fc, is_complex = audio_data
                 self.data_source = data_source
                 self.file_path = path
-                self.rate = fs
-                self.fc = fc
+                self.rate = fs if fs is not None else loaded_fs
+                self.fc = fc if fc is not None else loaded_fc
                 self.is_complex = is_complex
                 self.data_type = np.float32
+                type_str = loaded_type_str
 
                 # Update sidebar parameters
                 if hasattr(self, 'sidebar'):
@@ -599,12 +607,13 @@ class ViewControllerMixin:
         elif path.lower().endswith('.mat'):
             mat_data = load_mat_file(path)
             if mat_data:
-                data_source, type_str, fs, fc, is_complex = mat_data
+                data_source, loaded_type_str, loaded_fs, loaded_fc, is_complex = mat_data
                 self.data_source = data_source
                 self.file_path = path
-                self.rate = fs
-                self.fc = fc
+                self.rate = fs if fs is not None else loaded_fs
+                self.fc = fc if fc is not None else loaded_fc
                 self.is_complex = is_complex
+                type_str = loaded_type_str
                 
                 # Update sidebar parameters
                 if hasattr(self, 'sidebar'):
@@ -627,8 +636,8 @@ class ViewControllerMixin:
             
             # Detect fs and fc from filename if possible
             params = detect_params_from_filename(path)
-            fs_detected = params.get('fs')
-            fc_detected = params.get('fc')
+            fs_detected = fs if fs is not None else params.get('fs')
+            fc_detected = fc if fc is not None else params.get('fc')
             if fs_detected is not None or fc_detected is not None:
                 if fs_detected is not None:
                     self.rate = fs_detected
@@ -637,12 +646,13 @@ class ViewControllerMixin:
                 if hasattr(self, 'sidebar'):
                     self.sidebar.update_params(fs=fs_detected, fc=fc_detected)
 
-            # Priority: 1. Auto-detection from filename, 2. App Settings
-            auto_type = detect_type_from_ext(path)
-            if auto_type:
-                type_str = auto_type
-            else:
-                type_str = str(self.settings_mgr.get("core/type", "complex64"))
+            # Priority: 1. Argument, 2. Auto-detection from filename, 3. App Settings
+            if type_str is None:
+                auto_type = detect_type_from_ext(path)
+                if auto_type:
+                    type_str = auto_type
+                else:
+                    type_str = str(self.settings_mgr.get("core/type", "complex64"))
 
             dtype = DTYPE_MAP.get(type_str, np.complex64)
             self.is_complex = dtype in [np.complex64, np.complex128, np.int16]
@@ -654,8 +664,14 @@ class ViewControllerMixin:
             else:
                 self.data_type = dtype
 
+        self.current_type_str = type_str
+        
         # Save to recent files list
-        self._add_recent_file(path)
+        if hasattr(self, '_add_recent_file'):
+            self._add_recent_file(path, type_str, self.rate, self.fc)
+
+        # Force spectrogram auto_range and scaling to reset
+        self.is_first_load = True
 
         # Clear all markers using refactored method
         self.clear_all_markers()
