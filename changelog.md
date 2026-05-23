@@ -3,6 +3,8 @@
 ## [0.1.5] - 2026-05-16
 
 ### Added
+- **Waterfall Spectrogram Layout**: Added a "Waterfall" checkbox in the settings to transpose the spectrogram axes (X-axis = Frequency, Y-axis = Time).
+- **Adaptive Marker UI**: Marker panel icons and tooltips now dynamically swap depending on whether the spectrogram is in Standard or Waterfall orientation to maintain intuitive vertical/horizontal representation.
 - **Eye Diagram Popup**: Added an interactive Eye Diagram analysis tab accessible via right-click on the spectrogram. Includes signal-type selectors (Real, Imaginary, Phase, Inst. Freq, Magnitude), fractional Nsps support with three-tier sliders (Main, Coarse, Fine) for precise symbol timing, an offset slider, and a mini waveform overview with draggable range handles for isolating specific signal segments.
 - **Marker Grid Customization**: Added dedicated width, color, opacity, and line style settings for the cyclic continuation marker lines, completely decoupling them from the background axis grid appearance.
 - **Region Overlays**: Added `X-Region` and `Y-Region` overlay shapes. These act as infinite bands (e.g. spanning the entire frequency range between two time points) and support interactive dragging and resizing.
@@ -18,6 +20,7 @@
 - **Python API & Plugin Debugging**: Added the `iqview.view()` function to launch the application directly from Python scripts. This enables opening files or passing raw NumPy arrays programmatically, making it perfect for setting IDE breakpoints and debugging plugins interactively.
 
 ### Changed
+- **Adaptive Icon Theming**: Button icons and assets (like marker controls) now dynamically respond to the active Light/Dark theme configuration instead of being hardcoded.
 - **Plugin Overlay API**: Completely redesigned the plugin return mechanism. Plugins must now return a `PluginResult` object to express overlay operations (`.add()`, `.update()`, `.remove()`, `.replace()`). This allows plugins to non-destructively modify or remove existing overlays (e.g., snapping rectangles to a grid) rather than just adding new ones. The `info["overlays"]` dictionary now provides safe, deep-copied `Overlay` objects for easy attribute access.
 - **Context Menu Cleanup**: Removed the redundant "Switch to Overlay Mode" from the right-click menu, as it is already cleanly accessible from the main top panel.
 - **Instantaneous Frequency for Real Signals**: The "instant frequency" plot in the Time Domain popup now produces meaningful output for real-valued signals (e.g. WAV files, real-sampled SDR). Previously, the naive `diff(angle())` approach yielded erratic 0/π phase jumps. The signal is now converted to an analytic signal via a Hilbert transform, followed by a very wide DC-blocking HPF (to remove any Hilbert-induced DC offset), before computing the instantaneous frequency using modulo phase difference wrapping — identical to the path used for complex IQ signals. Complex signals are unaffected.
@@ -26,6 +29,9 @@
 
 
 ### Fixed
+- **Waterfall Overlay Rendering & Interaction**: Completely overhauled `OverlayItem` and drag interactions to correctly render shapes (Rectangles, Ellipses, Polygons, and Bands) and map mouse interactions when the axes are transposed in Waterfall mode.
+- **Waterfall Domain Analysis Popups**: Fixed a bug where triggering a Time Domain or Frequency Domain popup in Waterfall mode with no markers placed would attempt to extract an impossibly large number of samples, hitting the sample limit protection.
+- **Waterfall Lazy Rendering**: Fixed an issue where the spectrogram lazy-rendering engine would render only a few pixels when in Waterfall mode due to reading bounds from the wrong axis.
 - **Settings Live Update**: All marker grids now update their appearance instantly across the spectrogram and all detached domain windows when changes are applied in the settings dialog.
 - **Settings Dialog Reset Crash**: Fixed a bug where attempting to use reset buttons within the settings dialog would crash the application due to a missing `QDoubleSpinBox` import.
 - **.mat File Window Title and Association**: Fixed a bug where loading a `.mat` file displayed `<stdin>` in the window title instead of the actual file name/path. This also restores proper saving and loading of overlay sidecars (`.mat.overlays`) for MATLAB files.
