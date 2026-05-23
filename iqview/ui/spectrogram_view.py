@@ -122,6 +122,14 @@ class SpectrogramView(QWidget):
         self.full_t_range = (0, 1)
         self.full_f_range = (0, 1)
 
+        # Cache of the last raw spectrogram data so we can re-render on orientation change
+        self._last_spectrogram = None
+        self._last_fc = None
+        self._last_rate = None
+        self._last_t_start = None  # for lazy tiles
+        self._last_t_end = None    # for lazy tiles
+        self._last_auto_range = False
+
         # Connect signals
         self.view_box.sigRangeChanged.connect(self.update_scrollbars)
         self.view_box.sigRangeChanged.connect(lambda: self.parent_window.update_grid('TIME'))
@@ -131,6 +139,62 @@ class SpectrogramView(QWidget):
         self.y_scroll.valueChanged.connect(self.scroll_view)
 
         self.refresh_theme()
+
+    # ---- Waterfall helpers ----
+
+    @property
+    def is_waterfall(self):
+        """True when waterfall mode is enabled (Freq→X, Time→Y)."""
+        return bool(self.parent_window.settings_mgr.get("ui/waterfall", False))
+
+    def _axis_labels_for_mode(self):
+        """Return (bottom_label, left_label) appropriate for current mode."""
+        if self.is_waterfall:
+            return ("Frequency", "Hz"), ("Time", "s")
+        else:
+            return ("Time", "s"), ("Frequency", "Hz")
+
+    def _apply_axis_labels(self):
+        (bl, bu), (ll, lu) = self._axis_labels_for_mode()
+        self.plot_item.setLabel('bottom', bl, units=bu)
+        self.plot_item.setLabel('left', ll, units=lu)
+
+    def apply_waterfall_mode(self):
+        """Re-render the current cached image in the new orientation and update all
+        axis labels, scrollbars, and the spectrum envelope sync.
+        Called from on_settings_applied() after the user changes the waterfall checkbox."""
+        self._apply_axis_labels()
+
+        # Re-render using cached data if available
+        if self._last_spectrogram is not None and self._last_fc is not None:
+            if self._last_t_start is not None:
+                # lazy tile path
+                self.update_lazy_tile(
+                    self._last_spectrogram,
+                    self._last_fc,
+                    self._last_rate,
+                    self._last_t_start,
+                    self._last_t_end,
+                    auto_range=True,
+                )
+            else:
+                # full spectrogram path
+                self.update_spectrogram(
+                    self._last_spectrogram,
+                    self._last_fc,
+                    self._last_rate,
+                    self.full_t_range[1],
+                    auto_range=True,
+                )
+        self.update_scrollbars()
+        # Update angles of any already-placed markers
+        if hasattr(self.parent_window, 'refresh_spectrogram_markers'):
+            self.parent_window.refresh_spectrogram_markers()
+        # Update marker button icons/tooltips in the panel
+        if hasattr(self.parent_window, 'marker_panel'):
+            self.parent_window.marker_panel.refresh_waterfall_ui()
+
+    # ---- Level / Gradient ----
 
     def on_levels_changed(self):
         low, high = self.level_region.getRegion()
@@ -247,27 +311,32 @@ class SpectrogramView(QWidget):
             self.parent_window.on_viewport_changed()
 
     def get_pixel_width(self):
-        """Return the current plot pixel width (integer). Used by ViewportAwareReader
-        to compute how many FFT rows are actually needed."""
+        """Return the current plot pixel size along the *time* axis (integer).
+
+        In standard mode (X=time) this is the ViewBox width in pixels.
+        In waterfall mode (Y=time) this is the ViewBox height in pixels.
+        Used by ViewportAwareReader to compute how many FFT rows are needed.
+        """
         try:
             rect = self.view_box.screenGeometry()
-            if rect and rect.width() > 0:
-                return int(rect.width())
+            if rect:
+                if self.is_waterfall:
+                    dim = rect.height()
+                else:
+                    dim = rect.width()
+                if dim > 0:
+                    return int(dim)
         except Exception:
             pass
-        # Fallback: use the widget width
+        # Fallback
+        if self.is_waterfall:
+            return max(1, self.glw_plot.height())
         return max(1, self.glw_plot.width())
 
-    def update_lazy_tile(self, spectrogram, fc, rate, t_start, t_end,
-                         auto_range=False):
-        """
-        Like update_spectrogram() but positions the image at [t_start, t_end]
-        instead of always starting at 0.  Used by the lazy renderer.
-        """
-        duration = t_end - t_start
-        if duration <= 0:
-            return
+    # ---- Image display helpers ----
 
+    def _compute_auto_levels(self, spectrogram):
+        """Compute sensible (min_v, max_v) from spectrogram data."""
         valid_data = spectrogram[spectrogram > -190.0]
         if len(valid_data) > 0:
             max_v = float(np.max(valid_data))
@@ -280,33 +349,41 @@ class SpectrogramView(QWidget):
         else:
             max_v = 0.0
             min_v = -100.0
+        return min_v, max_v
 
-        if not auto_range:
-            levels = self.img.levels if self.img.levels is not None else [min_v, max_v]
+    def _set_image_and_rect(self, spectrogram, fc, rate, t_start, t_end, levels):
+        """Place the image on the plot in either standard or waterfall orientation.
+
+        spectrogram shape is always (N_freq, N_time).
+        Standard  → image as-is,   rect = (t_start, f_min, duration, bandwidth)
+        Waterfall → transposed,     rect = (f_min, t_start, bandwidth, duration)
+        """
+        f_min = fc - rate / 2
+        duration = t_end - t_start
+
+        if self.is_waterfall:
+            # Transpose: rows become columns; the image will be (N_time, N_freq)
+            display_data = np.ascontiguousarray(spectrogram.T)
+            self.img.setImage(display_data, autoLevels=False, levels=levels,
+                              autoDownsample=True)
+            # rect: (x_left, y_bottom, width_x, height_y) = (f_min, t_start, bw, duration)
+            self.img.setRect(QRectF(f_min, t_start, rate, duration))
         else:
-            levels = [min_v, max_v]
-            self.level_region.setRegion([min_v, max_v])
+            self.img.setImage(spectrogram, autoLevels=False, levels=levels,
+                              autoDownsample=True)
+            self.img.setRect(QRectF(t_start, f_min, duration, rate))
 
-        self.img.setImage(spectrogram, autoLevels=False, levels=levels,
-                          autoDownsample=True)
-        # Place the image rect at the correct world-space position
-        self.img.setRect(QRectF(t_start, fc - rate / 2, duration, rate))
+    def _update_spectrum_envelope(self, spectrogram, fc, rate, min_v, max_v, auto_range):
+        """Refresh the right-side spectrum envelope panel.
 
-        if auto_range:
-            # Use the full file extent (set by display_lazy_tile before calling us)
-            # rather than autoRange() which would only zoom to the rendered tile.
-            t0, t1 = self.full_t_range
-            f0, f1 = self.full_f_range
-            if t1 > t0 and f1 > f0:
-                self.plot_item.setXRange(t0, t1, padding=0)
-                self.plot_item.setYRange(f0, f1, padding=0)
-            else:
-                self.plot_item.autoRange()
-
-        # Update spectrum envelope
+        The envelope always shows Frequency on its X axis and dB on its Y axis,
+        regardless of the main plot orientation.
+        """
+        # full_spectrogram shape: (Freq, Time) — statistics across Time (axis 1)
         min_env = np.min(spectrogram, axis=1)
         max_env = np.max(spectrogram, axis=1)
         freqs = np.linspace(fc - rate / 2, fc + rate / 2, len(min_env))
+
         self.min_env_curve.setData(freqs, min_env)
         self.max_env_curve.setData(freqs, max_env)
         self.spectrum_plot.setXRange(fc - rate / 2, fc + rate / 2, padding=0)
@@ -316,95 +393,53 @@ class SpectrogramView(QWidget):
             self.spectrum_plot.setYRange(min_v, max_v, padding=0.1)
             self.level_region.setBounds([min_v - pad, max_v + pad])
 
-    # ---- Scrollbars ----
+    # ---- Public update methods ----
 
-    def update_scrollbars(self):
-        if self._block_signals: return
-        self._block_signals = True
-        
-        xr, yr = self.view_box.viewRange()
-        
-        t_total = self.full_t_range[1] - self.full_t_range[0]
-        if t_total > 0:
-            visible_ratio_x = (xr[1] - xr[0]) / t_total
-            if visible_ratio_x < 0.999:
-                self.x_scroll.show()
-                page_step = int(visible_ratio_x * 1000)
-                self.x_scroll.setRange(0, 1000 - page_step)
-                self.x_scroll.setPageStep(page_step)
-                # Position
-                pos = (xr[0] - self.full_t_range[0]) / t_total * 1000
-                self.x_scroll.setValue(int(pos))
-            else:
-                self.x_scroll.hide()
-        
-        # Freq axis (Y)
-        f_total = self.full_f_range[1] - self.full_f_range[0]
-        if f_total > 0:
-            visible_ratio_y = (yr[1] - yr[0]) / f_total
-            if visible_ratio_y < 0.999:
-                self.y_scroll.show()
-                page_step = int(visible_ratio_y * 1000)
-                self.y_scroll.setRange(0, 1000 - page_step)
-                self.y_scroll.setPageStep(page_step)
-                
-                # Value 0 is TOP (f_max), Max is BOTTOM (f_min)
-                pos_from_bottom = (yr[0] - self.full_f_range[0]) / f_total * 1000
-                inv_pos = 1000 - page_step - int(pos_from_bottom)
-                self.y_scroll.setValue(inv_pos)
-            else:
-                self.y_scroll.hide()
-                
-        self._block_signals = False
+    def update_lazy_tile(self, spectrogram, fc, rate, t_start, t_end,
+                         auto_range=False):
+        """
+        Like update_spectrogram() but positions the image at [t_start, t_end]
+        instead of always starting at 0.  Used by the lazy renderer.
+        """
+        duration = t_end - t_start
+        if duration <= 0:
+            return
 
-    def scroll_view(self):
-        if self._block_signals: return
-        self._block_signals = True
-        
-        val_x = self.x_scroll.value()
-        val_y = self.y_scroll.value() # 0 is top
-        
-        t_total = self.full_t_range[1] - self.full_t_range[0]
-        f_total = self.full_f_range[1] - self.full_f_range[0]
-        xr, yr = self.view_box.viewRange()
-        width = xr[1] - xr[0]
-        height = yr[1] - yr[0]
-        
-        new_left = self.full_t_range[0] + (val_x / 1000.0) * t_total
-        
-        # Flip Y back: top of scrollbar is f_max - vr.height()
-        inv_val_y = 1000 - self.y_scroll.pageStep() - val_y
-        new_bottom = self.full_f_range[0] + (inv_val_y / 1000.0) * f_total
-        
-        if self.x_scroll.isVisible():
-            self.plot_item.setXRange(new_left, new_left + width, padding=0)
-        if self.y_scroll.isVisible():
-            self.plot_item.setYRange(new_bottom, new_bottom + height, padding=0)
-            
-        self._block_signals = False
-        
-    def update_spectrogram(self, full_spectrogram, fc, rate, time_duration, auto_range=True):
-        # Ignore digital silence (values near -200 dB created by maximum(..., 1e-10))
-        valid_data = full_spectrogram[full_spectrogram > -190.0]
-        
-        if len(valid_data) > 0:
-            max_v = float(np.max(valid_data))
-            
-            # Use a low percentile of the non-silent data to find the noise floor
-            # 5th percentile handles most signals well
-            p5 = float(np.percentile(valid_data, 5))
-            
-            # If the calculated floor is too close to the peak (e.g. pure CW tone, low noise), default to 80dB range
-            if max_v - p5 < 20.0:
-                min_v = max_v - 80.0
-            else:
-                min_v = p5
-            
-            # Prevent the dynamic range from automatically stretching beyond 120dB
-            min_v = max(min_v, max_v - 120.0)
+        min_v, max_v = self._compute_auto_levels(spectrogram)
+
+        if not auto_range:
+            levels = self.img.levels if self.img.levels is not None else [min_v, max_v]
         else:
-            max_v = 0.0
-            min_v = -100.0
+            levels = [min_v, max_v]
+            self.level_region.setRegion([min_v, max_v])
+
+        # Cache for orientation re-renders
+        self._last_spectrogram = spectrogram
+        self._last_fc = fc
+        self._last_rate = rate
+        self._last_t_start = t_start
+        self._last_t_end = t_end
+
+        self._set_image_and_rect(spectrogram, fc, rate, t_start, t_end, levels)
+
+        if auto_range:
+            # Use the full file extent set by display_lazy_tile before calling us
+            t0, t1 = self.full_t_range
+            f0, f1 = self.full_f_range
+            if t1 > t0 and f1 > f0:
+                if self.is_waterfall:
+                    self.plot_item.setXRange(f0, f1, padding=0)
+                    self.plot_item.setYRange(t0, t1, padding=0)
+                else:
+                    self.plot_item.setXRange(t0, t1, padding=0)
+                    self.plot_item.setYRange(f0, f1, padding=0)
+            else:
+                self.plot_item.autoRange()
+
+        self._update_spectrum_envelope(spectrogram, fc, rate, min_v, max_v, auto_range)
+
+    def update_spectrogram(self, full_spectrogram, fc, rate, time_duration, auto_range=True):
+        min_v, max_v = self._compute_auto_levels(full_spectrogram)
         
         # Current levels
         if not auto_range:
@@ -412,9 +447,15 @@ class SpectrogramView(QWidget):
         else:
             levels = [min_v, max_v]
             self.level_region.setRegion([min_v, max_v])
-        
-        self.img.setImage(full_spectrogram, autoLevels=False, levels=levels, autoDownsample=True)
-        self.img.setRect(QRectF(0, fc - rate/2, time_duration, rate))
+
+        # Cache for orientation re-renders
+        self._last_spectrogram = full_spectrogram
+        self._last_fc = fc
+        self._last_rate = rate
+        self._last_t_start = None  # signals "full file" path
+        self._last_t_end = None
+
+        self._set_image_and_rect(full_spectrogram, fc, rate, 0.0, time_duration, levels)
         
         self.full_t_range = (0, time_duration)
         self.full_f_range = (fc - rate/2, fc + rate/2)
@@ -422,28 +463,122 @@ class SpectrogramView(QWidget):
         if auto_range:
             self.plot_item.autoRange()
 
-        # full_spectrogram shape: (Freq, Time)
-        # We want statistics across Time (axis 1)
-        min_env = np.min(full_spectrogram, axis=1)
-        max_env = np.max(full_spectrogram, axis=1)
-        
-        freqs = np.linspace(fc - rate/2, fc + rate/2, len(min_env))
-        
-        # Map Frequency to X and Level to Y
-        self.min_env_curve.setData(freqs, min_env)
-        self.max_env_curve.setData(freqs, max_env)
-        
-        # Explicitly sync X-axis with main plot's frequency range
-        self.spectrum_plot.setXRange(fc - rate/2, fc + rate/2, padding=0)
-        
-        if auto_range:
-            # Only auto-range the Y-axis (Signal Level)
-            pad = (max_v - min_v) * 0.1
-            y_min = min_v - pad
-            y_max = max_v + pad
-            self.spectrum_plot.setYRange(min_v, max_v, padding=0.1)
-            self.level_region.setBounds([y_min, y_max])
+        self._update_spectrum_envelope(full_spectrogram, fc, rate, min_v, max_v, auto_range)
 
+    # ---- Scrollbars ----
+
+    def update_scrollbars(self):
+        if self._block_signals: return
+        self._block_signals = True
+        
+        xr, yr = self.view_box.viewRange()
+        waterfall = self.is_waterfall
+
+        # In waterfall mode: X = freq, Y = time
+        # In standard mode:  X = time, Y = freq
+        if waterfall:
+            t_visible_range = yr   # time is on Y
+            f_visible_range = xr   # freq is on X
+        else:
+            t_visible_range = xr   # time is on X
+            f_visible_range = yr   # freq is on Y
+
+        t_total = self.full_t_range[1] - self.full_t_range[0]
+        if t_total > 0:
+            visible_ratio_t = (t_visible_range[1] - t_visible_range[0]) / t_total
+            if visible_ratio_t < 0.999:
+                self.x_scroll.show() if not waterfall else self.y_scroll.show()
+                page_step = int(visible_ratio_t * 1000)
+                scroll = self.x_scroll if not waterfall else self.y_scroll
+                scroll.setRange(0, 1000 - page_step)
+                scroll.setPageStep(page_step)
+                pos = (t_visible_range[0] - self.full_t_range[0]) / t_total * 1000
+                if waterfall:
+                    # Y scroll: 0 = top = t_max, invert
+                    inv_pos = 1000 - page_step - int(pos)
+                    scroll.setValue(inv_pos)
+                else:
+                    scroll.setValue(int(pos))
+            else:
+                if waterfall:
+                    self.y_scroll.hide()
+                else:
+                    self.x_scroll.hide()
+
+        f_total = self.full_f_range[1] - self.full_f_range[0]
+        if f_total > 0:
+            visible_ratio_f = (f_visible_range[1] - f_visible_range[0]) / f_total
+            if visible_ratio_f < 0.999:
+                scroll = self.y_scroll if not waterfall else self.x_scroll
+                scroll.show()
+                page_step = int(visible_ratio_f * 1000)
+                scroll.setRange(0, 1000 - page_step)
+                scroll.setPageStep(page_step)
+
+                if not waterfall:
+                    # Standard: Y scroll, 0 = top = f_max (inverted)
+                    pos_from_bottom = (f_visible_range[0] - self.full_f_range[0]) / f_total * 1000
+                    inv_pos = 1000 - page_step - int(pos_from_bottom)
+                    scroll.setValue(inv_pos)
+                else:
+                    # Waterfall: X scroll tracks freq which is on X
+                    pos = (f_visible_range[0] - self.full_f_range[0]) / f_total * 1000
+                    scroll.setValue(int(pos))
+            else:
+                if waterfall:
+                    self.x_scroll.hide()
+                else:
+                    self.y_scroll.hide()
+                    
+        self._block_signals = False
+
+    def scroll_view(self):
+        if self._block_signals: return
+        self._block_signals = True
+        
+        waterfall = self.is_waterfall
+        xr, yr = self.view_box.viewRange()
+
+        if waterfall:
+            # X = freq (x_scroll), Y = time (y_scroll, inverted)
+            val_f = self.x_scroll.value()
+            val_t = self.y_scroll.value()  # 0 = top = t_max
+
+            f_total = self.full_f_range[1] - self.full_f_range[0]
+            t_total = self.full_t_range[1] - self.full_t_range[0]
+            f_width = xr[1] - xr[0]
+            t_height = yr[1] - yr[0]
+
+            new_f_left = self.full_f_range[0] + (val_f / 1000.0) * f_total
+            inv_val_t = 1000 - self.y_scroll.pageStep() - val_t
+            new_t_bottom = self.full_t_range[0] + (inv_val_t / 1000.0) * t_total
+
+            if self.x_scroll.isVisible():
+                self.plot_item.setXRange(new_f_left, new_f_left + f_width, padding=0)
+            if self.y_scroll.isVisible():
+                self.plot_item.setYRange(new_t_bottom, new_t_bottom + t_height, padding=0)
+        else:
+            # X = time (x_scroll), Y = freq (y_scroll, inverted)
+            val_x = self.x_scroll.value()
+            val_y = self.y_scroll.value()  # 0 = top
+
+            t_total = self.full_t_range[1] - self.full_t_range[0]
+            f_total = self.full_f_range[1] - self.full_f_range[0]
+            width = xr[1] - xr[0]
+            height = yr[1] - yr[0]
+
+            new_left = self.full_t_range[0] + (val_x / 1000.0) * t_total
+
+            inv_val_y = 1000 - self.y_scroll.pageStep() - val_y
+            new_bottom = self.full_f_range[0] + (inv_val_y / 1000.0) * f_total
+
+            if self.x_scroll.isVisible():
+                self.plot_item.setXRange(new_left, new_left + width, padding=0)
+            if self.y_scroll.isVisible():
+                self.plot_item.setYRange(new_bottom, new_bottom + height, padding=0)
+            
+        self._block_signals = False
+        
     def refresh_theme(self):
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
         p = get_palette(theme)
@@ -457,6 +592,9 @@ class SpectrogramView(QWidget):
             self.parent_window.settings_mgr.get("ui/colormap", "turbo"),
             bool(self.parent_window.settings_mgr.get("ui/colormap_reversed", False))
         )
+        
+        # Axis labels
+        self._apply_axis_labels()
         
         # Update spectrum plot lines
         if hasattr(self, 'min_env_curve'):

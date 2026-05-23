@@ -41,19 +41,13 @@ class MarkerPanel(QFrame):
 
         # 1. Time (Top-Left)
         self.btn_marker_time = DoubleClickButton("")
-        self.btn_marker_time.setIcon(self._get_icon("vertical_markers"))
-        self.btn_marker_time.setIconSize(QSize(32, 32))
         self.btn_marker_time.setObjectName("mode_btn")
-        self.btn_marker_time.setToolTip("Time Markers (Double-click to clear)")
         self.btn_marker_time.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_time, 0, 0)
         
         # 1b. Time Endless
         self.btn_marker_time_endless = DoubleClickButton("")
-        self.btn_marker_time_endless.setIcon(self._get_icon("endless_vertical_markers"))
-        self.btn_marker_time_endless.setIconSize(QSize(32, 32))
         self.btn_marker_time_endless.setObjectName("mode_btn")
-        self.btn_marker_time_endless.setToolTip("Endless Time Markers")
         self.btn_marker_time_endless.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_time_endless, 0, 1)
 
@@ -78,19 +72,13 @@ class MarkerPanel(QFrame):
         
         # 4. Freq
         self.btn_marker_freq = DoubleClickButton("")
-        self.btn_marker_freq.setIcon(self._get_icon("horizontal_markers"))
-        self.btn_marker_freq.setIconSize(QSize(32, 32))
         self.btn_marker_freq.setObjectName("mode_btn")
-        self.btn_marker_freq.setToolTip("Frequency Markers (Double-click to clear)")
         self.btn_marker_freq.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_freq, 1, 0)
         
         # 4b. Freq Endless
         self.btn_marker_freq_endless = DoubleClickButton("")
-        self.btn_marker_freq_endless.setIcon(self._get_icon("endless_horizontal_markers"))
-        self.btn_marker_freq_endless.setIconSize(QSize(32, 32))
         self.btn_marker_freq_endless.setObjectName("mode_btn")
-        self.btn_marker_freq_endless.setToolTip("Endless Frequency Markers")
         self.btn_marker_freq_endless.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_marker_freq_endless, 1, 1)
 
@@ -332,11 +320,56 @@ class MarkerPanel(QFrame):
         self.btn_marker_time.setChecked(True)
         self.interactionModeChanged.emit('TIME')
 
+        # Apply icons for initial (standard) mode
+        self._apply_marker_button_icons(waterfall=False)
+
         # Apply theme (must be done AFTER buttons are initialized)
         self.refresh_theme()
 
-    def _get_icon(self, name, theme="Light"):
-        """Helper to load icons from resources/assets."""
+    def _apply_marker_button_icons(self, waterfall):
+        """Set button icons, tooltips according to orientation mode.
+
+        Standard (waterfall=False):
+          TIME button → vertical lines icon,   tooltip = 'Time Markers'
+          FREQ button → horizontal lines icon,  tooltip = 'Frequency Markers'
+
+        Waterfall (waterfall=True):
+          TIME button → horizontal lines icon,  tooltip = 'Time Markers (horizontal)'
+          FREQ button → vertical lines icon,    tooltip = 'Frequency Markers (vertical)'
+        """
+        if waterfall:
+            self.btn_marker_time.setIcon(self._get_icon("horizontal_markers"))
+            self.btn_marker_time.setToolTip("Time Markers — horizontal lines (Double-click to clear)")
+            self.btn_marker_time_endless.setIcon(self._get_icon("endless_horizontal_markers"))
+            self.btn_marker_time_endless.setToolTip("Endless Time Markers — horizontal lines")
+            self.btn_marker_freq.setIcon(self._get_icon("vertical_markers"))
+            self.btn_marker_freq.setToolTip("Frequency Markers — vertical lines (Double-click to clear)")
+            self.btn_marker_freq_endless.setIcon(self._get_icon("endless_vertical_markers"))
+            self.btn_marker_freq_endless.setToolTip("Endless Frequency Markers — vertical lines")
+        else:
+            self.btn_marker_time.setIcon(self._get_icon("vertical_markers"))
+            self.btn_marker_time.setToolTip("Time Markers — vertical lines (Double-click to clear)")
+            self.btn_marker_time_endless.setIcon(self._get_icon("endless_vertical_markers"))
+            self.btn_marker_time_endless.setToolTip("Endless Time Markers — vertical lines")
+            self.btn_marker_freq.setIcon(self._get_icon("horizontal_markers"))
+            self.btn_marker_freq.setToolTip("Frequency Markers — horizontal lines (Double-click to clear)")
+            self.btn_marker_freq_endless.setIcon(self._get_icon("endless_horizontal_markers"))
+            self.btn_marker_freq_endless.setToolTip("Endless Frequency Markers — horizontal lines")
+        for btn in (self.btn_marker_time, self.btn_marker_time_endless,
+                    self.btn_marker_freq, self.btn_marker_freq_endless):
+            btn.setIconSize(QSize(32, 32))
+
+    def refresh_waterfall_ui(self):
+        """Called from apply_waterfall_mode() when the user toggles the Waterfall setting.
+        Swaps button icons and refreshes the current table headers."""
+        waterfall = self.parent_window.settings_mgr.get("ui/waterfall", False)
+        self._apply_marker_button_icons(waterfall)
+        # Re-apply current mode so row labels also refresh
+        self.update_headers(self.current_mode)
+
+    def _get_icon(self, name):
+        """Load icon using the current app theme (Light or Dark)."""
+        theme = self.parent_window.settings_mgr.get("ui/theme", "Light") if hasattr(self, 'parent_window') else "Light"
         suffix = "_dark" if theme == "Dark" else ""
         icon_name = f"{name}{suffix}"
         try:
@@ -347,7 +380,6 @@ class MarkerPanel(QFrame):
                 pixmap.loadFromData(f.read())
                 return QIcon(pixmap)
         except Exception:
-            # Fallback for local dev if package structure isn't perfect
             base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             local_path = os.path.join(base_path, "iqview", "resources", "assets", f"{icon_name}.png")
             if not os.path.exists(local_path) and suffix:
@@ -473,6 +505,10 @@ class MarkerPanel(QFrame):
         self.btn_overlay.blockSignals(False)
 
         self.current_mode = mode
+        
+        # Keep marker button icons in sync with the current waterfall setting
+        waterfall = self.parent_window.settings_mgr.get("ui/waterfall", False)
+        self._apply_marker_button_icons(waterfall)
         
         # Track the last valid marker mode to display in the table
         if mode in ['TIME', 'FREQ', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'OVERLAY']:
@@ -879,16 +915,16 @@ class MarkerPanel(QFrame):
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
         p = get_palette(theme)
         
-        # Update Icons based on theme
-        self.btn_marker_time.setIcon(self._get_icon("vertical_markers", theme))
-        self.btn_marker_freq.setIcon(self._get_icon("horizontal_markers", theme))
-        self.btn_zoom.setIcon(self._get_icon("zoom_mode", theme))
-        self.btn_move.setIcon(self._get_icon("free_move_mode", theme))
-        self.btn_home.setIcon(self._get_icon("reset_zoom", theme))
-        self.btn_bpf.setIcon(self._get_icon("bpf_selection_mode", theme))
-        self.btn_marker_time_endless.setIcon(self._get_icon("endless_vertical_markers", theme))
-        self.btn_marker_freq_endless.setIcon(self._get_icon("endless_horizontal_markers", theme))
-        self.btn_overlay.setIcon(self._get_icon("overlays", theme))
+        # Update non-marker-type icons (always the same regardless of waterfall)
+        self.btn_zoom.setIcon(self._get_icon("zoom_mode"))
+        self.btn_move.setIcon(self._get_icon("free_move_mode"))
+        self.btn_home.setIcon(self._get_icon("reset_zoom"))
+        self.btn_bpf.setIcon(self._get_icon("bpf_selection_mode"))
+        self.btn_overlay.setIcon(self._get_icon("overlays"))
+        
+        # TIME/FREQ marker icons depend on waterfall state — delegate
+        waterfall = self.parent_window.settings_mgr.get("ui/waterfall", False)
+        self._apply_marker_button_icons(waterfall)
         
         self.setStyleSheet(f"""
             MarkerPanel {{ 

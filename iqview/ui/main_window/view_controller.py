@@ -25,6 +25,7 @@ class ViewControllerMixin:
         # Remap current view and markers when fs or fc changed.
         # Works in both full-file and lazy mode (no full_spectrogram_cache required).
         old_duration = self.time_duration
+        waterfall = self.spectrogram_view.is_waterfall
         if old_duration > 0:
             old_bottom = old_fc - old_rate / 2
 
@@ -40,13 +41,30 @@ class ViewControllerMixin:
                                                    self.fc + self.rate / 2)
 
             vr = self.spectrogram_view.plot_item.viewRange()
-            rel_t_min, rel_t_max = vr[0][0] / old_duration, vr[0][1] / old_duration
-            rel_f_min = (vr[1][0] - old_bottom) / old_rate
-            rel_f_max = (vr[1][1] - old_bottom) / old_rate
+            if waterfall:
+                # X = freq, Y = time
+                rel_f_min = (vr[0][0] - (old_fc - old_rate/2)) / old_rate
+                rel_f_max = (vr[0][1] - (old_fc - old_rate/2)) / old_rate
+                rel_t_min, rel_t_max = vr[1][0] / old_duration, vr[1][1] / old_duration
+            else:
+                rel_t_min, rel_t_max = vr[0][0] / old_duration, vr[0][1] / old_duration
+                rel_f_min = (vr[1][0] - old_bottom) / old_rate
+                rel_f_max = (vr[1][1] - old_bottom) / old_rate
 
             new_bottom = self.fc - self.rate / 2
-            self.spectrogram_view.plot_item.setXRange(rel_t_min * self.time_duration, rel_t_max * self.time_duration, padding=0)
-            self.spectrogram_view.plot_item.setYRange(new_bottom + rel_f_min * self.rate, new_bottom + rel_f_max * self.rate, padding=0)
+            if waterfall:
+                self.spectrogram_view.plot_item.setXRange(
+                    new_bottom + rel_f_min * self.rate,
+                    new_bottom + rel_f_max * self.rate, padding=0)
+                self.spectrogram_view.plot_item.setYRange(
+                    rel_t_min * self.time_duration,
+                    rel_t_max * self.time_duration, padding=0)
+            else:
+                self.spectrogram_view.plot_item.setXRange(
+                    rel_t_min * self.time_duration, rel_t_max * self.time_duration, padding=0)
+                self.spectrogram_view.plot_item.setYRange(
+                    new_bottom + rel_f_min * self.rate,
+                    new_bottom + rel_f_max * self.rate, padding=0)
 
             for marker in self.markers_time:
                 marker.setPos((marker.value() / old_duration) * self.time_duration)
@@ -153,17 +171,16 @@ class ViewControllerMixin:
 
     def open_time_domain_tab(self):
         """Extracts the IQ data between the two time markers (or full range) and opens it in a new tab."""
-        # Find time markers in spectrogram
         markers = self.markers_time
         if len(markers) < 2:
-            # Fallback to current view range if < 2 markers
-            xr, _ = self.spectrogram_view.view_box.viewRange()
-            start_t, end_t = xr
+            # Fallback to current view range. In waterfall mode, time is on Y.
+            xr, yr = self.spectrogram_view.view_box.viewRange()
+            time_range = yr if self.spectrogram_view.is_waterfall else xr
+            start_t, end_t = time_range
         else:
             sorted_m = sorted(markers, key=lambda m: m.value())
             start_t, end_t = sorted_m[0].value(), sorted_m[1].value()
         
-        # Extract IQ segment
         segment = self.extract_iq_segment(start_t, end_t)
         if segment is not None:
             from ..time_domain.view import TimeDomainView
@@ -176,8 +193,9 @@ class ViewControllerMixin:
         """Extracts IQ data for the selected time range and opens a Frequency Domain analysis tab."""
         markers = self.markers_time
         if len(markers) < 2:
-            xr, _ = self.spectrogram_view.view_box.viewRange()
-            start_t, end_t = xr
+            xr, yr = self.spectrogram_view.view_box.viewRange()
+            time_range = yr if self.spectrogram_view.is_waterfall else xr
+            start_t, end_t = time_range
         else:
             sorted_m = sorted(markers, key=lambda m: m.value())
             start_t, end_t = sorted_m[0].value(), sorted_m[1].value()
@@ -185,7 +203,6 @@ class ViewControllerMixin:
         segment = self.extract_iq_segment(start_t, end_t)
         if segment is not None:
             from ..frequency_domain.view import FrequencyDomainView
-            # Use center frequency from current state
             view = FrequencyDomainView(segment, self.fc, self.rate, parent_window=self)
             self.tabs.addTab(view, "Freq Domain")
             self.tabs.setCurrentWidget(view)
@@ -195,8 +212,9 @@ class ViewControllerMixin:
         """Extracts IQ data for the selected time range and opens an Eye Diagram tab."""
         markers = self.markers_time
         if len(markers) < 2:
-            xr, _ = self.spectrogram_view.view_box.viewRange()
-            start_t, end_t = xr
+            xr, yr = self.spectrogram_view.view_box.viewRange()
+            time_range = yr if self.spectrogram_view.is_waterfall else xr
+            start_t, end_t = time_range
         else:
             sorted_m = sorted(markers, key=lambda m: m.value())
             start_t, end_t = sorted_m[0].value(), sorted_m[1].value()
@@ -285,11 +303,19 @@ class ViewControllerMixin:
         else:
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             sv = self.spectrogram_view
-            t0, t1 = sv.full_t_range
-            if t1 > t0:
-                sv.plot_item.setXRange(t0, t1, padding=0)
+            if sv.is_waterfall:
+                # In waterfall, X=freq — reset the freq axis
+                f0, f1 = sv.full_f_range
+                if f1 > f0:
+                    sv.plot_item.setXRange(f0, f1, padding=0)
+                else:
+                    sv.plot_item.enableAutoRange(axis='x')
             else:
-                sv.plot_item.enableAutoRange(axis='x')
+                t0, t1 = sv.full_t_range
+                if t1 > t0:
+                    sv.plot_item.setXRange(t0, t1, padding=0)
+                else:
+                    sv.plot_item.enableAutoRange(axis='x')
 
     def reset_zoom_y(self):
         active_tab = self.tabs.currentWidget()
@@ -298,11 +324,19 @@ class ViewControllerMixin:
         else:
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             sv = self.spectrogram_view
-            f0, f1 = sv.full_f_range
-            if f1 > f0:
-                sv.plot_item.setYRange(f0, f1, padding=0)
+            if sv.is_waterfall:
+                # In waterfall, Y=time — reset the time axis
+                t0, t1 = sv.full_t_range
+                if t1 > t0:
+                    sv.plot_item.setYRange(t0, t1, padding=0)
+                else:
+                    sv.plot_item.enableAutoRange(axis='y')
             else:
-                sv.plot_item.enableAutoRange(axis='y')
+                f0, f1 = sv.full_f_range
+                if f1 > f0:
+                    sv.plot_item.setYRange(f0, f1, padding=0)
+                else:
+                    sv.plot_item.enableAutoRange(axis='y')
 
     def _zoom_to_full_range(self):
         """Zoom to the full file extent using full_t_range / full_f_range.
@@ -311,8 +345,12 @@ class ViewControllerMixin:
         t0, t1 = sv.full_t_range
         f0, f1 = sv.full_f_range
         if t1 > t0 and f1 > f0:
-            sv.plot_item.setXRange(t0, t1, padding=0)
-            sv.plot_item.setYRange(f0, f1, padding=0)
+            if sv.is_waterfall:
+                sv.plot_item.setXRange(f0, f1, padding=0)
+                sv.plot_item.setYRange(t0, t1, padding=0)
+            else:
+                sv.plot_item.setXRange(t0, t1, padding=0)
+                sv.plot_item.setYRange(f0, f1, padding=0)
         else:
             sv.plot_item.autoRange()
 
@@ -344,8 +382,19 @@ class ViewControllerMixin:
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             v1, v2 = active_markers[0].value(), active_markers[1].value()
             v_min, v_max = min(v1, v2), max(v1, v2)
-            if is_freq: self.spectrogram_view.plot_item.setYRange(v_min, v_max, padding=0)
-            else: self.spectrogram_view.plot_item.setXRange(v_min, v_max, padding=0)
+            waterfall = self.spectrogram_view.is_waterfall
+            if is_freq:
+                # freq axis: Y in standard, X in waterfall
+                if waterfall:
+                    self.spectrogram_view.plot_item.setXRange(v_min, v_max, padding=0)
+                else:
+                    self.spectrogram_view.plot_item.setYRange(v_min, v_max, padding=0)
+            else:
+                # time axis: X in standard, Y in waterfall
+                if waterfall:
+                    self.spectrogram_view.plot_item.setYRange(v_min, v_max, padding=0)
+                else:
+                    self.spectrogram_view.plot_item.setXRange(v_min, v_max, padding=0)
 
     def clear_all_markers(self):
         # Clear time / freq markers (regular and endless)
@@ -419,6 +468,7 @@ class ViewControllerMixin:
                 self._do_update_grid(a, force=force)
             return
         
+        waterfall = self.spectrogram_view.is_waterfall
         is_freq = (axis == 'FREQ')
         enabled = self.grid_freq_enabled if is_freq else self.grid_time_enabled
         tracking = self.grid_freq_tracking if is_freq else self.grid_time_tracking
@@ -439,13 +489,23 @@ class ViewControllerMixin:
 
         # Optimization: Only plot visible lines
         vr = self.spectrogram_view.plot_item.viewRange()
-        v_min_visible, v_max_visible = vr[1] if is_freq else vr[0]
+        # In standard mode: time on X (vr[0]), freq on Y (vr[1])
+        # In waterfall mode: freq on X (vr[0]), time on Y (vr[1])
+        if waterfall:
+            # freq lines are now vertical (angle=90, on X axis)
+            # time lines are now horizontal (angle=0, on Y axis)
+            axis_range = vr[0] if is_freq else vr[1]
+            line_angle = 90 if is_freq else 0
+        else:
+            # standard: freq lines horizontal (angle=0), time lines vertical (angle=90)
+            axis_range = vr[1] if is_freq else vr[0]
+            line_angle = 0 if is_freq else 90
+        v_min_visible, v_max_visible = axis_range
         
         # Guard against too many markers
         if (v_max_visible - v_min_visible) / delta > 500:
             return
 
-        angle = 0 if is_freq else 90
         theme = self.settings_mgr.get("ui/theme", "Dark").lower()
         color = self.settings_mgr.get(f"ui/{theme}/marker_grid_color", "#c8c8ff")
         style_name = self.settings_mgr.get(f"ui/{theme}/marker_grid_style", "SolidLine")
@@ -473,7 +533,7 @@ class ViewControllerMixin:
         
         count = 0
         while curr <= v_max_visible + 1e-9 and count < 500:
-            line = pg.InfiniteLine(pos=curr, angle=angle, pen=pen, movable=False)
+            line = pg.InfiniteLine(pos=curr, angle=line_angle, pen=pen, movable=False)
             line.setZValue(5)
             self.spectrogram_view.plot_item.addItem(line, ignoreBounds=True)
             grid_lines.append(line)
@@ -500,18 +560,33 @@ class ViewControllerMixin:
             return
         if self.last_move_scene_pos is None: return
         xr_curr, yr_curr = self.spectrogram_view.view_box.viewRange()
-        visible_ratio_x = (xr_curr[1] - xr_curr[0]) / self.time_duration
-        visible_ratio_y = (yr_curr[1] - yr_curr[0]) / self.rate
+        waterfall = self.spectrogram_view.is_waterfall
+        if waterfall:
+            visible_ratio_x = (xr_curr[1] - xr_curr[0]) / self.rate
+            visible_ratio_y = (yr_curr[1] - yr_curr[0]) / self.time_duration
+        else:
+            visible_ratio_x = (xr_curr[1] - xr_curr[0]) / self.time_duration
+            visible_ratio_y = (yr_curr[1] - yr_curr[0]) / self.rate
         if visible_ratio_x > 0.999 and visible_ratio_y > 0.999: return
         p1 = self.spectrogram_view.view_box.mapSceneToView(self.last_move_scene_pos)
         p2 = self.spectrogram_view.view_box.mapSceneToView(scene_pos)
-        dt, df = p2.x() - p1.x(), p2.y() - p1.y()
-        new_xr, new_yr = [xr_curr[0] - dt, xr_curr[1] - dt], [yr_curr[0] - df, yr_curr[1] - df]
-        if new_xr[0] < 0: new_xr = [0, new_xr[1] - new_xr[0]]
-        elif new_xr[1] > self.time_duration: new_xr = [new_xr[0] - (new_xr[1] - self.time_duration), self.time_duration]
-        f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
-        if new_yr[0] < f_min: new_yr = [f_min, new_yr[1] + (f_min - new_yr[0])]
-        elif new_yr[1] > f_max: new_yr = [new_yr[0] - (new_yr[1] - f_max), f_max]
+        dx, dy = p2.x() - p1.x(), p2.y() - p1.y()
+        new_xr = [xr_curr[0] - dx, xr_curr[1] - dx]
+        new_yr = [yr_curr[0] - dy, yr_curr[1] - dy]
+        if waterfall:
+            # X = freq, Y = time
+            f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
+            if new_xr[0] < f_min: new_xr = [f_min, new_xr[1] - new_xr[0] + f_min]
+            elif new_xr[1] > f_max: new_xr = [new_xr[0] - (new_xr[1] - f_max), f_max]
+            if new_yr[0] < 0: new_yr = [0, new_yr[1] - new_yr[0]]
+            elif new_yr[1] > self.time_duration: new_yr = [new_yr[0] - (new_yr[1] - self.time_duration), self.time_duration]
+        else:
+            # X = time, Y = freq
+            if new_xr[0] < 0: new_xr = [0, new_xr[1] - new_xr[0]]
+            elif new_xr[1] > self.time_duration: new_xr = [new_xr[0] - (new_xr[1] - self.time_duration), self.time_duration]
+            f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
+            if new_yr[0] < f_min: new_yr = [f_min, new_yr[1] + (f_min - new_yr[0])]
+            elif new_yr[1] > f_max: new_yr = [new_yr[0] - (new_yr[1] - f_max), f_max]
         self.spectrogram_view.plot_item.setXRange(*new_xr, padding=0)
         self.spectrogram_view.plot_item.setYRange(*new_yr, padding=0)
         self.last_move_scene_pos = scene_pos

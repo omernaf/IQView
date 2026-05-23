@@ -11,6 +11,7 @@ class MarkerManagerMixin:
         if self.spectrogram_view.plot_item.sceneBoundingRect().contains(scene_pos):
             vb = self.spectrogram_view.plot_item.vb
             mouse_v = vb.mapSceneToView(scene_pos)
+            waterfall = self.spectrogram_view.is_waterfall
             
             is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
             is_endless = 'ENDLESS' in self.interaction_mode
@@ -21,22 +22,36 @@ class MarkerManagerMixin:
                 active_markers = self.markers_time if is_time else self.markers_freq
                 
             curr_min, curr_max = (0.0, self.time_duration) if is_time else (self.fc - self.rate/2, self.fc + self.rate/2)
-            angle = 90 if is_time else 0
+
+            # In standard mode: time markers are vertical (angle=90), placed on X.
+            #                   freq markers are horizontal (angle=0), placed on Y.
+            # In waterfall mode: time markers are horizontal (angle=0), placed on Y.
+            #                    freq markers are vertical (angle=90), placed on X.
+            if waterfall:
+                angle = 0 if is_time else 90
+            else:
+                angle = 90 if is_time else 0
             
             # 1. Determine the target logical value
             if is_time:
-                raw_val = float(np.clip(mouse_v.x(), 0.0, self.time_duration))
+                # Time value is always on X in standard, Y in waterfall
+                raw_val = float(np.clip(
+                    mouse_v.y() if waterfall else mouse_v.x(), 0.0, self.time_duration))
                 sample = int(round(raw_val * self.rate)) + 1
                 val = (sample - 1.0) / self.rate
             else:
                 f_min = self.fc - self.rate/2
-                raw_val = float(np.clip(mouse_v.y(), f_min, self.fc + self.rate/2))
+                # Freq value is always on Y in standard, X in waterfall
+                raw_val = float(np.clip(
+                    mouse_v.x() if waterfall else mouse_v.y(), f_min, self.fc + self.rate/2))
                 rbw = self.rate / self.fft_size
                 bin_idx = int(round((raw_val - f_min) / rbw)) + 1
                 val = f_min + (bin_idx - 1.0) * rbw
 
             # 2. HIGHEST PRIORITY: Handle FILTER mode placement
             if self.interaction_mode == 'FILTER':
+                # In waterfall mode the filter band spans time (Y); use vertical region.
+                filter_orient = 'vertical' if waterfall else 'horizontal'
                 # 1. Hit-test for existing bounds
                 if self.filter_bounds:
                     hit_threshold = 20 # pixels
@@ -51,8 +66,12 @@ class MarkerManagerMixin:
                     )
                     
                     for i, b_val in enumerate(self.filter_bounds):
-                        p_scene = vb.mapViewToScene(pg.Point(0, b_val))
-                        dist = abs(scene_pos.y() - p_scene.y())
+                        if waterfall:
+                            p_scene = vb.mapViewToScene(pg.Point(0, b_val))
+                            dist = abs(scene_pos.x() - p_scene.x())
+                        else:
+                            p_scene = vb.mapViewToScene(pg.Point(0, b_val))
+                            dist = abs(scene_pos.y() - p_scene.y())
                         if is_locked:
                             # Bypass threshold, find global nearest
                             if best_idx == -1 or dist < min_dist:
@@ -122,7 +141,9 @@ class MarkerManagerMixin:
                 
                 if len(self.filter_bounds) == 1:
                     if not self.filter_line:
-                        self.filter_line = pg.InfiniteLine(angle=0, pen=pg.mkPen('#ff6400', width=2, style=Qt.PenStyle.DashLine))
+                        # In waterfall mode the single-bound preview is a vertical line
+                        filter_line_angle = 90 if waterfall else 0
+                        self.filter_line = pg.InfiniteLine(angle=filter_line_angle, pen=pg.mkPen('#ff6400', width=2, style=Qt.PenStyle.DashLine))
                         self.filter_line.setZValue(10)
                     if self.filter_line not in self.spectrogram_view.plot_item.items:
                         self.spectrogram_view.plot_item.addItem(self.filter_line)
@@ -133,9 +154,9 @@ class MarkerManagerMixin:
                     f1 = self.filter_bounds[0]
                     f2 = self.filter_bounds[1]
                     if not self.filter_region:
-                        # Lazily create the region
+                        # Lazily create the region with the correct orientation
                         self.filter_region = pg.LinearRegionItem(
-                            values=[f1, f2], orientation='horizontal',
+                            values=[f1, f2], orientation=filter_orient,
                             brush=pg.mkBrush(255, 100, 0, 40), pen=pg.mkPen('#ff6400', width=2),
                             movable=False
                         )
@@ -166,8 +187,17 @@ class MarkerManagerMixin:
             
             for m in active_markers:
                 m_pos = m.value()
-                p_scene = vb.mapViewToScene(pg.Point(m_pos, 0)) if is_time else vb.mapViewToScene(pg.Point(0, m_pos))
-                dist = abs(scene_pos.x() - p_scene.x()) if is_time else abs(scene_pos.y() - p_scene.y())
+                if waterfall:
+                    # time markers live on Y; freq markers live on X
+                    if is_time:
+                        p_scene = vb.mapViewToScene(pg.Point(0, m_pos))
+                        dist = abs(scene_pos.y() - p_scene.y())
+                    else:
+                        p_scene = vb.mapViewToScene(pg.Point(m_pos, 0))
+                        dist = abs(scene_pos.x() - p_scene.x())
+                else:
+                    p_scene = vb.mapViewToScene(pg.Point(m_pos, 0)) if is_time else vb.mapViewToScene(pg.Point(0, m_pos))
+                    dist = abs(scene_pos.x() - p_scene.x()) if is_time else abs(scene_pos.y() - p_scene.y())
                 
                 # Skip the locked marker so only the free one is draggable
                 if len(active_markers) == 2 and (
@@ -219,8 +249,16 @@ class MarkerManagerMixin:
                 
                 for gl in grid_lines:
                     gl_pos = gl.value()
-                    p_scene = vb.mapViewToScene(pg.Point(gl_pos, 0)) if is_time else vb.mapViewToScene(pg.Point(0, gl_pos))
-                    dist = abs(scene_pos.x() - p_scene.x()) if is_time else abs(scene_pos.y() - p_scene.y())
+                    if waterfall:
+                        if is_time:
+                            p_scene = vb.mapViewToScene(pg.Point(0, gl_pos))
+                            dist = abs(scene_pos.y() - p_scene.y())
+                        else:
+                            p_scene = vb.mapViewToScene(pg.Point(gl_pos, 0))
+                            dist = abs(scene_pos.x() - p_scene.x())
+                    else:
+                        p_scene = vb.mapViewToScene(pg.Point(gl_pos, 0)) if is_time else vb.mapViewToScene(pg.Point(0, gl_pos))
+                        dist = abs(scene_pos.x() - p_scene.x()) if is_time else abs(scene_pos.y() - p_scene.y())
                     
                     if dist < min_gl_dist:
                         min_gl_dist = dist
@@ -352,12 +390,14 @@ class MarkerManagerMixin:
     def update_drag(self, scene_pos):
         if True: # Let mapSceneToView and np.clip handle out-of-bounds coordinates
             mouse_v = self.spectrogram_view.plot_item.vb.mapSceneToView(scene_pos)
+            waterfall = self.spectrogram_view.is_waterfall
             
             # 1. Handle explicit BPF bound dragging (highest priority)
             if self.interaction_mode == 'FILTER' and getattr(self, 'active_drag_filter_bound_idx', -1) != -1:
                 idx = self.active_drag_filter_bound_idx
                 f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
-                raw_val = float(np.clip(mouse_v.y(), f_min, f_max))
+                # In waterfall mode freq is on X axis; in standard it's on Y
+                raw_val = float(np.clip(mouse_v.x() if waterfall else mouse_v.y(), f_min, f_max))
                 rbw = self.rate / self.fft_size
                 bin_idx = int(round((raw_val - f_min) / rbw)) + 1
                 new_v = f_min + (bin_idx - 1.0) * rbw
@@ -416,15 +456,17 @@ class MarkerManagerMixin:
             # 2. Handle BPF placement preview (rubberband between first bound and mouse)
             if self.interaction_mode == 'FILTER' and len(self.filter_bounds) == 1:
                 f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
-                raw_val = float(np.clip(mouse_v.y(), f_min, f_max))
+                # Read freq from the correct axis
+                raw_val = float(np.clip(mouse_v.x() if waterfall else mouse_v.y(), f_min, f_max))
                 rbw = self.rate / self.fft_size
                 bin_idx = int(round((raw_val - f_min) / rbw)) + 1
                 new_v = f_min + (bin_idx - 1.0) * rbw
                 
                 f1 = self.filter_bounds[0]
                 if not self.filter_region:
+                    filter_orient = 'vertical' if waterfall else 'horizontal'
                     self.filter_region = pg.LinearRegionItem(
-                        values=[f1, new_v], orientation='horizontal',
+                        values=[f1, new_v], orientation=filter_orient,
                         brush=pg.mkBrush(255, 100, 0, 40), pen=pg.mkPen('#ff6400', width=2),
                         movable=False
                     )
@@ -454,12 +496,16 @@ class MarkerManagerMixin:
                 
                 if is_time:
                     f_min, f_max = 0.0, self.time_duration
-                    raw_val = float(np.clip(mouse_v.x(), 0.0, self.time_duration))
+                    # time axis: X in standard, Y in waterfall
+                    raw_val = float(np.clip(
+                        mouse_v.y() if waterfall else mouse_v.x(), 0.0, self.time_duration))
                     sample = int(round(raw_val * self.rate)) + 1
                     g_prime = (sample - 1.0) / self.rate
                 else:
                     f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
-                    raw_val = float(np.clip(mouse_v.y(), f_min, f_max))
+                    # freq axis: Y in standard, X in waterfall
+                    raw_val = float(np.clip(
+                        mouse_v.x() if waterfall else mouse_v.y(), f_min, f_max))
                     rbw = self.rate / self.fft_size
                     bin_idx = int(round((raw_val - f_min) / rbw)) + 1
                     g_prime = f_min + (bin_idx - 1.0) * rbw
@@ -527,13 +573,17 @@ class MarkerManagerMixin:
             if is_time:
                 get_pos = lambda m: m.value()
                 f_min, f_max = 0.0, self.time_duration
-                raw_val = float(np.clip(mouse_v.x(), 0.0, self.time_duration))
+                # time value: X in standard, Y in waterfall
+                raw_val = float(np.clip(
+                    mouse_v.y() if waterfall else mouse_v.x(), 0.0, self.time_duration))
                 sample = int(round(raw_val * self.rate)) + 1
                 new_v = (sample - 1.0) / self.rate
             else:
                 f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
                 get_pos = lambda m: m.value()
-                raw_val = float(np.clip(mouse_v.y(), f_min, f_max))
+                # freq value: Y in standard, X in waterfall
+                raw_val = float(np.clip(
+                    mouse_v.x() if waterfall else mouse_v.y(), f_min, f_max))
                 rbw = self.rate / self.fft_size
                 bin_idx = int(round((raw_val - f_min) / rbw)) + 1
                 new_v = f_min + (bin_idx - 1.0) * rbw
@@ -914,7 +964,9 @@ class MarkerManagerMixin:
         return None
 
     def refresh_spectrogram_markers(self):
+        """Refresh pen styles and ensure line angles match the current orientation."""
         theme = self.settings_mgr.get("ui/theme", "Dark").lower()
+        waterfall = self.spectrogram_view.is_waterfall
         
         style_map = {
             "SolidLine": Qt.PenStyle.SolidLine,
@@ -925,11 +977,17 @@ class MarkerManagerMixin:
 
         t_color = self.settings_mgr.get(f"ui/{theme}/time_marker_color")
         t_style = style_map.get(str(self.settings_mgr.get(f"ui/{theme}/time_marker_style")), Qt.PenStyle.DashLine)
+        # Standard: time=vertical(90), waterfall: time=horizontal(0)
+        t_angle = 0 if waterfall else 90
         
         f_color = self.settings_mgr.get(f"ui/{theme}/freq_marker_color")
         f_style = style_map.get(str(self.settings_mgr.get(f"ui/{theme}/freq_marker_style")), Qt.PenStyle.DashLine)
+        # Standard: freq=horizontal(0), waterfall: freq=vertical(90)
+        f_angle = 90 if waterfall else 0
         
         for m in self.markers_time:
             m.setPen(pg.mkPen(t_color, width=2, style=t_style))
+            m.setAngle(t_angle)
         for m in self.markers_freq:
             m.setPen(pg.mkPen(f_color, width=2, style=f_style))
+            m.setAngle(f_angle)

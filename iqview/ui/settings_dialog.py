@@ -325,6 +325,15 @@ class SettingsDialog(QDialog):
         self.cmap_reverse_cb = QCheckBox("Reverse")
         self.cmap_reverse_cb.setChecked(bool(self.mgr.get("ui/colormap_reversed", False)))
 
+        self.waterfall_cb = QCheckBox("Waterfall (Freq → X axis, Time → Y axis)")
+        self.waterfall_cb.setChecked(bool(self.mgr.get("ui/waterfall", False)))
+        self.waterfall_cb.setToolTip(
+            "When enabled the spectrogram is transposed so that frequency runs\n"
+            "along the horizontal (X) axis and time runs along the vertical (Y)\n"
+            "axis — the classic SDR waterfall layout.\n"
+            "Default is OFF (Time → X, Frequency → Y)."
+        )
+
         # Marker and Zoom Box Styles
         self.marker_styles = ["SolidLine", "DashLine", "DotLine", "DashDotLine"]
         
@@ -346,6 +355,7 @@ class SettingsDialog(QDialog):
         self._add_reset_row(self.appearance_form, "Theme:", self.theme_combo, "ui/theme")
         self._add_reset_row(self.appearance_form, "Default Colormap:", self.cmap_combo, "ui/colormap")
         self._add_reset_row(self.appearance_form, "Reverse Colormap:", self.cmap_reverse_cb, "ui/colormap_reversed")
+        self._add_reset_row(self.appearance_form, "Waterfall Mode:", self.waterfall_cb, "ui/waterfall")
         
         self.appearance_form.addRow(QLabel(" "))
         self.appearance_form.addRow(QLabel("<b>Grid Customization</b>"))
@@ -663,6 +673,7 @@ class SettingsDialog(QDialog):
             self.mgr.set("ui/theme", self.theme_combo.currentText())
             self.mgr.set("ui/colormap", self.cmap_combo.currentText())
             self.mgr.set("ui/colormap_reversed", self.cmap_reverse_cb.isChecked())
+            self.mgr.set("ui/waterfall", self.waterfall_cb.isChecked())
             
             # Save theme-specific styles for the CURRENTLY SELECTED theme in the dialog
             theme = self.theme_combo.currentText().lower()

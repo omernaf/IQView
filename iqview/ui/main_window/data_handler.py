@@ -124,14 +124,16 @@ class DataHandlerMixin:
             t_start, t_end = 0.0, self._estimate_file_duration()
             pixel_width = self.spectrogram_view.get_pixel_width()
         else:
-            xr, _ = self.spectrogram_view.view_box.viewRange()
-            view_width = max(xr[1] - xr[0], 1.0 / max(self.rate, 1))
+            xr, yr = self.spectrogram_view.view_box.viewRange()
+            # In standard mode: X=time, Y=freq.  In waterfall mode: X=freq, Y=time.
+            time_range = yr if self.spectrogram_view.is_waterfall else xr
+            view_width = max(time_range[1] - time_range[0], 1.0 / max(self.rate, 1))
             
             # Pre-generate exactly another screen width in each direction (3x total)
             file_duration = getattr(self, 'time_duration', self._estimate_file_duration())
             
-            ideal_start = xr[0] - view_width
-            ideal_end = xr[1] + view_width
+            ideal_start = time_range[0] - view_width
+            ideal_end = time_range[1] + view_width
             
             t_start = max(0.0, ideal_start)
             t_end = min(file_duration, ideal_end)
