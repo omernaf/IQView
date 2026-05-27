@@ -568,7 +568,8 @@ class OverlayManagerMixin:
 
     def export_overlays(self) -> None:
         from PyQt6.QtWidgets import QFileDialog, QMessageBox
-        
+        import datetime
+
         user_overlays = [o for o in self.overlays if o.source == 'user']
         if not user_overlays:
             QMessageBox.information(self, "Export Overlays", "No user overlays to export.")
@@ -580,8 +581,42 @@ class OverlayManagerMixin:
         if not path:
             return
 
+        # ── Build optional metadata block ────────────────────────────────────
+        # Collect whatever fields are available on the host window.
+        # All of these are best-effort; missing attributes are omitted cleanly.
+        meta: dict = {
+            "exported_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        }
+        fp = getattr(self, 'file_path', None)
+        if fp:
+            meta["file_name"] = os.path.basename(fp)
+            meta["file_path"] = fp
+        rate = getattr(self, 'rate', None)
+        if rate is not None:
+            meta["sample_rate_hz"] = float(rate)
+        fc = getattr(self, 'fc', None)
+        if fc is not None:
+            meta["center_freq_hz"] = float(fc)
+        fft = getattr(self, 'fft_size', None)
+        if fft is not None:
+            meta["fft_size"] = int(fft)
+        wt = getattr(self, 'window_type', None)
+        if wt is not None:
+            meta["window_type"] = str(wt)
+        overlap = getattr(self, 'overlap_percent', None)
+        if overlap is not None:
+            meta["overlap_percent"] = float(overlap)
+        dtype = getattr(self, 'data_type', None)
+        if dtype is not None:
+            meta["data_type"] = getattr(dtype, '__name__', str(dtype))
+        is_complex = getattr(self, 'is_complex', None)
+        if is_complex is not None:
+            meta["is_complex"] = bool(is_complex)
+
         data = {
             "version": 1,
+            # metadata is informational only — ignored on import
+            "metadata": meta,
             "overlays": [o.to_dict() for o in user_overlays],
         }
         try:
