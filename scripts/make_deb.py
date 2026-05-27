@@ -50,10 +50,10 @@ def get_project_version():
                     return line.split("=")[1].strip().strip('"').strip("'")
     except Exception:
         pass
-    return "0.1.4"
+    return "0.5.1"
 
 def find_wheel():
-    """Find the .whl in dist/."""
+    """Find the .whl in dist/. Only needed for offline builds."""
     dist_dir = Path("dist")
     if not dist_dir.exists():
         return None
@@ -65,15 +65,17 @@ def find_wheel():
 
 def make_deb(offline_wheels=None):
     version = get_project_version()
-    wheel_path = find_wheel()
-    
-    if not wheel_path:
-        print("Error: No .whl found in dist/. Run 'python -m build' first.")
-        sys.exit(1)
-        
+
+    # For offline builds we still need a local wheel to bundle
+    if offline_wheels:
+        wheel_path = find_wheel()
+        if not wheel_path:
+            print("Error: No .whl found in dist/. Run 'python -m build' first for offline builds.")
+            sys.exit(1)
+
     suffix = "_offline" if offline_wheels else ""
-    print(f"Building .deb for IQView v{version}{suffix} using {wheel_path.name}...")
-    
+    print(f"Building .deb for IQView v{version}{suffix}...")
+
     # 1. Create Control Tarball
     control_buf = io.BytesIO()
     # Force GNU_FORMAT to avoid 'PAX tar header' errors on some Linux distros
@@ -94,7 +96,9 @@ Depends: python3, python3-pip, python3-venv, libgl1, libxcb-cursor0
         tar.addfile(c_info, io.BytesIO(control_content.encode('utf-8')))
         
         # postinst script
-        postinst_content = f"""#!/bin/bash
+        if offline_wheels:
+            # Offline: install from the bundled local wheels (no internet required)
+            postinst_content = f"""#!/bin/bash
 set -e
 
 APP_DIR="/opt/iqview"
@@ -105,13 +109,35 @@ echo "Setting up IQView virtual environment in $VENV_DIR..."
 mkdir -p "$APP_DIR"
 python3 -m venv "$VENV_DIR"
 
-if [ -d "$APP_DIR/wheels" ]; then
-    echo "Installing IQView and dependencies from local wheels..."
-    "$VENV_DIR/bin/pip" install --no-index --find-links="$APP_DIR/wheels" "$WHEEL_PATH"
-else
-    echo "Installing IQView from wheel..."
-    "$VENV_DIR/bin/pip" install "$WHEEL_PATH"
-fi
+echo "Installing IQView and dependencies from local wheels..."
+"$VENV_DIR/bin/pip" install --no-index --find-links="$APP_DIR/wheels" "$WHEEL_PATH"
+
+echo "Creating symbolic link..."
+ln -sf "$VENV_DIR/bin/iqview" /usr/bin/iqview
+
+# Trigger desktop integration to set up associations
+echo "Configuring desktop integration and file associations..."
+/usr/bin/iqview --install-desktop
+/usr/bin/iqview --install-mat
+
+echo "IQView installation complete."
+exit 0
+"""
+        else:
+            # Online: create venv and install iqview directly from PyPI
+            postinst_content = f"""#!/bin/bash
+set -e
+
+APP_DIR="/opt/iqview"
+VENV_DIR="$APP_DIR/venv"
+
+echo "Setting up IQView virtual environment in $VENV_DIR..."
+mkdir -p "$APP_DIR"
+python3 -m venv "$VENV_DIR"
+
+echo "Installing IQView {version} and dependencies from PyPI..."
+"$VENV_DIR/bin/pip" install --upgrade pip
+"$VENV_DIR/bin/pip" install "iqview=={version}"
 
 echo "Creating symbolic link..."
 ln -sf "$VENV_DIR/bin/iqview" /usr/bin/iqview
@@ -165,12 +191,12 @@ exit 0
             d_info.mtime = int(time.time())
             d_info.mode = 0o755
             tar.addfile(d_info)
-            
-        # Add the wheel
-        tar.add(wheel_path, arcname=f"opt/iqview/{wheel_path.name}")
-        
-        # Add offline wheels if specified
+
         if offline_wheels:
+            # Bundle the iqview wheel itself
+            tar.add(wheel_path, arcname=f"opt/iqview/{wheel_path.name}")
+
+            # Bundle dependency wheels
             offline_path = Path(offline_wheels)
             if not offline_path.exists() or not offline_path.is_dir():
                 print(f"Error: Offline wheels directory '{offline_wheels}' does not exist.")
@@ -182,7 +208,10 @@ exit 0
                     # Avoid duplicate packaging of iqview wheel
                     continue
                 tar.add(w, arcname=f"opt/iqview/wheels/{w.name}")
-        
+
+        # Online build: data tarball only contains the /opt/iqview/ directory skeleton.
+        # pip install will populate the venv at install time.
+
     # 3. Create the .deb
     output_filename = f"dist/{PACKAGE_NAME}_{version}{suffix}_{ARCHITECTURE}.deb"
     create_ar_archive(output_filename, [

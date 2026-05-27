@@ -16,13 +16,19 @@ def main():
     parser = argparse.ArgumentParser(description="Build IQView Project")
     parser.add_argument("--offline-wheels", type=str, default=None,
                         help="Path to directory containing pre-downloaded offline wheels (e.g. offline_dist/linux/py312)")
+    parser.add_argument("--build-wheel", action="store_true",
+                        help="Also build the Python wheel/sdist (required before publishing to PyPI, "
+                             "and required for offline .deb builds)")
     args = parser.parse_args()
 
-    # 1. Build the wheel/sdist
-    print("Step 1: Building Python wheel and sdist...")
-    run_command([sys.executable, "-m", "build"])
-    
-    # 2. Build the Debian package
+    if args.build_wheel or args.offline_wheels:
+        # Build the wheel/sdist — needed for PyPI uploads and offline .deb bundles
+        print("Step 1: Building Python wheel and sdist...")
+        run_command([sys.executable, "-m", "build"])
+    else:
+        print("Step 1: Skipping wheel build (use --build-wheel to build a wheel for PyPI/offline).")
+
+    # Build the Debian package
     print("\nStep 2: Building Debian package (.deb)...")
     scripts_dir = Path(__file__).parent
     cmd = [sys.executable, str(scripts_dir / "make_deb.py")]

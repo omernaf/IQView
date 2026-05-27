@@ -58,7 +58,7 @@ PYTHON_TARGETS = [
 #     # Default to Windows 64-bit.
 #     PLATFORM = "win_amd64"
 
-DIST_DIR    = Path("offline_dist")
+DIST_DIR    = Path("dist")
 
 # ─────────────────────────────────────────────────────────────────────────────
 
