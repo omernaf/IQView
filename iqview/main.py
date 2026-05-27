@@ -14,7 +14,7 @@ import pyqtgraph as pg
 from PyQt6.QtWidgets import QApplication
 from iqview.ui import SpectrogramWindow
 from iqview.utils.settings_manager import SettingsManager
-from iqview.utils.helpers import DTYPE_MAP, AUDIO_EXTENSIONS, detect_type_from_ext, detect_params_from_filename, load_mat_file, load_audio_file
+from iqview.utils.helpers import DTYPE_MAP, AUDIO_EXTENSIONS, detect_type_from_ext, detect_params_from_filename, load_mat_file, load_audio_file, MatFileFormatError
 
 # Canonical AppUserModelID — must match exactly across main.py, main_window, and any .lnk shortcut
 APP_USER_MODEL_ID = "OmerNaf.IQView.0.1.4"
@@ -173,7 +173,13 @@ def main():
         else:
             sys.exit(1)
     elif file_path and file_path.lower().endswith('.mat'):
-        mat_data = load_mat_file(file_path)
+        try:
+            mat_data = load_mat_file(file_path)
+        except MatFileFormatError as exc:
+            print(f"\nError: {exc}", file=sys.stderr)
+            if exc.detail:
+                print(exc.detail, file=sys.stderr)
+            sys.exit(1)
         if mat_data:
             data_source, type_str, fs, fc, is_complex = mat_data
             # CLI flags take priority over values read from the file

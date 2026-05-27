@@ -2,8 +2,8 @@ import os
 import pyqtgraph as pg
 import numpy as np
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import QFileDialog
-from iqview.utils.helpers import DTYPE_MAP, AUDIO_EXTENSIONS, detect_type_from_ext, detect_params_from_filename, load_mat_file, load_audio_file
+from PyQt6.QtWidgets import QFileDialog, QMessageBox
+from iqview.utils.helpers import DTYPE_MAP, AUDIO_EXTENSIONS, detect_type_from_ext, detect_params_from_filename, load_mat_file, load_audio_file, MatFileFormatError
 from ..detached_window import DetachedViewWindow
 
 class ViewControllerMixin:
@@ -680,7 +680,15 @@ class ViewControllerMixin:
 
         # Check if it's a .mat file
         elif path.lower().endswith('.mat'):
-            mat_data = load_mat_file(path)
+            try:
+                mat_data = load_mat_file(path)
+            except MatFileFormatError as exc:
+                QMessageBox.critical(
+                    self,
+                    "Unsupported .mat File Format",
+                    f"<b>{exc}</b><br><br><pre style='font-family:Consolas;'>{exc.detail}</pre>",
+                )
+                return
             if mat_data:
                 data_source, loaded_type_str, loaded_fs, loaded_fc, is_complex = mat_data
                 self.data_source = data_source

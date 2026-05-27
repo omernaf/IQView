@@ -4,6 +4,7 @@
 
 ### Added
 - **Eye Diagram Baud Rate Cycling Mode**: Added a **⇄ Baud Rate** toggle button next to the SPS spinbox in the Eye Diagram popup. When active, the main slider, coarse/fine sliders, and numeric spinbox all cycle through **Baud Rate (Hz)** instead of Samples-Per-Symbol. The three-tier slider ranges scale proportionally to the current baud rate (±50% main, ±2% coarse, ±0.1% fine). While in Baud Rate mode, the computed **SPS** is shown as a highlighted row in the Signal Info panel so both values are visible simultaneously.
+- **`.mat` File Format Error Dialog**: When opening a `.mat` file that is not in the expected IQView format, a clear error dialog is now shown (instead of silently failing). The dialog names the missing or invalid variable(s) and includes a working MATLAB/Octave `save()` example showing the required variables (`Y`, `XDelta`, `InputCenter`) with their types and meaning. The CLI path (`main.py`) prints the same detail to `stderr` before exiting.
 
 ### Changed
 - **Versioning Scheme**: Switched the primary version axis from the third position to the second (e.g. `0.1.x` → `0.5.x`), allowing patch/minor releases to increment the third digit going forward.
@@ -12,6 +13,7 @@
 - **Debian Package Installation**: Fixed the `.deb` `postinst` script — IQView and all its dependencies are now installed via a plain `pip install iqview=={version}` from the user's default PyPI server into a fresh virtual environment at `/opt/iqview/venv`. The package no longer bundles or installs from a local `.whl` file. The offline build path (`--offline-wheels`) is unchanged.
 - **Waterfall Time Axis Direction**: Fixed the Y axis in Waterfall mode so that time `0` (signal start) is at the **top** and the latest time is at the **bottom**, matching the conventional waterfall display convention. Previously the axis was upward, placing the oldest data at the bottom.
 - **`iqview.view()` Explicit `fs`/`fc` Ignored at 1 MHz / 0 Hz**: Fixed a bug where calling `iqview.view(file, fs=1e6)` or `iqview.view(file, fc=0.0)` would silently override the caller's explicit value with any sample rate or center frequency auto-detected from the filename. The old code compared `fs == 1e6` to detect "not set", which is indistinguishable from an intentional `1e6` argument. `fs` and `fc` now default to `None` as a proper sentinel so explicit values are always honoured.
+- **`.mat` File Silent Failure**: `load_mat_file` previously swallowed all errors with a bare `except` and returned `None`, giving no feedback to the user. It now raises a dedicated `MatFileFormatError` exception with a structured message and detail string, which callers convert into a visible error dialog (GUI) or a `stderr` print (CLI).
 
 ---
 
