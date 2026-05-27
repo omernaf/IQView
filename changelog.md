@@ -8,6 +8,7 @@
 ### Fixed
 - **Debian Package Installation**: Fixed the `.deb` `postinst` script — IQView and all its dependencies are now installed via a plain `pip install iqview=={version}` from the user's default PyPI server into a fresh virtual environment at `/opt/iqview/venv`. The package no longer bundles or installs from a local `.whl` file. The offline build path (`--offline-wheels`) is unchanged.
 - **Waterfall Time Axis Direction**: Fixed the Y axis in Waterfall mode so that time `0` (signal start) is at the **top** and the latest time is at the **bottom**, matching the conventional waterfall display convention. Previously the axis was upward, placing the oldest data at the bottom.
+- **`iqview.view()` Explicit `fs`/`fc` Ignored at 1 MHz / 0 Hz**: Fixed a bug where calling `iqview.view(file, fs=1e6)` or `iqview.view(file, fc=0.0)` would silently override the caller's explicit value with any sample rate or center frequency auto-detected from the filename. The old code compared `fs == 1e6` to detect "not set", which is indistinguishable from an intentional `1e6` argument. `fs` and `fc` now default to `None` as a proper sentinel so explicit values are always honoured.
 
 ---
 

@@ -25,7 +25,7 @@ def main():
     # filename = "samples/saved/iq1.mat"
     # filename = "samples/file_example_WAV_5MG.wav"
     filename = "samples/temp.32fc"
-    sample_rate = 50e6  # 2 MHz
+    sample_rate = 1e6  # 2 MHz
     duration = 10.0    # 10 seconds of simulated RF recording
     if args.line_profile:
         print("Running Deep Line-by-Line Profiler...")

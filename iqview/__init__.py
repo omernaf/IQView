@@ -7,8 +7,8 @@ __all__ = ["view", "PluginResult"]
 
 def view(
     source=None,
-    fs: float = 1e6,
-    fc: float = 0.0,
+    fs: float = None,   # effective default: 1e6
+    fc: float = None,   # effective default: 0.0
     fft_size: int = 1024,
     dtype: str = "complex64",
     name: str = None,
@@ -35,14 +35,14 @@ def view(
         * ``None`` (default)— open IQView with an empty canvas (no file loaded).
 
     fs : float, optional
-        Sample rate in Hz.  Default ``1e6`` (1 MHz).
-        Ignored when *source* is a file path and the rate can be auto-detected
-        from the filename.
+        Sample rate in Hz.  Default ``1e6`` (1 MHz) when not auto-detected
+        from the filename.  Pass ``None`` (or omit) to allow filename
+        auto-detection; pass an explicit value to always override it.
 
     fc : float, optional
-        Center frequency in Hz.  Default ``0.0``.
-        Ignored when *source* is a file path and the frequency can be
-        auto-detected from the filename.
+        Center frequency in Hz.  Default ``0.0`` when not auto-detected
+        from the filename.  Pass ``None`` (or omit) to allow filename
+        auto-detection; pass an explicit value to always override it.
 
     fft_size : int, optional
         Number of FFT bins (spectrogram frequency resolution).  Default ``1024``.
@@ -114,10 +114,13 @@ def view(
         auto_type = detect_type_from_ext(file_path)
         resolved_type = auto_type or dtype
 
-        # Auto-detect fs / fc from filename (only if the caller left defaults)
+        # Auto-detect fs / fc from filename only when the caller did not
+        # explicitly supply a value (fs/fc are None when left at default).
+        # Using None as the sentinel avoids the ambiguity of comparing against
+        # a magic value like 1e6 — which is also a legitimate sample rate.
         params = detect_params_from_filename(file_path)
-        resolved_fs = params.get("fs", fs) if fs == 1e6 else fs
-        resolved_fc = params.get("fc", fc) if fc == 0.0 else fc
+        resolved_fs = fs if fs is not None else params.get("fs", 1e6)
+        resolved_fc = fc if fc is not None else params.get("fc", 0.0)
         fs = resolved_fs
         fc = resolved_fc
 
@@ -156,6 +159,12 @@ def view(
     # ------------------------------------------------------------------ #
     # Launch                                                               #
     # ------------------------------------------------------------------ #
+    # Apply final defaults for paths that didn't go through filename detection
+    if fs is None:
+        fs = 1e6
+    if fc is None:
+        fc = 0.0
+
     window = SpectrogramWindow(
         data_source,
         data_type,
