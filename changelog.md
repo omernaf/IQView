@@ -2,6 +2,9 @@
 
 ## [0.5.1] - 2026-05-27
 
+### Added
+- **Eye Diagram Baud Rate Cycling Mode**: Added a **⇄ Baud Rate** toggle button next to the SPS spinbox in the Eye Diagram popup. When active, the main slider, coarse/fine sliders, and numeric spinbox all cycle through **Baud Rate (Hz)** instead of Samples-Per-Symbol. The three-tier slider ranges scale proportionally to the current baud rate (±50% main, ±2% coarse, ±0.1% fine). While in Baud Rate mode, the computed **SPS** is shown as a highlighted row in the Signal Info panel so both values are visible simultaneously.
+
 ### Changed
 - **Versioning Scheme**: Switched the primary version axis from the third position to the second (e.g. `0.1.x` → `0.5.x`), allowing patch/minor releases to increment the third digit going forward.
 

@@ -9,6 +9,7 @@ Mirrors the functionality of the MATLAB dynamic_eye_diagram.mlapp:
  - Offset slider for symbol-timing phase adjustment
  - Mini waveform overview with two draggable range handles
  - Live Baud Rate / Symbol Time info panel
+ - Cycling mode: SPS or Baud Rate (Hz)
  - Respects IQView Dark/Light theme
 """
 
@@ -180,6 +181,9 @@ class EyeDiagramView(QWidget):
         self._nsps = 10.0
         self._offset = 0.0          # fractional offset in [−1, +1] symbols
         self._mode = "Real"
+
+        # Cycling mode: 'sps' or 'baud'
+        self._cycle_mode = 'sps'
 
         # Suppress recursive slider updates
         self._updating = False
@@ -354,7 +358,7 @@ class EyeDiagramView(QWidget):
         nsps_lo = max(2.0, nsps_init - 14)
         nsps_hi = nsps_init + 14
 
-        # Main Nsps slider
+        # Main slider (used for either SPS or Baud Rate depending on _cycle_mode)
         self._sld_main, self._get_main, self._set_main = _make_slider(nsps_lo, nsps_hi, nsps_init)
         # Coarse slider  ±0.2
         self._sld_coarse, self._get_coarse, self._set_coarse = _make_slider(-0.2, 0.2, 0.0)
@@ -363,18 +367,31 @@ class EyeDiagramView(QWidget):
         # Offset slider  ±1 symbol
         self._sld_offset, self._get_offset, self._set_offset = _make_slider(-1.0, 1.0, 0.0)
 
-        # Nsps numeric edit
+        # Numeric spinbox (label is updated dynamically by _update_cycle_mode_ui)
         self._spin_nsps = QDoubleSpinBox()
-        self._spin_nsps.setRange(2.0, 1e9)
+        self._spin_nsps.setRange(1e-6, 1e12)
         self._spin_nsps.setDecimals(6)
         self._spin_nsps.setValue(nsps_init)
-        self._spin_nsps.setFixedWidth(100)
+        self._spin_nsps.setFixedWidth(110)
 
-        # Layout rows
+        # Cycle-mode toggle button (SPS ⇄ Baud Rate)
+        self._btn_cycle_mode = QPushButton("⇄ Baud Rate")
+        self._btn_cycle_mode.setCheckable(True)
+        self._btn_cycle_mode.setChecked(False)
+        self._btn_cycle_mode.setToolTip(
+            "Switch between cycling by Samples-Per-Symbol (SPS) "
+            "or by Baud Rate (Hz)"
+        )
+        self._btn_cycle_mode.setFixedWidth(110)
+        self._btn_cycle_mode.toggled.connect(self._on_cycle_mode_toggled)
+
+        # Main row: slider + spinbox + mode toggle
+        self._main_slider_label = QLabel("Nsps:")
         main_row = QHBoxLayout()
         main_row.addWidget(self._sld_main)
         main_row.addWidget(self._spin_nsps)
-        sl.addRow("Nsps:", main_row)
+        main_row.addWidget(self._btn_cycle_mode)
+        sl.addRow(self._main_slider_label, main_row)
         sl.addRow("Coarse:", self._sld_coarse)
         sl.addRow("Fine:", self._sld_fine)
         sl.addRow("Offset:", self._sld_offset)
@@ -399,13 +416,24 @@ class EyeDiagramView(QWidget):
             lbl.setStyleSheet("font-family: Consolas; font-size: 11px;")
             return lbl
 
-        self._lbl_fs = _ro_label()
-        self._lbl_br = _ro_label()
-        self._lbl_ts = _ro_label()
+        self._lbl_fs  = _ro_label()
+        self._lbl_br  = _ro_label()
+        self._lbl_ts  = _ro_label()
+        self._lbl_sps = _ro_label()   # only visible in Baud Rate mode
 
-        il.addRow("Sampling Freq:", self._lbl_fs)
-        il.addRow("Baud Rate:", self._lbl_br)
-        il.addRow("Symbol Time:", self._lbl_ts)
+        self._row_fs  = il.addRow("Sampling Freq:", self._lbl_fs)
+        self._row_br  = il.addRow("Baud Rate:",     self._lbl_br)
+        self._row_ts  = il.addRow("Symbol Time:",   self._lbl_ts)
+        # "SPS" row — shown only when cycling by Baud Rate
+        self._lbl_sps_key = QLabel("SPS:")
+        self._lbl_sps_key.setStyleSheet("font-weight: bold; color: #ffaa00;")
+        self._lbl_sps.setStyleSheet(
+            "font-family: Consolas; font-size: 11px; font-weight: bold; color: #ffaa00;"
+        )
+        il.addRow(self._lbl_sps_key, self._lbl_sps)
+        # Hide SPS row initially (SPS mode is default)
+        self._lbl_sps_key.setVisible(False)
+        self._lbl_sps.setVisible(False)
 
         cl.addWidget(info_grp, stretch=1)
 
@@ -443,26 +471,47 @@ class EyeDiagramView(QWidget):
     def _on_main_slider(self):
         if self._updating:
             return
-        nsps = self._get_main() + self._get_coarse() + self._get_fine()
-        self._apply_nsps(nsps, source='main_slider')
+        raw = self._get_main() + self._get_coarse() + self._get_fine()
+        if self._cycle_mode == 'baud':
+            # raw is a Baud Rate value → convert to nsps
+            baud = max(1e-6, raw)
+            nsps = self._rate / baud
+            self._apply_nsps(nsps, source='main_slider', baud_raw=baud)
+        else:
+            self._apply_nsps(raw, source='main_slider')
 
     def _on_coarse_slider(self):
         if self._updating:
             return
-        nsps = self._get_main() + self._get_coarse() + self._get_fine()
-        self._apply_nsps(nsps, source='coarse_slider')
+        raw = self._get_main() + self._get_coarse() + self._get_fine()
+        if self._cycle_mode == 'baud':
+            baud = max(1e-6, raw)
+            nsps = self._rate / baud
+            self._apply_nsps(nsps, source='coarse_slider', baud_raw=baud)
+        else:
+            self._apply_nsps(raw, source='coarse_slider')
 
     def _on_fine_slider(self):
         if self._updating:
             return
-        nsps = self._get_main() + self._get_coarse() + self._get_fine()
-        self._apply_nsps(nsps, source='fine_slider')
+        raw = self._get_main() + self._get_coarse() + self._get_fine()
+        if self._cycle_mode == 'baud':
+            baud = max(1e-6, raw)
+            nsps = self._rate / baud
+            self._apply_nsps(nsps, source='fine_slider', baud_raw=baud)
+        else:
+            self._apply_nsps(raw, source='fine_slider')
 
     def _on_spin_nsps(self):
         if self._updating:
             return
-        nsps = self._spin_nsps.value()
-        self._apply_nsps(nsps, source='spinbox')
+        raw = self._spin_nsps.value()
+        if self._cycle_mode == 'baud':
+            baud = max(1e-6, raw)
+            nsps = self._rate / baud
+            self._apply_nsps(nsps, source='spinbox', baud_raw=baud)
+        else:
+            self._apply_nsps(raw, source='spinbox')
 
     def _on_offset_slider(self):
         if self._updating:
@@ -471,28 +520,134 @@ class EyeDiagramView(QWidget):
         self._offset = self._get_offset() * self._nsps
         self._schedule_update()
 
+    def _on_cycle_mode_toggled(self, checked: bool):
+        """Switch between SPS cycling and Baud Rate cycling."""
+        self._cycle_mode = 'baud' if checked else 'sps'
+        self._update_cycle_mode_ui()
+
     # ── Internal helpers ──────────────────────────────────────────────────────
 
-    def _apply_nsps(self, nsps: float, source: str = 'main_slider'):
+    def _update_cycle_mode_ui(self):
+        """
+        Reconfigure the main slider and spinbox to match the current
+        cycle mode (SPS or Baud Rate), without changing the eye diagram.
+        """
+        self._updating = True
+        try:
+            if self._cycle_mode == 'baud':
+                # Update toggle button appearance
+                self._btn_cycle_mode.setText("⇄ SPS")
+                self._btn_cycle_mode.setChecked(True)
+
+                # Reconfigure slider label
+                self._main_slider_label.setText("Baud Rate:")
+
+                # Compute current baud rate from nsps
+                baud = self._rate / max(self._nsps, 1e-9)
+
+                # Reconfigure main slider window around current baud rate
+                # Use ±50% of current baud as range (same feel as SPS ±14)
+                half = max(baud * 0.5, 1.0)
+                lo = max(1e-6, baud - half)
+                hi = baud + half
+                self._sld_main._lo = lo
+                self._sld_main._hi = hi
+                self._set_main(baud)
+
+                # Reconfigure coarse/fine sliders proportionally to baud
+                coarse_range = max(baud * 0.02, 1.0)   # ±2% of baud rate
+                fine_range   = max(baud * 0.001, 0.1)  # ±0.1% of baud rate
+                self._sld_coarse._lo = -coarse_range
+                self._sld_coarse._hi =  coarse_range
+                self._sld_fine._lo   = -fine_range
+                self._sld_fine._hi   =  fine_range
+                self._set_coarse(0.0)
+                self._set_fine(0.0)
+
+                # Update spinbox to show baud rate
+                self._spin_nsps.setValue(baud)
+
+                # Show highlighted SPS row in info panel
+                self._lbl_sps_key.setVisible(True)
+                self._lbl_sps.setVisible(True)
+
+            else:  # 'sps'
+                self._btn_cycle_mode.setText("⇄ Baud Rate")
+                self._btn_cycle_mode.setChecked(False)
+
+                self._main_slider_label.setText("Nsps:")
+
+                # Reconfigure main slider window around current nsps
+                nsps = self._nsps
+                lo = max(2.0, round(nsps) - 14)
+                hi = round(nsps) + 14
+                self._sld_main._lo = lo
+                self._sld_main._hi = hi
+                self._set_main(nsps)
+
+                # Restore original coarse/fine ranges
+                self._sld_coarse._lo = -0.2
+                self._sld_coarse._hi =  0.2
+                self._sld_fine._lo   = -0.01
+                self._sld_fine._hi   =  0.01
+                self._set_coarse(0.0)
+                self._set_fine(0.0)
+
+                # Update spinbox to show SPS
+                self._spin_nsps.setValue(nsps)
+
+                # Hide SPS row (redundant in SPS mode)
+                self._lbl_sps_key.setVisible(False)
+                self._lbl_sps.setVisible(False)
+
+        finally:
+            self._updating = False
+
+        self._update_info_panel()
+
+    def _apply_nsps(self, nsps: float, source: str = 'main_slider',
+                    baud_raw: float = None):
         """Update Nsps state and sync all controls, then redraw."""
         nsps = max(2.0, nsps)
         self._nsps = nsps
 
         self._updating = True
         try:
-            # Update spinbox
-            self._spin_nsps.setValue(nsps)
+            if self._cycle_mode == 'baud':
+                # baud_raw is the baud rate value the user dialled
+                baud = baud_raw if baud_raw is not None else (self._rate / nsps)
+                self._spin_nsps.setValue(baud)
 
-            if source == 'spinbox':
-                # Re-center main slider window and reset coarse/fine
-                lo = max(2.0, round(nsps) - 14)
-                hi = round(nsps) + 14
-                self._sld_main._lo = lo
-                self._sld_main._hi = hi
-                self._set_main(nsps)
-                self._set_coarse(0.0)
-                self._set_fine(0.0)
-            # For slider sources: no re-centering, just update spin
+                if source == 'spinbox':
+                    # Re-center main slider on new baud value and reset coarse/fine
+                    half = max(baud * 0.5, 1.0)
+                    lo = max(1e-6, baud - half)
+                    hi = baud + half
+                    self._sld_main._lo = lo
+                    self._sld_main._hi = hi
+                    coarse_range = max(baud * 0.02, 1.0)
+                    fine_range   = max(baud * 0.001, 0.1)
+                    self._sld_coarse._lo = -coarse_range
+                    self._sld_coarse._hi =  coarse_range
+                    self._sld_fine._lo   = -fine_range
+                    self._sld_fine._hi   =  fine_range
+                    self._set_main(baud)
+                    self._set_coarse(0.0)
+                    self._set_fine(0.0)
+            else:
+                # SPS mode — spinbox shows nsps
+                self._spin_nsps.setValue(nsps)
+
+                if source == 'spinbox':
+                    # Re-center main slider window and reset coarse/fine
+                    lo = max(2.0, round(nsps) - 14)
+                    hi = round(nsps) + 14
+                    self._sld_main._lo = lo
+                    self._sld_main._hi = hi
+                    self._set_main(nsps)
+                    self._set_coarse(0.0)
+                    self._set_fine(0.0)
+                # For slider sources: no re-centering, just update spin
         finally:
             self._updating = False
 
@@ -500,10 +655,10 @@ class EyeDiagramView(QWidget):
         self._schedule_update()
 
     def _update_info_panel(self):
-        fs = self._rate
+        fs   = self._rate
         nsps = max(self._nsps, 1e-9)
-        br = fs / nsps
-        ts = 1.0 / br if br > 0 else float('inf')
+        br   = fs / nsps
+        ts   = 1.0 / br if br > 0 else float('inf')
 
         def _fmt_freq(f):
             if f >= 1e9:   return f"{f/1e9:.4g} GHz"
@@ -521,6 +676,10 @@ class EyeDiagramView(QWidget):
         self._lbl_fs.setText(_fmt_freq(fs))
         self._lbl_br.setText(_fmt_freq(br))
         self._lbl_ts.setText(_fmt_time(ts))
+
+        # SPS row — shown and highlighted when cycling by Baud Rate
+        if self._cycle_mode == 'baud':
+            self._lbl_sps.setText(f"{nsps:.6g}")
 
     def _refresh_mini_curve(self):
         sig = _compute_signal(self._raw_samples, self._mode, self._rate)
