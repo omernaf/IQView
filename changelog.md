@@ -1,6 +1,17 @@
 # Changelog
 
-## [0.1.5] - 2026-05-16
+## [0.5.1] - 2026-05-27
+
+### Changed
+- **Versioning Scheme**: Switched the primary version axis from the third position to the second (e.g. `0.1.x` → `0.5.x`), allowing patch/minor releases to increment the third digit going forward.
+
+### Fixed
+- **Debian Package Installation**: Fixed the `.deb` `postinst` script — IQView and all its dependencies are now installed via a plain `pip install iqview=={version}` from the user's default PyPI server into a fresh virtual environment at `/opt/iqview/venv`. The package no longer bundles or installs from a local `.whl` file. The offline build path (`--offline-wheels`) is unchanged.
+- **Waterfall Time Axis Direction**: Fixed the Y axis in Waterfall mode so that time `0` (signal start) is at the **top** and the latest time is at the **bottom**, matching the conventional waterfall display convention. Previously the axis was upward, placing the oldest data at the bottom.
+
+---
+
+## [0.5.0] - 2026-05-16
 
 ### Added
 - **Waterfall Spectrogram Layout**: Added a "Waterfall" checkbox in the settings to transpose the spectrogram axes (X-axis = Frequency, Y-axis = Time).

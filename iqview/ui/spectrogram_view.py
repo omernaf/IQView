@@ -165,6 +165,10 @@ class SpectrogramView(QWidget):
         Called from on_settings_applied() after the user changes the waterfall checkbox."""
         self._apply_axis_labels()
 
+        # In waterfall mode time is on the Y axis; invert it so t=0 is at the top
+        # (newest data scrolls down, matching the conventional waterfall direction).
+        self.view_box.invertY(self.is_waterfall)
+
         # Re-render using cached data if available
         if self._last_spectrogram is not None and self._last_fc is not None:
             if self._last_t_start is not None:
@@ -494,9 +498,8 @@ class SpectrogramView(QWidget):
                 scroll.setPageStep(page_step)
                 pos = (t_visible_range[0] - self.full_t_range[0]) / t_total * 1000
                 if waterfall:
-                    # Y scroll: 0 = top = t_max, invert
-                    inv_pos = 1000 - page_step - int(pos)
-                    scroll.setValue(inv_pos)
+                    # Y axis is inverted in waterfall: scrollbar 0 = top = t_min
+                    scroll.setValue(int(pos))
                 else:
                     scroll.setValue(int(pos))
             else:
@@ -540,9 +543,10 @@ class SpectrogramView(QWidget):
         xr, yr = self.view_box.viewRange()
 
         if waterfall:
-            # X = freq (x_scroll), Y = time (y_scroll, inverted)
+            # X = freq (x_scroll), Y = time (y_scroll)
+            # Y axis is inverted so scrollbar 0 = top = t_min
             val_f = self.x_scroll.value()
-            val_t = self.y_scroll.value()  # 0 = top = t_max
+            val_t = self.y_scroll.value()
 
             f_total = self.full_f_range[1] - self.full_f_range[0]
             t_total = self.full_t_range[1] - self.full_t_range[0]
@@ -550,8 +554,7 @@ class SpectrogramView(QWidget):
             t_height = yr[1] - yr[0]
 
             new_f_left = self.full_f_range[0] + (val_f / 1000.0) * f_total
-            inv_val_t = 1000 - self.y_scroll.pageStep() - val_t
-            new_t_bottom = self.full_t_range[0] + (inv_val_t / 1000.0) * t_total
+            new_t_bottom = self.full_t_range[0] + (val_t / 1000.0) * t_total
 
             if self.x_scroll.isVisible():
                 self.plot_item.setXRange(new_f_left, new_f_left + f_width, padding=0)
@@ -593,8 +596,10 @@ class SpectrogramView(QWidget):
             bool(self.parent_window.settings_mgr.get("ui/colormap_reversed", False))
         )
         
-        # Axis labels
+        # Axis labels and orientation
         self._apply_axis_labels()
+        # Ensure Y-axis inversion matches the current mode (important on startup)
+        self.view_box.invertY(self.is_waterfall)
         
         # Update spectrum plot lines
         if hasattr(self, 'min_env_curve'):
