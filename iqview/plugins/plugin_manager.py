@@ -24,9 +24,10 @@ Return     — a PluginResult instance (from `from iqview import PluginResult`).
              Use .add(), .update(), .remove(), .replace() to express operations.
              Returning anything other than a PluginResult raises an error dialog.
 
-Optional module-level metadata strings:
-    PLUGIN_NAME        = "Human readable name"
-    PLUGIN_DESCRIPTION = "One-liner description shown in the menu tooltip"
+Optional module-level metadata constants:
+    PLUGIN_NAME               = "Human readable name"
+    PLUGIN_DESCRIPTION        = "One-liner description shown in the menu tooltip"
+    PLUGIN_RUN_ON_MAIN_THREAD = False  # Set to True to run synchronously (useful for matplotlib/GUI debugging)
 """
 
 from __future__ import annotations
@@ -174,6 +175,7 @@ class PluginManagerMixin:
 
         name        = getattr(module, "PLUGIN_NAME",        base)
         description = getattr(module, "PLUGIN_DESCRIPTION", "")
+        run_on_main = getattr(module, "PLUGIN_RUN_ON_MAIN_THREAD", False)
 
         # If a plugin with the same display name is already loaded, replace it
         self._loaded_plugins[name] = {
@@ -181,6 +183,7 @@ class PluginManagerMixin:
             "module":      module,
             "func":        module.run,
             "description": description,
+            "run_on_main": run_on_main,
         }
 
         if _persist:
@@ -274,7 +277,16 @@ class PluginManagerMixin:
             "overlays":    [copy.deepcopy(o) for o in self.overlays],
         }
 
-        # Run on background thread
+        # Run synchronously on main thread if requested (for GUI/matplotlib debugging)
+        if info.get("run_on_main", False):
+            try:
+                result = info["func"](samples, context)
+                self._on_plugin_finished(name, result)
+            except Exception:
+                self._on_plugin_error(name, traceback.format_exc())
+            return
+
+        # Otherwise, run on background thread
         self._run_plugin_async(name, info["func"], samples, context)
 
     def _run_plugin_async(
