@@ -4,6 +4,7 @@
 
 ### Added
 - **Broad Audio File Format Support**: IQView now loads audio files using `soundfile`, providing equivalent format coverage to MATLAB's `audioread()`. Supported formats: **WAV, FLAC, OGG/Vorbis, AIFF, AU, W64, RF64, CAF, SD2**. Previously only plain PCM WAV was supported via `scipy.io.wavfile`. `soundfile` is now a declared dependency and is installed automatically with `pip install iqview`. For WAV-only environments without `soundfile`, the `scipy.io.wavfile` fallback is preserved.
+- **Full Mode High-Resolution Zoom Rerendering**: In Full Mode, zooming in beyond a threshold (viewing 50% or less of the total duration) now automatically triggers a high-resolution, viewport-aware recalculation for the visible slice, identical to how Lazy Mode works. This dramatically improves perceptual quality and detail when zoomed in, solving the issue where Full Mode appeared blurry or undersampled compared to Lazy Mode. Zooming back out seamlessly restores the cached full-file render.
 
 ### Fixed
 

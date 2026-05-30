@@ -4,6 +4,8 @@ import numpy as np
 from PyQt6.QtCore import pyqtSlot, QTimer
 from iqview.dsp import FileReaderThread, ViewportAwareReader
 
+_ZOOM_RERENDER_THRESHOLD = 0.5   # re-render when viewing <= 50% of the file
+
 class DataHandlerMixin:
     # ------------------------------------------------------------------
     # Full-file processing (stdin / bytes sources, or lazy mode disabled)
@@ -84,6 +86,9 @@ class DataHandlerMixin:
             self.worker.stop()
         if hasattr(self, 'lazy_worker') and self.lazy_worker.isRunning():
             self.lazy_worker.stop()
+        # Cancel any pending zoom re-render
+        if hasattr(self, '_zoom_rerender_timer') and self._zoom_rerender_timer.isActive():
+            self._zoom_rerender_timer.stop()
 
     def _get_lazy_debounce_timer(self):
         """Return (creating if needed) the debounce timer for lazy renders."""
@@ -97,10 +102,16 @@ class DataHandlerMixin:
         """Called by SpectrogramView whenever the visible range changes."""
         if self.data_source is None:
             return
-        lazy_enabled = self._lazy_enabled
-        if not lazy_enabled or not isinstance(self.data_source, str):
+        if self._lazy_enabled and isinstance(self.data_source, str):
+            self._schedule_lazy_render()
             return
-        self._schedule_lazy_render()
+        
+        # Full mode: trigger high-res zoom re-render when sufficiently zoomed in
+        if not isinstance(self.data_source, str):
+            return   # can't re-read in-memory sources
+        if getattr(self, 'full_spectrogram_cache', None) is None:
+            return   # no full render done yet
+        self._schedule_zoom_rerender()
 
     def _schedule_lazy_render(self, delay_ms=80):
         """Debounce repeated viewport changes — fire the actual render after a short pause."""
@@ -108,6 +119,44 @@ class DataHandlerMixin:
         if timer.isActive():
             timer.stop()
         timer.start(delay_ms)
+
+    def _schedule_zoom_rerender(self, delay_ms=80):
+        """Debounced zoom-aware re-render for full mode."""
+        if not hasattr(self, '_zoom_rerender_timer'):
+            self._zoom_rerender_timer = QTimer()
+            self._zoom_rerender_timer.setSingleShot(True)
+            self._zoom_rerender_timer.timeout.connect(self._do_zoom_rerender)
+        if self._zoom_rerender_timer.isActive():
+            self._zoom_rerender_timer.stop()
+        self._zoom_rerender_timer.start(delay_ms)
+
+    def _do_zoom_rerender(self):
+        """In full mode: re-render at high res when zoomed in, restore cache when zoomed out."""
+        if not isinstance(self.data_source, str):
+            return
+        if getattr(self, 'full_spectrogram_cache', None) is None:
+            return
+
+        xr, yr = self.spectrogram_view.view_box.viewRange()
+        time_range = yr if self.spectrogram_view.is_waterfall else xr
+        visible_duration = max(time_range[1] - time_range[0], 0.0)
+        total_duration = getattr(self, 'time_duration', 1.0)
+
+        visible_fraction = visible_duration / total_duration if total_duration > 0 else 1.0
+
+        if visible_fraction >= _ZOOM_RERENDER_THRESHOLD:
+            # Zoomed out enough — restore the full cached spectrogram
+            if getattr(self, '_zoom_hires_active', False):
+                self.spectrogram_view.update_spectrogram(
+                    self.full_spectrogram_cache, self.fc, self.rate,
+                    self.time_duration, auto_range=False
+                )
+                self._zoom_hires_active = False
+            return
+
+        # Zoomed in past threshold — launch a viewport-aware high-res render
+        self._zoom_hires_active = True
+        self._do_lazy_render()   # reuses all existing lazy machinery
 
     def _do_lazy_render(self):
         """Build and launch a ViewportAwareReader for the current viewport."""
