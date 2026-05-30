@@ -136,7 +136,8 @@ def main():
 
     if not is_audio and type_str not in DTYPE_MAP:
         print(f"Error: Unsupported data type '{type_str}'. "
-              f"Valid types: {', '.join(DTYPE_MAP)} or 'aud'/'audio' for WAV files.")
+              f"Valid types: {', '.join(DTYPE_MAP)} or 'aud'/'audio' for audio files "
+              f"(WAV, FLAC, OGG, AIFF, AU, W64, CAF, RF64, SD2).")
         sys.exit(1)
 
     if is_audio:
@@ -160,9 +161,13 @@ def main():
         data_source = sys.stdin.buffer.read()
         print(f"Read {len(data_source):,} bytes from stdin.", flush=True)
     elif file_path and (is_audio or os.path.splitext(file_path)[1].lower() in AUDIO_EXTENSIONS):
-        audio_data = load_audio_file(file_path)
-        if audio_data:
-            data_source, type_str, fs, fc, is_complex = audio_data
+        data_bytes, err_or_type, loaded_fs, loaded_fc, loaded_complex = load_audio_file(file_path)
+        if data_bytes is not None:
+            data_source = data_bytes
+            type_str = err_or_type  # 'float32'
+            fs = loaded_fs
+            fc = loaded_fc
+            is_complex = loaded_complex
             dtype = np.float32
             # CLI flags take priority over values read from the file
             if user_rate:
@@ -171,6 +176,7 @@ def main():
             if user_fc:
                 fc = args.fc
         else:
+            print(f"Error loading audio file: {err_or_type}", file=sys.stderr)
             sys.exit(1)
     elif file_path and file_path.lower().endswith('.mat'):
         try:

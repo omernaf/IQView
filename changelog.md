@@ -2,7 +2,11 @@
 
 ## [0.5.2] - 2026-05-30
 
+### Added
+- **Broad Audio File Format Support**: IQView now loads audio files using `soundfile`, providing equivalent format coverage to MATLAB's `audioread()`. Supported formats: **WAV, FLAC, OGG/Vorbis, AIFF, AU, W64, RF64, CAF, SD2**. Previously only plain PCM WAV was supported via `scipy.io.wavfile`. `soundfile` is now a declared dependency and is installed automatically with `pip install iqview`. For WAV-only environments without `soundfile`, the `scipy.io.wavfile` fallback is preserved.
+
 ### Fixed
+
 - **Debian Package Installation on Private Networks**: Fixed the `.deb` `postinst` script failing with `Name or service not known` when installing on private networks with a custom PyPI server. The root cause was `dpkg` not guaranteeing `HOME=/root` when running maintainer scripts — `HOME` is merely inherited from the parent process and could point to the invoking user's home directory, preventing `pip` from finding root's pip configuration (e.g. `/root/.config/pip/pip.conf`) with the private PyPI `index-url`. The postinst now explicitly sets `HOME=/root` and copies the pip configuration into the virtual environment's site-level config (`$VENV_DIR/pip.conf`).
 - **Debian Package Post-Installation `pip install --upgrade pip` Regression**: Removed the `pip install --upgrade pip` step that was re-introduced after the v0.5.0 fix. This step is unnecessary and causes installation hangs or failures on restricted networks.
 

@@ -38,6 +38,7 @@ DEPENDENCIES = [
     "pyqtgraph >= 0.13.0",
     "PyOpenGL",
     "scipy",
+    "soundfile",
 ]
 
 # (python_tag, abi_tag) pairs to download for.
@@ -163,7 +164,7 @@ def write_uninstall_bat(folder: Path):
 echo Uninstalling IQView and its dependencies...
 echo.
 
-pip uninstall -y iqview numpy pyqtgraph PyOpenGL scipy PyQt6 PyQt6-Qt6 PyQt6-sip colorama
+pip uninstall -y iqview numpy pyqtgraph PyOpenGL scipy soundfile PyQt6 PyQt6-Qt6 PyQt6-sip colorama
 
 echo.
 echo Done. You can now re-install from the offline kit to test it.
@@ -211,7 +212,7 @@ def write_uninstall_sh(folder: Path):
 echo "Uninstalling IQView and its dependencies..."
 echo
 
-pip uninstall -y iqview numpy pyqtgraph PyOpenGL scipy PyQt6 PyQt6-Qt6 PyQt6-sip colorama
+pip uninstall -y iqview numpy pyqtgraph PyOpenGL scipy soundfile PyQt6 PyQt6-Qt6 PyQt6-sip colorama
 
 echo
 echo "Done. You can now re-install from the offline kit to test it."

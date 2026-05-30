@@ -598,14 +598,13 @@ class ViewControllerMixin:
         if not exts:
             exts = "*.32f *.64f *.16tc *.16sc *.64fc *.32fc *.bin *.iq *.raw"
 
-        # Always include audio extensions in the dialog
-        audio_exts = " ".join([f"*{e}" for e in sorted(AUDIO_EXTENSIONS)])
+        audio_exts_str = " ".join([f"*{e}" for e in sorted(AUDIO_EXTENSIONS)])
 
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Open IQ / Audio File",
             os.path.dirname(self.file_path) if isinstance(self.file_path, str) else "",
-            f"IQ Files ({exts});;Audio Files ({audio_exts});;All Files (*)"
+            f"IQ Files ({exts});;Audio Files ({audio_exts_str});;All Files (*)"
         )
         if path:
             self.load_new_file(path)
@@ -659,24 +658,29 @@ class ViewControllerMixin:
         else:
             self.setWindowTitle(f"IQView - {path}")
 
-        # Check if it's an audio file (.wav etc.)
         if os.path.splitext(path)[1].lower() in AUDIO_EXTENSIONS:
-            audio_data = load_audio_file(path)
-            if audio_data:
-                data_source, loaded_type_str, loaded_fs, loaded_fc, is_complex = audio_data
-                self.data_source = data_source
+            data_bytes, err_or_type, loaded_fs, loaded_fc, is_complex = load_audio_file(path)
+            if data_bytes is not None:
+                self.data_source = data_bytes
                 self.file_path = path
                 self.rate = fs if fs is not None else loaded_fs
                 self.fc = fc if fc is not None else loaded_fc
                 self.is_complex = is_complex
                 self.data_type = np.float32
-                type_str = loaded_type_str
+                type_str = err_or_type  # 'float32' on success
 
                 # Update sidebar parameters
                 if hasattr(self, 'sidebar'):
-                    self.sidebar.update_params(fs=fs, fc=fc)
+                    self.sidebar.update_params(fs=self.rate, fc=self.fc)
             else:
-                return  # Error loading audio file
+                QMessageBox.critical(
+                    self,
+                    "Unsupported Audio Format",
+                    f"<b>Could not load audio file:</b><br>{os.path.basename(path)}<br><br>"
+                    f"<pre style='font-family:Consolas;'>{err_or_type}</pre>"
+                    f"<br>Supported formats: WAV, FLAC, OGG, AIFF, AU, W64, CAF, RF64, SD2"
+                )
+                return
 
         # Check if it's a .mat file
         elif path.lower().endswith('.mat'):

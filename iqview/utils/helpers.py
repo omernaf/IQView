@@ -15,8 +15,12 @@ DTYPE_MAP = {
     'np.complex128': np.complex128,
 }
 
-# Audio file extensions supported natively (via scipy.io.wavfile, no extra deps)
-AUDIO_EXTENSIONS = {'.wav'}
+# Audio file extensions supported via soundfile (WAV, FLAC, OGG, AIFF, AU, W64,
+# CAF, RF64, MAT-audio …) — mirrors the format coverage of MATLAB's audioread().
+AUDIO_EXTENSIONS = {
+    '.wav', '.flac', '.ogg', '.oga', '.aiff', '.aif', '.aifc',
+    '.au',  '.snd',  '.w64', '.rf64', '.caf',  '.sd2',
+}
 
 
 class MatFileFormatError(ValueError):
@@ -227,9 +231,15 @@ def load_mat_file(path):
 
 def load_audio_file(path):
     """
-    Loads a .wav audio file using scipy.io.wavfile (no extra dependencies).
+    Loads an audio file and returns it as mono float32 IQ-compatible samples.
+
+    Supported formats (via soundfile): WAV, FLAC, OGG/Vorbis, AIFF, AU, W64,
+    RF64, CAF, SD2 — equivalent coverage to MATLAB's audioread().
+    Falls back to scipy.io.wavfile for plain PCM WAV if soundfile is not
+    installed (no-dependency fallback).
+
     Multi-channel audio is averaged to a single mono channel.
-    Integer samples are normalized to float32 in [-1.0, 1.0].
+    All integer sample types are normalised to float32 in [-1.0, 1.0].
 
     Returns:
         tuple: (data_bytes, type_str, fs, fc, is_complex)
@@ -238,37 +248,49 @@ def load_audio_file(path):
                fs         — sample rate in Hz (from the file header)
                fc         — always 0.0 (no carrier info in audio files)
                is_complex — always False
-        None on error.
+        None on error (caller is responsible for showing an error dialog).
     """
+    ext = os.path.splitext(path)[1].lower()
+
     try:
-        from scipy.io import wavfile
-        fs, data = wavfile.read(path)
+        # ── Primary path: soundfile handles WAV + FLAC + OGG + AIFF + … ──────
+        try:
+            import soundfile as sf
+            data, fs = sf.read(path, dtype='float32', always_2d=True)
+            # soundfile already normalises integers to [-1.0, 1.0] when
+            # dtype='float32' is requested — no further scaling needed.
+        except ImportError:
+            # ── Fallback: scipy.io.wavfile for plain PCM WAV only ────────────
+            if ext != '.wav':
+                raise RuntimeError(
+                    f"soundfile is not installed. Only .wav files are supported "
+                    f"without it. Install it with: pip install soundfile"
+                )
+            from scipy.io import wavfile
+            fs, raw = wavfile.read(path)
+            # Normalise integer dtypes to float32 [-1.0, 1.0]
+            if raw.dtype == np.int16:
+                data = raw.astype(np.float32) / 32768.0
+            elif raw.dtype == np.int32:
+                data = raw.astype(np.float32) / 2147483648.0
+            elif raw.dtype == np.uint8:
+                data = (raw.astype(np.float32) - 128.0) / 128.0
+            else:
+                data = raw.astype(np.float32)
+            if data.ndim == 1:
+                data = data[:, np.newaxis]  # make always_2d consistent
 
-        # Convert to float32, normalizing integers to [-1.0, 1.0]
-        if data.dtype == np.int16:
-            samples = data.astype(np.float32) / 32768.0
-        elif data.dtype == np.int32:
-            samples = data.astype(np.float32) / 2147483648.0
-        elif data.dtype == np.uint8:
-            # uint8 WAV is offset-binary: 0–255, centre at 128
-            samples = (data.astype(np.float32) - 128.0) / 128.0
-        else:
-            # float32 or float64 already — just ensure float32
-            samples = data.astype(np.float32)
-
-        # Average multi-channel (stereo, etc.) to mono
-        if samples.ndim > 1:
-            samples = samples.mean(axis=1).astype(np.float32)
-
-        fc = 0.0
-        is_complex = False
-        dtype_str = 'float32'
-
+        # data is (n_samples, n_channels) at this point
         n_ch = data.shape[1] if data.ndim > 1 else 1
+        if data.ndim > 1 and n_ch > 1:
+            samples = data.mean(axis=1).astype(np.float32)
+        else:
+            samples = data[:, 0].astype(np.float32) if data.ndim > 1 else data.astype(np.float32)
+
         print(f"Successfully loaded audio file: {len(samples):,} samples, "
               f"Fs={fs/1e3:g} kHz, {n_ch} channel(s) averaged to mono")
-        return samples.tobytes(), dtype_str, float(fs), fc, is_complex
+        return samples.tobytes(), 'float32', float(fs), 0.0, False
 
     except Exception as e:
-        print(f"Error loading audio file {path}: {e}")
-        return None
+        print(f"Error loading audio file '{path}': {e}")
+        return None, str(e), None, None, None
