@@ -50,7 +50,7 @@ def get_project_version():
                     return line.split("=")[1].strip().strip('"').strip("'")
     except Exception:
         pass
-    return "0.5.1"
+    return "0.5.2"
 
 def find_wheel():
     """Find the .whl in dist/. Only needed for offline builds."""
@@ -124,19 +124,35 @@ echo "IQView installation complete."
 exit 0
 """
         else:
-            # Online: create venv and install iqview directly from PyPI
+            # Online: create venv and install iqview from the user's configured PyPI
             postinst_content = f"""#!/bin/bash
 set -e
 
 APP_DIR="/opt/iqview"
 VENV_DIR="$APP_DIR/venv"
 
+# dpkg does not guarantee HOME is set correctly when running postinst.
+# It is merely inherited from the parent process and may point to the
+# invoking user's home instead of /root.  Ensure HOME=/root so that pip
+# can find root's user-level configuration (e.g. /root/.config/pip/pip.conf
+# with a private PyPI index-url).
+export HOME=/root
+
 echo "Setting up IQView virtual environment in $VENV_DIR..."
 mkdir -p "$APP_DIR"
 python3 -m venv "$VENV_DIR"
 
-echo "Installing IQView {version} and dependencies from PyPI..."
-"$VENV_DIR/bin/pip" install --upgrade pip
+# Copy pip configuration into the venv to guarantee index-url resolution.
+# The venv's pip reads $VIRTUAL_ENV/pip.conf as its site-level config.
+for pip_conf in "$HOME/.config/pip/pip.conf" "$HOME/.pip/pip.conf" /etc/pip.conf; do
+    if [ -f "$pip_conf" ]; then
+        cp "$pip_conf" "$VENV_DIR/pip.conf"
+        echo "Using pip configuration from $pip_conf"
+        break
+    fi
+done
+
+echo "Installing IQView {version}..."
 "$VENV_DIR/bin/pip" install "iqview=={version}"
 
 echo "Creating symbolic link..."
@@ -150,6 +166,7 @@ echo "Configuring desktop integration and file associations..."
 echo "IQView installation complete."
 exit 0
 """
+
         p_info = tarfile.TarInfo("postinst")
         p_info.size = len(postinst_content)
         p_info.mtime = time.time()
