@@ -3,3 +3,4 @@ PyQt6
 pyqtgraph>=0.14.0
 PyOpenGL
 scipy
+soundfile

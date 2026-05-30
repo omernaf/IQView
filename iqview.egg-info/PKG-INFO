@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: iqview
-Version: 0.5.1
+Version: 0.5.2
 Summary: High-performance Static RF Spectrogram Viewer
 Requires-Python: >=3.9
 Description-Content-Type: text/markdown
@@ -9,6 +9,7 @@ Requires-Dist: PyQt6
 Requires-Dist: pyqtgraph>=0.14.0
 Requires-Dist: PyOpenGL
 Requires-Dist: scipy
+Requires-Dist: soundfile
 
 # IQView
 
