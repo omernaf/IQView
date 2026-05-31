@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3] - 2026-05-31
+
+### Added
+- **Complex Audio IQ Type (`-t caud` / `-t caudio`)**: Added a new data-type alias for loading audio files (WAV, FLAC, OGG, AIFF, AU, W64, RF64, CAF, SD2) whose samples represent interleaved IQ data. The file is first mixed down to mono using the same path as `-t aud`, then the flat sample array is deinterleaved into complex64 samples: even-indexed samples (`x[0::2]`) become the real (I) component and odd-indexed samples (`x[1::2]`) become the imaginary (Q) component. The resulting signal is displayed as a full complex IQ spectrogram. Useful for recordings exported from SDR software as interleaved audio streams. If the mono array has an odd number of samples the last sample is silently dropped to keep I/Q pairs balanced.
+
+---
+
 ## [0.5.2] - 2026-05-30
 
 ### Added

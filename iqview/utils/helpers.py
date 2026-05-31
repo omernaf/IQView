@@ -229,26 +229,35 @@ def load_mat_file(path):
     return samples.tobytes(), 'complex64', fs, fc, True
 
 
-def load_audio_file(path):
+def load_audio_file(path, complex_iq=False):
     """
-    Loads an audio file and returns it as mono float32 IQ-compatible samples.
+    Loads an audio file and returns it as IQ-compatible float32 samples.
 
     Supported formats (via soundfile): WAV, FLAC, OGG/Vorbis, AIFF, AU, W64,
     RF64, CAF, SD2 — equivalent coverage to MATLAB's audioread().
     Falls back to scipy.io.wavfile for plain PCM WAV if soundfile is not
     installed (no-dependency fallback).
 
-    Multi-channel audio is averaged to a single mono channel.
-    All integer sample types are normalised to float32 in [-1.0, 1.0].
+    Normal mode (complex_iq=False):
+        Multi-channel audio is averaged to a single mono channel.
+        All integer sample types are normalised to float32 in [-1.0, 1.0].
+
+    Complex IQ mode (complex_iq=True, -t caud):
+        Multi-channel audio is first mixed down to mono (same as normal mode).
+        The flat mono sample array is then treated as interleaved IQ:
+          I (real) = mono[0::2]  (even-indexed samples)
+          Q (imag) = mono[1::2]  (odd-indexed samples)
+        Each consecutive pair becomes one complex64 sample, so the output
+        contains half as many samples as the mono array.
 
     Returns:
         tuple: (data_bytes, type_str, fs, fc, is_complex)
-               data_bytes — raw bytes of float32 samples
-               type_str   — always 'float32'
+               data_bytes — raw bytes of float32 (normal) or complex64 (IQ) samples
+               type_str   — 'float32' or 'complex64'
                fs         — sample rate in Hz (from the file header)
                fc         — always 0.0 (no carrier info in audio files)
-               is_complex — always False
-        None on error (caller is responsible for showing an error dialog).
+               is_complex — False (normal) or True (complex IQ mode)
+        On error returns (None, error_str, None, None, None).
     """
     ext = os.path.splitext(path)[1].lower()
 
@@ -282,14 +291,31 @@ def load_audio_file(path):
 
         # data is (n_samples, n_channels) at this point
         n_ch = data.shape[1] if data.ndim > 1 else 1
-        if data.ndim > 1 and n_ch > 1:
-            samples = data.mean(axis=1).astype(np.float32)
-        else:
-            samples = data[:, 0].astype(np.float32) if data.ndim > 1 else data.astype(np.float32)
 
-        print(f"Successfully loaded audio file: {len(samples):,} samples, "
-              f"Fs={fs/1e3:g} kHz, {n_ch} channel(s) averaged to mono")
-        return samples.tobytes(), 'float32', float(fs), 0.0, False
+        if complex_iq:
+            # ── Complex IQ mode: mix to mono first, then deinterleave ────────
+            if data.ndim > 1 and n_ch > 1:
+                mono = data.mean(axis=1).astype(np.float32)
+            else:
+                mono = data[:, 0].astype(np.float32) if data.ndim > 1 else data.astype(np.float32)
+            # Deinterleave: even indices = I, odd indices = Q
+            i_samples = mono[0::2]
+            q_samples = mono[1::2]
+            # Trim to equal length in case of odd total sample count
+            n = min(len(i_samples), len(q_samples))
+            samples = (i_samples[:n] + 1j * q_samples[:n]).astype(np.complex64)
+            print(f"Successfully loaded complex audio IQ file: {len(samples):,} IQ samples, "
+                  f"Fs={fs/1e3:g} kHz, {n_ch} ch(s) mixed to mono then deinterleaved")
+            return samples.tobytes(), 'complex64', float(fs), 0.0, True
+        else:
+            # ── Normal mode: mix down to mono ────────────────────────────────
+            if data.ndim > 1 and n_ch > 1:
+                samples = data.mean(axis=1).astype(np.float32)
+            else:
+                samples = data[:, 0].astype(np.float32) if data.ndim > 1 else data.astype(np.float32)
+            print(f"Successfully loaded audio file: {len(samples):,} samples, "
+                  f"Fs={fs/1e3:g} kHz, {n_ch} channel(s) averaged to mono")
+            return samples.tobytes(), 'float32', float(fs), 0.0, False
 
     except Exception as e:
         print(f"Error loading audio file '{path}': {e}")

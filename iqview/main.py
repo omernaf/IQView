@@ -17,7 +17,7 @@ from iqview.utils.settings_manager import SettingsManager
 from iqview.utils.helpers import DTYPE_MAP, AUDIO_EXTENSIONS, detect_type_from_ext, detect_params_from_filename, load_mat_file, load_audio_file, MatFileFormatError
 
 # Canonical AppUserModelID — must match exactly across main.py, main_window, and any .lnk shortcut
-APP_USER_MODEL_ID = "OmerNaf.IQView.0.1.4"
+APP_USER_MODEL_ID = "OmerNaf.IQView.0.5.3"
 
 # Fix taskbar grouping on Windows (must be done before creating QApplication)
 if sys.platform == "win32":
@@ -131,16 +131,21 @@ def main():
     # Normalise audio type aliases
     if type_str in ('aud', 'audio'):
         type_str = 'audio'
+    elif type_str in ('caud', 'caudio'):
+        type_str = 'caudio'
 
-    is_audio = (type_str == 'audio')
+    is_audio    = (type_str == 'audio')
+    is_caudio   = (type_str == 'caudio')
 
-    if not is_audio and type_str not in DTYPE_MAP:
+    if not is_audio and not is_caudio and type_str not in DTYPE_MAP:
         print(f"Error: Unsupported data type '{type_str}'. "
-              f"Valid types: {', '.join(DTYPE_MAP)} or 'aud'/'audio' for audio files "
+              f"Valid types: {', '.join(DTYPE_MAP)}, "
+              f"'aud'/'audio' for audio files, or "
+              f"'caud'/'caudio' for audio files with interleaved IQ data "
               f"(WAV, FLAC, OGG, AIFF, AU, W64, CAF, RF64, SD2).")
         sys.exit(1)
 
-    if is_audio:
+    if is_audio or is_caudio:
         # Audio files carry their own dtype and fs — handled like .mat
         dtype = np.float32
         is_complex = False
@@ -160,8 +165,10 @@ def main():
         print("Reading IQ data from stdin...", flush=True)
         data_source = sys.stdin.buffer.read()
         print(f"Read {len(data_source):,} bytes from stdin.", flush=True)
-    elif file_path and (is_audio or os.path.splitext(file_path)[1].lower() in AUDIO_EXTENSIONS):
-        data_bytes, err_or_type, loaded_fs, loaded_fc, loaded_complex = load_audio_file(file_path)
+    elif file_path and (is_audio or is_caudio or os.path.splitext(file_path)[1].lower() in AUDIO_EXTENSIONS):
+        data_bytes, err_or_type, loaded_fs, loaded_fc, loaded_complex = load_audio_file(
+            file_path, complex_iq=is_caudio
+        )
         if data_bytes is not None:
             data_source = data_bytes
             type_str = err_or_type  # 'float32'
