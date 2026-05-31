@@ -131,26 +131,57 @@ set -e
 APP_DIR="/opt/iqview"
 VENV_DIR="$APP_DIR/venv"
 
-# dpkg does not guarantee HOME is set correctly when running postinst.
-# It is merely inherited from the parent process and may point to the
-# invoking user's home instead of /root.  Ensure HOME=/root so that pip
-# can find root's user-level configuration (e.g. /root/.config/pip/pip.conf
-# with a private PyPI index-url).
-export HOME=/root
-
 echo "Setting up IQView virtual environment in $VENV_DIR..."
 mkdir -p "$APP_DIR"
 python3 -m venv "$VENV_DIR"
 
-# Copy pip configuration into the venv to guarantee index-url resolution.
-# The venv's pip reads $VIRTUAL_ENV/pip.conf as its site-level config.
-for pip_conf in "$HOME/.config/pip/pip.conf" "$HOME/.pip/pip.conf" /etc/pip.conf; do
+# ── Locate the invoking user's pip configuration ─────────────────────
+# On private networks the pip.conf with the internal PyPI index-url
+# lives in the *invoking user's* home, not root's.  When the package is
+# installed via `sudo dpkg -i`, sudo sets SUDO_USER to the real user
+# who ran the command.  We use `getent passwd` to reliably resolve that
+# user's home directory (we never rely on $HOME which dpkg may reset).
+#
+# Search order (first found wins):
+#   1. Invoking user's ~/.config/pip/pip.conf   (XDG standard)
+#   2. Invoking user's ~/.pip/pip.conf          (legacy location)
+#   3. Root's          ~/.config/pip/pip.conf
+#   4. Root's          ~/.pip/pip.conf
+#   5. System-wide     /etc/pip.conf
+#
+# The found file is copied into $VENV_DIR/pip.conf which pip reads as
+# the "site-level" configuration for the virtual environment.
+PIP_CONF_FOUND=""
+
+# Build the candidate list
+CANDIDATES=""
+
+# 1–2: Invoking user's config (only if SUDO_USER is set and isn't root)
+if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+    INVOKER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+    if [ -n "$INVOKER_HOME" ]; then
+        CANDIDATES="$INVOKER_HOME/.config/pip/pip.conf $INVOKER_HOME/.pip/pip.conf"
+    fi
+fi
+
+# 3–4: Root's config
+CANDIDATES="$CANDIDATES /root/.config/pip/pip.conf /root/.pip/pip.conf"
+
+# 5: System-wide
+CANDIDATES="$CANDIDATES /etc/pip.conf"
+
+for pip_conf in $CANDIDATES; do
     if [ -f "$pip_conf" ]; then
         cp "$pip_conf" "$VENV_DIR/pip.conf"
-        echo "Using pip configuration from $pip_conf"
+        echo "Copied pip configuration from $pip_conf into venv"
+        PIP_CONF_FOUND="$pip_conf"
         break
     fi
 done
+
+if [ -z "$PIP_CONF_FOUND" ]; then
+    echo "No pip configuration found; using default PyPI index."
+fi
 
 echo "Installing IQView {version}..."
 "$VENV_DIR/bin/pip" install "iqview=={version}"
