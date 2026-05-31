@@ -24,7 +24,21 @@ class SettingsManager:
             '.64fc': 'complex128',
             '.32fc': 'complex64',
             '.bin': 'complex64',
-            '.iq': 'complex64'
+            '.iq': 'complex64',
+            # Audio formats — loaded via soundfile/scipy, sample rate from header
+            '.wav': 'audio',
+            '.flac': 'audio',
+            '.ogg': 'audio',
+            '.oga': 'audio',
+            '.aiff': 'audio',
+            '.aif': 'audio',
+            '.aifc': 'audio',
+            '.au': 'audio',
+            '.snd': 'audio',
+            '.w64': 'audio',
+            '.rf64': 'audio',
+            '.caf': 'audio',
+            '.sd2': 'audio',
         },
         "core/time_plots": [
             "instant frequency", 

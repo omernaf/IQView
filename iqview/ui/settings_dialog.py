@@ -900,7 +900,10 @@ class SettingsDialog(QDialog):
         self.ext_table.setItem(row, 0, ext_item)
         
         dtype_combo = QComboBox()
-        valid_types = ["int16", "float32", "float64", "complex64", "complex128"]
+        valid_types = [
+            "int16", "float32", "float64", "complex64", "complex128",
+            "audio", "caudio",
+        ]
         dtype_combo.addItems(valid_types)
         
         # In case an invalid type somehow got saved, default to complex64

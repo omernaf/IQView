@@ -4,6 +4,7 @@
 
 ### Added
 - **Complex Audio IQ Type (`-t caud` / `-t caudio`)**: Added a new data-type alias for loading audio files (WAV, FLAC, OGG, AIFF, AU, W64, RF64, CAF, SD2) whose samples represent interleaved IQ data. The file is first mixed down to mono using the same path as `-t aud`, then the flat sample array is deinterleaved into complex64 samples: even-indexed samples (`x[0::2]`) become the real (I) component and odd-indexed samples (`x[1::2]`) become the imaginary (Q) component. The resulting signal is displayed as a full complex IQ spectrogram. Useful for recordings exported from SDR software as interleaved audio streams. If the mono array has an odd number of samples the last sample is silently dropped to keep I/Q pairs balanced.
+- **Audio & Complex Audio in File Types Settings**: The type dropdown in **Settings → File Types** now includes `audio` and `caudio` alongside the existing binary types, allowing custom extensions to be mapped to either audio mode. All 12 supported audio formats (`.wav`, `.flac`, `.ogg`, `.oga`, `.aiff`, `.aif`, `.aifc`, `.au`, `.snd`, `.w64`, `.rf64`, `.caf`, `.sd2`) are now included in the factory default extension mapping, each pre-mapped to `audio`. Clicking **Reset to Default** in the File Types tab will restore these entries.
 
 ---
 
