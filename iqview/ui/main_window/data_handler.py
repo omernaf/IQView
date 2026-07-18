@@ -107,8 +107,6 @@ class DataHandlerMixin:
             return
         
         # Full mode: trigger high-res zoom re-render when sufficiently zoomed in
-        if not isinstance(self.data_source, str):
-            return   # can't re-read in-memory sources
         if getattr(self, 'full_spectrogram_cache', None) is None:
             return   # no full render done yet
         self._schedule_zoom_rerender()
@@ -132,8 +130,6 @@ class DataHandlerMixin:
 
     def _do_zoom_rerender(self):
         """In full mode: re-render at high res when zoomed in, restore cache when zoomed out."""
-        if not isinstance(self.data_source, str):
-            return
         if getattr(self, 'full_spectrogram_cache', None) is None:
             return
 
@@ -160,7 +156,7 @@ class DataHandlerMixin:
 
     def _do_lazy_render(self):
         """Build and launch a ViewportAwareReader for the current viewport."""
-        if self.data_source is None or not isinstance(self.data_source, str):
+        if self.data_source is None:
             return
 
         # Stop any still-running lazy worker
@@ -234,7 +230,10 @@ class DataHandlerMixin:
         try:
             item_size = np.dtype(self.data_type).itemsize
             read_mult = 2 if self.is_complex else 1
-            file_size = os.path.getsize(self.data_source)
+            if isinstance(self.data_source, (bytes, bytearray)):
+                file_size = len(self.data_source)
+            else:
+                file_size = os.path.getsize(self.data_source)
             total_samples = (file_size // item_size) // read_mult
             return total_samples / max(self.rate, 1)
         except Exception:

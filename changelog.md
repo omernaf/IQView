@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0] - 2026-07-18
+
+### Fixed
+- **Zoom Resolution in Full/Stdin Modes**: Fixed a bug where zoom-aware high-resolution re-rendering was completely disabled for stdin (piped) and in-memory (bytes/bytearray) data sources in full mode. This was caused by type-checking guards that incorrectly assumed in-memory sources could not be re-read, even though the backend reader class already supported them using in-memory streams.
+
+---
+
 ## [0.5.3] - 2026-05-31
 
 ### Added

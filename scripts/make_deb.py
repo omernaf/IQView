@@ -50,7 +50,7 @@ def get_project_version():
                     return line.split("=")[1].strip().strip('"').strip("'")
     except Exception:
         pass
-    return "0.5.3"
+    return "0.6.0"
 
 def find_wheel():
     """Find the .whl in dist/. Only needed for offline builds."""
