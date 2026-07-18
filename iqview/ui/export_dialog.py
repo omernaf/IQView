@@ -9,8 +9,11 @@ class ExportDialog(QtWidgets.QDialog):
     def __init__(self, ui_controller, parent=None):
         super().__init__(parent)
         self.ui_controller = ui_controller
-        # True when opened from a TimeDomainView instead of the main SpectrogramWindow
-        self.is_time_domain = not getattr(ui_controller, 'is_spectrogram', True)
+        # Identify the controller type
+        class_name = ui_controller.__class__.__name__
+        self.is_spectrogram = (class_name == "SpectrogramWindow")
+        self.is_time_domain = (class_name == "TimeDomainView")
+        self.is_freq_domain = (class_name == "FrequencyDomainView")
         self.setWindowTitle("Export Data & Image")
         self.resize(520, 730)
         
@@ -45,7 +48,7 @@ class ExportDialog(QtWidgets.QDialog):
         # Scope Group
         scope_group = QtWidgets.QGroupBox("Image Scope")
         scope_layout = QtWidgets.QVBoxLayout(scope_group)
-        self.radio_raw = QtWidgets.QRadioButton("Raw Spectrogram (Pixels only)")
+        self.radio_raw = QtWidgets.QRadioButton("Raw Image")
         self.radio_axes = QtWidgets.QRadioButton("Plot with Axes and Markers")
         self.radio_window = QtWidgets.QRadioButton("Entire Window")
         self.radio_axes.setChecked(True)
@@ -133,6 +136,33 @@ class ExportDialog(QtWidgets.QDialog):
             range_layout.addWidget(self.radio_visible)
             range_layout.addWidget(self.radio_markers)
             layout.addWidget(range_group)
+        elif self.is_freq_domain:
+            # ---- Frequency Domain data export ----
+            fmt_group = QtWidgets.QGroupBox("Data Format")
+            fmt_layout = QtWidgets.QVBoxLayout(fmt_group)
+            self.radio_mat = QtWidgets.QRadioButton("MATLAB (.mat)  —  struct with Freq/Amp/IQ")
+            self.radio_npy = QtWidgets.QRadioButton("NumPy (.npy)  —  (N, 2) array [Freq, Amp]")
+            self.radio_csv = QtWidgets.QRadioButton("CSV/Text (.csv)  —  comma-separated table")
+            self.radio_mat.setChecked(True)
+            fmt_layout.addWidget(self.radio_mat)
+            fmt_layout.addWidget(self.radio_npy)
+            fmt_layout.addWidget(self.radio_csv)
+            layout.addWidget(fmt_group)
+
+            range_group = QtWidgets.QGroupBox("Data Range")
+            range_layout = QtWidgets.QVBoxLayout(range_group)
+            self.radio_full = QtWidgets.QRadioButton("Full Spectrum")
+            self.radio_visible = QtWidgets.QRadioButton("Visible Frequencies")
+            self.radio_markers = QtWidgets.QRadioButton("Between Frequency Markers (M1/M2)")
+            self.radio_full.setChecked(True)
+            has_two_markers = len(getattr(self.ui_controller, 'markers_freq', [])) == 2
+            self.radio_markers.setEnabled(has_two_markers)
+            if not has_two_markers:
+                self.radio_markers.setToolTip("Place two frequency markers to enable this option.")
+            range_layout.addWidget(self.radio_full)
+            range_layout.addWidget(self.radio_visible)
+            range_layout.addWidget(self.radio_markers)
+            layout.addWidget(range_group)
         else:
             # ---- Spectrogram / IQ data export ----
             fmt_group = QtWidgets.QGroupBox("Data Format")
@@ -195,7 +225,7 @@ class ExportDialog(QtWidgets.QDialog):
 
     def _get_source_name(self):
         s = self.ui_controller
-        src = getattr(s.parent_window if self.is_time_domain else s, 'data_source', 'N/A')
+        src = getattr(s.parent_window if (self.is_time_domain or self.is_freq_domain) else s, 'data_source', 'N/A')
         if isinstance(src, (bytes, bytearray)):
             return "<stdin>"
         return str(src)
@@ -218,6 +248,16 @@ class ExportDialog(QtWidgets.QDialog):
                 f"Segment Start: {s.start_time:.6f} s",
                 f"Segment Duration: {duration:.6f} s",
                 f"Samples: {len(s.samples)}",
+            ]
+        elif self.is_freq_domain:
+            duration = len(s.samples) / s.rate
+            md = [
+                f"Source: {src_str}",
+                f"Center Freq: {s.center_freq / 1e6:.3f} MHz",
+                f"Sample Rate: {s.rate / 1e6:.3f} MHz",
+                f"Segment Duration: {duration:.6f} s",
+                f"Samples: {len(s.samples)}",
+                f"Plot Mode: {s.y_label_text}",
             ]
         else:
             md = [
@@ -260,10 +300,29 @@ class ExportDialog(QtWidgets.QDialog):
             self.refresh_preview()
 
     def _capture_td_raw(self):
-        """Capture the raw waveform pixels from the TimeDomainView plot."""
-        from pyqtgraph.exporters import ImageExporter
-        exporter = ImageExporter(self.ui_controller.plot_widget.plotItem)
-        return QtGui.QPixmap.fromImage(exporter.export(toBytes=True))
+        """Capture the raw plot curves without axes, labels, grid lines, or markers."""
+        s = self.ui_controller
+        plot_item = s.plot_widget.plotItem
+        view_box = plot_item.vb
+        
+        # Identify and temporarily hide non-curve items (markers, regions, stats dots)
+        hidden_items = []
+        for item in plot_item.items:
+            if isinstance(item, (pg.InfiniteLine, pg.LinearRegionItem, pg.ScatterPlotItem)):
+                if item.isVisible():
+                    item.hide()
+                    hidden_items.append(item)
+                    
+        try:
+            from pyqtgraph.exporters import ImageExporter
+            exporter = ImageExporter(view_box)
+            img = exporter.export(toBytes=True)
+        finally:
+            # Restore visibility
+            for item in hidden_items:
+                item.show()
+                
+        return QtGui.QPixmap.fromImage(img)
 
     def _capture_td_axes(self):
         """Capture the TimeDomainView plot including axes and markers."""
@@ -277,13 +336,13 @@ class ExportDialog(QtWidgets.QDialog):
             return
         try:
             if self.radio_raw.isChecked():
-                if self.is_time_domain:
+                if self.is_time_domain or self.is_freq_domain:
                     pix = self._capture_td_raw()
                 else:
                     img = self.ui_controller.spectrogram_view.capture_raw_image()
                     pix = QtGui.QPixmap.fromImage(img)
             elif self.radio_axes.isChecked():
-                if self.is_time_domain:
+                if self.is_time_domain or self.is_freq_domain:
                     pix = self._capture_td_axes()
                 else:
                     img = self.ui_controller.spectrogram_view.capture_plot_with_axes()
@@ -318,11 +377,11 @@ class ExportDialog(QtWidgets.QDialog):
 
     def get_selected_image(self):
         if self.radio_raw.isChecked():
-            if self.is_time_domain:
+            if self.is_time_domain or self.is_freq_domain:
                 return self._capture_td_raw().toImage()
             return self.ui_controller.spectrogram_view.capture_raw_image()
         elif self.radio_axes.isChecked():
-            if self.is_time_domain:
+            if self.is_time_domain or self.is_freq_domain:
                 return self._capture_td_axes().toImage()
             return self.ui_controller.spectrogram_view.capture_plot_with_axes()
         else:
@@ -438,6 +497,73 @@ class ExportDialog(QtWidgets.QDialog):
                     np.save(path, data.astype(np.complex64))
                 else:  # raw binary .32fc
                     data.astype(np.complex64).tofile(path)
+                
+                if self.chk_auto_metadata.isChecked():
+                    json_path = os.path.splitext(path)[0] + '.json'
+                    self.export_metadata_json(auto_path=json_path)
+
+                QtWidgets.QMessageBox.information(self, "Export Successful", f"Data exported to {os.path.basename(path)}")
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(self, "Export Error", f"Failed to export data: {str(e)}")
+            return
+
+        elif self.is_freq_domain:
+            # ---- Frequency Domain export ----
+            f_start = s.freq_axis[0]
+            f_end = s.freq_axis[-1]
+
+            if self.radio_visible.isChecked():
+                xr, _ = s.view_box.viewRange()
+                f_start, f_end = xr[0], xr[1]
+            elif self.radio_markers.isChecked():
+                m1 = s.markers_freq[0].value()
+                m2 = s.markers_freq[1].value()
+                f_start, f_end = min(m1, m2), max(m1, m2)
+
+            i_start = np.searchsorted(s.freq_axis, f_start)
+            i_end = np.searchsorted(s.freq_axis, f_end)
+            i_start, i_end = max(0, i_start), min(len(s.freq_axis), i_end)
+
+            export_freqs = s.freq_axis[i_start:i_end]
+            export_data = s.current_plot_data[i_start:i_end]
+
+            if len(export_freqs) == 0:
+                QtWidgets.QMessageBox.warning(self, "Export Failed", "No data in selected range.")
+                return
+
+            is_mat = self.radio_mat.isChecked()
+            is_npy = self.radio_npy.isChecked()
+            if is_mat:
+                ext, filter_str = "mat", "MATLAB Files (*.mat)"
+            elif is_npy:
+                ext, filter_str = "npy", "NumPy Files (*.npy)"
+            else:  # CSV
+                ext, filter_str = "csv", "CSV Files (*.csv)"
+
+            path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Export Data", "", filter_str)
+            if not path: return
+            if not path.lower().endswith(f".{ext}"): path += f".{ext}"
+
+            try:
+                if is_mat:
+                    scipy.io.savemat(path, {
+                        "frequency_hz": export_freqs,
+                        "magnitude": export_data,
+                        "y_label": s.y_label_text,
+                        "raw_iq_samples": s.samples,
+                        "center_freq_hz": s.center_freq,
+                        "sample_rate_hz": s.rate,
+                    })
+                elif is_npy:
+                    np.save(path, np.column_stack((export_freqs, export_data)))
+                else:  # CSV
+                    np.savetxt(
+                        path, 
+                        np.column_stack((export_freqs, export_data)), 
+                        delimiter=",", 
+                        header=f"Frequency_Hz,Magnitude_{s.y_label_text.replace(' ', '_')}", 
+                        comments=""
+                    )
                 
                 if self.chk_auto_metadata.isChecked():
                     json_path = os.path.splitext(path)[0] + '.json'
@@ -565,6 +691,17 @@ class ExportDialog(QtWidgets.QDialog):
             }
             if len(s.markers_time) >= 1: meta["marker_1_s"] = s.markers_time[0].value()
             if len(s.markers_time) >= 2: meta["marker_2_s"] = s.markers_time[1].value()
+        elif self.is_freq_domain:
+            meta = {
+                "source": src_str,
+                "center_freq_hz": s.center_freq,
+                "sample_rate_hz": s.rate,
+                "segment_duration_s": len(s.samples) / s.rate,
+                "num_samples": len(s.samples),
+                "plot_mode": s.y_label_text,
+            }
+            if len(s.markers_freq) >= 1: meta["freq_marker_1_hz"] = s.markers_freq[0].value()
+            if len(s.markers_freq) >= 2: meta["freq_marker_2_hz"] = s.markers_freq[1].value()
         else:
             meta = {
                 "source": src_str,
