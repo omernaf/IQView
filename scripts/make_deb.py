@@ -112,8 +112,15 @@ python3 -m venv "$VENV_DIR"
 echo "Installing IQView and dependencies from local wheels..."
 "$VENV_DIR/bin/pip" install --no-index --find-links="$APP_DIR/wheels" "$WHEEL_PATH"
 
-echo "Creating symbolic link..."
-ln -sf "$VENV_DIR/bin/iqview" /usr/bin/iqview
+echo "Creating launcher script..."
+cat << 'EOF' > /usr/bin/iqview
+#!/bin/bash
+# Disable system platform theme integration to prevent Qt library collisions
+export QT_QPA_PLATFORMTHEME=""
+export QT_STYLE_OVERRIDE=""
+exec "/opt/iqview/venv/bin/iqview" "$@"
+EOF
+chmod +x /usr/bin/iqview
 
 # Trigger desktop integration to set up associations
 echo "Configuring desktop integration and file associations..."
@@ -186,8 +193,15 @@ fi
 echo "Installing IQView {version}..."
 "$VENV_DIR/bin/pip" install "iqview=={version}"
 
-echo "Creating symbolic link..."
-ln -sf "$VENV_DIR/bin/iqview" /usr/bin/iqview
+echo "Creating launcher script..."
+cat << 'EOF' > /usr/bin/iqview
+#!/bin/bash
+# Disable system platform theme integration to prevent Qt library collisions
+export QT_QPA_PLATFORMTHEME=""
+export QT_STYLE_OVERRIDE=""
+exec "/opt/iqview/venv/bin/iqview" "$@"
+EOF
+chmod +x /usr/bin/iqview
 
 # Trigger desktop integration to set up associations
 echo "Configuring desktop integration and file associations..."
