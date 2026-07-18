@@ -10,11 +10,13 @@ class ViewControllerMixin:
     def on_parameters_changed(self, params):
         needs_reprocess = (self.fft_size != params['fft_size'] or 
                            self.overlap_percent != params['overlap_percent'] or
-                           self.window_type != params['window_type'])
+                           self.window_type != params['window_type'] or
+                           getattr(self, 'window_size', None) != params.get('window_size', params['fft_size']))
         
         old_rate, old_fc = self.rate, self.fc
         self.rate, self.fc = params['fs'], params['fc']
         self.fft_size, self.window_type, self.overlap_percent = params['fft_size'], params['window_type'], params['overlap_percent']
+        self.window_size = params.get('window_size', params['fft_size'])
         
         if hasattr(self, '_add_recent_file') and getattr(self, 'file_path', None):
             self._add_recent_file(self.file_path, type_str=getattr(self, 'current_type_str', None), fs=self.rate, fc=self.fc)

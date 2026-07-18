@@ -74,12 +74,13 @@ class VersionChecker(QObject):
 class SidePanel(QFrame):
     parametersChanged = pyqtSignal(dict)
 
-    def __init__(self, fs, fc, fft_size, window_type="Hamming", overlap_percent=99.0, parent_window=None):
+    def __init__(self, fs, fc, fft_size, window_type="Hamming", overlap_percent=99.0, window_size=None, parent_window=None):
         super().__init__()
         self.parent_window = parent_window
         self.fs = fs
         self.fc = fc
         self.fft_size = fft_size
+        self.window_size = window_size if window_size is not None else fft_size
         self.window_type = window_type
         self.overlap_percent = overlap_percent
         
@@ -178,6 +179,11 @@ class SidePanel(QFrame):
         self.fft_combo.currentIndexChanged.connect(self.on_fft_combo_changed)
         self.layout.addWidget(self.fft_combo)
 
+        self.layout.addWidget(QLabel("Window Size (samples)"))
+        self.window_size_edit = QLineEdit(str(self.window_size))
+        self.window_size_edit.returnPressed.connect(self.on_window_size_edited)
+        self.layout.addWidget(self.window_size_edit)
+
         self.layout.addWidget(QLabel("Overlap (%)"))
         self.overlap_edit = QLineEdit(str(self.overlap_percent))
         self.overlap_edit.returnPressed.connect(self.on_overlap_edited)
@@ -263,7 +269,7 @@ class SidePanel(QFrame):
             self.rbw_display.setText(f"{rbw:.2f} Hz")
         
         # dt = step_size / Fs
-        step_size = int(self.fft_size * (1.0 - self.overlap_percent / 100.0))
+        step_size = int(self.window_size * (1.0 - self.overlap_percent / 100.0))
         step_size = max(1, step_size)
         
         if self.fs == 0:
@@ -278,8 +284,26 @@ class SidePanel(QFrame):
                 self.dt_display.setText(f"{dt:.6f} s")
 
     def on_fft_combo_changed(self):
+        old_fft = self.fft_size
         self.fft_size = int(self.fft_combo.currentText())
+        if self.window_size == old_fft or self.window_size > self.fft_size:
+            self.window_size = self.fft_size
+            self.window_size_edit.setText(str(self.window_size))
         self.on_edit_finished()
+
+    def on_window_size_edited(self):
+        try:
+            val = int(self.window_size_edit.text())
+            if val > self.fft_size:
+                val = self.fft_size
+            elif val < 1:
+                val = 1
+            self.window_size = val
+            self.window_size_edit.setText(str(self.window_size))
+            self.on_edit_finished()
+        except ValueError:
+            self.window_size_edit.setText(str(self.window_size))
+            self.update_derived_values()
 
     def on_window_type_changed(self):
         self.window_type = self.window_type_combo.currentText()
@@ -297,7 +321,6 @@ class SidePanel(QFrame):
         try:
             self.fs = float(self.fs_edit.text())
             self.fc = float(self.fc_edit.text())
-            # self.fft_size already updated by combo change or rbw logic
             
             self.update_derived_values()
             
@@ -305,6 +328,7 @@ class SidePanel(QFrame):
                 'fs': self.fs,
                 'fc': self.fc,
                 'fft_size': self.fft_size,
+                'window_size': self.window_size,
                 'window_type': self.window_type,
                 'overlap_percent': self.overlap_percent
             }

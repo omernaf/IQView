@@ -19,12 +19,14 @@ class FileReaderThread(QThread):
     
     def __init__(self, source, dtype, fft_size, overlap_percent, sample_rate, 
                  profile_enabled=False, window_type="Hanning",
-                 filter_mode=None, f_min=None, f_max=None, is_complex=True, **kwargs):
+                 filter_mode=None, f_min=None, f_max=None, is_complex=True,
+                 window_size=None, **kwargs):
         super().__init__()
         self.source = source
         self.dtype = dtype
         self.is_complex = is_complex
         self.fft_size = fft_size
+        self.window_size = window_size if window_size is not None else fft_size
         self.sample_rate = sample_rate
         self.profile_enabled = profile_enabled
         self.running = True
@@ -54,18 +56,18 @@ class FileReaderThread(QThread):
         
         # Select Window Function
         if window_type == "Hanning":
-            self.window = np.hanning(fft_size).astype(np.float32)
+            self.window = np.hanning(self.window_size).astype(np.float32)
         elif window_type == "Hamming":
-            self.window = np.hamming(fft_size).astype(np.float32)
+            self.window = np.hamming(self.window_size).astype(np.float32)
         elif window_type == "Blackman":
-            self.window = np.blackman(fft_size).astype(np.float32)
+            self.window = np.blackman(self.window_size).astype(np.float32)
         elif window_type == "Bartlett":
-            self.window = np.bartlett(fft_size).astype(np.float32)
+            self.window = np.bartlett(self.window_size).astype(np.float32)
         else: # Rectangular / None
-            self.window = np.ones(fft_size, dtype=np.float32)
+            self.window = np.ones(self.window_size, dtype=np.float32)
         
         # Calculate step size based on requested overlap
-        req_step_size = int(fft_size * (1.0 - overlap_percent / 100.0))
+        req_step_size = int(self.window_size * (1.0 - overlap_percent / 100.0))
         req_step_size = max(1, req_step_size)
         
         item_size = np.dtype(self.dtype).itemsize
@@ -80,8 +82,8 @@ class FileReaderThread(QThread):
         
         # We want to cover the whole file. 
         # Calculate how many rows would be needed with requested step_size
-        if self.complex_samples > self.fft_size:
-            requested_rows = (self.complex_samples - self.fft_size) // req_step_size + 1
+        if self.complex_samples > self.window_size:
+            requested_rows = (self.complex_samples - self.window_size) // req_step_size + 1
         else:
             requested_rows = 0
             
@@ -91,10 +93,10 @@ class FileReaderThread(QThread):
         
         if requested_rows > max_rows_limit and requested_rows > 0:
             self.num_rows = max_rows_limit
-            # Ensure the last window (fft_size) ends exactly at or before complex_samples
-            # (num_rows - 1) * step_size + fft_size <= complex_samples
-            # step_size <= (complex_samples - fft_size) / (num_rows - 1)
-            self.step_size = (self.complex_samples - self.fft_size) // (self.num_rows - 1)
+            # Ensure the last window (window_size) ends exactly at or before complex_samples
+            # (num_rows - 1) * step_size + window_size <= complex_samples
+            # step_size <= (complex_samples - window_size) / (num_rows - 1)
+            self.step_size = (self.complex_samples - self.window_size) // (self.num_rows - 1)
             self.step_size = max(req_step_size, self.step_size)
         else:
             self.num_rows = requested_rows
@@ -109,7 +111,6 @@ class FileReaderThread(QThread):
             return
 
         item_size = np.dtype(self.dtype).itemsize
-        # chunk_read_size = self.fft_size * (2 if self.is_complex else 1)
         
         import time
         start_time = time.time()
@@ -142,7 +143,7 @@ class FileReaderThread(QThread):
                     
                     # Read Time (Batch)
                     t_read_start = time.time()
-                    total_samples_to_read = (rows_to_process - 1) * self.step_size + self.fft_size
+                    total_samples_to_read = (rows_to_process - 1) * self.step_size + self.window_size
                     data_bytes = f.read(total_samples_to_read * read_multiplier * item_size)
                     read_time += (time.time() - t_read_start)
                     
@@ -165,17 +166,14 @@ class FileReaderThread(QThread):
                         # Already real samples, just treat as complex with 0 imag
                         full_complex = raw_array.astype(np.complex64)
                     
-                    # No time-domain filtering — BPF is applied in the frequency domain
-                    # below (after fftshift) for maximum performance and visual consistency.
-
                     # Extract windows into a 2D array for vectorized processing
                     # We use stride_tricks to avoid copying data where possible
                     from numpy.lib.stride_tricks import as_strided
                     itemsize = full_complex.itemsize
                     
                     # SAFETY CHECK: Ensure we don't stride past the end of full_complex
-                    # The last element accessed is (rows_to_process - 1) * step_size + (fft_size - 1)
-                    required_samples = (rows_to_process - 1) * self.step_size + self.fft_size
+                    # The last element accessed is (rows_to_process - 1) * step_size + (window_size - 1)
+                    required_samples = (rows_to_process - 1) * self.step_size + self.window_size
                     if len(full_complex) < required_samples:
                         # Pad with zeros if we under-read (should be rare with fixed step_size)
                         padded = np.zeros(required_samples, dtype=full_complex.dtype)
@@ -184,7 +182,7 @@ class FileReaderThread(QThread):
 
                     complex_batch = as_strided(
                         full_complex,
-                        shape=(rows_to_process, self.fft_size),
+                        shape=(rows_to_process, self.window_size),
                         strides=(self.step_size * itemsize, itemsize),
                         writeable=False
                     )
@@ -192,8 +190,8 @@ class FileReaderThread(QThread):
                     # Apply window (vectorized across all rows)
                     windowed_batch = complex_batch * self.window
                     
-                    # FFT (vectorized across all rows)
-                    fft_batch = np.fft.fft(windowed_batch, axis=1)
+                    # FFT (vectorized across all rows) zero-padded to self.fft_size
+                    fft_batch = np.fft.fft(windowed_batch, n=self.fft_size, axis=1)
                     
                     # Post-process (vectorized)
                     shifted_batch = np.fft.fftshift(fft_batch, axes=1)
@@ -223,7 +221,7 @@ class FileReaderThread(QThread):
                     actual_rows = row_idx
                     total_duration = 0.0
                     if actual_rows > 0:
-                        total_samples_processed = (actual_rows - 1) * self.step_size + self.fft_size
+                        total_samples_processed = (actual_rows - 1) * self.step_size + self.window_size
                         total_duration = total_samples_processed / self.sample_rate
                     
                     io_time = seek_time + read_time
@@ -287,11 +285,13 @@ class ViewportAwareReader(QThread):
                  pixel_width, is_complex=True, window_type="Hanning",
                  overlap_percent=0.0,
                  filter_mode=None, f_min=None, f_max=None,
+                 window_size=None,
                  **kwargs):
         super().__init__()
         self.source        = source
         self.dtype         = dtype
         self.fft_size      = fft_size
+        self.window_size   = window_size if window_size is not None else fft_size
         self.sample_rate   = sample_rate
         self.t_start       = t_start
         self.t_end         = t_end
@@ -311,15 +311,15 @@ class ViewportAwareReader(QThread):
 
         # Window function
         if window_type == "Hanning":
-            self.window = np.hanning(fft_size).astype(np.float32)
+            self.window = np.hanning(self.window_size).astype(np.float32)
         elif window_type == "Hamming":
-            self.window = np.hamming(fft_size).astype(np.float32)
+            self.window = np.hamming(self.window_size).astype(np.float32)
         elif window_type == "Blackman":
-            self.window = np.blackman(fft_size).astype(np.float32)
+            self.window = np.blackman(self.window_size).astype(np.float32)
         elif window_type == "Bartlett":
-            self.window = np.bartlett(fft_size).astype(np.float32)
+            self.window = np.bartlett(self.window_size).astype(np.float32)
         else:
-            self.window = np.ones(fft_size, dtype=np.float32)
+            self.window = np.ones(self.window_size, dtype=np.float32)
 
         # --- Derive sample indices ---
         item_size = np.dtype(dtype).itemsize
@@ -350,16 +350,14 @@ class ViewportAwareReader(QThread):
         # appearance while completely dodging the 20,000+ row read bottlenecks.
         target_rows = max(1, self.pixel_width * 4)
 
-        req_step     = max(1, int(fft_size * (1.0 - overlap_percent / 100.0)))
-        natural_step = max(1, (view_samples - fft_size) // max(target_rows - 1, 1))
+        req_step     = max(1, int(self.window_size * (1.0 - overlap_percent / 100.0)))
+        natural_step = max(1, (view_samples - self.window_size) // max(target_rows - 1, 1))
         self.step_size = max(req_step, natural_step)
 
-        max_possible_rows = max(1, (view_samples - fft_size) // self.step_size + 1)
+        max_possible_rows = max(1, (view_samples - self.window_size) // self.step_size + 1)
         self.num_rows = min(max_possible_rows, target_rows)
 
-        # Precompute frequency-domain BPF response (much better than binary mask).
-        # We use the same filter design as the time-domain path, then evaluate
-        # its frequency response (roll-off) at each FFT bin.
+        # Precompute frequency-domain BPF response
         self.freq_mask = None
         if filter_mode in ['bpf', 'bsf'] and f_min is not None and f_max is not None:
             filter_data, f_center, is_fir = design_filter(sample_rate, f_min, f_max, **kwargs)
@@ -412,16 +410,16 @@ class ViewportAwareReader(QThread):
                 while self.running and row_idx < self.num_rows:
                     batch_now = self.num_rows - row_idx
                     
-                    # Logic: If step_size >= fft_size, we just read one row at a time.
-                    if self.step_size >= self.fft_size:
+                    # Logic: If step_size >= window_size, we just read one row at a time.
+                    if self.step_size >= self.window_size:
                         batch_now = 1
                     else:
                         # Limit batch size to keep reads under max_read_samples
-                        span_samples = (batch_now - 1) * self.step_size + self.fft_size
+                        span_samples = (batch_now - 1) * self.step_size + self.window_size
                         if span_samples > max_read_samples:
-                            batch_now = max(1, (max_read_samples - self.fft_size) // self.step_size + 1)
+                            batch_now = max(1, (max_read_samples - self.window_size) // self.step_size + 1)
                             
-                    samples_to_read = (batch_now - 1) * self.step_size + self.fft_size
+                    samples_to_read = (batch_now - 1) * self.step_size + self.window_size
                     
                     # Read directly into buffer
                     start_sample = self.s_read_start + row_idx * self.step_size
@@ -442,17 +440,17 @@ class ViewportAwareReader(QThread):
                     else:
                         valid_complex = raw_array.astype(np.complex64)
 
-                    if len(valid_complex) < self.fft_size:
-                        padded = np.zeros(self.fft_size, dtype=np.complex64)
+                    if len(valid_complex) < self.window_size:
+                        padded = np.zeros(self.window_size, dtype=np.complex64)
                         padded[:len(valid_complex)] = valid_complex
                         valid_complex = padded
 
                     if batch_now == 1:
                         # Single row
-                        windowed  = valid_complex[:self.fft_size] * self.window
+                        windowed  = valid_complex[:self.window_size] * self.window
                         # Expand dimensions to make it 2D so fft functions behave like batch processing
                         windowed  = windowed[np.newaxis, :]
-                        fft_out   = np.fft.fft(windowed, axis=1)
+                        fft_out   = np.fft.fft(windowed, n=self.fft_size, axis=1)
                         shifted   = np.fft.fftshift(fft_out, axes=1)
                         if self.freq_mask is not None:
                             shifted *= self.freq_mask
@@ -465,7 +463,7 @@ class ViewportAwareReader(QThread):
                         from numpy.lib.stride_tricks import as_strided
                         itemsize_c = valid_complex.itemsize
                         
-                        required = (batch_now - 1) * self.step_size + self.fft_size
+                        required = (batch_now - 1) * self.step_size + self.window_size
                         if len(valid_complex) < required:
                             padded = np.zeros(required, dtype=valid_complex.dtype)
                             padded[:len(valid_complex)] = valid_complex
@@ -473,13 +471,13 @@ class ViewportAwareReader(QThread):
                             
                         batch = as_strided(
                             valid_complex,
-                            shape=(batch_now, self.fft_size),
+                            shape=(batch_now, self.window_size),
                             strides=(self.step_size * itemsize_c, itemsize_c),
                             writeable=False
                         )
                         
                         windowed  = batch * self.window
-                        fft_out   = np.fft.fft(windowed, axis=1)
+                        fft_out   = np.fft.fft(windowed, n=self.fft_size, axis=1)
                         shifted   = np.fft.fftshift(fft_out, axes=1)
                         if self.freq_mask is not None:
                             shifted *= self.freq_mask  # broadcast across rows, zero-cost

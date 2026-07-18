@@ -260,6 +260,7 @@ class UIComponentsMixin:
         self.sidebar = SidePanel(self.rate, self.fc, self.fft_size,
                                  window_type=self.window_type,
                                  overlap_percent=self.overlap_percent,
+                                 window_size=getattr(self, 'window_size', self.fft_size),
                                  parent_window=self)
         self.sidebar.parametersChanged.connect(self.on_parameters_changed)
         self.spec_h_layout.addWidget(self.sidebar)
