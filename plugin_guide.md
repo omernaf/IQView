@@ -273,7 +273,59 @@ result.add(Rect(
 
 ---
 
-## 7. Advanced Example: Detect Bursts
+## 7. Custom Configuration Parameters
+
+IQView supports dynamic configuration parameters for plugins. By defining a module-level `PLUGIN_PARAMS` dictionary, you can expose parameters that the user can configure interactively in the GUI before running the plugin.
+
+### Exposing Parameters
+
+Expose parameters by defining the `PLUGIN_PARAMS` dictionary at the top level of your plugin. Each key in the dictionary is the parameter ID, and its value is a dictionary specifying the parameter's properties:
+
+* `type`: The parameter type, which can be `"float"`, `"int"`, `"bool"`, or `"str"`.
+* `default`: The default value for the parameter.
+* `label`: The human-readable label displayed in the GUI form.
+* `tooltip`: (Optional) Helpful text shown when the user hovers over the input field in the GUI.
+
+#### Example Specification
+```python
+PLUGIN_PARAMS = {
+    "threshold_db": {
+        "type": "float",
+        "default": 15.0,
+        "label": "Threshold SNR (dB)",
+        "tooltip": "Power threshold in dB above the background noise floor"
+    },
+    "nfft": {
+        "type": "int",
+        "default": 512,
+        "label": "FFT Size",
+        "tooltip": "FFT size for spectrogram calculation"
+    },
+    "verbose": {
+        "type": "bool",
+        "default": True,
+        "label": "Verbose Logs"
+    }
+}
+```
+
+### Accessing Parameters in `run()`
+
+When the plugin is executed, the user-configured values are passed inside the `info` context dictionary under the `"params"` key. You should read them with safe fallback defaults (such as your module-level constants) to ensure backward compatibility:
+
+```python
+def run(samples: np.ndarray, info: dict) -> PluginResult:
+    # Extract user-configured parameters from the GUI context
+    params = info.get("params", {})
+    threshold_db = params.get("threshold_db", 15.0)
+    nfft = int(params.get("nfft", 512))
+    
+    # ... perform DSP calculations using these parameters ...
+```
+
+---
+
+## 8. Advanced Example: Detect Bursts
 
 ```python
 import numpy as np
