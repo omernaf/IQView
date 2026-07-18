@@ -15,7 +15,7 @@ class FileReaderThread(QThread):
       - bytes: raw IQ bytes already loaded in memory (e.g. piped from stdin)
     """
     progress = pyqtSignal(int, int)
-    finished_processing = pyqtSignal(np.ndarray, float)
+    finished_processing = pyqtSignal(np.ndarray, float, float)
     
     def __init__(self, source, dtype, fft_size, overlap_percent, sample_rate, 
                  profile_enabled=False, window_type="Hanning",
@@ -107,7 +107,7 @@ class FileReaderThread(QThread):
         
     def run(self):
         if self.num_rows <= 0:
-            self.finished_processing.emit(np.zeros((self.fft_size, 1), dtype=np.float32), 0.0)
+            self.finished_processing.emit(np.zeros((self.fft_size, 1), dtype=np.float32), 0.0, 0.0)
             return
 
         item_size = np.dtype(self.dtype).itemsize
@@ -219,10 +219,11 @@ class FileReaderThread(QThread):
                 total_time = time.time() - start_time
                 if self.running:
                     actual_rows = row_idx
-                    total_duration = 0.0
+                    actual_t_start = (self.window_size / 2 - self.step_size / 2) / self.sample_rate
                     if actual_rows > 0:
-                        total_samples_processed = (actual_rows - 1) * self.step_size + self.window_size
-                        total_duration = total_samples_processed / self.sample_rate
+                        actual_t_end = (self.window_size / 2 - self.step_size / 2 + actual_rows * self.step_size) / self.sample_rate
+                    else:
+                        actual_t_end = actual_t_start
                     
                     io_time = seek_time + read_time
                     other_time = total_time - (io_time + dsp_time + overhead_time)
@@ -239,7 +240,7 @@ class FileReaderThread(QThread):
                         print(f" - Other/Python:  {other_time:.3f}s ({(other_time/total_time)*100:.1f}%)")
                         print("-"*30 + "\n")
                     
-                    self.finished_processing.emit(self.spectrogram[:actual_rows, :].T, total_duration)
+                    self.finished_processing.emit(self.spectrogram[:actual_rows, :].T, actual_t_start, actual_t_end)
                     
         except Exception as e:
             print(f"Error reading IQ source: {e}")
@@ -491,10 +492,15 @@ class ViewportAwareReader(QThread):
                         self.progress.emit(row_idx, self.num_rows)
 
             if self.running:
+                actual_t_start = (self.s_start + self.window_size / 2 - self.step_size / 2) / self.sample_rate
+                if row_idx > 0:
+                    actual_t_end = (self.s_start + self.window_size / 2 - self.step_size / 2 + row_idx * self.step_size) / self.sample_rate
+                else:
+                    actual_t_end = actual_t_start
                 self.finished_processing.emit(
                     spectrogram[:row_idx].T,  # (fft_size, num_rows)
-                    self.t_start,
-                    self.t_end
+                    actual_t_start,
+                    actual_t_end
                 )
 
         except Exception as e:

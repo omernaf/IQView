@@ -250,8 +250,8 @@ class DataHandlerMixin:
         self.progress_bar.setMaximum(total)
         self.progress_bar.setValue(current)
 
-    @pyqtSlot(np.ndarray, float)
-    def display_spectrogram(self, full_spectrogram, duration):
+    @pyqtSlot(np.ndarray, float, float)
+    def display_spectrogram(self, full_spectrogram, t_start, t_end):
         """Slot for the legacy full-file FileReaderThread."""
         was_first = self.is_first_load
         self.progress_bar.setValue(0)
@@ -260,10 +260,11 @@ class DataHandlerMixin:
             "QProgressBar::chunk { background-color: transparent; }"
         )
         self.full_spectrogram_cache = full_spectrogram
-        self.time_duration = duration
-        self.total_samples_in_cache = int(round(duration * self.rate))
+        total_duration = self._estimate_file_duration()
+        self.time_duration = total_duration
+        self.total_samples_in_cache = int(round(total_duration * self.rate))
         self.spectrogram_view.update_spectrogram(
-            full_spectrogram, self.fc, self.rate, self.time_duration,
+            full_spectrogram, self.fc, self.rate, t_start, t_end,
             auto_range=self.is_first_load
         )
         self.is_first_load = False
