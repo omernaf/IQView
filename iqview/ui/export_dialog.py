@@ -5,6 +5,42 @@ from PyQt6 import QtWidgets, QtCore, QtGui
 from PyQt6.QtCore import Qt, pyqtSlot
 import pyqtgraph as pg
 
+class PreviewLabel(QtWidgets.QLabel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._pixmap = None
+
+    def setPixmap(self, pixmap):
+        self._pixmap = pixmap
+        if pixmap and not pixmap.isNull():
+            super().setText("")  # Clear placeholder text
+        self.update()
+
+    def setText(self, text):
+        if text:
+            self._pixmap = None
+        super().setText(text)
+
+    def sizeHint(self):
+        return QtCore.QSize(480, 220)
+
+    def minimumSizeHint(self):
+        return QtCore.QSize(200, 150)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self._pixmap and not self._pixmap.isNull():
+            painter = QtGui.QPainter(self)
+            rect = self.contentsRect()
+            scaled = self._pixmap.scaled(
+                rect.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            x = rect.left() + (rect.width() - scaled.width()) // 2
+            y = rect.top() + (rect.height() - scaled.height()) // 2
+            painter.drawPixmap(x, y, scaled)
+
 class ExportDialog(QtWidgets.QDialog):
     def __init__(self, ui_controller, parent=None):
         super().__init__(parent)
@@ -67,9 +103,8 @@ class ExportDialog(QtWidgets.QDialog):
         preview_layout = QtWidgets.QVBoxLayout(preview_group)
         preview_layout.setContentsMargins(8, 16, 8, 8)
 
-        self.preview_label = QtWidgets.QLabel()
+        self.preview_label = PreviewLabel()
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview_label.setMinimumHeight(220)
         self.preview_label.setObjectName("previewLabel")
         self.preview_label.setText("Loading preview…")
         preview_layout.addWidget(self.preview_label)
@@ -361,15 +396,7 @@ class ExportDialog(QtWidgets.QDialog):
             # Record original pixel dims for the size hint
             orig_w, orig_h = pix.width(), pix.height()
 
-            # Scale to fit the label, keeping aspect ratio
-            max_w = self.preview_label.width() or 480
-            max_h = self.preview_label.minimumHeight()
-            scaled = pix.scaled(
-                max_w, max_h,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
-            )
-            self.preview_label.setPixmap(scaled)
+            self.preview_label.setPixmap(pix)
             self.preview_size_label.setText(f"{orig_w} × {orig_h} px")
         except Exception as e:
             self.preview_label.setText(f"Preview error: {e}")
