@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QCheckBox, QPushButton, QHBoxLayout, QStackedWidget, QWidget, QScrollArea, QVBoxLayout, QButtonGroup
+from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QCheckBox, QPushButton, QHBoxLayout, QStackedWidget, QWidget, QScrollArea, QVBoxLayout, QButtonGroup, QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox, QSpinBox, QLineEdit
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap
 import importlib.resources
@@ -109,6 +109,15 @@ class MarkerPanel(QFrame):
         self.btn_overlay.setCheckable(True)
         self.mode_btn_layout.addWidget(self.btn_overlay, 0, 4)
 
+        # 8. Plugins Mode
+        self.btn_plugins = QPushButton("")
+        self.btn_plugins.setIcon(self._get_icon("plugins"))
+        self.btn_plugins.setIconSize(QSize(32, 32))
+        self.btn_plugins.setObjectName("mode_btn")
+        self.btn_plugins.setToolTip("Plugins Panel — manage and run plugins")
+        self.btn_plugins.setCheckable(True)
+        self.mode_btn_layout.addWidget(self.btn_plugins, 1, 4)
+
         # Re-assign BPF to row 1, col 3 (push it down) — already done above
 
         self.btn_home.clicked.connect(self.resetZoomRequested.emit)
@@ -123,6 +132,7 @@ class MarkerPanel(QFrame):
         self.mode_group.addButton(self.btn_move)
         self.mode_group.addButton(self.btn_bpf)
         self.mode_group.addButton(self.btn_overlay)
+        self.mode_group.addButton(self.btn_plugins)
         self.mode_group.setExclusive(True)
 
         # Connections
@@ -134,6 +144,7 @@ class MarkerPanel(QFrame):
         self.btn_move.clicked.connect(lambda: self.interactionModeChanged.emit('MOVE'))
         self.btn_bpf.clicked.connect(lambda: self.interactionModeChanged.emit('FILTER'))
         self.btn_overlay.clicked.connect(lambda: self.interactionModeChanged.emit('OVERLAY'))
+        self.btn_plugins.clicked.connect(lambda: self.interactionModeChanged.emit('PLUGINS'))
         
         self.btn_marker_time.doubleClicked.connect(lambda: self.markerClearRequested.emit('TIME'))
         self.btn_marker_freq.doubleClicked.connect(lambda: self.markerClearRequested.emit('FREQ'))
@@ -316,6 +327,44 @@ class MarkerPanel(QFrame):
         self.overlay_scroll.setWidget(self.overlay_scroll_content)
         self.overlay_layout.addWidget(self.overlay_scroll)
 
+        # Page 3: Plugins Mode
+        self.plugins_widget = QWidget()
+        self.stack.addWidget(self.plugins_widget)
+        self.plugins_layout = QVBoxLayout(self.plugins_widget)
+        self.plugins_layout.setContentsMargins(0, 0, 0, 0)
+        self.plugins_layout.setSpacing(2)
+        
+        # --- Plugins Control Header ---
+        self.plugins_control_widget = QWidget()
+        self.plugins_control_layout = QHBoxLayout(self.plugins_control_widget)
+        self.plugins_control_layout.setContentsMargins(5, 2, 5, 2)
+        self.plugins_control_layout.setSpacing(10)
+        
+        self.btn_load_plugin = QPushButton("Load Plugin...")
+        self.btn_load_plugin.setFixedHeight(24)
+        self.btn_load_plugin.clicked.connect(self.parent_window.load_plugin)
+        
+        self.plugins_control_layout.addWidget(QLabel("Plugins Manager"))
+        self.plugins_control_layout.addStretch()
+        self.plugins_control_layout.addWidget(self.btn_load_plugin)
+        
+        self.plugins_layout.addWidget(self.plugins_control_widget)
+        
+        # --- Plugins Scroll Area ---
+        self.plugins_scroll = QScrollArea()
+        self.plugins_scroll.setWidgetResizable(True)
+        self.plugins_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.plugins_scroll.setStyleSheet("background: transparent;")
+        
+        self.plugins_scroll_content = QWidget()
+        self.plugins_scroll_layout = QVBoxLayout(self.plugins_scroll_content)
+        self.plugins_scroll_layout.setContentsMargins(0, 0, 10, 0)
+        self.plugins_scroll_layout.setSpacing(4)
+        self.plugins_scroll_layout.addStretch()
+        
+        self.plugins_scroll.setWidget(self.plugins_scroll_content)
+        self.plugins_layout.addWidget(self.plugins_scroll)
+
         # Explicit Default Force
         self.btn_marker_time.setChecked(True)
         self.interactionModeChanged.emit('TIME')
@@ -485,6 +534,7 @@ class MarkerPanel(QFrame):
         self.btn_move.blockSignals(True)
         self.btn_bpf.blockSignals(True)
         self.btn_overlay.blockSignals(True)
+        if hasattr(self, 'btn_plugins'): self.btn_plugins.blockSignals(True)
         
         self.btn_marker_time.setChecked(mode == 'TIME')
         self.btn_marker_freq.setChecked(mode == 'FREQ')
@@ -494,6 +544,7 @@ class MarkerPanel(QFrame):
         self.btn_move.setChecked(mode == 'MOVE')
         self.btn_bpf.setChecked(mode == 'FILTER')
         self.btn_overlay.setChecked(mode == 'OVERLAY')
+        if hasattr(self, 'btn_plugins'): self.btn_plugins.setChecked(mode == 'PLUGINS')
         
         self.btn_marker_time.blockSignals(False)
         self.btn_marker_freq.blockSignals(False)
@@ -503,6 +554,7 @@ class MarkerPanel(QFrame):
         self.btn_move.blockSignals(False)
         self.btn_bpf.blockSignals(False)
         self.btn_overlay.blockSignals(False)
+        if hasattr(self, 'btn_plugins'): self.btn_plugins.blockSignals(False)
 
         self.current_mode = mode
         
@@ -511,13 +563,15 @@ class MarkerPanel(QFrame):
         self._apply_marker_button_icons(waterfall)
         
         # Track the last valid marker mode to display in the table
-        if mode in ['TIME', 'FREQ', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'OVERLAY']:
+        if mode in ['TIME', 'FREQ', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'OVERLAY', 'PLUGINS']:
             self.last_marker_mode = mode
             
         display_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE'] else mode
 
         if display_mode == 'OVERLAY':
             self.stack.setCurrentIndex(2)
+        elif display_mode == 'PLUGINS':
+            self.stack.setCurrentIndex(3)
         elif display_mode in ['TIME_ENDLESS', 'FREQ_ENDLESS']:
             self.stack.setCurrentIndex(1)
         else:
@@ -984,3 +1038,210 @@ class MarkerPanel(QFrame):
         if hasattr(self, 'btn_lock_delta'):
             for btn in [self.btn_lock_m1, self.btn_lock_m2, self.btn_lock_delta, self.btn_lock_center]:
                 btn.setStyleSheet(lock_style)
+
+        if hasattr(self, 'btn_plugins'):
+            self.btn_plugins.setIcon(self._get_icon("plugins"))
+
+    def update_plugins_list(self, loaded_plugins):
+        """
+        Populate the shared scroll area with plugin rows.
+        Each row: Name | Config btn | Run btn | Del btn
+        """
+        if not hasattr(self, '_plugin_rows'):
+            self._plugin_rows = []
+
+        # Build / rebuild header once
+        if not hasattr(self, '_plugin_header_widget'):
+            hw = QWidget()
+            hl = QHBoxLayout(hw)
+            hl.setContentsMargins(5, 2, 5, 2)
+            hl.setSpacing(8)
+            l_name = QLabel("Plugin Name"); l_name.setObjectName("header_label")
+            hl.addWidget(l_name, 1)
+            self._plugin_header_widget = hw
+            self.plugins_scroll_layout.insertWidget(0, hw)
+
+        # Sync row count
+        plugins_data = list(loaded_plugins.items())
+        while len(self._plugin_rows) > len(plugins_data):
+            rd = self._plugin_rows.pop()
+            rd['widget'].deleteLater()
+        while len(self._plugin_rows) < len(plugins_data):
+            row = QWidget()
+            rl  = QHBoxLayout(row)
+            rl.setContentsMargins(5, 0, 5, 0)
+            rl.setSpacing(8)
+
+            lbl_name = QLabel()
+            lbl_name.setStyleSheet("font-weight: bold; color: #00aaff;")
+            
+            btn_config = QPushButton("Config")
+            btn_config.setFixedHeight(28)
+            btn_config.setToolTip("Configure plugin parameters")
+            
+            btn_run = QPushButton("▶ Run")
+            btn_run.setFixedHeight(28)
+            btn_run.setToolTip("Run this plugin")
+            btn_run.setStyleSheet("""
+                QPushButton { background: none; color: #00cc66; font-weight: bold;
+                              border-radius: 4px; border: 1px solid #00cc66; }
+                QPushButton:hover { background: rgba(0,204,102,0.2); }
+            """)
+
+            btn_del = QPushButton("Del")
+            btn_del.setFixedHeight(28)
+            btn_del.setToolTip("Unload this plugin")
+            btn_del.setStyleSheet("""
+                QPushButton { background: none; color: #ff4444; font-weight: bold;
+                              border-radius: 4px; border: 1px solid #ff4444; }
+                QPushButton:hover { background: rgba(255,68,68,0.2); }
+            """)
+
+            rl.addWidget(lbl_name, 1)
+            rl.addWidget(btn_config)
+            rl.addWidget(btn_run)
+            rl.addWidget(btn_del)
+
+            self.plugins_scroll_layout.insertWidget(self.plugins_scroll_layout.count()-1, row)
+            self._plugin_rows.append({
+                'widget': row, 'lbl_name': lbl_name,
+                'btn_config': btn_config, 'btn_run': btn_run, 'btn_del': btn_del,
+            })
+
+        # Update data
+        for i, (name, info) in enumerate(plugins_data):
+            rd = self._plugin_rows[i]
+            rd['widget'].setVisible(True)
+            rd['lbl_name'].setText(name)
+            
+            desc = info.get("description", "")
+            if desc:
+                rd['lbl_name'].setToolTip(desc)
+            else:
+                rd['lbl_name'].setToolTip("No description provided.")
+
+            has_params = bool(info.get("params_spec"))
+            rd['btn_config'].setEnabled(has_params)
+
+            try: rd['btn_config'].clicked.disconnect()
+            except: pass
+            try: rd['btn_run'].clicked.disconnect()
+            except: pass
+            try: rd['btn_del'].clicked.disconnect()
+            except: pass
+
+            rd['btn_config'].clicked.connect(lambda _, n=name: self._on_plugin_config(n))
+            rd['btn_run'].clicked.connect(lambda _, n=name: self.parent_window.run_plugin(n))
+            rd['btn_del'].clicked.connect(lambda _, n=name: self._on_plugin_unload(n))
+
+        for rd in self._plugin_rows[len(plugins_data):]:
+            rd['widget'].setVisible(False)
+
+    def _on_plugin_config(self, name):
+        info = self.parent_window._loaded_plugins.get(name)
+        if not info:
+            return
+            
+        params_spec = info.get("params_spec", {})
+        current_params = info.get("params", {})
+        
+        from PyQt6.QtWidgets import QDialog
+        dlg = PluginConfigDialog(name, params_spec, current_params, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            new_values = dlg.get_values()
+            info["params"] = new_values
+            self.parent_window.statusBar().showMessage(f"Updated parameters for {name}", 3000)
+
+    def _on_plugin_unload(self, name):
+        self.parent_window.unload_plugin(name)
+
+
+class PluginConfigDialog(QDialog):
+    def __init__(self, plugin_name, params_spec, current_params, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Configure {plugin_name}")
+        self.setMinimumWidth(350)
+        self.setup_ui(params_spec, current_params)
+        
+    def setup_ui(self, params_spec, current_params):
+        layout = QVBoxLayout(self)
+        form_layout = QFormLayout()
+        
+        theme = "Light"
+        if self.parent() and hasattr(self.parent(), 'parent_window'):
+            theme = self.parent().parent_window.settings_mgr.get("ui/theme", "Light")
+        from .themes import get_palette
+        p = get_palette(theme)
+        
+        self.setStyleSheet(f"""
+            QDoubleSpinBox, QSpinBox {{
+                background-color: {p.bg_input};
+                color: {p.text_main};
+                border: 1px solid {p.border};
+                border-radius: 4px;
+                padding: 4px 8px;
+            }}
+            QDoubleSpinBox:focus, QSpinBox:focus {{
+                border-color: {p.accent};
+            }}
+        """)
+        
+        self.widgets = {}
+        
+        for key, spec in params_spec.items():
+            if not isinstance(spec, dict):
+                spec = {"type": "str", "default": spec, "label": key}
+                
+            label_text = spec.get("label", key)
+            param_type = spec.get("type", "str")
+            tooltip = spec.get("tooltip", "")
+            default_val = spec.get("default")
+            curr_val = current_params.get(key, default_val)
+            
+            if param_type == "float":
+                widget = QDoubleSpinBox()
+                widget.setRange(spec.get("min", -1e15), spec.get("max", 1e15))
+                widget.setDecimals(spec.get("decimals", 5))
+                if curr_val is not None:
+                    widget.setValue(float(curr_val))
+            elif param_type == "int":
+                widget = QSpinBox()
+                widget.setRange(spec.get("min", -2147483648), spec.get("max", 2147483647))
+                if curr_val is not None:
+                    widget.setValue(int(curr_val))
+            elif param_type == "bool":
+                widget = QCheckBox()
+                if curr_val is not None:
+                    widget.setChecked(bool(curr_val))
+            else:
+                widget = QLineEdit()
+                if curr_val is not None:
+                    widget.setText(str(curr_val))
+                    
+            if tooltip:
+                widget.setToolTip(tooltip)
+                
+            form_layout.addRow(QLabel(label_text), widget)
+            self.widgets[key] = (widget, param_type)
+            
+        layout.addLayout(form_layout)
+        
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        
+    def get_values(self):
+        values = {}
+        for key, (widget, param_type) in self.widgets.items():
+            if param_type == "float":
+                values[key] = widget.value()
+            elif param_type == "int":
+                values[key] = widget.value()
+            elif param_type == "bool":
+                values[key] = widget.isChecked()
+            else:
+                values[key] = widget.text()
+        return values
