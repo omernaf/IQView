@@ -797,9 +797,129 @@ class ViewControllerMixin:
 
         # Close all Time Domain tabs (keep index 0 = Spectrogram)
 
+        # Reset multi-row controls to default single-row values when opening a new file
+        if hasattr(self, 'sidebar'):
+            self.sidebar.num_rows_edit.setText("1")
+            self.sidebar.start_sample_edit.setText("0")
+            self.sidebar.samples_per_row_edit.setText("0")
+            self.sidebar.period_edit.setText("0")
+            self.sidebar.freq_min_edit.raw_value = 0.0
+            self.sidebar.freq_max_edit.raw_value = 0.0
+            self._prev_num_rows = 1
+            self._prev_mr_params = {}
+
         # Update sidebar file info
         self.update_sidebar_file_info(path, type_str)
 
         # Reprocess with the new file
         self.start_processing()
+
+    def on_spectrogram_range_changed(self):
+        if hasattr(self, 'sidebar') and self.sidebar.get_num_rows() <= 1:
+            sv = self.spectrogram_view
+            vr = sv.view_box.viewRange()
+            waterfall = sv.is_waterfall
+            
+            if waterfall:
+                freq_range = vr[0]
+                time_range = vr[1]
+            else:
+                time_range = vr[0]
+                freq_range = vr[1]
+
+            t_start = max(0.0, time_range[0])
+            t_end = min(self.time_duration, time_range[1])
+            
+            start_sample = int(round(t_start * self.rate))
+            samples_per_row = int(round((t_end - t_start) * self.rate))
+            
+            sidebar = self.sidebar
+            if not sidebar.start_sample_edit.hasFocus():
+                sidebar.start_sample_edit.setText(str(start_sample))
+            if not sidebar.samples_per_row_edit.hasFocus():
+                sidebar.samples_per_row_edit.setText(str(samples_per_row))
+            if not sidebar.freq_min_edit.hasFocus():
+                sidebar.freq_min_edit.raw_value = freq_range[0]
+            if not sidebar.freq_max_edit.hasFocus():
+                sidebar.freq_max_edit.raw_value = freq_range[1]
+
+    def on_multirow_changed(self):
+        num_rows = self.sidebar.get_num_rows()
+        
+        # Track if num_rows state changed (going from 1 to >1 or vice versa)
+        prev_num_rows = getattr(self, '_prev_num_rows', 1)
+        self._prev_num_rows = num_rows
+
+        if num_rows <= 1:
+            if prev_num_rows > 1:
+                # Switched back to single row, reprocess standard view
+                self.start_processing()
+            else:
+                # Zoom the standard view using the typed coordinates
+                is_waterfall = self.spectrogram_view.is_waterfall
+                mr_params = self.sidebar.get_multirow_params()
+                t_start = mr_params['start_sample'] / max(self.rate, 1)
+                t_end = (mr_params['start_sample'] + mr_params['samples_per_row']) / max(self.rate, 1)
+                
+                if is_waterfall:
+                    self.spectrogram_view.plot_item.setRange(
+                        xRange=[mr_params['freq_min'], mr_params['freq_max']],
+                        yRange=[t_start, t_end],
+                        padding=0
+                    )
+                else:
+                    self.spectrogram_view.plot_item.setRange(
+                        xRange=[t_start, t_end],
+                        yRange=[mr_params['freq_min'], mr_params['freq_max']],
+                        padding=0
+                    )
+            return
+            
+        if prev_num_rows <= 1:
+            # Switched from single row to multi-row for the first time
+            # Initialize defaults first if they are not set
+            total_samples = self.get_total_samples()
+            self.sidebar.set_multirow_defaults(total_samples, self.rate, self.fc)
+            self.start_processing()
+            return
+
+        # Check if period or num_rows changed (structural change)
+        mr_params = self.sidebar.get_multirow_params()
+        prev_params = getattr(self, '_prev_mr_params', {})
+        self._prev_mr_params = mr_params
+
+        if (mr_params['num_rows'] != prev_params.get('num_rows') or 
+            mr_params['period'] != prev_params.get('period')):
+            # Structure changed, need recalculation
+            self.start_processing()
+            return
+
+        # Otherwise, the change is just start_sample, samples_per_row, freq_min, or freq_max
+        # These are zoom parameters! Update the zoom on all rows.
+        if hasattr(self, 'multi_row_view'):
+            self.multi_row_view._block_sync = True
+            try:
+                is_waterfall = bool(self.settings_mgr.get("ui/waterfall", False))
+                
+                for i, row in enumerate(self.multi_row_view.rows):
+                    row_start_sample = mr_params['start_sample'] + i * mr_params['period']
+                    row_end_sample = row_start_sample + mr_params['samples_per_row']
+                    
+                    t_start = row_start_sample / max(self.rate, 1)
+                    t_end = row_end_sample / max(self.rate, 1)
+                    
+                    if is_waterfall:
+                        row['plot'].setRange(
+                            xRange=[mr_params['freq_min'], mr_params['freq_max']],
+                            yRange=[t_start, t_end],
+                            padding=0
+                        )
+                    else:
+                        row['plot'].setRange(
+                            xRange=[t_start, t_end],
+                            yRange=[mr_params['freq_min'], mr_params['freq_max']],
+                            padding=0
+                        )
+            finally:
+                self.multi_row_view._block_sync = False
 

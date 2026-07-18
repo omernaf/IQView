@@ -8,8 +8,17 @@ class MarkerManagerMixin:
         if self.interaction_mode in ['ZOOM', 'MOVE']:
             return
             
-        if self.spectrogram_view.plot_item.sceneBoundingRect().contains(scene_pos):
-            vb = self.spectrogram_view.plot_item.vb
+        target_vb = None
+        if hasattr(self, 'sidebar') and self.sidebar.get_num_rows() > 1 and hasattr(self, 'multi_row_view'):
+            for row in self.multi_row_view.rows:
+                if row['plot'].sceneBoundingRect().contains(scene_pos):
+                    target_vb = row['plot'].vb
+                    break
+        if target_vb is None and self.spectrogram_view.plot_item.sceneBoundingRect().contains(scene_pos):
+            target_vb = self.spectrogram_view.plot_item.vb
+
+        if target_vb is not None:
+            vb = target_vb
             mouse_v = vb.mapSceneToView(scene_pos)
             waterfall = self.spectrogram_view.is_waterfall
             
@@ -55,7 +64,7 @@ class MarkerManagerMixin:
                 # 1. Hit-test for existing bounds
                 if self.filter_bounds:
                     hit_threshold = 20 # pixels
-                    vb = self.spectrogram_view.plot_item.vb
+                    # Use the vb defined in outer scope
                     best_idx = -1
                     min_dist = hit_threshold
                     
@@ -389,7 +398,15 @@ class MarkerManagerMixin:
 
     def update_drag(self, scene_pos):
         if True: # Let mapSceneToView and np.clip handle out-of-bounds coordinates
-            mouse_v = self.spectrogram_view.plot_item.vb.mapSceneToView(scene_pos)
+            target_vb = None
+            if hasattr(self, 'sidebar') and self.sidebar.get_num_rows() > 1 and hasattr(self, 'multi_row_view'):
+                for row in self.multi_row_view.rows:
+                    if row['plot'].sceneBoundingRect().contains(scene_pos):
+                        target_vb = row['plot'].vb
+                        break
+            if target_vb is None:
+                target_vb = self.spectrogram_view.plot_item.vb
+            mouse_v = target_vb.mapSceneToView(scene_pos)
             waterfall = self.spectrogram_view.is_waterfall
             
             # 1. Handle explicit BPF bound dragging (highest priority)
@@ -753,6 +770,8 @@ class MarkerManagerMixin:
 
         self.update_grid('TIME')
         self.update_grid('FREQ')
+        if hasattr(self, 'sidebar') and self.sidebar.get_num_rows() > 1 and hasattr(self, 'multi_row_view'):
+            self.multi_row_view.refresh_markers_and_overlays()
 
     def marker_edit_finished(self):
         sender = self.sender()
@@ -991,3 +1010,5 @@ class MarkerManagerMixin:
         for m in self.markers_freq:
             m.setPen(pg.mkPen(f_color, width=2, style=f_style))
             m.setAngle(f_angle)
+        if hasattr(self, 'sidebar') and self.sidebar.get_num_rows() > 1 and hasattr(self, 'multi_row_view'):
+            self.multi_row_view.refresh_markers_and_overlays()

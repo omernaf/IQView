@@ -27,6 +27,20 @@ class DataHandlerMixin:
             return bool(override)
         return bool(self.settings_mgr.get("core/lazy_rendering", True))
 
+    def get_total_samples(self):
+        if self.data_source is None:
+            return 0
+        try:
+            item_size = np.dtype(self.data_type).itemsize
+            read_mult = 2 if self.is_complex else 1
+            if isinstance(self.data_source, (bytes, bytearray)):
+                file_size = len(self.data_source)
+            else:
+                file_size = os.path.getsize(self.data_source)
+            return (file_size // item_size) // read_mult
+        except Exception:
+            return 0
+
     def start_processing(self):
         if self.data_source is None:
             return  # nothing loaded yet — waiting for user to open a file
@@ -48,6 +62,40 @@ class DataHandlerMixin:
         # Make frequencies relative to Fc for the baseband DSP filter
         f_min_rel = (f_min - self.fc) if f_min is not None else None
         f_max_rel = (f_max - self.fc) if f_max is not None else None
+
+        # Check if Multi-Row is active
+        if hasattr(self, 'sidebar') and self.sidebar.get_num_rows() > 1:
+            if hasattr(self, 'spectrogram_stack'):
+                self.spectrogram_stack.setCurrentIndex(1)
+            
+            mr_params = self.sidebar.get_multirow_params()
+            from iqview.dsp import MultiRowProcessor
+            
+            self.multirow_worker = MultiRowProcessor(
+                self.data_source, self.data_type, self.fft_size, self.rate,
+                mr_params['num_rows'], mr_params['start_sample'],
+                mr_params['samples_per_row'], mr_params['period'],
+                is_complex=self.is_complex,
+                window_type=self.window_type,
+                overlap_percent=self.overlap_percent,
+                window_size=getattr(self, 'window_size', None),
+                filter_mode=self.filter_mode,
+                f_min=f_min_rel, f_max=f_max_rel,
+                filter_type=str(self.settings_mgr.get("core/filter_type", "Elliptic")),
+                filter_order=int(self.settings_mgr.get("core/filter_order", 8)),
+                filter_ripple=float(self.settings_mgr.get("core/filter_ripple", 0.1)),
+                filter_stopband=float(self.settings_mgr.get("core/filter_stopband", 60.0)),
+                filter_taps=int(self.settings_mgr.get("core/filter_taps", 101)),
+                fir_window=str(self.settings_mgr.get("core/fir_window", "Hamming")),
+                filter_bessel_norm=str(self.settings_mgr.get("core/filter_bessel_norm", "phase"))
+            )
+            self.multirow_worker.progress.connect(self.update_progress)
+            self.multirow_worker.finished.connect(self.display_multirow_spectrograms)
+            self.multirow_worker.start()
+            return
+
+        if hasattr(self, 'spectrogram_stack'):
+            self.spectrogram_stack.setCurrentIndex(0)
 
         lazy_enabled = self._lazy_enabled
 
@@ -82,11 +130,13 @@ class DataHandlerMixin:
     # ------------------------------------------------------------------
 
     def _stop_all_workers(self):
-        """Stop both the full-file worker and the lazy worker if running."""
+        """Stop full-file, lazy, and multirow workers if running."""
         if hasattr(self, 'worker') and self.worker.isRunning():
             self.worker.stop()
         if hasattr(self, 'lazy_worker') and self.lazy_worker.isRunning():
             self.lazy_worker.stop()
+        if hasattr(self, 'multirow_worker') and self.multirow_worker.isRunning():
+            self.multirow_worker.stop()
         # Cancel any pending zoom re-render
         if hasattr(self, '_zoom_rerender_timer') and self._zoom_rerender_timer.isActive():
             self._zoom_rerender_timer.stop()
@@ -306,6 +356,24 @@ class DataHandlerMixin:
         # Load persisted overlays on first display
         if was_first and hasattr(self, 'load_overlay_sidecar'):
             self.load_overlay_sidecar()
+
+    @pyqtSlot(list)
+    def display_multirow_spectrograms(self, spectrograms):
+        self.progress_bar.setValue(0)
+        self.progress_bar.setStyleSheet(
+            "QProgressBar { background-color: transparent; border: none; } "
+            "QProgressBar::chunk { background-color: transparent; }"
+        )
+        if not hasattr(self, 'sidebar') or not hasattr(self, 'multi_row_view'):
+            return
+        mr_params = self.sidebar.get_multirow_params()
+        self.multi_row_view.update_spectrograms(
+            spectrograms, self.rate, self.fc,
+            mr_params['start_sample'], mr_params['samples_per_row'], mr_params['period']
+        )
+        # Force-refresh markers/overlays on the rows to display them on new data
+        if hasattr(self.multi_row_view, 'refresh_markers_and_overlays'):
+            self.multi_row_view.refresh_markers_and_overlays()
 
     # ------------------------------------------------------------------
     # IQ extraction (unchanged — reads directly from file)
