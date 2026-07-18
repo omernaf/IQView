@@ -503,3 +503,154 @@ class ViewportAwareReader(QThread):
     def stop(self):
         self.running = False
         self.wait()
+
+
+class MultiRowProcessor(QThread):
+    progress = pyqtSignal(int, int)
+    finished = pyqtSignal(list, list) # list of spectrograms, list of metadata
+    
+    def __init__(self, source, dtype, is_complex, sample_rate, fc,
+                 start_sample, samples_per_row, num_rows, period,
+                 fft_size, window_size, overlap_percent, window_type):
+        super().__init__()
+        self.source = source
+        self.dtype = dtype
+        self.is_complex = is_complex
+        self.rate = sample_rate
+        self.fc = fc
+        self.start_sample = start_sample
+        self.samples_per_row = samples_per_row
+        self.num_rows = num_rows
+        self.period = period
+        self.fft_size = fft_size
+        self.window_size = window_size if window_size is not None else fft_size
+        self.overlap_percent = overlap_percent
+        self.window_type = window_type
+        self.running = True
+
+    def run(self):
+        import time
+        import io
+        import numpy as np
+        from scipy.signal import get_window
+        
+        # 1. Setup window
+        if self.window_type.lower() == "rectangular":
+            window = np.ones(self.window_size, dtype=np.float32)
+        else:
+            try:
+                window = get_window(self.window_type.lower(), self.window_size).astype(np.float32)
+            except Exception:
+                window = get_window("hamming", self.window_size).astype(np.float32)
+                
+        overlap_fraction = self.overlap_percent / 100.0
+        step_size = int(round(self.window_size * (1.0 - overlap_fraction)))
+        if step_size < 1:
+            step_size = 1
+
+        # 2. Open data source
+        if isinstance(self.source, (bytes, bytearray)):
+            f = io.BytesIO(self.source)
+        else:
+            try:
+                f = open(self.source, 'rb')
+            except Exception as e:
+                print(f"Error opening source file in MultiRowProcessor: {e}")
+                self.finished.emit([], [])
+                return
+
+        item_size = np.dtype(self.dtype).itemsize
+        read_multiplier = 2 if self.is_complex else 1
+        
+        spectrograms = []
+        metadata = []
+        
+        try:
+            with f:
+                for i in range(self.num_rows):
+                    if not self.running:
+                        break
+                        
+                    # Calculate row sample range
+                    row_start = self.start_sample + i * self.period
+                    row_end = row_start + self.samples_per_row
+                    
+                    actual_start = max(0, row_start)
+                    actual_end = max(0, row_end)
+                    read_count = actual_end - actual_start
+                    
+                    if read_count <= 0:
+                        data_bytes = None
+                    else:
+                        offset = actual_start * read_multiplier * item_size
+                        try:
+                            f.seek(offset)
+                            data_bytes = f.read(read_count * read_multiplier * item_size)
+                        except Exception:
+                            data_bytes = None
+                            
+                    # Construct and pad raw_array
+                    raw_array = np.zeros(self.samples_per_row * read_multiplier, dtype=np.float32)
+                    if data_bytes:
+                        valid_len = (len(data_bytes) // item_size) * item_size
+                        if len(data_bytes) > valid_len:
+                            data_bytes = data_bytes[:valid_len]
+                            
+                        try:
+                            read_part = np.frombuffer(data_bytes, dtype=self.dtype).astype(np.float32)
+                            if self.dtype == np.int16:
+                                read_part = read_part / 32768.0
+                                
+                            lead_samples = max(0, actual_start - row_start)
+                            dest_start = lead_samples * read_multiplier
+                            dest_end = min(len(raw_array), dest_start + len(read_part))
+                            assign_len = dest_end - dest_start
+                            if assign_len > 0:
+                                raw_array[dest_start:dest_end] = read_part[:assign_len]
+                        except Exception as e:
+                            print(f"Error parsing buffer in MultiRowProcessor: {e}")
+                            
+                    if self.is_complex:
+                        complex_data = raw_array[0::2].astype(np.complex64) + 1j * raw_array[1::2].astype(np.complex64)
+                    else:
+                        complex_data = raw_array.astype(np.complex64)
+                        
+                    # Calculate spectrogram for this row
+                    n_s = len(complex_data)
+                    num_spec_rows = (n_s - self.window_size) // step_size + 1
+                    if num_spec_rows <= 0:
+                        db_spec = np.zeros((1, self.fft_size), dtype=np.float32)
+                    else:
+                        from numpy.lib.stride_tricks import as_strided
+                        itemsize = complex_data.itemsize
+                        complex_batch = as_strided(
+                            complex_data,
+                            shape=(num_spec_rows, self.window_size),
+                            strides=(step_size * itemsize, itemsize),
+                            writeable=False
+                        )
+                        
+                        windowed = complex_batch * window
+                        fft_res = np.fft.fft(windowed, n=self.fft_size, axis=1)
+                        shifted = np.fft.fftshift(fft_res, axes=1)
+                        
+                        mag = np.maximum(np.abs(shifted), np.float32(1e-10))
+                        db_spec = 20.0 * np.log10(mag)
+                        
+                    spectrograms.append(db_spec)
+                    metadata.append({
+                        'start_sample': row_start,
+                        'end_sample': row_end
+                    })
+                    
+                    self.progress.emit(i + 1, self.num_rows)
+                    
+            if self.running:
+                self.finished.emit(spectrograms, metadata)
+        except Exception as e:
+            print(f"Error during MultiRowProcessor run: {e}")
+            self.finished.emit([], [])
+
+    def stop(self):
+        self.running = False
+        self.wait()

@@ -31,6 +31,62 @@ class DataHandlerMixin:
         if self.data_source is None:
             return  # nothing loaded yet — waiting for user to open a file
 
+        # Check if Multi-Row mode is active
+        is_multirow = False
+        if hasattr(self, 'sidebar'):
+            try:
+                is_multirow = int(self.sidebar.num_rows_edit.text()) > 1
+            except ValueError:
+                is_multirow = False
+
+        if is_multirow:
+            self._stop_all_workers()
+            self.progress_bar.setValue(0)
+            self.progress_bar.setStyleSheet(
+                "QProgressBar { background-color: transparent; border: none; } "
+                "QProgressBar::chunk { background-color: #00aaff; }"
+            )
+            
+            # Switch central widget stack to multi-row view
+            if hasattr(self, 'spectrogram_stack'):
+                self.spectrogram_stack.setCurrentWidget(self.multi_row_view)
+            
+            try:
+                num_rows = int(self.sidebar.num_rows_edit.text())
+            except ValueError:
+                num_rows = 1
+                
+            try:
+                start_sample = int(self.sidebar.start_sample_edit.text())
+            except ValueError:
+                start_sample = 0
+                
+            try:
+                samples_per_row = int(self.sidebar.samples_per_row_edit.text())
+            except ValueError:
+                samples_per_row = 1000
+                
+            try:
+                period = int(self.sidebar.period_edit.text())
+            except ValueError:
+                period = 1000
+
+            from iqview.dsp import MultiRowProcessor
+            self.multirow_worker = MultiRowProcessor(
+                self.data_source, self.data_type, self.is_complex, self.rate, self.fc,
+                start_sample, samples_per_row, num_rows, period,
+                self.fft_size, getattr(self, 'window_size', self.fft_size),
+                self.overlap_percent, self.window_type
+            )
+            self.multirow_worker.progress.connect(self.update_progress)
+            self.multirow_worker.finished.connect(self.display_multirow_spectrograms)
+            self.multirow_worker.start()
+            return
+
+        # Restore standard view
+        if hasattr(self, 'spectrogram_stack'):
+            self.spectrogram_stack.setCurrentWidget(self.spectrogram_view)
+
         # Stop any running workers
         self._stop_all_workers()
 
@@ -87,6 +143,8 @@ class DataHandlerMixin:
             self.worker.stop()
         if hasattr(self, 'lazy_worker') and self.lazy_worker.isRunning():
             self.lazy_worker.stop()
+        if hasattr(self, 'multirow_worker') and self.multirow_worker.isRunning():
+            self.multirow_worker.stop()
         # Cancel any pending zoom re-render
         if hasattr(self, '_zoom_rerender_timer') and self._zoom_rerender_timer.isActive():
             self._zoom_rerender_timer.stop()
@@ -227,19 +285,25 @@ class DataHandlerMixin:
             "QProgressBar::chunk { background-color: #00aaff; }"
         )
 
-    def _estimate_file_duration(self):
-        """Quick, cheap estimate of file duration before any processing is done."""
+    def get_total_samples(self):
+        """Returns the total number of IQ samples in the current data source."""
         try:
+            if self.data_source is None:
+                return 0
             item_size = np.dtype(self.data_type).itemsize
             read_mult = 2 if self.is_complex else 1
             if isinstance(self.data_source, (bytes, bytearray)):
                 file_size = len(self.data_source)
             else:
                 file_size = os.path.getsize(self.data_source)
-            total_samples = (file_size // item_size) // read_mult
-            return total_samples / max(self.rate, 1)
+            return (file_size // item_size) // read_mult
         except Exception:
-            return 1.0
+            return 0
+
+    def _estimate_file_duration(self):
+        """Quick, cheap estimate of file duration before any processing is done."""
+        total_samples = self.get_total_samples()
+        return total_samples / max(self.rate, 1)
 
     # ------------------------------------------------------------------
     # Display slots
@@ -271,6 +335,35 @@ class DataHandlerMixin:
         # Load persisted overlays on first display
         if was_first and hasattr(self, 'load_overlay_sidecar'):
             self.load_overlay_sidecar()
+
+    @pyqtSlot(list, list)
+    def display_multirow_spectrograms(self, spectrograms, metadata):
+        self.progress_bar.setValue(0)
+        self.progress_bar.setStyleSheet(
+            "QProgressBar { background-color: transparent; border: none; } "
+            "QProgressBar::chunk { background-color: transparent; }"
+        )
+        if len(spectrograms) == 0:
+            return
+            
+        try:
+            start_sample = int(self.sidebar.start_sample_edit.text())
+        except ValueError:
+            start_sample = 0
+            
+        try:
+            samples_per_row = int(self.sidebar.samples_per_row_edit.text())
+        except ValueError:
+            samples_per_row = 1000
+            
+        try:
+            period = int(self.sidebar.period_edit.text())
+        except ValueError:
+            period = 1000
+            
+        self.multi_row_view.update_spectrograms(
+            spectrograms, self.rate, self.fc, start_sample, samples_per_row, period
+        )
 
     @pyqtSlot(np.ndarray, float, float)
     def display_lazy_tile(self, spectrogram, t_start, t_end):

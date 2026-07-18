@@ -7,6 +7,80 @@ from iqview.utils.helpers import DTYPE_MAP, AUDIO_EXTENSIONS, detect_type_from_e
 from ..detached_window import DetachedViewWindow
 
 class ViewControllerMixin:
+    def on_multirow_changed(self, data):
+        # Trigger default slice calculations if we are entering multi-row mode
+        # or changing the row count and no custom values are present.
+        is_enabled = data['enabled']
+        num_rows = data['num_rows']
+        
+        if is_enabled and num_rows > 1:
+            total_samples = self.get_total_samples()
+            try:
+                curr_samples = int(self.sidebar.samples_per_row_edit.text())
+            except ValueError:
+                curr_samples = total_samples
+                
+            if curr_samples == total_samples or curr_samples <= 0:
+                default_w = total_samples // num_rows
+                self.sidebar.start_sample_edit.blockSignals(True)
+                self.sidebar.samples_per_row_edit.blockSignals(True)
+                self.sidebar.period_edit.blockSignals(True)
+                try:
+                    self.sidebar.start_sample_edit.setText("0")
+                    self.sidebar.samples_per_row_edit.setText(str(default_w))
+                    self.sidebar.period_edit.setText(str(default_w))
+                finally:
+                    self.sidebar.start_sample_edit.blockSignals(False)
+                    self.sidebar.samples_per_row_edit.blockSignals(False)
+                    self.sidebar.period_edit.blockSignals(False)
+                    
+            # Set the stack widget to multi-row view
+            self.spectrogram_stack.setCurrentWidget(self.multi_row_view)
+        else:
+            # Revert to standard view
+            self.spectrogram_stack.setCurrentWidget(self.spectrogram_view)
+            
+            # If they typed new frequency/time values inside the sidebar edit boxes,
+            # zoom the standard spectrogram plot view to those coordinates
+            t_start = data['start_sample'] / self.rate
+            t_end = (data['start_sample'] + data['samples_per_row']) / self.rate
+            f_min = data['freq_min']
+            f_max = data['freq_max']
+            
+            is_waterfall = bool(self.settings_mgr.get("ui/waterfall", False))
+            if is_waterfall:
+                self.spectrogram_view.plot_item.setXRange(f_min, f_max, padding=0)
+                self.spectrogram_view.plot_item.setYRange(t_start, t_end, padding=0)
+            else:
+                self.spectrogram_view.plot_item.setXRange(t_start, t_end, padding=0)
+                self.spectrogram_view.plot_item.setYRange(f_min, f_max, padding=0)
+                
+        # Trigger reprocessing/recomputations
+        self.start_processing()
+
+    def on_spectrogram_range_changed(self):
+        if hasattr(self, 'sidebar'):
+            try:
+                num_rows = int(self.sidebar.num_rows_edit.text())
+            except ValueError:
+                num_rows = 1
+            if num_rows <= 1:
+                tr = self.spectrogram_view.plot_item.viewRange()
+                is_waterfall = bool(self.settings_mgr.get("ui/waterfall", False))
+                
+                if is_waterfall:
+                    f_min, f_max = tr[0]
+                    t_min, t_max = tr[1]
+                else:
+                    t_min, t_max = tr[0]
+                    f_min, f_max = tr[1]
+                    
+                start_s = int(round(t_min * self.rate))
+                width_s = int(round((t_max - t_min) * self.rate))
+                
+                # Set values
+                self.sidebar.update_multirow_fields(start_s, width_s, f_min, f_max)
+
     def on_parameters_changed(self, params):
         needs_reprocess = (self.fft_size != params['fft_size'] or 
                            self.overlap_percent != params['overlap_percent'] or
@@ -799,6 +873,29 @@ class ViewControllerMixin:
 
         # Update sidebar file info
         self.update_sidebar_file_info(path, type_str)
+
+        # Initialize Multi-Row parameters to default values
+        if hasattr(self, 'sidebar'):
+            total_s = self.get_total_samples()
+            self.sidebar.start_sample_edit.blockSignals(True)
+            self.sidebar.samples_per_row_edit.blockSignals(True)
+            self.sidebar.period_edit.blockSignals(True)
+            self.sidebar.num_rows_edit.blockSignals(True)
+            try:
+                self.sidebar.start_sample_edit.setText("0")
+                self.sidebar.samples_per_row_edit.setText(str(total_s))
+                self.sidebar.period_edit.setText(str(total_s))
+                self.sidebar.num_rows_edit.setText("1")
+                
+                f_min = self.fc - self.rate / 2
+                f_max = self.fc + self.rate / 2
+                self.sidebar.freq_min_edit.set_value(f_min)
+                self.sidebar.freq_max_edit.set_value(f_max)
+            finally:
+                self.sidebar.start_sample_edit.blockSignals(False)
+                self.sidebar.samples_per_row_edit.blockSignals(False)
+                self.sidebar.period_edit.blockSignals(False)
+                self.sidebar.num_rows_edit.blockSignals(False)
 
         # Reprocess with the new file
         self.start_processing()
