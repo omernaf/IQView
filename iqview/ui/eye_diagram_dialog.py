@@ -401,7 +401,7 @@ class EyeDiagramView(QWidget):
         self._sld_coarse.valueChanged.connect(self._on_coarse_slider)
         self._sld_fine.valueChanged.connect(self._on_fine_slider)
         self._sld_offset.valueChanged.connect(self._on_offset_slider)
-        self._spin_nsps.valueChanged.connect(self._on_spin_nsps)
+        self._spin_nsps.editingFinished.connect(self._on_spin_nsps)
 
         cl.addWidget(slider_grp, stretch=3)
 

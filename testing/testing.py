@@ -25,7 +25,8 @@ def main():
     # filename = "samples/saved/iq1.mat"
     # filename = "samples/file_example_WAV_5MG.wav"
     # filename = "samples/temp.32fc"
-    filename = "samples/mavic_long_50MHz.32fc"
+    # filename = "samples/mavic_long_50MHz.32fc"
+    filename = "samples/burst_cw.32fc";
     sample_rate = 1e6  # 2 MHz
     duration = 10.0    # 10 seconds of simulated RF recording
     if args.line_profile:
@@ -42,9 +43,9 @@ def main():
         sys.executable, main_py,
         "-f", filename,
         "-r", str(sample_rate),
-        # "--lazy",
+        "--lazy",
         # "--name", "lazy"
-        "--full",
+        # "--full",
         # "--name", "full"
     ]
     

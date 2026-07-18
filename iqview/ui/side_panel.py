@@ -127,10 +127,13 @@ class SidePanel(QFrame):
         title_layout.addWidget(title)
 
         try:
-            from importlib.metadata import version
-            ver = version('iqview')
+            from iqview import __version__ as ver
         except Exception:
-            ver = "0.5.1"
+            try:
+                from importlib.metadata import version
+                ver = version('iqview')
+            except Exception:
+                ver = "0.6.0"
 
         self.current_version = ver
         version_lbl = QLabel(f"v{ver}")
