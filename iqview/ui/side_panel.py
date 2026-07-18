@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QLineEdit, QVBoxLayout, QHBoxLayout, QComboBox, QPushButton, QTabWidget, QCheckBox, QWidget
+from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QLineEdit, QVBoxLayout, QHBoxLayout, QComboBox, QPushButton
 from PyQt6.QtCore import pyqtSignal, Qt, QObject
 from PyQt6.QtGui import QFont, QPixmap
 from PyQt6 import QtGui
@@ -71,56 +71,8 @@ class VersionChecker(QObject):
                 return latest != current
 
 
-def format_frequency(val):
-    abs_val = abs(val)
-    if abs_val >= 1e6:
-        return f"{val / 1e6:.6f} MHz"
-    elif abs_val >= 1e3:
-        return f"{val / 1e3:.6f} kHz"
-    else:
-        return f"{val:.6f} Hz"
-
-class FocusLineEdit(QLineEdit):
-    def __init__(self, val_formatter, parent=None):
-        super().__init__(parent)
-        self.val_formatter = val_formatter
-        self.raw_value = 0.0
-        
-    def set_value(self, val):
-        self.raw_value = val
-        if not self.hasFocus():
-            self.setText(self.val_formatter(val))
-            
-    def focusInEvent(self, event):
-        super().focusInEvent(event)
-        self.setText(f"{self.raw_value:.6f}".rstrip('0').rstrip('.'))
-        
-    def focusOutEvent(self, event):
-        text = self.text().strip()
-        if text:
-            try:
-                self.raw_value = float(text)
-            except ValueError:
-                pass
-        self.setText(self.val_formatter(self.raw_value))
-        super().focusOutEvent(event)
-
-    def keyPressEvent(self, event):
-        if event.key() in (Qt.Key.Key_Enter, Qt.Key.Key_Return):
-            text = self.text().strip()
-            if text:
-                try:
-                    self.raw_value = float(text)
-                except ValueError:
-                    pass
-            self.setText(self.val_formatter(self.raw_value))
-            self.clearFocus()
-        super().keyPressEvent(event)
-
-
 class SidePanel(QFrame):
     parametersChanged = pyqtSignal(dict)
-    multirowChanged = pyqtSignal(dict)
 
     def __init__(self, fs, fc, fft_size, window_type="Hamming", overlap_percent=99.0, window_size=None, parent_window=None):
         super().__init__()
@@ -198,164 +150,81 @@ class SidePanel(QFrame):
         self.update_lbl.setVisible(False)
         self.layout.addWidget(self.update_lbl)
 
-        # --- TAB WIDGET ---
-        self.tabs = QTabWidget()
-        self.tabs.setObjectName("side_tabs")
-        self.tabs.setStyleSheet("""
-            QTabWidget::pane {
-                border: 1px solid #2a2a2a;
-                background: #1e1e1e;
-                border-radius: 4px;
-            }
-            QTabBar::tab {
-                background: #252525;
-                color: #888;
-                border: 1px solid #2a2a2a;
-                border-bottom: none;
-                padding: 6px 12px;
-                border-top-left-radius: 4px;
-                border-top-right-radius: 4px;
-                font-size: 11px;
-                font-weight: bold;
-            }
-            QTabBar::tab:selected {
-                background: #1e1e1e;
-                color: #00aaff;
-                border-color: #2a2a2a;
-            }
-        """)
-        self.layout.addWidget(self.tabs)
-
-        # Tab 1: Main (Standard Settings)
-        self.main_tab = QWidget()
-        self.main_tab_layout = QVBoxLayout(self.main_tab)
-        self.main_tab_layout.setContentsMargins(10, 10, 10, 10)
-        self.main_tab_layout.setSpacing(5)
-        self.main_tab_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
         # --- CORE SETTINGS ---
         core_header = QLabel("Core Settings")
         core_header.setObjectName("section_header")
-        self.main_tab_layout.addWidget(core_header)
+        self.layout.addWidget(core_header)
 
-        self.main_tab_layout.addWidget(QLabel("Sample Rate (Hz)"))
+        self.layout.addWidget(QLabel("Sample Rate (Hz)"))
         self.fs_edit = QLineEdit(str(self.fs))
         self.fs_edit.returnPressed.connect(self.on_edit_finished)
-        self.main_tab_layout.addWidget(self.fs_edit)
+        self.layout.addWidget(self.fs_edit)
 
-        self.main_tab_layout.addWidget(QLabel("Center Freq (Hz)"))
+        self.layout.addWidget(QLabel("Center Freq (Hz)"))
         self.fc_edit = QLineEdit(str(self.fc))
         self.fc_edit.returnPressed.connect(self.on_edit_finished)
-        self.main_tab_layout.addWidget(self.fc_edit)
+        self.layout.addWidget(self.fc_edit)
 
         # --- DSP SETTINGS ---
         dsp_header = QLabel("DSP Settings")
         dsp_header.setObjectName("section_header")
-        self.main_tab_layout.addWidget(dsp_header)
+        self.layout.addWidget(dsp_header)
 
-        self.main_tab_layout.addWidget(QLabel("FFT Size (bins)"))
+        self.layout.addWidget(QLabel("FFT Size (bins)"))
         self.fft_combo = QComboBox()
         powers = [2**i for i in range(5, 17)]
         self.fft_combo.addItems([str(p) for p in powers])
         idx = self.fft_combo.findText(str(self.fft_size))
         if idx >= 0: self.fft_combo.setCurrentIndex(idx)
         self.fft_combo.currentIndexChanged.connect(self.on_fft_combo_changed)
-        self.main_tab_layout.addWidget(self.fft_combo)
+        self.layout.addWidget(self.fft_combo)
 
-        self.main_tab_layout.addWidget(QLabel("Window Size (samples)"))
+        self.layout.addWidget(QLabel("Window Size (samples)"))
         self.window_size_edit = QLineEdit(str(self.window_size))
         self.window_size_edit.returnPressed.connect(self.on_window_size_edited)
-        self.main_tab_layout.addWidget(self.window_size_edit)
+        self.layout.addWidget(self.window_size_edit)
 
-        self.main_tab_layout.addWidget(QLabel("Overlap (%)"))
+        self.layout.addWidget(QLabel("Overlap (%)"))
         self.overlap_edit = QLineEdit(str(self.overlap_percent))
         self.overlap_edit.returnPressed.connect(self.on_overlap_edited)
-        self.main_tab_layout.addWidget(self.overlap_edit)
+        self.layout.addWidget(self.overlap_edit)
 
-        self.main_tab_layout.addWidget(QLabel("Window Type"))
+        self.layout.addWidget(QLabel("Window Type"))
         self.window_type_combo = QComboBox()
         self.window_type_combo.addItems(["Hanning", "Hamming", "Blackman", "Bartlett", "Rectangular"])
         self.window_type_combo.setCurrentText(self.window_type)
         self.window_type_combo.currentIndexChanged.connect(self.on_window_type_changed)
-        self.main_tab_layout.addWidget(self.window_type_combo)
+        self.layout.addWidget(self.window_type_combo)
 
         # --- DIAGNOSTICS ---
         diag_header = QLabel("Diagnostics")
         diag_header.setObjectName("section_header")
-        self.main_tab_layout.addWidget(diag_header)
+        self.layout.addWidget(diag_header)
 
-        self.main_tab_layout.addWidget(QLabel("Time Resolution (dt) [s]"))
+        self.layout.addWidget(QLabel("Time Resolution (dt) [s]"))
         self.dt_display = QLineEdit()
         self.dt_display.setReadOnly(True)
-        self.main_tab_layout.addWidget(self.dt_display)
+        self.layout.addWidget(self.dt_display)
 
-        self.main_tab_layout.addWidget(QLabel("RBW (Hz)"))
+        self.layout.addWidget(QLabel("RBW (Hz)"))
         self.rbw_display = QLineEdit()
         self.rbw_display.setReadOnly(True)
-        self.main_tab_layout.addWidget(self.rbw_display)
+        self.layout.addWidget(self.rbw_display)
 
         # --- FILE INFORMATION ---
         file_header = QLabel("File Information")
         file_header.setObjectName("section_header")
-        self.main_tab_layout.addWidget(file_header)
+        self.layout.addWidget(file_header)
 
-        self.main_tab_layout.addWidget(QLabel("File Type"))
+        self.layout.addWidget(QLabel("File Type"))
         self.type_display = QLineEdit("N/A")
         self.type_display.setReadOnly(True)
-        self.main_tab_layout.addWidget(self.type_display)
+        self.layout.addWidget(self.type_display)
 
-        self.main_tab_layout.addWidget(QLabel("File Size"))
+        self.layout.addWidget(QLabel("File Size"))
         self.size_display = QLineEdit("N/A")
         self.size_display.setReadOnly(True)
-        self.main_tab_layout.addWidget(self.size_display)
-
-        # Tab 2: Multi-Row (Raster Settings)
-        self.multirow_tab = QWidget()
-        self.multirow_tab_layout = QVBoxLayout(self.multirow_tab)
-        self.multirow_tab_layout.setContentsMargins(10, 10, 10, 10)
-        self.multirow_tab_layout.setSpacing(5)
-        self.multirow_tab_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-        # Number of Rows
-        self.multirow_tab_layout.addWidget(QLabel("Number of Rows"))
-        self.num_rows_edit = QLineEdit("1")
-        self.num_rows_edit.returnPressed.connect(self.on_multirow_edited)
-        self.multirow_tab_layout.addWidget(self.num_rows_edit)
-
-        # Start Sample
-        self.multirow_tab_layout.addWidget(QLabel("Start Sample"))
-        self.start_sample_edit = QLineEdit("0")
-        self.start_sample_edit.returnPressed.connect(self.on_multirow_edited)
-        self.multirow_tab_layout.addWidget(self.start_sample_edit)
-
-        # Samples Per Row
-        self.multirow_tab_layout.addWidget(QLabel("Samples Per Row"))
-        self.samples_per_row_edit = QLineEdit("1000")
-        self.samples_per_row_edit.returnPressed.connect(self.on_multirow_edited)
-        self.multirow_tab_layout.addWidget(self.samples_per_row_edit)
-
-        # Row Period (samples)
-        self.multirow_tab_layout.addWidget(QLabel("Row Period (samples)"))
-        self.period_edit = QLineEdit("1000")
-        self.period_edit.returnPressed.connect(self.on_multirow_edited)
-        self.multirow_tab_layout.addWidget(self.period_edit)
-
-        # Frequency Limits
-        self.multirow_tab_layout.addWidget(QLabel("Frequency Min"))
-        self.freq_min_edit = FocusLineEdit(format_frequency)
-        self.freq_min_edit.set_value(self.fc - self.fs / 2)
-        self.freq_min_edit.returnPressed.connect(self.on_multirow_edited)
-        self.multirow_tab_layout.addWidget(self.freq_min_edit)
-
-        self.multirow_tab_layout.addWidget(QLabel("Frequency Max"))
-        self.freq_max_edit = FocusLineEdit(format_frequency)
-        self.freq_max_edit.set_value(self.fc + self.fs / 2)
-        self.freq_max_edit.returnPressed.connect(self.on_multirow_edited)
-        self.multirow_tab_layout.addWidget(self.freq_max_edit)
-
-        # Add tabs
-        self.tabs.addTab(self.main_tab, "Main")
-        self.tabs.addTab(self.multirow_tab, "Multi-Row")
+        self.layout.addWidget(self.size_display)
 
         self.layout.addStretch()
 
@@ -475,50 +344,6 @@ class SidePanel(QFrame):
             self.fc = fc
             self.fc_edit.setText(str(fc))
         self.update_derived_values()
-
-    def on_multirow_edited(self):
-        try:
-            num_rows = int(self.num_rows_edit.text())
-            if num_rows < 1:
-                num_rows = 1
-                self.num_rows_edit.setText("1")
-            is_enabled = num_rows > 1
-                
-            start_sample = int(self.start_sample_edit.text())
-            samples_per_row = int(self.samples_per_row_edit.text())
-            period = int(self.period_edit.text())
-            
-            freq_min = self.freq_min_edit.raw_value
-            freq_max = self.freq_max_edit.raw_value
-            
-            data = {
-                'enabled': is_enabled,
-                'num_rows': num_rows,
-                'start_sample': start_sample,
-                'samples_per_row': samples_per_row,
-                'period': period,
-                'freq_min': freq_min,
-                'freq_max': freq_max
-            }
-            self.multirowChanged.emit(data)
-        except ValueError:
-            pass
-
-    def update_multirow_fields(self, start_sample, samples_per_row, freq_min, freq_max):
-        self.start_sample_edit.blockSignals(True)
-        self.samples_per_row_edit.blockSignals(True)
-        self.freq_min_edit.blockSignals(True)
-        self.freq_max_edit.blockSignals(True)
-        try:
-            self.start_sample_edit.setText(str(start_sample))
-            self.samples_per_row_edit.setText(str(samples_per_row))
-            self.freq_min_edit.set_value(freq_min)
-            self.freq_max_edit.set_value(freq_max)
-        finally:
-            self.start_sample_edit.blockSignals(False)
-            self.samples_per_row_edit.blockSignals(False)
-            self.freq_min_edit.blockSignals(False)
-            self.freq_max_edit.blockSignals(False)
 
     def on_version_checked(self, latest_version):
         if latest_version:

@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QProgressBar,
-                               QLabel, QTabBar, QTabWidget, QStackedWidget)
+                               QLabel, QTabBar, QTabWidget)
 from PyQt6.QtCore import Qt, QTimer, QPoint
 from PyQt6.QtGui import QAction, QKeySequence, QPainter, QPixmap
 from ..marker_panel import MarkerPanel
@@ -263,7 +263,6 @@ class UIComponentsMixin:
                                  window_size=getattr(self, 'window_size', self.fft_size),
                                  parent_window=self)
         self.sidebar.parametersChanged.connect(self.on_parameters_changed)
-        self.sidebar.multirowChanged.connect(self.on_multirow_changed)
         self.spec_h_layout.addWidget(self.sidebar)
 
         # Right Side Container (MarkerPanel + SpectrogramView)
@@ -279,17 +278,8 @@ class UIComponentsMixin:
         self.marker_panel.markerClearRequested.connect(self.handle_marker_clear)
         self.spec_v_layout.addWidget(self.marker_panel)
 
-        # Stacked widget to switch between single and multi-row views
-        self.spectrogram_stack = QStackedWidget()
-        self.spec_v_layout.addWidget(self.spectrogram_stack)
-        
         self.spectrogram_view = SpectrogramView(self)
-        self.spectrogram_view.view_box.sigRangeChanged.connect(self.on_spectrogram_range_changed)
-        self.spectrogram_stack.addWidget(self.spectrogram_view)
-        
-        from ..multi_row_view import MultiRowSpectrogramView
-        self.multi_row_view = MultiRowSpectrogramView(self)
-        self.spectrogram_stack.addWidget(self.multi_row_view)
+        self.spec_v_layout.addWidget(self.spectrogram_view)
 
         # Add to tabs
         self.tabs.addTab(self.spec_tab_page, "Spectrogram")
