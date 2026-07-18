@@ -169,6 +169,27 @@ class ViewControllerMixin:
         else:
             self.spectrogram_view.setCursor(Qt.CursorShape.ArrowCursor)
 
+    def _confirm_large_segment(self, start_t, end_t, tab_name) -> bool:
+        """
+        Warns the user if they are trying to open a large segment in a popup tab.
+        Returns True if it's safe/approved to proceed, False otherwise.
+        """
+        num_samples = int(round(abs(end_t - start_t) * self.rate))
+        # Warn if segment is larger than 10 million samples
+        WARNING_THRESHOLD = 10_000_000
+        if num_samples > WARNING_THRESHOLD:
+            from PyQt6.QtWidgets import QMessageBox
+            reply = QMessageBox.question(
+                self, "Large Segment Warning",
+                f"You are opening a segment with {num_samples:,} samples in the {tab_name} tab.\n\n"
+                "Opening segments larger than 10,000,000 samples can cause significant lag or crash the application.\n\n"
+                "Do you want to proceed?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            return reply == QMessageBox.StandardButton.Yes
+        return True
+
     def open_time_domain_tab(self):
         """Extracts the IQ data between the two time markers (or full range) and opens it in a new tab."""
         markers = self.markers_time
@@ -181,6 +202,9 @@ class ViewControllerMixin:
             sorted_m = sorted(markers, key=lambda m: m.value())
             start_t, end_t = sorted_m[0].value(), sorted_m[1].value()
         
+        if not self._confirm_large_segment(start_t, end_t, "Time Domain"):
+            return
+
         segment = self.extract_iq_segment(start_t, end_t)
         if segment is not None:
             from ..time_domain.view import TimeDomainView
@@ -200,6 +224,9 @@ class ViewControllerMixin:
             sorted_m = sorted(markers, key=lambda m: m.value())
             start_t, end_t = sorted_m[0].value(), sorted_m[1].value()
             
+        if not self._confirm_large_segment(start_t, end_t, "Frequency Domain"):
+            return
+
         segment = self.extract_iq_segment(start_t, end_t)
         if segment is not None:
             from ..frequency_domain.view import FrequencyDomainView
@@ -218,6 +245,9 @@ class ViewControllerMixin:
         else:
             sorted_m = sorted(markers, key=lambda m: m.value())
             start_t, end_t = sorted_m[0].value(), sorted_m[1].value()
+
+        if not self._confirm_large_segment(start_t, end_t, "Eye Diagram"):
+            return
 
         segment = self.extract_iq_segment(start_t, end_t)
         if segment is not None:

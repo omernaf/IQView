@@ -2,6 +2,9 @@
 
 ## [0.6.0] - 2026-07-18
 
+### Added
+- **Large Segment Safety Warning**: Added a safety confirmation dialog when opening a Time Domain, Frequency Domain, or Eye Diagram popup tab with more than 10,000,000 samples. This alerts the user to potential lag or memory exhaustion, preventing accidental application freezes or crashes while still allowing the user to proceed if desired.
+
 ### Fixed
 - **Zoom Resolution in Full/Stdin Modes**: Fixed a bug where zoom-aware high-resolution re-rendering was completely disabled for stdin (piped) and in-memory (bytes/bytearray) data sources in full mode. This was caused by type-checking guards that incorrectly assumed in-memory sources could not be re-read, even though the backend reader class already supported them using in-memory streams.
 - **Eye Diagram SPS Input Validation**: Changed the validation trigger on the SPS/Baud Rate spinbox from `valueChanged` to `editingFinished`. This prevents the input field from immediately correcting values while typing (e.g. immediately clamping "1" to "2" when trying to type "10"). Verification and clamping to >= 2.0 now occur only when Enter is pressed or focus is lost.
