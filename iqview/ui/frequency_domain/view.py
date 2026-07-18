@@ -91,6 +91,23 @@ class FrequencyDomainView(QWidget):
         self.toolbar_layout = QHBoxLayout(self.toolbar)
         self.toolbar_layout.setContentsMargins(10, 5, 10, 5)
         
+        self.toolbar_layout.addWidget(QLabel("Operator:"))
+        self.operator_combo = QComboBox()
+        self.operator_combo.setObjectName("fd_operator_combo")
+        self.operator_combo.addItems([
+            "Normal",
+            "2nd Power",
+            "4th Power",
+            "Absolute Value",
+            "FM Demod",
+            "2nd Power FM",
+            "Delay & Multiply"
+        ])
+        self.operator_combo.currentIndexChanged.connect(self.on_operator_changed)
+        self.toolbar_layout.addWidget(self.operator_combo)
+        
+        self.toolbar_layout.addSpacing(15)
+        
         self.toolbar_layout.addWidget(QLabel("Plot Mode:"))
         self.plot_buttons_layout = QHBoxLayout()
         self.plot_buttons_layout.setSpacing(5)
@@ -192,10 +209,96 @@ class FrequencyDomainView(QWidget):
         self.x_scroll.valueChanged.connect(self.scroll_view)
         self.y_scroll.valueChanged.connect(self.scroll_view)
 
+    def get_processed_samples(self):
+        """Applies the selected preprocessing operator to the source samples."""
+        src = self._filtered_samples if (getattr(self, '_filtered_samples', None) is not None) else self.samples
+        if src is None or len(src) == 0:
+            return np.array([], dtype=np.complex64)
+            
+        operator = self.operator_combo.currentText()
+        if operator == "2nd Power":
+            return src ** 2
+        elif operator == "4th Power":
+            return src ** 4
+        elif operator == "Absolute Value":
+            return np.abs(src)
+        elif operator in ("FM Demod", "2nd Power FM"):
+            from scipy.signal import hilbert, butter, sosfiltfilt
+            
+            # Detect real signal: imaginary part is negligible
+            is_real = not np.any(np.iscomplex(src)) or np.max(np.abs(src.imag)) < 1e-9 * (np.max(np.abs(src.real)) + 1e-30)
+            if is_real:
+                real_part = src.real.astype(np.float64)
+                try:
+                    analytic = hilbert(real_part)
+                    sos = butter(2, 0.005, btype='high', output='sos')
+                    analytic = sosfiltfilt(sos, analytic.real) + 1j * sosfiltfilt(sos, analytic.imag)
+                    src = analytic
+                except Exception:
+                    pass
+            
+            dphi = np.diff(np.angle(src))
+            wrapped_dphi = (dphi + np.pi) % (2 * np.pi) - np.pi
+            freq = wrapped_dphi / (2 * np.pi) * self.rate
+            
+            # Apply moving median filter if configured
+            filter_len = 1
+            if self.settings_mgr:
+                filter_len = int(self.settings_mgr.get("core/inst_freq_filter_len", 7))
+            if filter_len > 1:
+                from scipy.signal import medfilt
+                if filter_len % 2 == 0:
+                    filter_len += 1
+                try:
+                    freq = medfilt(freq, kernel_size=filter_len)
+                except Exception:
+                    pass
+            
+            if len(freq) > 0:
+                freq = np.concatenate(([freq[0]], freq))
+            
+            if operator == "2nd Power FM":
+                return freq ** 2
+            return freq
+        elif operator == "Delay & Multiply":
+            if len(src) > 1:
+                res = src[1:] * np.conj(src[:-1])
+                return np.concatenate(([res[0]], res))
+            else:
+                return np.array([], dtype=np.complex64)
+        return src
+
+    def on_operator_changed(self):
+        """Called when the user selects a new preprocessing operator."""
+        operator = self.operator_combo.currentText()
+        if operator != "Normal":
+            # Switch back to FREQ interaction mode if in FILTER mode (filter not supported directly in baseband)
+            if self.interaction_mode == 'FILTER':
+                self.set_interaction_mode('FREQ')
+                self.marker_panel.update_mode_ui('FREQ')
+                self.marker_panel.update_headers('FREQ')
+            # Hide filter region
+            if hasattr(self, 'filter_region'):
+                self.filter_region.hide()
+            if hasattr(self, 'filter_line') and self.filter_line:
+                self.filter_line.hide()
+                
+        # Clear zoom ranges as operators change the frequency/magnitude scaling
+        self._first_plot = True
+        self.zoom_y_dict.clear()
+        
+        self.compute_fft()
+        
+        saved_mode = getattr(self, '_current_plot_mode_key', 'magnitude')
+        available = getattr(self, 'available_modes', {})
+        target = saved_mode if saved_mode in available else 'magnitude'
+        if target in available:
+            available[target]()
+
     def compute_fft(self):
         """Perform FFT processing on the sample segment using signal length N."""
-        # Use filtered samples if a filter is active, otherwise raw samples
-        src = self._filtered_samples if (self._filtered_samples is not None) else self.samples
+        # Use preprocessed samples
+        src = self.get_processed_samples()
         n = len(src)
         if n == 0: return
 
@@ -205,9 +308,19 @@ class FrequencyDomainView(QWidget):
         fft_res = np.fft.fft(src * window) / n
         self.fft_data = np.fft.fftshift(fft_res)
 
-        # freq_axis is always based on raw sample count so zooming works consistently
-        n_raw = len(self.samples) if len(self.samples) > 0 else n
-        self.fft_freq_axis = np.fft.fftshift(np.fft.fftfreq(n_raw, 1/self.rate)) + self.center_freq
+        # Determine center frequency based on the operator
+        operator = self.operator_combo.currentText()
+        if operator in ("Absolute Value", "FM Demod", "2nd Power FM", "Delay & Multiply"):
+            cf = 0.0
+        elif operator == "2nd Power":
+            cf = 2 * self.center_freq
+        elif operator == "4th Power":
+            cf = 4 * self.center_freq
+        else:
+            cf = self.center_freq
+
+        # freq_axis is always based on processed sample count so sizes match
+        self.fft_freq_axis = np.fft.fftshift(np.fft.fftfreq(n, 1/self.rate)) + cf
         self.freq_axis = self.fft_freq_axis
         self.stats_region.setBounds([self.freq_axis[0], self.freq_axis[-1]])
         if hasattr(self, 'filter_region'):
@@ -372,19 +485,31 @@ class FrequencyDomainView(QWidget):
         if self.settings_mgr:
             method = self.settings_mgr.get("core/psd_algorithm", "Welch")
         
-        # Use a reasonable segment length for Welch based on samples
-        # Default to 4096 or segments of ~1/4 size
-        nperseg = 4096 if len(self.samples) > 4096 else 1024
+        # Use processed samples
+        src = self.get_processed_samples()
+        if len(src) == 0: return
+        
+        # Use a reasonable segment length for Welch based on processed samples
+        nperseg = 4096 if len(src) > 4096 else 1024
         
         # Fix: Use fs=1.0 density and divide by N to get Power per Bin
-        # Use filtered samples for PSD if a filter is active
-        src = self._filtered_samples if (getattr(self, '_filtered_samples', None) is not None) else self.samples
         freqs, psd = compute_psd(src, fs=1.0, method=method, nperseg=nperseg)
         # Power per Bin (independent of fs)
         psd_bin_power = psd / len(psd)
         
-        # Scale frequencies only for display
-        freqs = freqs * self.rate + self.center_freq
+        # Determine center frequency based on the operator
+        operator = self.operator_combo.currentText()
+        if operator in ("Absolute Value", "FM Demod", "2nd Power FM", "Delay & Multiply"):
+            cf = 0.0
+        elif operator == "2nd Power":
+            cf = 2 * self.center_freq
+        elif operator == "4th Power":
+            cf = 4 * self.center_freq
+        else:
+            cf = self.center_freq
+            
+        # Scale frequencies and center them based on the operator
+        freqs = freqs * self.rate + cf
         
         # PSD is viewed as Power per Bin in dB
         psd_db = 10 * np.log10(psd_bin_power + 1e-20)
