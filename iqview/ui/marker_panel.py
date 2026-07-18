@@ -303,12 +303,21 @@ class MarkerPanel(QFrame):
             self.cb_overlay_shape.addItem(label, userData=shape)
             
         self.btn_manual_overlay = QPushButton("+ Manual Add")
-        self.btn_manual_overlay.setFixedHeight(24)
+        self.btn_manual_overlay.setFixedHeight(28)
+        self.btn_manual_overlay.setMinimumWidth(110)
+        self.btn_manual_overlay.setStyleSheet("QPushButton { padding: 3px 8px; }")
         self.btn_manual_overlay.clicked.connect(self._on_manual_overlay_add)
+        
+        self.btn_clear_overlays_overlay = QPushButton("Clear All")
+        self.btn_clear_overlays_overlay.setFixedHeight(28)
+        self.btn_clear_overlays_overlay.setMinimumWidth(90)
+        self.btn_clear_overlays_overlay.setStyleSheet("QPushButton { padding: 3px 8px; }")
+        self.btn_clear_overlays_overlay.clicked.connect(lambda: self.parent_window.clear_overlays())
         
         self.overlay_control_layout.addWidget(QLabel("Place Shape:"))
         self.overlay_control_layout.addWidget(self.cb_overlay_shape, 1)
         self.overlay_control_layout.addWidget(self.btn_manual_overlay)
+        self.overlay_control_layout.addWidget(self.btn_clear_overlays_overlay)
         
         self.overlay_layout.addWidget(self.overlay_control_widget)
         
@@ -341,12 +350,21 @@ class MarkerPanel(QFrame):
         self.plugins_control_layout.setSpacing(10)
         
         self.btn_load_plugin = QPushButton("Load Plugin...")
-        self.btn_load_plugin.setFixedHeight(24)
+        self.btn_load_plugin.setFixedHeight(28)
+        self.btn_load_plugin.setMinimumWidth(110)
+        self.btn_load_plugin.setStyleSheet("QPushButton { padding: 3px 8px; }")
         self.btn_load_plugin.clicked.connect(self.parent_window.load_plugin)
+        
+        self.btn_clear_overlays_plugins = QPushButton("Clear All")
+        self.btn_clear_overlays_plugins.setFixedHeight(28)
+        self.btn_clear_overlays_plugins.setMinimumWidth(90)
+        self.btn_clear_overlays_plugins.setStyleSheet("QPushButton { padding: 3px 8px; }")
+        self.btn_clear_overlays_plugins.clicked.connect(lambda: self.parent_window.clear_overlays())
         
         self.plugins_control_layout.addWidget(QLabel("Plugins Manager"))
         self.plugins_control_layout.addStretch()
         self.plugins_control_layout.addWidget(self.btn_load_plugin)
+        self.plugins_control_layout.addWidget(self.btn_clear_overlays_plugins)
         
         self.plugins_layout.addWidget(self.plugins_control_widget)
         
@@ -1077,23 +1095,27 @@ class MarkerPanel(QFrame):
             
             btn_config = QPushButton("Config")
             btn_config.setFixedHeight(28)
+            btn_config.setMinimumWidth(75)
+            btn_config.setStyleSheet("QPushButton { padding: 3px 8px; }")
             btn_config.setToolTip("Configure plugin parameters")
             
             btn_run = QPushButton("▶ Run")
             btn_run.setFixedHeight(28)
+            btn_run.setMinimumWidth(75)
             btn_run.setToolTip("Run this plugin")
             btn_run.setStyleSheet("""
                 QPushButton { background: none; color: #00cc66; font-weight: bold;
-                              border-radius: 4px; border: 1px solid #00cc66; }
+                              border-radius: 4px; border: 1px solid #00cc66; padding: 3px 8px; }
                 QPushButton:hover { background: rgba(0,204,102,0.2); }
             """)
 
             btn_del = QPushButton("Del")
             btn_del.setFixedHeight(28)
+            btn_del.setMinimumWidth(60)
             btn_del.setToolTip("Unload this plugin")
             btn_del.setStyleSheet("""
                 QPushButton { background: none; color: #ff4444; font-weight: bold;
-                              border-radius: 4px; border: 1px solid #ff4444; }
+                              border-radius: 4px; border: 1px solid #ff4444; padding: 3px 8px; }
                 QPushButton:hover { background: rgba(255,68,68,0.2); }
             """)
 
