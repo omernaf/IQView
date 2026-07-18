@@ -1016,34 +1016,27 @@ class TimeDomainView(QWidget):
             active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
             if len(active_markers) == 2:
                 try:
+                    curr_min = t_min if is_time else y_min
+                    curr_max = t_max if is_time else y_max
                     if lock_delta:
                         sorted_m = sorted(active_markers, key=lambda m: m.value())
                         p1_orig, p2_orig = sorted_m[0].value(), sorted_m[1].value()
                         delta_orig = p2_orig - p1_orig
                         shift = g_prime - (p1_orig + k * delta_orig)
-                        new_p1, new_p2 = p1_orig + shift, p2_orig + shift
-                        if is_time:
-                            if t_min <= new_p1 <= t_max and t_min <= new_p2 <= t_max:
-                                sorted_m[0].setPos(new_p1); sorted_m[1].setPos(new_p2)
-                        else:
-                            if y_min <= new_p1 <= y_max and y_min <= new_p2 <= y_max:
-                                sorted_m[0].setPos(new_p1); sorted_m[1].setPos(new_p2)
+                        
+                        shift_min = max(curr_min - p1_orig, curr_min - p2_orig)
+                        shift_max = min(curr_max - p1_orig, curr_max - p2_orig)
+                        shift_clamped = np.clip(shift, shift_min, shift_max)
+                        sorted_m[0].setPos(p1_orig + shift_clamped); sorted_m[1].setPos(p2_orig + shift_clamped)
                     elif lock_center:
                         sorted_m = sorted(active_markers, key=lambda m: m.value())
                         p1_orig, p2_orig = sorted_m[0].value(), sorted_m[1].value()
                         center = (p1_orig + p2_orig) / 2
                         if abs(k - 0.5) > 1e-9:
                             new_delta = (g_prime - center) / (k - 0.5)
-                            new_p1 = center - new_delta / 2
-                            new_p2 = center + new_delta / 2
-                            if is_time:
-                                if t_min <= new_p1 <= t_max and t_min <= new_p2 <= t_max:
-                                    if new_p1 <= new_p2:
-                                        sorted_m[0].setPos(new_p1); sorted_m[1].setPos(new_p2)
-                            else:
-                                if y_min <= new_p1 <= y_max and y_min <= new_p2 <= y_max:
-                                    if new_p1 <= new_p2:
-                                        sorted_m[0].setPos(new_p1); sorted_m[1].setPos(new_p2)
+                            max_half_delta = min(center - curr_min, curr_max - center)
+                            half_delta_clamped = np.clip(abs(new_delta / 2), 0.0, max_half_delta)
+                            sorted_m[0].setPos(center - half_delta_clamped); sorted_m[1].setPos(center + half_delta_clamped)
                     else:
                         if is_p1:
                             if abs(1 - k) > 1e-9:
@@ -1119,27 +1112,20 @@ class TimeDomainView(QWidget):
             if lock_target: return # Dragging a locked marker is a no-op
 
             shift = val - self.active_drag_marker.value()
+            curr_min = t_min if is_time else y_min
+            curr_max = t_max if is_time else y_max
             if lock_delta:
-                new_o = other.value() + shift
-                if is_time:
-                    t_min, t_max = self.time_axis[0], self.time_axis[-1]
-                    if t_min <= val <= t_max and t_min <= new_o <= t_max:
-                        self.active_drag_marker.setValue(val); other.setValue(new_o)
-                else:
-                    y_min, y_max = self._get_y_bounds()
-                    if y_min <= val <= y_max and y_min <= new_o <= y_max:
-                        self.active_drag_marker.setValue(val); other.setValue(new_o)
+                potential_other = other.value() + shift
+                potential_other_clamped = np.clip(potential_other, curr_min, curr_max)
+                actual_shift = potential_other_clamped - other.value()
+                self.active_drag_marker.setValue(self.active_drag_marker.value() + actual_shift)
+                other.setValue(potential_other_clamped)
             elif lock_center:
                 ct = (self.active_drag_marker.value() + other.value()) / 2
-                new_o = 2 * ct - val
-                if is_time:
-                    t_min, t_max = self.time_axis[0], self.time_axis[-1]
-                    if t_min <= val <= t_max and t_min <= new_o <= t_max:
-                        self.active_drag_marker.setValue(val); other.setValue(new_o)
-                else:
-                    y_min, y_max = self._get_y_bounds()
-                    if y_min <= val <= y_max and y_min <= new_o <= y_max:
-                        self.active_drag_marker.setValue(val); other.setValue(new_o)
+                potential_other = 2 * ct - val
+                potential_other_clamped = np.clip(potential_other, curr_min, curr_max)
+                self.active_drag_marker.setValue(2 * ct - potential_other_clamped)
+                other.setValue(potential_other_clamped)
             else: 
                 self.active_drag_marker.setValue(val)
                 # Crossing logic

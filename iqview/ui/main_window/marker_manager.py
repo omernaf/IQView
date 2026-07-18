@@ -415,15 +415,16 @@ class MarkerManagerMixin:
                     
                     if self.marker_panel.btn_lock_delta.isChecked():
                         potential_other = other_old_v + shift
-                        if f_min <= new_v <= f_max and f_min <= potential_other <= f_max:
-                            actual_new_v = new_v
-                            actual_other_new_v = potential_other
+                        potential_other_clamped = np.clip(potential_other, f_min, f_max)
+                        actual_shift = potential_other_clamped - other_old_v
+                        actual_new_v = old_v + actual_shift
+                        actual_other_new_v = potential_other_clamped
                     elif self.marker_panel.btn_lock_center.isChecked():
                         center = (old_v + other_old_v) / 2
                         potential_other = 2 * center - new_v
-                        if f_min <= new_v <= f_max and f_min <= potential_other <= f_max:
-                            actual_new_v = new_v
-                            actual_other_new_v = potential_other
+                        potential_other_clamped = np.clip(potential_other, f_min, f_max)
+                        actual_new_v = 2 * center - potential_other_clamped
+                        actual_other_new_v = potential_other_clamped
                             
                     self.filter_bounds[idx] = actual_new_v
                     self.filter_bounds[other_idx] = actual_other_new_v
@@ -522,21 +523,19 @@ class MarkerManagerMixin:
                             delta_orig = p2_orig - p1_orig
                             shift = g_prime - (p1_orig + k * delta_orig)
                             
-                            new_p1, new_p2 = p1_orig + shift, p2_orig + shift
-                            if f_min <= new_p1 <= f_max and f_min <= new_p2 <= f_max:
-                                sorted_m[0].setPos(new_p1); sorted_m[1].setPos(new_p2)
+                            shift_min = max(f_min - p1_orig, f_min - p2_orig)
+                            shift_max = min(f_max - p1_orig, f_max - p2_orig)
+                            shift_clamped = np.clip(shift, shift_min, shift_max)
+                            sorted_m[0].setPos(p1_orig + shift_clamped); sorted_m[1].setPos(p2_orig + shift_clamped)
                         elif lock_center:
                             sorted_m = sorted(active_markers, key=lambda m: m.value())
                             p1_orig, p2_orig = sorted_m[0].value(), sorted_m[1].value()
                             center = (p1_orig + p2_orig) / 2
                             if abs(k - 0.5) > 1e-9:
                                 new_delta = (g_prime - center) / (k - 0.5)
-                                new_p1 = center - new_delta / 2
-                                new_p2 = center + new_delta / 2
-                                if f_min <= new_p1 <= f_max and f_min <= new_p2 <= f_max:
-                                    # Still don't allow inversion in center-locked mode as it's confusing
-                                    if new_p1 <= new_p2:
-                                        sorted_m[0].setPos(new_p1); sorted_m[1].setPos(new_p2)
+                                max_half_delta = min(center - f_min, f_max - center)
+                                half_delta_clamped = np.clip(abs(new_delta / 2), 0.0, max_half_delta)
+                                sorted_m[0].setPos(center - half_delta_clamped); sorted_m[1].setPos(center + half_delta_clamped)
                         else:
                             if is_p1:
                                 if abs(1 - k) > 1e-9:
@@ -595,17 +594,18 @@ class MarkerManagerMixin:
                 old_v = get_pos(self.active_drag_marker)
                 shift = new_v - old_v
                 if self.marker_panel.btn_lock_delta.isChecked():
-                    other_new = get_pos(other_marker) + shift
-                    if f_min <= other_new <= f_max:
-                        self.active_drag_marker.setPos(new_v)
-                        other_marker.setPos(other_new)
+                    potential_other = get_pos(other_marker) + shift
+                    potential_other_clamped = np.clip(potential_other, f_min, f_max)
+                    actual_shift = potential_other_clamped - get_pos(other_marker)
+                    self.active_drag_marker.setPos(old_v + actual_shift)
+                    other_marker.setPos(potential_other_clamped)
                 elif self.marker_panel.btn_lock_center.isChecked():
                     p1, p2 = get_pos(active_markers[0]), get_pos(active_markers[1])
                     ct = (p1 + p2) / 2
-                    other_new = 2 * ct - new_v
-                    if f_min <= other_new <= f_max:
-                        self.active_drag_marker.setPos(new_v)
-                        other_marker.setPos(other_new)
+                    potential_other = 2 * ct - new_v
+                    potential_other_clamped = np.clip(potential_other, f_min, f_max)
+                    self.active_drag_marker.setPos(2 * ct - potential_other_clamped)
+                    other_marker.setPos(potential_other_clamped)
                 else:
                     self.active_drag_marker.setPos(new_v)
                     # Swap list order if the free marker crossed the locked one
