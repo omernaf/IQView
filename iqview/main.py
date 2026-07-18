@@ -30,7 +30,10 @@ if sys.platform == "win32":
 
 def parse_args():
     sm = SettingsManager()
-    parser = argparse.ArgumentParser(description="IQView - High-performance Static RF Spectrogram Viewer")
+    parser = argparse.ArgumentParser(
+        description="IQView - High-performance Static RF Spectrogram Viewer",
+        allow_abbrev=False
+    )
     
     # Positional path to load a file by dragging and dropping or double clicking
     parser.add_argument('path', nargs='?', default=None, help='Positional path to the binary IQ file')
