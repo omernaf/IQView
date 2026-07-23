@@ -173,14 +173,20 @@ class MultiRowSpectrogramView(QWidget):
         s_duration = s_row['t_end'] - s_row['t_start']
 
         if s_duration > 0:
-            rel_start = (time_range[0] - s_row['t_start']) / s_duration
-            rel_end   = (time_range[1] - s_row['t_start']) / s_duration
+            r_seg0 = (time_range[0] - s_row['t_start']) / s_duration
+            r_seg1 = (time_range[1] - s_row['t_start']) / s_duration
         else:
-            rel_start, rel_end = 0.0, 1.0
+            r_seg0, r_seg1 = 0.0, 1.0
 
-        rel_start = float(np.clip(rel_start, 0.0, 1.0))
-        rel_end   = float(np.clip(rel_end, rel_start + 1e-6, 1.0))
-        self._current_rel_time = (rel_start, rel_end)
+        old_r0, old_r1 = getattr(self, '_current_rel_time', (0.0, 1.0))
+        old_span = old_r1 - old_r0
+
+        new_r0 = old_r0 + r_seg0 * old_span
+        new_r1 = old_r0 + r_seg1 * old_span
+
+        new_r0 = float(np.clip(new_r0, 0.0, 1.0))
+        new_r1 = float(np.clip(new_r1, new_r0 + 1e-6, 1.0))
+        self._current_rel_time = (new_r0, new_r1)
 
         self._syncing = True
         try:
@@ -188,20 +194,25 @@ class MultiRowSpectrogramView(QWidget):
                 if i == source_idx:
                     continue
                 r_dur = row['t_end'] - row['t_start']
-                new_t0 = row['t_start'] + rel_start * r_dur
-                new_t1 = row['t_start'] + rel_end * r_dur
+                new_t0 = row['t_start'] + r_seg0 * r_dur
+                new_t1 = row['t_start'] + r_seg1 * r_dur
 
-                if is_waterfall:
-                    row['plot'].setXRange(freq_range[0], freq_range[1], padding=0)
-                    row['plot'].setYRange(new_t0, new_t1, padding=0)
-                else:
-                    row['plot'].setXRange(new_t0, new_t1, padding=0)
-                    row['plot'].setYRange(freq_range[0], freq_range[1], padding=0)
+                vb_other = row['plot'].getViewBox()
+                vb_other.blockSignals(True)
+                try:
+                    if is_waterfall:
+                        row['plot'].setXRange(freq_range[0], freq_range[1], padding=0)
+                        row['plot'].setYRange(new_t0, new_t1, padding=0)
+                    else:
+                        row['plot'].setXRange(new_t0, new_t1, padding=0)
+                        row['plot'].setYRange(freq_range[0], freq_range[1], padding=0)
+                finally:
+                    vb_other.blockSignals(False)
         finally:
             self._syncing = False
 
         # Update sidebar text inputs (frequency & time/sample ranges)
-        self._update_sidebar_inputs(freq_range[0], freq_range[1], rel_start, rel_end)
+        self._update_sidebar_inputs(freq_range[0], freq_range[1], new_r0, new_r1)
 
         # Trigger resolution re-render for the zoomed time window
         if hasattr(self.parent_window, '_schedule_multirow_rerender'):
@@ -219,18 +230,16 @@ class MultiRowSpectrogramView(QWidget):
 
         if hasattr(sb, 'start_sample_edit') and hasattr(sb, 'samples_per_row_edit') and len(self.rows) > 0:
             fs = max(getattr(self.parent_window, 'rate', 1.0), 1.0)
-            row0 = self.rows[0]
-            dur0 = row0['t_end'] - row0['t_start']
-            new_start_sec = row0['t_start'] + rel_start * dur0
-            new_spr_sec   = (rel_end - rel_start) * dur0
+            base_start = getattr(self.parent_window, '_multirow_start_sample', 0)
+            base_spr   = getattr(self.parent_window, '_multirow_samples_per_row', 0)
 
-            new_start_sample = int(round(new_start_sec * fs))
-            new_spr          = int(round(new_spr_sec * fs))
+            active_start_sample = base_start + int(round(rel_start * base_spr))
+            active_spr          = max(1, int(round((rel_end - rel_start) * base_spr)))
 
             sb.start_sample_edit.blockSignals(True)
             sb.samples_per_row_edit.blockSignals(True)
-            sb.start_sample_edit.setText(str(new_start_sample))
-            sb.samples_per_row_edit.setText(str(new_spr))
+            sb.start_sample_edit.setText(str(active_start_sample))
+            sb.samples_per_row_edit.setText(str(active_spr))
             sb.start_sample_edit.blockSignals(False)
             sb.samples_per_row_edit.blockSignals(False)
 
@@ -248,10 +257,15 @@ class MultiRowSpectrogramView(QWidget):
         self._syncing = True
         try:
             for row in self.rows:
-                if is_waterfall:
-                    row['plot'].setXRange(f_lo, f_hi, padding=0)
-                else:
-                    row['plot'].setYRange(f_lo, f_hi, padding=0)
+                vb_other = row['plot'].getViewBox()
+                vb_other.blockSignals(True)
+                try:
+                    if is_waterfall:
+                        row['plot'].setXRange(f_lo, f_hi, padding=0)
+                    else:
+                        row['plot'].setYRange(f_lo, f_hi, padding=0)
+                finally:
+                    vb_other.blockSignals(False)
         finally:
             self._syncing = False
         self._update_sidebar_inputs(f_lo, f_hi)
@@ -557,30 +571,34 @@ class MultiRowSpectrogramView(QWidget):
                 f_view_lo = f_lo_req if custom_freq else f_min
                 f_view_hi = f_hi_req if custom_freq else (f_min + rate)
 
-                if is_waterfall:
-                    display = np.ascontiguousarray(spec.T)
-                    row['img'].setImage(display, autoLevels=False,
-                                       levels=levels, autoDownsample=True)
-                    row['img'].setRect(QRectF(f_min, t_start, rate, duration))
-                    row['plot'].setLabel('bottom', "Frequency", units='Hz')
-                    row['plot'].setLabel('left',   "Time",      units='s')
-                    row['plot'].getViewBox().invertY(True)
-                    row['plot'].setXRange(f_view_lo, f_view_hi, padding=0)
-                    row['plot'].setYRange(t_start, t_end, padding=0)
-                else:
-                    row['img'].setImage(spec, autoLevels=False,
-                                       levels=levels, autoDownsample=True)
-                    row['img'].setRect(QRectF(t_start, f_min, duration, rate))
-                    row['plot'].setLabel('bottom', "Time",      units='s')
-                    row['plot'].setLabel('left',   "Frequency", units='Hz')
-                    row['plot'].getViewBox().invertY(False)
-                    row['plot'].setXRange(t_start, t_end, padding=0)
-                    row['plot'].setYRange(f_view_lo, f_view_hi, padding=0)
+                vb_curr = row['plot'].getViewBox()
+                vb_curr.blockSignals(True)
+                try:
+                    if is_waterfall:
+                        display = np.ascontiguousarray(spec.T)
+                        row['img'].setImage(display, autoLevels=False,
+                                           levels=levels, autoDownsample=True)
+                        row['img'].setRect(QRectF(f_min, t_start, rate, duration))
+                        row['plot'].setLabel('bottom', "Frequency", units='Hz')
+                        row['plot'].setLabel('left',   "Time",      units='s')
+                        row['plot'].getViewBox().invertY(True)
+                        row['plot'].setXRange(f_view_lo, f_view_hi, padding=0)
+                        row['plot'].setYRange(t_start, t_end, padding=0)
+                    else:
+                        row['img'].setImage(spec, autoLevels=False,
+                                           levels=levels, autoDownsample=True)
+                        row['img'].setRect(QRectF(t_start, f_min, duration, rate))
+                        row['plot'].setLabel('bottom', "Time",      units='s')
+                        row['plot'].setLabel('left',   "Frequency", units='Hz')
+                        row['plot'].getViewBox().invertY(False)
+                        row['plot'].setXRange(t_start, t_end, padding=0)
+                        row['plot'].setYRange(f_view_lo, f_view_hi, padding=0)
+                finally:
+                    vb_curr.blockSignals(False)
 
                 row['img'].setColorMap(cmap)
                 row['img'].setLevels(levels)
 
-            self._current_rel_time = (0.0, 1.0)
         finally:
             self._syncing = False
 
@@ -602,6 +620,8 @@ class MultiRowSpectrogramView(QWidget):
             row['img'].setLevels(levels)
             if cmap is not None:
                 row['img'].setColorMap(cmap)
+            row['img'].update()
+            row['widget'].update()
 
     def pan_view(self, dx, dy):
         """Pan all multi-row plots in real time matching 1-row mode clamping logic.
@@ -621,19 +641,22 @@ class MultiRowSpectrogramView(QWidget):
         dt = dx if not is_waterfall else dy
         df = dy if not is_waterfall else dx
 
-        row0 = self.rows[0]
-        r0_t_s, r0_t_e = row0['t_start'], row0['t_end']
-        r0_dur = max(r0_t_e - r0_t_s, 1e-9)
+        base_start = getattr(self.parent_window, '_multirow_start_sample', 0)
+        base_spr   = getattr(self.parent_window, '_multirow_samples_per_row', 0)
+        fs         = max(self.parent_window.rate, 1.0)
+        base_dur   = (base_spr / fs) if base_spr > 0 else 1.0
 
+        row0 = self.rows[0]
         xr0, yr0 = row0['plot'].viewRange()
-        t_curr = yr0 if is_waterfall else xr0
         f_curr = xr0 if is_waterfall else yr0
 
-        rel_s, rel_e = getattr(self, '_current_rel_time', (0.0, 1.0))
-        vis_ratio_time = rel_e - rel_s
+        r0, r1 = getattr(self, '_current_rel_time', (0.0, 1.0))
+        rel_span = r1 - r0
+
+        vis_ratio_time = rel_span
         vis_ratio_freq = (f_curr[1] - f_curr[0]) / rate
 
-        # Frequency Panning (only if zoomed in on frequency)
+        # Frequency Panning (only if zoomed in)
         if vis_ratio_freq <= 0.999 and df != 0.0:
             f_span = f_curr[1] - f_curr[0]
             new_f0 = f_curr[0] - df
@@ -644,70 +667,37 @@ class MultiRowSpectrogramView(QWidget):
                 new_f0, new_f1 = f_max_bounds - f_span, f_max_bounds
             self.set_freq_range(new_f0, new_f1)
 
-        # Time Panning (zoomed within row OR scrolling sample offset)
-        if dt != 0.0:
-            if vis_ratio_time <= 0.999:
-                rel_span = rel_e - rel_s
-                dt_rel = dt / r0_dur
-                new_rel_s = rel_s - dt_rel
-                new_rel_e = rel_e - dt_rel
-                if new_rel_s < 0.0:
-                    new_rel_s, new_rel_e = 0.0, rel_span
-                elif new_rel_e > 1.0:
-                    new_rel_s, new_rel_e = 1.0 - rel_span, 1.0
-                self._current_rel_time = (new_rel_s, new_rel_e)
+        # Time Panning (only if zoomed in)
+        if vis_ratio_time <= 0.999 and dt != 0.0:
+            dt_rel = dt / max(base_dur, 1e-9)
+            new_r0 = float(np.clip(r0 - dt_rel, 0.0, 1.0 - rel_span))
+            new_r1 = float(np.clip(new_r0 + rel_span, rel_span, 1.0))
+            self._current_rel_time = (new_r0, new_r1)
 
-                self._syncing = True
-                try:
-                    for row in self.rows:
-                        t_s, t_e = row['t_start'], row['t_end']
-                        dur = t_e - t_s
-                        v0 = t_s + new_rel_s * dur
-                        v1 = t_s + new_rel_e * dur
+            # Shift row viewports live
+            self._syncing = True
+            try:
+                for row in self.rows:
+                    t_s, t_e = row['t_start'], row['t_end']
+                    dur = t_e - t_s
+                    v0 = t_s + new_r0 * dur
+                    v1 = t_s + new_r1 * dur
+                    vb_other = row['plot'].getViewBox()
+                    vb_other.blockSignals(True)
+                    try:
                         if is_waterfall:
                             row['plot'].setYRange(v0, v1, padding=0)
                         else:
                             row['plot'].setXRange(v0, v1, padding=0)
-                finally:
-                    self._syncing = False
-            else:
-                fs = max(self.parent_window.rate, 1.0)
-                delta_samples = int(round(dt * fs))
-
-                curr_start = getattr(self.parent_window, '_multirow_start_sample', 0)
-                total_samples = self.parent_window.get_total_samples() if hasattr(self.parent_window, 'get_total_samples') else 0
-                spr = getattr(self.parent_window, '_multirow_samples_per_row', 0)
-                max_start = max(0, total_samples - spr) if total_samples > 0 else 1e9
-
-                new_start = int(np.clip(curr_start - delta_samples, 0, max_start))
-                if new_start != curr_start:
-                    self.parent_window._multirow_start_sample = new_start
-                    sb = getattr(self.parent_window, 'sidebar', None)
-                    if sb and hasattr(sb, 'start_sample_edit'):
-                        sb.start_sample_edit.blockSignals(True)
-                        sb.start_sample_edit.setText(str(new_start))
-                        sb.start_sample_edit.blockSignals(False)
-
-                    period = getattr(self.parent_window, '_multirow_period', spr)
-                    if period <= 0: period = spr
-
-                    self._syncing = True
-                    try:
-                        for i, row in enumerate(self.rows):
-                            row_s_idx = new_start + i * period
-                            t_s = row_s_idx / fs
-                            t_e = (row_s_idx + spr) / fs
-                            row['t_start'] = t_s
-                            row['t_end']   = t_e
-                            if is_waterfall:
-                                row['plot'].setYRange(t_s, t_e, padding=0)
-                            else:
-                                row['plot'].setXRange(t_s, t_e, padding=0)
                     finally:
-                        self._syncing = False
+                        vb_other.blockSignals(False)
+            finally:
+                self._syncing = False
 
-                    if hasattr(self.parent_window, '_schedule_multirow_rerender'):
-                        self.parent_window._schedule_multirow_rerender()
+            self._update_sidebar_inputs(f_curr[0], f_curr[1], new_r0, new_r1)
+
+            if hasattr(self.parent_window, '_schedule_multirow_rerender'):
+                self.parent_window._schedule_multirow_rerender()
 
         # Sync existing markers and overlays to the new row layout
         self.sync_markers(

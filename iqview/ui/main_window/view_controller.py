@@ -228,6 +228,8 @@ class ViewControllerMixin:
         self._multirow_period         = period
 
         if hasattr(self, 'multi_row_view'):
+            if needs_reprocess:
+                self.multi_row_view._current_rel_time = (0.0, 1.0)
             self.multi_row_view.set_freq_range(f_min, f_max)
 
         if needs_reprocess and self._has_data():

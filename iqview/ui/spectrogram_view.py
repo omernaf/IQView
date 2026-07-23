@@ -203,10 +203,16 @@ class SpectrogramView(QWidget):
     def on_levels_changed(self):
         low, high = self.level_region.getRegion()
         self.img.setLevels([low, high])
+        if hasattr(self.parent_window, 'multi_row_view') and hasattr(self.parent_window, 'spectrogram_stack'):
+            if self.parent_window.spectrogram_stack.currentIndex() == 1:
+                self.parent_window.multi_row_view.apply_levels_and_colormap()
 
     def on_gradient_changed(self):
         # Simply apply the current state of the gradient editor to the image
         self.img.setColorMap(self.gradient.colorMap())
+        if hasattr(self.parent_window, 'multi_row_view') and hasattr(self.parent_window, 'spectrogram_stack'):
+            if self.parent_window.spectrogram_stack.currentIndex() == 1:
+                self.parent_window.multi_row_view.apply_levels_and_colormap()
 
     def apply_colormap(self, cmap_name, reversed_mode):
         """Apply a named colormap to the gradient editor and image."""
