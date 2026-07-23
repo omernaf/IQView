@@ -170,16 +170,20 @@ class MultiRowSpectrogramView(QWidget):
         time_range = yr if is_waterfall else xr
 
         s_row = self.rows[source_idx]
-        s_duration = s_row['t_end'] - s_row['t_start']
+        v_start = s_row.get('t_vis_start', s_row['t_start'])
+        v_end   = s_row.get('t_vis_end', s_row['t_end'])
+        s_duration = max(v_end - v_start, 1e-9)
 
-        if s_duration > 0:
-            rel_start = (time_range[0] - s_row['t_start']) / s_duration
-            rel_end   = (time_range[1] - s_row['t_start']) / s_duration
-        else:
-            rel_start, rel_end = 0.0, 1.0
+        rel_start = (time_range[0] - v_start) / s_duration
+        rel_end   = (time_range[1] - v_start) / s_duration
 
         rel_start = float(np.clip(rel_start, 0.0, 1.0))
         rel_end   = float(np.clip(rel_end, rel_start + 1e-6, 1.0))
+
+        # Push state to zoom history before updating
+        if hasattr(self.parent_window, 'push_multirow_zoom_state'):
+            self.parent_window.push_multirow_zoom_state()
+
         self._current_rel_time = (rel_start, rel_end)
 
         self._syncing = True
@@ -187,9 +191,11 @@ class MultiRowSpectrogramView(QWidget):
             for i, row in enumerate(self.rows):
                 if i == source_idx:
                     continue
-                r_dur = row['t_end'] - row['t_start']
-                new_t0 = row['t_start'] + rel_start * r_dur
-                new_t1 = row['t_start'] + rel_end * r_dur
+                r_v_start = row.get('t_vis_start', row['t_start'])
+                r_v_end   = row.get('t_vis_end', row['t_end'])
+                r_dur     = max(r_v_end - r_v_start, 1e-9)
+                new_t0    = r_v_start + rel_start * r_dur
+                new_t1    = r_v_start + rel_end * r_dur
 
                 vb_other = row['plot'].getViewBox()
                 vb_other.blockSignals(True)
@@ -557,8 +563,10 @@ class MultiRowSpectrogramView(QWidget):
                 t_vis_start = s_vis / sr
                 t_vis_end   = (s_vis + vis_spr) / sr
 
-                row['t_start'] = t_read_start
-                row['t_end']   = t_read_end
+                row['t_start']     = t_read_start
+                row['t_end']       = t_read_end
+                row['t_vis_start'] = t_vis_start
+                row['t_vis_end']   = t_vis_end
 
                 # -- Label --
                 if n > 1:

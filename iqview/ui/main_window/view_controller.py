@@ -667,11 +667,51 @@ class ViewControllerMixin:
             curr += delta
             count += 1
 
+    def push_multirow_zoom_state(self):
+        """Save current multi-row zoom parameters to multirow_zoom_history."""
+        if not hasattr(self, 'multirow_zoom_history'):
+            self.multirow_zoom_history = []
+        
+        start_sample = getattr(self, '_multirow_start_sample', 0)
+        spr          = getattr(self, '_multirow_samples_per_row', 0)
+        f_lo, f_hi   = 0.0, 1.0
+        if hasattr(self, 'multi_row_view') and len(self.multi_row_view.rows) > 0:
+            row0 = self.multi_row_view.rows[0]
+            xr, yr = row0['plot'].viewRange()
+            f_lo, f_hi = xr if self.spectrogram_view.is_waterfall else yr
+
+        state = {
+            'start_sample':    start_sample,
+            'samples_per_row': spr,
+            'freq_min':        f_lo,
+            'freq_max':        f_hi,
+        }
+        if not self.multirow_zoom_history or self.multirow_zoom_history[-1] != state:
+            self.multirow_zoom_history.append(state)
+
     def undo_zoom(self):
         active_tab = self.tabs.currentWidget()
         if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'undo_zoom'):
             active_tab.undo_zoom()
-        elif self.zoom_history:
+            return
+
+        if hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
+            if hasattr(self, 'multirow_zoom_history') and self.multirow_zoom_history:
+                prev_state = self.multirow_zoom_history.pop()
+                self._multirow_start_sample   = prev_state['start_sample']
+                self._multirow_samples_per_row = prev_state['samples_per_row']
+                if hasattr(self, 'multi_row_view'):
+                    self.multi_row_view._current_rel_time = (0.0, 1.0)
+                    self.multi_row_view.set_freq_range(prev_state['freq_min'], prev_state['freq_max'])
+                if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'start_sample_edit'):
+                    self.sidebar.start_sample_edit.setText(str(prev_state['start_sample']))
+                    self.sidebar.samples_per_row_edit.setText(str(prev_state['samples_per_row']))
+                self._do_multirow_rerender()
+            elif hasattr(self, 'multi_row_view'):
+                self.multi_row_view.reset_zoom()
+            return
+
+        if self.zoom_history:
             prev_rect = self.zoom_history.pop()
             self.spectrogram_view.plot_item.setRange(rect=prev_rect, padding=0)
         else:
