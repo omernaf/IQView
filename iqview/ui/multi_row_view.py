@@ -180,6 +180,7 @@ class MultiRowSpectrogramView(QWidget):
 
         rel_start = float(np.clip(rel_start, 0.0, 1.0))
         rel_end   = float(np.clip(rel_end, rel_start + 1e-6, 1.0))
+        self._current_rel_time = (rel_start, rel_end)
 
         self._syncing = True
         try:
@@ -201,6 +202,10 @@ class MultiRowSpectrogramView(QWidget):
 
         # Update sidebar text inputs (frequency & time/sample ranges)
         self._update_sidebar_inputs(freq_range[0], freq_range[1], rel_start, rel_end)
+
+        # Trigger resolution re-render for the zoomed time window
+        if hasattr(self.parent_window, '_schedule_multirow_rerender'):
+            self.parent_window._schedule_multirow_rerender()
 
     def _update_sidebar_inputs(self, f_lo, f_hi, rel_start=0.0, rel_end=1.0):
         """Update Freq Min, Freq Max, Start Sample, and Samples Per Row text fields in sidebar."""
@@ -256,26 +261,45 @@ class MultiRowSpectrogramView(QWidget):
     # ------------------------------------------------------------------
 
     def reset_zoom(self):
-        """Reset frequency and time axes for all rows."""
+        """Reset multi-row view and sidebar inputs back to full default extent."""
+        self._current_rel_time = (0.0, 1.0)
         fc = self.parent_window.fc
         rate = self.parent_window.rate
         f_lo = fc - rate / 2.0
         f_hi = fc + rate / 2.0
-        is_waterfall = self.parent_window.spectrogram_view.is_waterfall
 
-        self._syncing = True
-        try:
-            for row in self.rows:
-                t0, t1 = row['t_start'], row['t_end']
-                if is_waterfall:
-                    row['plot'].setXRange(f_lo, f_hi, padding=0)
-                    row['plot'].setYRange(t0, t1, padding=0)
-                else:
-                    row['plot'].setXRange(t0, t1, padding=0)
-                    row['plot'].setYRange(f_lo, f_hi, padding=0)
-        finally:
-            self._syncing = False
-        self._update_sidebar_freq_inputs(f_lo, f_hi)
+        # Calculate default multi-row sample parameters
+        total = self.parent_window.get_total_samples() if hasattr(self.parent_window, 'get_total_samples') else 0
+        num_rows = max(1, len(self.rows))
+        default_spr = max(1, total // num_rows) if total > 0 else 0
+        default_period = default_spr
+
+        self.parent_window._multirow_start_sample   = 0
+        self.parent_window._multirow_samples_per_row = default_spr
+        self.parent_window._multirow_period         = default_period
+
+        sb = getattr(self.parent_window, 'sidebar', None)
+        if sb:
+            if hasattr(sb, 'start_sample_edit'):
+                sb.start_sample_edit.blockSignals(True)
+                sb.start_sample_edit.setText("0")
+                sb.start_sample_edit.blockSignals(False)
+            if hasattr(sb, 'samples_per_row_edit'):
+                sb.samples_per_row_edit.blockSignals(True)
+                sb.samples_per_row_edit.setText(str(default_spr))
+                sb.samples_per_row_edit.blockSignals(False)
+            if hasattr(sb, 'period_edit'):
+                sb.period_edit.blockSignals(True)
+                sb.period_edit.setText(str(default_period))
+                sb.period_edit.blockSignals(False)
+            if hasattr(sb, 'freq_min_edit') and hasattr(sb, 'freq_max_edit'):
+                sb.freq_min_edit.set_hz(f_lo)
+                sb.freq_max_edit.set_hz(f_hi)
+
+        if self.parent_window._has_data():
+            self.parent_window.start_processing()
+        else:
+            self.set_freq_range(f_lo, f_hi)
 
     def reset_zoom_x(self):
         is_waterfall = self.parent_window.spectrogram_view.is_waterfall

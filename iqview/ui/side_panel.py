@@ -404,19 +404,19 @@ class SidePanel(QFrame):
         # --- FREQUENCY RANGE ---
         self._add_section_header(lyt, "Frequency Range")
 
-        lyt.addWidget(QLabel("Freq Min"))
-        self.freq_min_edit = FocusLineEdit(
-            default_hz=self.fc - self.fs / 2.0
-        )
-        self.freq_min_edit.editingFinished.connect(self.on_multirow_edit_finished)
-        lyt.addWidget(self.freq_min_edit)
-
         lyt.addWidget(QLabel("Freq Max"))
         self.freq_max_edit = FocusLineEdit(
             default_hz=self.fc + self.fs / 2.0
         )
         self.freq_max_edit.editingFinished.connect(self.on_multirow_edit_finished)
         lyt.addWidget(self.freq_max_edit)
+
+        lyt.addWidget(QLabel("Freq Min"))
+        self.freq_min_edit = FocusLineEdit(
+            default_hz=self.fc - self.fs / 2.0
+        )
+        self.freq_min_edit.editingFinished.connect(self.on_multirow_edit_finished)
+        lyt.addWidget(self.freq_min_edit)
 
         tip = QLabel(
             "Set Rows > 1 and press\n"

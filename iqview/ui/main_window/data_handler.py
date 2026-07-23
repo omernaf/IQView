@@ -124,18 +124,120 @@ class DataHandlerMixin:
             self._lazy_timer.timeout.connect(self._do_lazy_render)
         return self._lazy_timer
 
+    def _update_sidebar_from_single_view(self):
+        """Update sidebar inputs (samples_per_row, start_sample, freq_max, freq_min) in default 1-row mode."""
+        sb = getattr(self, 'sidebar', None)
+        if not sb or not hasattr(self, 'spectrogram_view'):
+            return
+
+        xr, yr = self.spectrogram_view.view_box.viewRange()
+        waterfall = self.spectrogram_view.is_waterfall
+        freq_range = xr if waterfall else yr
+        time_range = yr if waterfall else xr
+
+        f_lo, f_hi = freq_range[0], freq_range[1]
+        t_min, t_max = max(0.0, time_range[0]), max(0.0, time_range[1])
+
+        fs = max(getattr(self, 'rate', 1.0), 1.0)
+        start_sample = int(round(t_min * fs))
+        spr          = int(round((t_max - t_min) * fs))
+
+        if hasattr(sb, 'freq_min_edit') and hasattr(sb, 'freq_max_edit'):
+            sb.freq_min_edit.set_hz(f_lo)
+            sb.freq_max_edit.set_hz(f_hi)
+
+        if hasattr(sb, 'start_sample_edit') and hasattr(sb, 'samples_per_row_edit'):
+            sb.start_sample_edit.blockSignals(True)
+            sb.samples_per_row_edit.blockSignals(True)
+            sb.start_sample_edit.setText(str(start_sample))
+            sb.samples_per_row_edit.setText(str(spr))
+            sb.start_sample_edit.blockSignals(False)
+            sb.samples_per_row_edit.blockSignals(False)
+
     def on_viewport_changed(self):
         """Called by SpectrogramView whenever the visible range changes."""
         if self.data_source is None:
             return
+
+        self._update_sidebar_from_single_view()
+
         if self._lazy_enabled and isinstance(self.data_source, str):
             self._schedule_lazy_render()
             return
-        
+
         # Full mode: trigger high-res zoom re-render when sufficiently zoomed in
         if getattr(self, 'full_spectrogram_cache', None) is None:
             return   # no full render done yet
         self._schedule_zoom_rerender()
+
+    def _schedule_multirow_rerender(self, delay_ms=250):
+        """Debounced high-res re-render for multi-row view when time-zoomed."""
+        if not hasattr(self, '_multirow_rerender_timer'):
+            self._multirow_rerender_timer = QTimer()
+            self._multirow_rerender_timer.setSingleShot(True)
+            self._multirow_rerender_timer.timeout.connect(self._do_multirow_rerender)
+        if self._multirow_rerender_timer.isActive():
+            self._multirow_rerender_timer.stop()
+        self._multirow_rerender_timer.start(delay_ms)
+
+    def _do_multirow_rerender(self):
+        """Re-run MultiRowProcessor for the active zoomed time window."""
+        if self.data_source is None or not hasattr(self, 'multi_row_view'):
+            return
+        if not hasattr(self, 'spectrogram_stack') or self.spectrogram_stack.currentIndex() != 1:
+            return
+
+        num_rows     = getattr(self, '_multirow_num_rows', 1)
+        base_start   = getattr(self, '_multirow_start_sample', 0)
+        base_spr     = getattr(self, '_multirow_samples_per_row', 0)
+        base_period  = getattr(self, '_multirow_period', base_spr)
+
+        if base_spr <= 0:
+            total = self.get_total_samples()
+            base_spr = max(1, total // max(num_rows, 1))
+        if base_period <= 0:
+            base_period = base_spr
+
+        # Check relative time bounds from multi_row_view
+        rel_start, rel_end = getattr(self.multi_row_view, '_current_rel_time', (0.0, 1.0))
+
+        zoomed_start_sample = base_start + int(round(rel_start * base_spr))
+        zoomed_spr          = max(1, int(round((rel_end - rel_start) * base_spr)))
+
+        # Filter frequencies
+        f_min_rel, f_max_rel = None, None
+        if self.filter_region:
+            v_lo, v_hi = self.filter_region.getRegion()
+            f_min_rel  = min(v_lo, v_hi) - self.fc
+            f_max_rel  = max(v_lo, v_hi) - self.fc
+
+        if hasattr(self, '_multirow_worker') and self._multirow_worker.isRunning():
+            self._multirow_worker.stop()
+
+        self._multirow_worker = MultiRowProcessor(
+            self.data_source, self.data_type, self.fft_size, self.rate,
+            num_rows, zoomed_start_sample, zoomed_spr, base_period,
+            is_complex=self.is_complex,
+            window_type=self.window_type,
+            overlap_percent=self.overlap_percent,
+            window_size=getattr(self, 'window_size', None),
+            filter_mode=self.filter_mode,
+            f_min=f_min_rel,
+            f_max=f_max_rel,
+            filter_type=str(self.settings_mgr.get("core/filter_type", "Elliptic")),
+            filter_order=int(self.settings_mgr.get("core/filter_order", 8)),
+            filter_ripple=float(self.settings_mgr.get("core/filter_ripple", 0.1)),
+            filter_stopband=float(self.settings_mgr.get("core/filter_stopband", 60.0)),
+        )
+        self._multirow_worker.progress.connect(self.update_progress)
+        self._multirow_worker.finished.connect(self.display_multi_row)
+        self._multirow_worker.start()
+
+        self._multirow_display_params = {
+            'start_sample':    zoomed_start_sample,
+            'samples_per_row': zoomed_spr,
+            'period':          base_period,
+        }
 
     def _schedule_lazy_render(self, delay_ms=80):
         """Debounce repeated viewport changes — fire the actual render after a short pause."""
