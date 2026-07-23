@@ -700,13 +700,19 @@ class MultiRowSpectrogramView(QWidget):
         if not sv:
             return
         try:
-            levels = sv.level_region.getRegion()
+            levels = list(sv.level_region.getRegion())
         except Exception:
-            levels = [-100, 0]
+            levels = [-100.0, 0.0]
         try:
             cmap = sv.gradient.colorMap()
         except Exception:
             cmap = None
+
+        for row in self.rows:
+            if 'img' in row:
+                row['img'].setLevels(levels)
+                if cmap is not None:
+                    row['img'].setColorMap(cmap)
 
     # ------------------------------------------------------------------
     # Single Source of Truth: Central Axis Update

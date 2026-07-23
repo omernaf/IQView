@@ -232,6 +232,9 @@ class SpectrogramView(QWidget):
             display_cmap.reverse()
         self.gradient.setColorMap(display_cmap)
         self.img.setColorMap(display_cmap)
+        if hasattr(self.parent_window, 'multi_row_view') and hasattr(self.parent_window, 'spectrogram_stack'):
+            if self.parent_window.spectrogram_stack.currentIndex() == 1:
+                self.parent_window.multi_row_view.apply_levels_and_colormap()
 
     def custom_gradient_menu(self, ev):
         if ev.button() != Qt.MouseButton.RightButton:
