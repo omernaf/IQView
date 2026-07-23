@@ -383,11 +383,11 @@ class CustomViewBox(pg.ViewBox):
                 ev.accept()
             elif self.ui_controller.interaction_mode == 'MOVE':
                 if ev.isStart():
-                    self.ui_controller.handle_move_drag(ev.buttonDownScenePos(), is_start=True)
+                    self.ui_controller.handle_move_drag(ev.buttonDownScenePos(), is_start=True, source_vb=self)
                 elif ev.isFinish():
-                    self.ui_controller.handle_move_drag(ev.scenePos(), is_finish=True)
+                    self.ui_controller.handle_move_drag(ev.scenePos(), is_finish=True, source_vb=self)
                 else:
-                    self.ui_controller.handle_move_drag(ev.scenePos())
+                    self.ui_controller.handle_move_drag(ev.scenePos(), source_vb=self)
                 ev.accept()
             elif self.ui_controller.interaction_mode == 'OVERLAY':
                 # Rubber-band drag to place an overlay

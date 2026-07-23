@@ -160,35 +160,10 @@ class ViewControllerMixin:
         reprocessing.  Also switches the QStackedWidget back to the standard
         view when num_rows <= 1.
         """
-        num_rows = max(1, params.get('num_rows', 1))
-
-        if num_rows <= 1:
-            # Return to single-row / standard mode
-            self._multirow_num_rows = 1
-            if hasattr(self, 'spectrogram_stack'):
-                self.spectrogram_stack.setCurrentIndex(0)
-            if self._has_data():
-                self.start_processing()
-            return
-
-        # --- Multi-row active ---
+        num_rows     = max(1, params.get('num_rows', 1))
         start_sample = max(0, params.get('start_sample', 0))
         spr          = max(0, params.get('samples_per_row', 0))
         period       = max(0, params.get('period', 0))
-
-        # Auto-compute missing values from file
-        if self._has_data():
-            total = self.get_total_samples()
-            if spr <= 0:
-                spr = max(1, total // num_rows)
-            if period <= 0:
-                period = spr
-            # Update sidebar with computed defaults
-            if hasattr(self, 'sidebar'):
-                self.sidebar.update_multirow_defaults(spr, period)
-        else:
-            spr    = max(1, spr)
-            period = max(1, period)
 
         # Clamp/validate frequency boundaries to [fc - fs/2, fc + fs/2]
         f_min_def = self.fc - self.rate / 2.0
@@ -205,8 +180,37 @@ class ViewControllerMixin:
             self.sidebar.freq_min_edit.set_hz(f_min)
             self.sidebar.freq_max_edit.set_hz(f_max)
 
-        # Check if processing parameters changed (only re-process if row segmentation params change)
+        if num_rows <= 1:
+            # Return to single-row / standard mode
+            self._multirow_num_rows = 1
+            if hasattr(self, 'spectrogram_stack'):
+                self.spectrogram_stack.setCurrentIndex(0)
+            if hasattr(self, 'spectrogram_view'):
+                if self.spectrogram_view.is_waterfall:
+                    self.spectrogram_view.plot_item.setXRange(f_min, f_max, padding=0)
+                else:
+                    self.spectrogram_view.plot_item.setYRange(f_min, f_max, padding=0)
+            return
+
         prev_num_rows = getattr(self, '_multirow_num_rows', 1)
+        entering_multi_row = (prev_num_rows <= 1 and num_rows > 1)
+
+        # Auto-compute missing values from file if entering multi-row mode or if not specified
+        if self._has_data():
+            total = self.get_total_samples()
+            if entering_multi_row or spr <= 0:
+                spr = max(1, total // num_rows)
+            if entering_multi_row or period <= 0:
+                period = spr
+            if hasattr(self, 'sidebar'):
+                self.sidebar.update_multirow_defaults(spr, period)
+        else:
+            if entering_multi_row or spr <= 0:
+                spr = 100000
+            if entering_multi_row or period <= 0:
+                period = spr
+
+        # Check if processing parameters changed (only re-process if row segmentation params change)
         prev_start    = getattr(self, '_multirow_start_sample', 0)
         prev_spr      = getattr(self, '_multirow_samples_per_row', 0)
         prev_period   = getattr(self, '_multirow_period', 0)
@@ -672,7 +676,31 @@ class ViewControllerMixin:
             # No history: zoom to the full file range
             self._zoom_to_full_range()
 
-    def handle_move_drag(self, scene_pos, is_start=False, is_finish=False):
+    def handle_move_drag(self, scene_pos, is_start=False, is_finish=False, source_vb=None):
+        if hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
+            if is_start:
+                self.last_move_scene_pos = scene_pos
+                return
+            if is_finish:
+                self.last_move_scene_pos = None
+                return
+            if getattr(self, 'last_move_scene_pos', None) is None:
+                return
+
+            vb = source_vb if source_vb is not None else (self.multi_row_view.rows[0]['plot'].getViewBox() if len(self.multi_row_view.rows) > 0 else self.spectrogram_view.plot_item.vb)
+            p1 = vb.mapSceneToView(self.last_move_scene_pos)
+            p2 = vb.mapSceneToView(scene_pos)
+            waterfall = self.spectrogram_view.is_waterfall
+
+            dt = p2.x() - p1.x() if not waterfall else p2.y() - p1.y()
+            df = p2.y() - p1.y() if not waterfall else p2.x() - p1.x()
+
+            if hasattr(self, 'multi_row_view'):
+                self.multi_row_view.pan_view(dt, df)
+
+            self.last_move_scene_pos = scene_pos
+            return
+
         if is_start:
             self.last_move_scene_pos = scene_pos
             return

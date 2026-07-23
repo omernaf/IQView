@@ -281,18 +281,21 @@ class UIComponentsMixin:
             self.marker_panel.update_plugins_list(self._loaded_plugins)
         self.spec_v_layout.addWidget(self.marker_panel)
 
-        # Standard spectrogram view (index 0 in the stack)
+        # Standard spectrogram view
         self.spectrogram_view = SpectrogramView(self)
 
-        # Multi-row view (index 1 in the stack)
+        # Multi-row view
         from ..multi_row_view import MultiRowSpectrogramView
         from PyQt6.QtWidgets import QStackedWidget
         self.multi_row_view = MultiRowSpectrogramView(self)
 
+        # Stack replacing glw_plot inside spectrogram_view layout (col 1) so glw_hist (histogram / colorbar) stays on the right (col 2)
         self.spectrogram_stack = QStackedWidget()
-        self.spectrogram_stack.addWidget(self.spectrogram_view)  # index 0
-        self.spectrogram_stack.addWidget(self.multi_row_view)    # index 1
-        self.spec_v_layout.addWidget(self.spectrogram_stack)
+        self.spectrogram_stack.addWidget(self.spectrogram_view.glw_plot)  # index 0
+        self.spectrogram_stack.addWidget(self.multi_row_view)              # index 1
+        self.spectrogram_view.layout.addWidget(self.spectrogram_stack, 0, 1)
+
+        self.spec_v_layout.addWidget(self.spectrogram_view)
 
         # Add to tabs
         self.tabs.addTab(self.spec_tab_page, "Spectrogram")

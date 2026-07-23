@@ -507,8 +507,10 @@ class DataHandlerMixin:
 
         p = getattr(self, '_multirow_display_params', {})
         start_sample  = p.get('start_sample',    0)
-        spr           = p.get('samples_per_row', 1)
-        period        = p.get('period',          spr)
+        spr           = max(1, p.get('samples_per_row', 1))
+        period        = p.get('period',          0)
+        if period <= 0:
+            period = spr
 
         start_samples = [start_sample + i * period for i in range(len(spectra_list))]
 

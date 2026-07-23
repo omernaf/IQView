@@ -432,6 +432,61 @@ class MultiRowSpectrogramView(QWidget):
 
             row['marker_items'] = items
 
+    def _clear_row_overlays(self, row):
+        """Remove all synced overlay items from *row*."""
+        for item in row.get('overlay_items', []):
+            try:
+                row['plot'].removeItem(item)
+            except Exception:
+                pass
+        row['overlay_items'] = []
+
+    def sync_overlays(self, overlays, is_waterfall):
+        """Re-render all overlays across all rows."""
+        from .overlay import OverlayItem, OverlayShape
+
+        for row in self.rows:
+            self._clear_row_overlays(row)
+            items = []
+            t_s, t_e = row['t_start'], row['t_end']
+
+            for o in overlays:
+                if not getattr(o, 'visible', True):
+                    continue
+
+                shape = getattr(o, 'shape', None)
+
+                if shape in [OverlayShape.LINE, "LINE"]:
+                    t_val = o.points[0][0] if o.points else (o.center[0] if o.center else 0.0)
+                    if t_s <= t_val <= t_e:
+                        line = pg.InfiniteLine(pos=t_val, angle=(0 if is_waterfall else 90), movable=False, pen=pg.mkPen(o.color, width=o.border_width))
+                        line.setZValue(getattr(o, 'z_order', 8))
+                        row['plot'].addItem(line, ignoreBounds=True)
+                        items.append(line)
+
+                elif shape in [OverlayShape.HLINE, "HLINE"]:
+                    f_val = o.points[0][1] if o.points else (o.center[1] if o.center else 0.0)
+                    line = pg.InfiniteLine(pos=f_val, angle=(90 if is_waterfall else 0), movable=False, pen=pg.mkPen(o.color, width=o.border_width))
+                    line.setZValue(getattr(o, 'z_order', 8))
+                    row['plot'].addItem(line, ignoreBounds=True)
+                    items.append(line)
+
+                else:
+                    t_min_o, t_max_o = -1e9, 1e9
+                    if o.points:
+                        t_coords = [p[0] for p in o.points]
+                        t_min_o, t_max_o = min(t_coords), max(t_coords)
+                    elif o.center and o.radii:
+                        t_min_o = o.center[0] - o.radii[0]
+                        t_max_o = o.center[0] + o.radii[0]
+
+                    if shape == OverlayShape.Y_REGION or (t_max_o >= t_s and t_min_o <= t_e):
+                        item = OverlayItem(o, is_waterfall=is_waterfall)
+                        row['plot'].addItem(item)
+                        items.append(item)
+
+            row['overlay_items'] = items
+
     # ------------------------------------------------------------------
     # Main display update
     # ------------------------------------------------------------------
@@ -525,10 +580,136 @@ class MultiRowSpectrogramView(QWidget):
                 row['img'].setColorMap(cmap)
                 row['img'].setLevels(levels)
 
+            self._current_rel_time = (0.0, 1.0)
         finally:
             self._syncing = False
 
-        # Sync existing markers to the new row layout
+    def apply_levels_and_colormap(self):
+        """Copy levels and colormap from the main SpectrogramView to all rows."""
+        sv = getattr(self.parent_window, 'spectrogram_view', None)
+        if not sv:
+            return
+        try:
+            levels = sv.level_region.getRegion()
+        except Exception:
+            levels = [-100, 0]
+        try:
+            cmap = sv.gradient.colorMap()
+        except Exception:
+            cmap = None
+
+        for row in self.rows:
+            row['img'].setLevels(levels)
+            if cmap is not None:
+                row['img'].setColorMap(cmap)
+
+    def pan_view(self, dx, dy):
+        """Pan all multi-row plots in real time matching 1-row mode clamping logic.
+
+        In standard mode:  dx = time delta (s), dy = freq delta (Hz)
+        In waterfall mode: dx = freq delta (Hz), dy = time delta (s)
+        """
+        if len(self.rows) == 0:
+            return
+
+        is_waterfall = self.parent_window.spectrogram_view.is_waterfall
+        fc   = self.parent_window.fc
+        rate = max(self.parent_window.rate, 1.0)
+        f_min_bounds = fc - rate / 2.0
+        f_max_bounds = fc + rate / 2.0
+
+        dt = dx if not is_waterfall else dy
+        df = dy if not is_waterfall else dx
+
+        row0 = self.rows[0]
+        r0_t_s, r0_t_e = row0['t_start'], row0['t_end']
+        r0_dur = max(r0_t_e - r0_t_s, 1e-9)
+
+        xr0, yr0 = row0['plot'].viewRange()
+        t_curr = yr0 if is_waterfall else xr0
+        f_curr = xr0 if is_waterfall else yr0
+
+        rel_s, rel_e = getattr(self, '_current_rel_time', (0.0, 1.0))
+        vis_ratio_time = rel_e - rel_s
+        vis_ratio_freq = (f_curr[1] - f_curr[0]) / rate
+
+        # Frequency Panning (only if zoomed in on frequency)
+        if vis_ratio_freq <= 0.999 and df != 0.0:
+            f_span = f_curr[1] - f_curr[0]
+            new_f0 = f_curr[0] - df
+            new_f1 = f_curr[1] - df
+            if new_f0 < f_min_bounds:
+                new_f0, new_f1 = f_min_bounds, f_min_bounds + f_span
+            elif new_f1 > f_max_bounds:
+                new_f0, new_f1 = f_max_bounds - f_span, f_max_bounds
+            self.set_freq_range(new_f0, new_f1)
+
+        # Time Panning (zoomed within row OR scrolling sample offset)
+        if dt != 0.0:
+            if vis_ratio_time <= 0.999:
+                rel_span = rel_e - rel_s
+                dt_rel = dt / r0_dur
+                new_rel_s = rel_s - dt_rel
+                new_rel_e = rel_e - dt_rel
+                if new_rel_s < 0.0:
+                    new_rel_s, new_rel_e = 0.0, rel_span
+                elif new_rel_e > 1.0:
+                    new_rel_s, new_rel_e = 1.0 - rel_span, 1.0
+                self._current_rel_time = (new_rel_s, new_rel_e)
+
+                self._syncing = True
+                try:
+                    for row in self.rows:
+                        t_s, t_e = row['t_start'], row['t_end']
+                        dur = t_e - t_s
+                        v0 = t_s + new_rel_s * dur
+                        v1 = t_s + new_rel_e * dur
+                        if is_waterfall:
+                            row['plot'].setYRange(v0, v1, padding=0)
+                        else:
+                            row['plot'].setXRange(v0, v1, padding=0)
+                finally:
+                    self._syncing = False
+            else:
+                fs = max(self.parent_window.rate, 1.0)
+                delta_samples = int(round(dt * fs))
+
+                curr_start = getattr(self.parent_window, '_multirow_start_sample', 0)
+                total_samples = self.parent_window.get_total_samples() if hasattr(self.parent_window, 'get_total_samples') else 0
+                spr = getattr(self.parent_window, '_multirow_samples_per_row', 0)
+                max_start = max(0, total_samples - spr) if total_samples > 0 else 1e9
+
+                new_start = int(np.clip(curr_start - delta_samples, 0, max_start))
+                if new_start != curr_start:
+                    self.parent_window._multirow_start_sample = new_start
+                    sb = getattr(self.parent_window, 'sidebar', None)
+                    if sb and hasattr(sb, 'start_sample_edit'):
+                        sb.start_sample_edit.blockSignals(True)
+                        sb.start_sample_edit.setText(str(new_start))
+                        sb.start_sample_edit.blockSignals(False)
+
+                    period = getattr(self.parent_window, '_multirow_period', spr)
+                    if period <= 0: period = spr
+
+                    self._syncing = True
+                    try:
+                        for i, row in enumerate(self.rows):
+                            row_s_idx = new_start + i * period
+                            t_s = row_s_idx / fs
+                            t_e = (row_s_idx + spr) / fs
+                            row['t_start'] = t_s
+                            row['t_end']   = t_e
+                            if is_waterfall:
+                                row['plot'].setYRange(t_s, t_e, padding=0)
+                            else:
+                                row['plot'].setXRange(t_s, t_e, padding=0)
+                    finally:
+                        self._syncing = False
+
+                    if hasattr(self.parent_window, '_schedule_multirow_rerender'):
+                        self.parent_window._schedule_multirow_rerender()
+
+        # Sync existing markers and overlays to the new row layout
         self.sync_markers(
             getattr(self.parent_window, 'markers_time', []),
             getattr(self.parent_window, 'markers_freq', []),
@@ -536,6 +717,7 @@ class MultiRowSpectrogramView(QWidget):
             self.parent_window.settings_mgr.get("ui/theme", "Dark").lower(),
             self.parent_window.settings_mgr
         )
+        self.sync_overlays(getattr(self.parent_window, 'overlays', []), is_waterfall)
 
     # ------------------------------------------------------------------
     # Theming
