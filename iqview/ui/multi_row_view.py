@@ -523,21 +523,43 @@ class MultiRowSpectrogramView(QWidget):
                     continue
 
                 shape = getattr(o, 'shape', None)
+                z_ord = getattr(o, 'z_order', 8)
 
                 if shape in [OverlayShape.LINE, "LINE"]:
                     t_val = o.points[0][0] if o.points else (o.center[0] if o.center else 0.0)
                     if t_s <= t_val <= t_e:
                         line = pg.InfiniteLine(pos=t_val, angle=(0 if is_waterfall else 90), movable=False, pen=pg.mkPen(o.color, width=o.border_width))
-                        line.setZValue(getattr(o, 'z_order', 8))
+                        line.setZValue(z_ord)
                         row['plot'].addItem(line, ignoreBounds=True)
                         items.append(line)
 
                 elif shape in [OverlayShape.HLINE, "HLINE"]:
                     f_val = o.points[0][1] if o.points else (o.center[1] if o.center else 0.0)
                     line = pg.InfiniteLine(pos=f_val, angle=(90 if is_waterfall else 0), movable=False, pen=pg.mkPen(o.color, width=o.border_width))
-                    line.setZValue(getattr(o, 'z_order', 8))
+                    line.setZValue(z_ord)
                     row['plot'].addItem(line, ignoreBounds=True)
                     items.append(line)
+
+                elif shape in [OverlayShape.X_REGION, "X_REGION"]:
+                    t_min_o = min(o.points[0][0], o.points[1][0]) if len(o.points) >= 2 else 0.0
+                    t_max_o = max(o.points[0][0], o.points[1][0]) if len(o.points) >= 2 else 0.0
+                    if t_max_o >= t_s and t_min_o <= t_e:
+                        c = pg.mkColor(o.color)
+                        c.setAlphaF(getattr(o, 'alpha', 0.25))
+                        reg = pg.LinearRegionItem(values=[t_min_o, t_max_o], orientation=(0 if is_waterfall else 1), brush=pg.mkBrush(c), pen=pg.mkPen(o.color, width=o.border_width), movable=False)
+                        reg.setZValue(z_ord)
+                        row['plot'].addItem(reg)
+                        items.append(reg)
+
+                elif shape in [OverlayShape.Y_REGION, "Y_REGION"]:
+                    f_min_o = min(o.points[0][1], o.points[1][1]) if len(o.points) >= 2 else 0.0
+                    f_max_o = max(o.points[0][1], o.points[1][1]) if len(o.points) >= 2 else 0.0
+                    c = pg.mkColor(o.color)
+                    c.setAlphaF(getattr(o, 'alpha', 0.25))
+                    reg = pg.LinearRegionItem(values=[f_min_o, f_max_o], orientation=(1 if is_waterfall else 0), brush=pg.mkBrush(c), pen=pg.mkPen(o.color, width=o.border_width), movable=False)
+                    reg.setZValue(z_ord)
+                    row['plot'].addItem(reg)
+                    items.append(reg)
 
                 else:
                     t_min_o, t_max_o = -1e9, 1e9
@@ -548,9 +570,12 @@ class MultiRowSpectrogramView(QWidget):
                         t_min_o = o.center[0] - o.radii[0]
                         t_max_o = o.center[0] + o.radii[0]
 
-                    if shape == OverlayShape.Y_REGION or (t_max_o >= t_s and t_min_o <= t_e):
-                        item = OverlayItem(o, is_waterfall=is_waterfall)
+                    if t_max_o >= t_s and t_min_o <= t_e:
+                        item = OverlayItem(o, waterfall=is_waterfall)
+                        item.setZValue(z_ord)
+                        item.setVisible(getattr(o, 'visible', True))
                         row['plot'].addItem(item)
+                        item.attach_to_plot(row['plot'])
                         items.append(item)
 
             row['overlay_items'] = items

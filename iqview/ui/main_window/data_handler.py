@@ -547,6 +547,8 @@ class DataHandlerMixin:
             spectra_list, self.fc, self.rate, read_start_samples, read_spr, vis_start_samples, vis_spr
         )
         self.update_marker_info()
+        if hasattr(self, 'sync_multi_row_overlays'):
+            self.sync_multi_row_overlays()
 
     # ------------------------------------------------------------------
     # IQ extraction (unchanged — reads directly from file)

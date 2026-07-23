@@ -466,6 +466,7 @@ class OverlayManagerMixin:
         if hasattr(self, 'marker_panel') and self.interaction_mode == 'OVERLAY':
             if hasattr(self.marker_panel, 'update_overlay_list'):
                 self.marker_panel.update_overlay_list(self.overlays)
+        self.sync_multi_row_overlays()
 
     def _remove_graphics_item(self, overlay_id: str, overlay: Overlay) -> None:
         """Remove the graphics item from the scene and clean up side effects."""
