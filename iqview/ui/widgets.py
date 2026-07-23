@@ -312,7 +312,7 @@ class CustomViewBox(pg.ViewBox):
                         rect = self.zoom_rect.path().boundingRect()
                         self.removeItem(self.zoom_rect)
                         self.zoom_rect = None
-                        self.ui_controller.handle_zoom_rectangle(rect, self.zoom_type)
+                        self.ui_controller.handle_zoom_rectangle(rect, self.zoom_type, source_vb=self)
                 else:
                     if self.zoom_rect:
                         curr_v = self.mapSceneToView(ev.scenePos())
@@ -383,11 +383,11 @@ class CustomViewBox(pg.ViewBox):
                 ev.accept()
             elif self.ui_controller.interaction_mode == 'MOVE':
                 if ev.isStart():
-                    self.ui_controller.handle_move_drag(ev.buttonDownScenePos(), is_start=True)
+                    self.ui_controller.handle_move_drag(ev.buttonDownScenePos(), is_start=True, source_vb=self)
                 elif ev.isFinish():
-                    self.ui_controller.handle_move_drag(ev.scenePos(), is_finish=True)
+                    self.ui_controller.handle_move_drag(ev.scenePos(), is_finish=True, source_vb=self)
                 else:
-                    self.ui_controller.handle_move_drag(ev.scenePos())
+                    self.ui_controller.handle_move_drag(ev.scenePos(), source_vb=self)
                 ev.accept()
             elif self.ui_controller.interaction_mode == 'OVERLAY':
                 # Rubber-band drag to place an overlay
@@ -501,7 +501,7 @@ class CustomViewBox(pg.ViewBox):
                 # --- Marker Logic ---
                 if self.ui_controller.interaction_mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS', 'STATS']:
                     if ev.isStart():
-                        self.ui_controller.place_marker(ev.buttonDownScenePos(), drag_mode=True)
+                        self.ui_controller.place_marker(ev.buttonDownScenePos(), drag_mode=True, source_vb=self)
                     elif ev.isFinish():
                         self.ui_controller.active_drag_marker = None
                         self.ui_controller.active_drag_grid_info = None
@@ -511,7 +511,7 @@ class CustomViewBox(pg.ViewBox):
                         if getattr(self.ui_controller, 'active_drag_stats_bound_idx', -1) != -1:
                             self.ui_controller.active_drag_stats_bound_idx = -1
                     else:
-                        self.ui_controller.update_drag(ev.scenePos())
+                        self.ui_controller.update_drag(ev.scenePos(), source_vb=self)
                 ev.accept()
         else:
             super().mouseDragEvent(ev)
@@ -520,7 +520,7 @@ class CustomViewBox(pg.ViewBox):
         if ev.button() == Qt.MouseButton.LeftButton:
             mode = self.ui_controller.interaction_mode
             if mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS', 'STATS']:
-                self.ui_controller.place_marker(ev.scenePos(), drag_mode=False)
+                self.ui_controller.place_marker(ev.scenePos(), drag_mode=False, source_vb=self)
             elif mode == 'OVERLAY':
                 # Single click → place a vertical LINE overlay at this time position
                 pos = self.mapSceneToView(ev.scenePos())

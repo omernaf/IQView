@@ -20,7 +20,7 @@ def main():
     # filename = "samples/long_sweep.32fc"
     # filename = "samples/very_long_sweep.32fc"
     # filename = "samples/long_cw.32fc"
-    # filename = "samples/chirp_rate_3MHz.32fc";
+    filename = "samples/chirp_rate_3MHz.32fc";
     # filename = "samples/noise.32fc"
     # filename = "samples/saved/iq1.mat"
     # filename = "samples/file_example_WAV_5MG.wav"

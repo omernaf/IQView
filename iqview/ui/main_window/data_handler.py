@@ -2,7 +2,7 @@ import io
 import os
 import numpy as np
 from PyQt6.QtCore import pyqtSlot, QTimer
-from iqview.dsp import FileReaderThread, ViewportAwareReader
+from iqview.dsp import FileReaderThread, ViewportAwareReader, MultiRowProcessor
 
 _ZOOM_RERENDER_THRESHOLD = 0.5   # re-render when viewing <= 50% of the file
 
@@ -27,12 +27,54 @@ class DataHandlerMixin:
             return bool(override)
         return bool(self.settings_mgr.get("core/lazy_rendering", True))
 
+    def get_total_samples(self):
+        """Return the total IQ sample count for the current data source."""
+        try:
+            item_size = np.dtype(self.data_type).itemsize
+            read_mult = 2 if self.is_complex else 1
+            if isinstance(self.data_source, (bytes, bytearray)):
+                file_size = len(self.data_source)
+            else:
+                file_size = os.path.getsize(self.data_source)
+            return (file_size // item_size) // read_mult
+        except Exception:
+            return 0
+
+    def get_active_filter_bounds(self):
+        """Return (f_min, f_max) absolute frequency bounds if filter_mode is active, else (None, None)."""
+        if not getattr(self, 'filter_mode', None):
+            return None, None
+        bounds = getattr(self, 'filter_bounds', None)
+        if bounds and len(bounds) == 2:
+            return float(min(bounds)), float(max(bounds))
+        fr = getattr(self, 'filter_region', None)
+        if fr:
+            try:
+                v_lo, v_hi = fr.getRegion()
+                return float(min(v_lo, v_hi)), float(max(v_lo, v_hi))
+            except Exception:
+                pass
+        return None, None
+
     def start_processing(self):
+        """Main entry point to start file/data processing and display."""
         if self.data_source is None:
             return  # nothing loaded yet — waiting for user to open a file
 
         # Stop any running workers
         self._stop_all_workers()
+
+        # ---- Multi-row mode check ----
+        num_rows = getattr(self, '_multirow_num_rows', 1)
+        if num_rows > 1 and isinstance(self.data_source, str):
+            self._start_multirow_processing()
+            return
+
+        # Single-row: ensure standard view is shown
+        if hasattr(self, 'spectrogram_stack'):
+            self.spectrogram_stack.setCurrentIndex(0)
+        if hasattr(self, 'restore_1row_filter_ui'):
+            self.restore_1row_filter_ui()
 
         self.progress_bar.setValue(0)
         self.progress_bar.setStyleSheet(
@@ -40,10 +82,7 @@ class DataHandlerMixin:
             "QProgressBar::chunk { background-color: #00aaff; }"
         )
 
-        f_min, f_max = None, None
-        if self.filter_region:
-            v_low, v_high = self.filter_region.getRegion()
-            f_min, f_max = min(v_low, v_high), max(v_low, v_high)
+        f_min, f_max = self.get_active_filter_bounds()
 
         # Make frequencies relative to Fc for the baseband DSP filter
         f_min_rel = (f_min - self.fc) if f_min is not None else None
@@ -82,11 +121,13 @@ class DataHandlerMixin:
     # ------------------------------------------------------------------
 
     def _stop_all_workers(self):
-        """Stop both the full-file worker and the lazy worker if running."""
+        """Stop any running full-file, lazy, or multi-row workers."""
         if hasattr(self, 'worker') and self.worker.isRunning():
             self.worker.stop()
         if hasattr(self, 'lazy_worker') and self.lazy_worker.isRunning():
             self.lazy_worker.stop()
+        if hasattr(self, '_multirow_worker') and self._multirow_worker.isRunning():
+            self._multirow_worker.stop()
         # Cancel any pending zoom re-render
         if hasattr(self, '_zoom_rerender_timer') and self._zoom_rerender_timer.isActive():
             self._zoom_rerender_timer.stop()
@@ -99,18 +140,128 @@ class DataHandlerMixin:
             self._lazy_timer.timeout.connect(self._do_lazy_render)
         return self._lazy_timer
 
+    def _update_sidebar_from_single_view(self):
+        """Update sidebar inputs (samples_per_row, start_sample, freq_max, freq_min) in default 1-row mode."""
+        sb = getattr(self, 'sidebar', None)
+        if not sb or not hasattr(self, 'spectrogram_view'):
+            return
+
+        xr, yr = self.spectrogram_view.view_box.viewRange()
+        waterfall = self.spectrogram_view.is_waterfall
+        freq_range = xr if waterfall else yr
+        time_range = yr if waterfall else xr
+
+        f_lo, f_hi = freq_range[0], freq_range[1]
+        t_min, t_max = max(0.0, time_range[0]), max(0.0, time_range[1])
+
+        fs = max(getattr(self, 'rate', 1.0), 1.0)
+        start_sample = int(round(t_min * fs))
+        spr          = int(round((t_max - t_min) * fs))
+
+        if hasattr(sb, 'freq_min_edit') and hasattr(sb, 'freq_max_edit'):
+            sb.freq_min_edit.set_hz(f_lo)
+            sb.freq_max_edit.set_hz(f_hi)
+
+        if hasattr(sb, 'start_sample_edit') and hasattr(sb, 'samples_per_row_edit'):
+            sb.start_sample_edit.blockSignals(True)
+            sb.samples_per_row_edit.blockSignals(True)
+            sb.start_sample_edit.setText(str(start_sample))
+            sb.samples_per_row_edit.setText(str(spr))
+            sb.start_sample_edit.blockSignals(False)
+            sb.samples_per_row_edit.blockSignals(False)
+
     def on_viewport_changed(self):
         """Called by SpectrogramView whenever the visible range changes."""
         if self.data_source is None:
             return
+
+        self._update_sidebar_from_single_view()
+
         if self._lazy_enabled and isinstance(self.data_source, str):
             self._schedule_lazy_render()
             return
-        
+
         # Full mode: trigger high-res zoom re-render when sufficiently zoomed in
         if getattr(self, 'full_spectrogram_cache', None) is None:
             return   # no full render done yet
         self._schedule_zoom_rerender()
+
+    def _schedule_multirow_rerender(self, delay_ms=250):
+        """Debounced high-res re-render for multi-row view when time-zoomed."""
+        if not hasattr(self, '_multirow_rerender_timer'):
+            self._multirow_rerender_timer = QTimer()
+            self._multirow_rerender_timer.setSingleShot(True)
+            self._multirow_rerender_timer.timeout.connect(self._do_multirow_rerender)
+        if self._multirow_rerender_timer.isActive():
+            self._multirow_rerender_timer.stop()
+        self._multirow_rerender_timer.start(delay_ms)
+
+    def _do_multirow_rerender(self):
+        """Re-run MultiRowProcessor for the active zoomed time window."""
+        if self.data_source is None or not hasattr(self, 'multi_row_view'):
+            return
+        if not hasattr(self, 'spectrogram_stack') or self.spectrogram_stack.currentIndex() != 1:
+            return
+
+        num_rows     = getattr(self, '_multirow_num_rows', 1)
+        base_start   = getattr(self, '_multirow_start_sample', 0)
+        base_spr     = getattr(self, '_multirow_samples_per_row', 0)
+        base_period  = getattr(self, '_multirow_period', base_spr)
+
+        if base_spr <= 0:
+            total = self.get_total_samples()
+            base_spr = max(1, total // max(num_rows, 1))
+        if base_period <= 0:
+            base_period = base_spr
+
+        # Check relative time bounds from multi_row_view
+        rel_start, rel_end = getattr(self.multi_row_view, '_current_rel_time', (0.0, 1.0))
+
+        zoomed_start_sample = base_start + int(round(rel_start * base_spr))
+        zoomed_spr          = max(1, int(round((rel_end - rel_start) * base_spr)))
+
+        self._multirow_start_sample   = zoomed_start_sample
+        self._multirow_samples_per_row = zoomed_spr
+
+        # 300% buffer (100% left, 100% visible, 100% right) for seamless dragging
+        total_samples = self.get_total_samples()
+        read_start_sample = max(0, zoomed_start_sample - zoomed_spr)
+        read_spr          = min(total_samples - read_start_sample, zoomed_spr * 3)
+
+        # Filter frequencies
+        f_min, f_max = self.get_active_filter_bounds()
+        f_min_rel = (f_min - self.fc) if f_min is not None else None
+        f_max_rel = (f_max - self.fc) if f_max is not None else None
+
+        if hasattr(self, '_multirow_worker') and self._multirow_worker.isRunning():
+            self._multirow_worker.stop()
+
+        self._multirow_worker = MultiRowProcessor(
+            self.data_source, self.data_type, self.fft_size, self.rate,
+            num_rows, read_start_sample, read_spr, base_period,
+            is_complex=self.is_complex,
+            window_type=self.window_type,
+            overlap_percent=self.overlap_percent,
+            window_size=getattr(self, 'window_size', None),
+            filter_mode=self.filter_mode,
+            f_min=f_min_rel,
+            f_max=f_max_rel,
+            filter_type=str(self.settings_mgr.get("core/filter_type", "Elliptic")),
+            filter_order=int(self.settings_mgr.get("core/filter_order", 8)),
+            filter_ripple=float(self.settings_mgr.get("core/filter_ripple", 0.1)),
+            filter_stopband=float(self.settings_mgr.get("core/filter_stopband", 60.0)),
+        )
+        self._multirow_worker.progress.connect(self.update_progress)
+        self._multirow_worker.finished.connect(self.display_multi_row)
+        self._multirow_worker.start()
+
+        self._multirow_display_params = {
+            'start_sample':        zoomed_start_sample,
+            'samples_per_row':     zoomed_spr,
+            'period':              base_period,
+            'read_start_sample':   read_start_sample,
+            'read_samples_per_row': read_spr,
+        }
 
     def _schedule_lazy_render(self, delay_ms=80):
         """Debounce repeated viewport changes — fire the actual render after a short pause."""
@@ -193,10 +344,7 @@ class DataHandlerMixin:
             else:
                 pixel_width = base_pixel_width
 
-        f_min, f_max = None, None
-        if self.filter_region:
-            v_low, v_high = self.filter_region.getRegion()
-            f_min, f_max = min(v_low, v_high), max(v_low, v_high)
+        f_min, f_max = self.get_active_filter_bounds()
         f_min_rel = (f_min - self.fc) if f_min is not None else None
         f_max_rel = (f_max - self.fc) if f_max is not None else None
 
@@ -309,6 +457,100 @@ class DataHandlerMixin:
             self.load_overlay_sidecar()
 
     # ------------------------------------------------------------------
+    # Multi-row processing
+    # ------------------------------------------------------------------
+
+    def _start_multirow_processing(self):
+        """Create and launch a MultiRowProcessor for the current params."""
+        # Switch to the multi-row view widget
+        if hasattr(self, 'spectrogram_stack'):
+            self.spectrogram_stack.setCurrentIndex(1)
+
+        num_rows      = getattr(self, '_multirow_num_rows', 2)
+        start_sample  = getattr(self, '_multirow_start_sample', 0)
+        spr           = getattr(self, '_multirow_samples_per_row', 0)
+        period        = getattr(self, '_multirow_period', 0)
+
+        # Guard: auto-compute missing values
+        if spr <= 0:
+            total = self.get_total_samples()
+            spr   = max(1, total // max(num_rows, 1))
+        if period <= 0:
+            period = spr
+
+        total_samples = self.get_total_samples()
+        read_start_sample = max(0, start_sample - spr)
+        read_spr          = min(total_samples - read_start_sample, spr * 3)
+
+        # Filter frequency offsets (relative to fc)
+        f_min, f_max = self.get_active_filter_bounds()
+        f_min_rel = (f_min - self.fc) if f_min is not None else None
+        f_max_rel = (f_max - self.fc) if f_max is not None else None
+
+        self._multirow_worker = MultiRowProcessor(
+            self.data_source, self.data_type, self.fft_size, self.rate,
+            num_rows, read_start_sample, read_spr, period,
+            is_complex=self.is_complex,
+            window_type=self.window_type,
+            overlap_percent=self.overlap_percent,
+            window_size=getattr(self, 'window_size', None),
+            filter_mode=self.filter_mode,
+            f_min=f_min_rel,
+            f_max=f_max_rel,
+            filter_type=str(self.settings_mgr.get("core/filter_type", "Elliptic")),
+            filter_order=int(self.settings_mgr.get("core/filter_order", 8)),
+            filter_ripple=float(self.settings_mgr.get("core/filter_ripple", 0.1)),
+            filter_stopband=float(self.settings_mgr.get("core/filter_stopband", 60.0)),
+        )
+        self._multirow_worker.progress.connect(self.update_progress)
+        self._multirow_worker.finished.connect(self.display_multi_row)
+        self._multirow_worker.start()
+
+        # Stash params so display_multi_row can build start_samples list
+        self._multirow_display_params = {
+            'start_sample':        start_sample,
+            'samples_per_row':     spr,
+            'period':              period,
+            'read_start_sample':   read_start_sample,
+            'read_samples_per_row': read_spr,
+        }
+
+        self.progress_bar.setValue(0)
+        self.progress_bar.setStyleSheet(
+            "QProgressBar { background-color: transparent; border: none; } "
+            "QProgressBar::chunk { background-color: #00aaff; }"
+        )
+
+    @pyqtSlot(list)
+    def display_multi_row(self, spectra_list):
+        """Slot called when MultiRowProcessor finishes. Renders all rows."""
+        self.progress_bar.setValue(0)
+        self.progress_bar.setStyleSheet(
+            "QProgressBar { background-color: transparent; border: none; } "
+            "QProgressBar::chunk { background-color: transparent; }"
+        )
+
+        p = getattr(self, '_multirow_display_params', {})
+        vis_start_sample  = p.get('start_sample',    0)
+        vis_spr           = max(1, p.get('samples_per_row', 1))
+        period            = p.get('period',          0)
+        if period <= 0:
+            period = vis_spr
+
+        read_start_sample = p.get('read_start_sample', vis_start_sample)
+        read_spr          = p.get('read_samples_per_row', vis_spr)
+
+        read_start_samples = [read_start_sample + i * period for i in range(len(spectra_list))]
+        vis_start_samples  = [vis_start_sample + i * period for i in range(len(spectra_list))]
+
+        self.multi_row_view.update_spectrograms(
+            spectra_list, self.fc, self.rate, read_start_samples, read_spr, vis_start_samples, vis_spr
+        )
+        self.update_marker_info()
+        if hasattr(self, 'sync_multi_row_overlays'):
+            self.sync_multi_row_overlays()
+
+    # ------------------------------------------------------------------
     # IQ extraction (unchanged — reads directly from file)
     # ------------------------------------------------------------------
 
@@ -366,11 +608,9 @@ class DataHandlerMixin:
                 complex_data = raw_data.astype(np.complex64)
 
             # Apply Filter if enabled
-            if hasattr(self, 'filter_mode') and self.filter_mode and self.filter_region:
+            f_min, f_max = self.get_active_filter_bounds()
+            if hasattr(self, 'filter_mode') and self.filter_mode and f_min is not None and f_max is not None:
                 from iqview.dsp import apply_filter
-                v_low, v_high = self.filter_region.getRegion()
-                f_min, f_max = min(v_low, v_high), max(v_low, v_high)
-
                 f_type = str(self.settings_mgr.get("core/filter_type", "Elliptic"))
                 f_order = int(self.settings_mgr.get("core/filter_order", 8))
                 f_ripple = float(self.settings_mgr.get("core/filter_ripple", 0.1))

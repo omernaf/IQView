@@ -117,10 +117,11 @@ class ViewControllerMixin:
 
     def on_filter_changed(self, mode):
         self.filter_mode = mode
+        self.full_spectrogram_cache = None
         if self.filter_region:
-            if mode and self.interaction_mode == 'FILTER' and getattr(self, 'filter_placed', False):
+            if mode and getattr(self, 'filter_placed', False):
                 self.filter_region.show()
-            elif self.interaction_mode != 'FILTER' or not getattr(self, 'filter_placed', False):
+            elif not mode:
                 self.filter_region.hide()
         
         # Trigger reprocessing if we have data
@@ -151,6 +152,114 @@ class ViewControllerMixin:
             
         # Trigger reprocessing when the user finishes dragging the region
         if getattr(self, 'filter_mode', None) and self._has_data():
+            self.start_processing()
+
+    def on_multirow_changed(self, params):
+        """Slot for SidePanel.multirowChanged signal.
+
+        Validates / auto-computes missing values, stores them, and triggers
+        reprocessing.  Also switches the QStackedWidget back to the standard
+        view when num_rows <= 1.
+        """
+        num_rows     = max(1, params.get('num_rows', 1))
+        start_sample = max(0, params.get('start_sample', 0))
+        spr          = max(0, params.get('samples_per_row', 0))
+        period       = max(0, params.get('period', 0))
+
+        # Clamp/validate frequency boundaries to [fc - fs/2, fc + fs/2]
+        f_min_def = self.fc - self.rate / 2.0
+        f_max_def = self.fc + self.rate / 2.0
+
+        f_min = params.get('freq_min', f_min_def)
+        f_max = params.get('freq_max', f_max_def)
+
+        f_min = float(np.clip(f_min, f_min_def, f_max_def - 1.0))
+        f_max = float(np.clip(f_max, f_min + 1.0, f_max_def))
+
+        # Push back validated bounds to sidebar inputs
+        if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'freq_min_edit'):
+            self.sidebar.freq_min_edit.set_hz(f_min)
+            self.sidebar.freq_max_edit.set_hz(f_max)
+
+        if num_rows <= 1:
+            # Return to single-row / standard mode
+            self._multirow_num_rows = 1
+            if hasattr(self, 'spectrogram_stack'):
+                self.spectrogram_stack.setCurrentIndex(0)
+            if hasattr(self, 'spectrogram_view'):
+                if self.spectrogram_view.is_waterfall:
+                    self.spectrogram_view.plot_item.setXRange(f_min, f_max, padding=0)
+                else:
+                    self.spectrogram_view.plot_item.setYRange(f_min, f_max, padding=0)
+            return
+
+        prev_num_rows = getattr(self, '_multirow_num_rows', 1)
+        prev_start    = getattr(self, '_multirow_start_sample', 0)
+        prev_spr      = getattr(self, '_multirow_samples_per_row', 0)
+        prev_period   = getattr(self, '_multirow_period', 0)
+
+        entering_multi_row = (prev_num_rows <= 1 and num_rows > 1)
+
+        if entering_multi_row:
+            # Transitioning from 1-row mode to multi-row mode:
+            # Maintain the EXACT same zoom level (start_sample & samples_per_row) from 1-row view!
+            if hasattr(self, 'spectrogram_view') and hasattr(self.spectrogram_view, 'plot_item'):
+                vr = self.spectrogram_view.plot_item.viewRange()
+                waterfall = self.spectrogram_view.is_waterfall
+                axis_vr = vr[1] if waterfall else vr[0]
+                t_min = max(0.0, float(axis_vr[0]))
+                t_max = min(float(getattr(self, 'time_duration', 1.0)), float(axis_vr[1]))
+                start_sample = max(0, int(round(t_min * self.rate)))
+                spr = max(1, int(round((t_max - t_min) * self.rate)))
+            elif spr <= 0 and self._has_data():
+                total = self.get_total_samples()
+                start_sample = 0
+                spr = max(1, total // num_rows)
+            elif spr <= 0:
+                start_sample = 0
+                spr = 100000
+
+            # Only period changes when switching from 1 row to multiple (period = spr)
+            period = spr
+
+            if hasattr(self, 'sidebar'):
+                self.sidebar.update_multirow_defaults(spr, period, start_sample=start_sample)
+        else:
+            # Transitioning between multi-row counts (N1 > 1 -> N2 > 1):
+            # If changing row count, start_sample, spr, and period stay the same!
+            if num_rows != prev_num_rows:
+                start_sample = prev_start
+                spr = prev_spr if prev_spr > 0 else (self.get_total_samples() // num_rows if self._has_data() else 100000)
+                period = prev_period if prev_period > 0 else spr
+            else:
+                if spr <= 0:
+                    spr = prev_spr if prev_spr > 0 else (self.get_total_samples() // num_rows if self._has_data() else 100000)
+                if period <= 0:
+                    period = prev_period if prev_period > 0 else spr
+
+            if hasattr(self, 'sidebar'):
+                self.sidebar.update_multirow_defaults(spr, period, start_sample=start_sample)
+
+        # Check if processing parameters changed
+        needs_reprocess = (
+            num_rows != prev_num_rows or
+            start_sample != prev_start or
+            spr != prev_spr or
+            period != prev_period
+        )
+
+        self._multirow_num_rows       = num_rows
+        self._multirow_start_sample   = start_sample
+        self._multirow_samples_per_row = spr
+        self._multirow_period         = period
+
+        if hasattr(self, 'multi_row_view'):
+            if needs_reprocess:
+                self.multi_row_view._current_rel_time = (0.0, 1.0)
+            self.multi_row_view.set_freq_range(f_min, f_max)
+
+        if needs_reprocess and self._has_data():
+            self.full_spectrogram_cache = None
             self.start_processing()
 
     def refresh_cursor(self):
@@ -322,16 +431,20 @@ class ViewControllerMixin:
 
     def reset_zoom(self):
         active_tab = self.tabs.currentWidget()
-        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'reset_zoom'):
+        if active_tab and active_tab != self.spec_tab_page and hasattr(active_tab, 'reset_zoom'):
             active_tab.reset_zoom()
+        elif hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
+            self.multi_row_view.reset_zoom()
         else:
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             self._zoom_to_full_range()
 
     def reset_zoom_x(self):
         active_tab = self.tabs.currentWidget()
-        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'reset_zoom_x'):
+        if active_tab and active_tab != self.spec_tab_page and hasattr(active_tab, 'reset_zoom_x'):
             active_tab.reset_zoom_x()
+        elif hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
+            self.multi_row_view.reset_zoom_x()
         else:
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             sv = self.spectrogram_view
@@ -351,8 +464,10 @@ class ViewControllerMixin:
 
     def reset_zoom_y(self):
         active_tab = self.tabs.currentWidget()
-        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'reset_zoom_y'):
+        if active_tab and active_tab != self.spec_tab_page and hasattr(active_tab, 'reset_zoom_y'):
             active_tab.reset_zoom_y()
+        elif hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
+            self.multi_row_view.reset_zoom_y()
         else:
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             sv = self.spectrogram_view
@@ -386,10 +501,12 @@ class ViewControllerMixin:
         else:
             sv.plot_item.autoRange()
 
-    def handle_zoom_rectangle(self, rect, zoom_type='BOTH'):
+    def handle_zoom_rectangle(self, rect, zoom_type='BOTH', source_vb=None):
         active_tab = self.tabs.currentWidget()
-        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'handle_zoom_rectangle'):
+        if active_tab and active_tab != self.spec_tab_page and hasattr(active_tab, 'handle_zoom_rectangle'):
             active_tab.handle_zoom_rectangle(rect, zoom_type)
+        elif hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
+            self.multi_row_view.handle_zoom_rectangle(rect, zoom_type, source_vb=source_vb)
         else:
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             if rect.width() <= 0 and zoom_type != 'Y_ONLY': return
@@ -400,7 +517,7 @@ class ViewControllerMixin:
 
     def fit_to_markers(self):
         active_tab = self.tabs.currentWidget()
-        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'fit_to_markers'):
+        if active_tab and active_tab != self.spec_tab_page and hasattr(active_tab, 'fit_to_markers'):
             active_tab.fit_to_markers()
             return
 
@@ -410,6 +527,11 @@ class ViewControllerMixin:
             active_markers = self.markers_freq_endless if is_freq else self.markers_time_endless
         else:
             active_markers = self.markers_freq if is_freq else self.markers_time
+
+        if hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
+            self.multi_row_view.fit_to_markers(active_markers)
+            return
+
         if len(active_markers) == 2:
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             v1, v2 = active_markers[0].value(), active_markers[1].value()
@@ -510,32 +632,44 @@ class ViewControllerMixin:
         if not enabled:
             for line in grid_lines: self.spectrogram_view.plot_item.removeItem(line)
             grid_lines.clear()
+            self.sync_multi_row_markers()
             return
         if not tracking and not force: return
         for line in grid_lines: self.spectrogram_view.plot_item.removeItem(line)
         grid_lines.clear()
-        if len(active_markers) != 2: return
+        if len(active_markers) != 2:
+            self.sync_multi_row_markers()
+            return
         p1, p2 = active_markers[0].value(), active_markers[1].value()
         delta = abs(p2 - p1)
-        if delta <= 0: return
+        if delta <= 0:
+            self.sync_multi_row_markers()
+            return
 
-        # Optimization: Only plot visible lines
-        vr = self.spectrogram_view.plot_item.viewRange()
-        # In standard mode: time on X (vr[0]), freq on Y (vr[1])
-        # In waterfall mode: freq on X (vr[0]), time on Y (vr[1])
-        if waterfall:
-            # freq lines are now vertical (angle=90, on X axis)
-            # time lines are now horizontal (angle=0, on Y axis)
-            axis_range = vr[0] if is_freq else vr[1]
-            line_angle = 90 if is_freq else 0
+        is_multirow = hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1 and hasattr(self, 'multi_row_view') and len(self.multi_row_view.rows) > 0
+
+        if is_multirow:
+            if is_freq:
+                vr = self.multi_row_view.rows[0]['plot'].viewRange()
+                axis_range = vr[0] if waterfall else vr[1]
+            else:
+                t_start_min = min(r['t_start'] for r in self.multi_row_view.rows)
+                t_end_max = max(r['t_end'] for r in self.multi_row_view.rows)
+                axis_range = [t_start_min, t_end_max]
+            line_angle = (90 if is_freq else 0) if waterfall else (0 if is_freq else 90)
         else:
-            # standard: freq lines horizontal (angle=0), time lines vertical (angle=90)
-            axis_range = vr[1] if is_freq else vr[0]
-            line_angle = 0 if is_freq else 90
+            vr = self.spectrogram_view.plot_item.viewRange()
+            if waterfall:
+                axis_range = vr[0] if is_freq else vr[1]
+                line_angle = 90 if is_freq else 0
+            else:
+                axis_range = vr[1] if is_freq else vr[0]
+                line_angle = 0 if is_freq else 90
         v_min_visible, v_max_visible = axis_range
-        
+
         # Guard against too many markers
-        if (v_max_visible - v_min_visible) / delta > 500:
+        if (v_max_visible - v_min_visible) / delta > 2000:
+            self.sync_multi_row_markers()
             return
 
         theme = self.settings_mgr.get("ui/theme", "Dark").lower()
@@ -564,26 +698,98 @@ class ViewControllerMixin:
         curr = p1 + start_count * delta
         
         count = 0
-        while curr <= v_max_visible + 1e-9 and count < 500:
+        while curr <= v_max_visible + 1e-9 and count < 2000:
             line = pg.InfiniteLine(pos=curr, angle=line_angle, pen=pen, movable=False)
             line.setZValue(5)
-            self.spectrogram_view.plot_item.addItem(line, ignoreBounds=True)
+            if not is_multirow:
+                self.spectrogram_view.plot_item.addItem(line, ignoreBounds=True)
             grid_lines.append(line)
             curr += delta
             count += 1
+        self.sync_multi_row_markers()
+
+    def push_multirow_zoom_state(self):
+        """Save current multi-row zoom parameters to multirow_zoom_history."""
+        if not hasattr(self, 'multirow_zoom_history'):
+            self.multirow_zoom_history = []
+        
+        start_sample = getattr(self, '_multirow_start_sample', 0)
+        spr          = getattr(self, '_multirow_samples_per_row', 0)
+        f_lo, f_hi   = 0.0, 1.0
+        if hasattr(self, 'multi_row_view') and len(self.multi_row_view.rows) > 0:
+            row0 = self.multi_row_view.rows[0]
+            xr, yr = row0['plot'].viewRange()
+            f_lo, f_hi = xr if self.spectrogram_view.is_waterfall else yr
+
+        state = {
+            'start_sample':    start_sample,
+            'samples_per_row': spr,
+            'freq_min':        f_lo,
+            'freq_max':        f_hi,
+        }
+        if not self.multirow_zoom_history or self.multirow_zoom_history[-1] != state:
+            self.multirow_zoom_history.append(state)
 
     def undo_zoom(self):
         active_tab = self.tabs.currentWidget()
         if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'undo_zoom'):
             active_tab.undo_zoom()
-        elif self.zoom_history:
+            return
+
+        if hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
+            if hasattr(self, 'multirow_zoom_history') and self.multirow_zoom_history:
+                prev_state = self.multirow_zoom_history.pop()
+                self._multirow_start_sample   = prev_state['start_sample']
+                self._multirow_samples_per_row = prev_state['samples_per_row']
+                if hasattr(self, 'multi_row_view'):
+                    self.multi_row_view._current_rel_time = (0.0, 1.0)
+                    self.multi_row_view.set_freq_range(prev_state['freq_min'], prev_state['freq_max'])
+                if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'start_sample_edit'):
+                    self.sidebar.start_sample_edit.setText(str(prev_state['start_sample']))
+                    self.sidebar.samples_per_row_edit.setText(str(prev_state['samples_per_row']))
+                self._do_multirow_rerender()
+            elif hasattr(self, 'multi_row_view'):
+                self.multi_row_view.reset_zoom()
+            return
+
+        if self.zoom_history:
             prev_rect = self.zoom_history.pop()
             self.spectrogram_view.plot_item.setRange(rect=prev_rect, padding=0)
         else:
             # No history: zoom to the full file range
             self._zoom_to_full_range()
 
-    def handle_move_drag(self, scene_pos, is_start=False, is_finish=False):
+    def handle_move_drag(self, scene_pos, is_start=False, is_finish=False, source_vb=None):
+        if hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
+            if is_start:
+                self.last_move_scene_pos = scene_pos
+                return
+            if is_finish:
+                self.last_move_scene_pos = None
+                if hasattr(self, 'multi_row_view') and getattr(self.multi_row_view, 'rows', None):
+                    is_waterfall = self.spectrogram_view.is_waterfall
+                    row0_plot = self.multi_row_view.rows[0]['plot']
+                    row0_time_vr = row0_plot.viewRange()[1] if is_waterfall else row0_plot.viewRange()[0]
+                    self._multirow_start_sample = max(0, int(round(row0_time_vr[0] * self.rate)))
+                if hasattr(self, '_schedule_multirow_rerender'):
+                    self._schedule_multirow_rerender()
+                return
+            if getattr(self, 'last_move_scene_pos', None) is None:
+                return
+
+            vb = source_vb if source_vb is not None else (self.multi_row_view.rows[0]['plot'].getViewBox() if len(self.multi_row_view.rows) > 0 else self.spectrogram_view.plot_item.vb)
+            
+            p1 = vb.mapSceneToView(self.last_move_scene_pos)
+            p2 = vb.mapSceneToView(scene_pos)
+            dx = p2.x() - p1.x()
+            dy = p2.y() - p1.y()
+
+            if hasattr(self, 'multi_row_view'):
+                self.multi_row_view.pan_view_view_units(dx, dy)
+
+            self.last_move_scene_pos = scene_pos
+            return
+
         if is_start:
             self.last_move_scene_pos = scene_pos
             return
@@ -794,6 +1000,16 @@ class ViewControllerMixin:
 
         # Clear all markers using refactored method
         self.clear_all_markers()
+
+        # Reset multi-row state for the new file
+        self._multirow_num_rows        = 1
+        self._multirow_start_sample    = 0
+        self._multirow_samples_per_row = 0
+        self._multirow_period          = 0
+        if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'num_rows_edit'):
+            self.sidebar.num_rows_edit.setText('1')
+        if hasattr(self, 'spectrogram_stack'):
+            self.spectrogram_stack.setCurrentIndex(0)
 
         # Close all Time Domain tabs (keep index 0 = Spectrogram)
 

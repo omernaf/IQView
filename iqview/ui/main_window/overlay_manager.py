@@ -224,6 +224,7 @@ class OverlayManagerMixin:
                 self.marker_panel.update_overlay_list(self.overlays)
         if hasattr(self, 'update_marker_info'):
             self.update_marker_info()
+        self.sync_multi_row_overlays()
 
     def update_overlay(self, overlay_id: str, **kwargs) -> None:
         """
@@ -264,6 +265,10 @@ class OverlayManagerMixin:
         if hasattr(self, 'marker_panel') and self.interaction_mode == 'OVERLAY':
             if hasattr(self.marker_panel, 'update_overlay_list'):
                 self.marker_panel.update_overlay_list(self.overlays)
+
+        if hasattr(self, 'update_marker_info'):
+            self.update_marker_info()
+        self.sync_multi_row_overlays()
 
     def get_overlays(self, source: Optional[str] = None) -> List[Overlay]:
         """Return overlays filtered by source, or all if source is None."""
@@ -319,6 +324,8 @@ class OverlayManagerMixin:
             plot_item.addItem(item)
             item.attach_to_plot(plot_item)
             self._overlay_items[overlay.id] = item
+
+        self.sync_multi_row_overlays()
 
     def _create_line_item(self, overlay: Overlay) -> Optional[pg.InfiniteLine]:
         """Build a pg.InfiniteLine for a LINE or HLINE overlay.
@@ -463,6 +470,7 @@ class OverlayManagerMixin:
         if hasattr(self, 'marker_panel') and self.interaction_mode == 'OVERLAY':
             if hasattr(self.marker_panel, 'update_overlay_list'):
                 self.marker_panel.update_overlay_list(self.overlays)
+        self.sync_multi_row_overlays()
 
     def _remove_graphics_item(self, overlay_id: str, overlay: Overlay) -> None:
         """Remove the graphics item from the scene and clean up side effects."""
@@ -660,4 +668,9 @@ class OverlayManagerMixin:
         QMessageBox.information(self, "Import Successful", f"Imported {imported_count} overlays.")
         if hasattr(self, 'update_marker_info'):
             self.update_marker_info()
+        self.sync_multi_row_overlays()
+
+    def sync_multi_row_overlays(self) -> None:
+        if hasattr(self, 'multi_row_view') and hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
+            self.multi_row_view.sync_overlays(self.overlays, self.spectrogram_view.is_waterfall)
 

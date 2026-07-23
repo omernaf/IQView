@@ -263,6 +263,7 @@ class UIComponentsMixin:
                                  window_size=getattr(self, 'window_size', self.fft_size),
                                  parent_window=self)
         self.sidebar.parametersChanged.connect(self.on_parameters_changed)
+        self.sidebar.multirowChanged.connect(self.on_multirow_changed)
         self.spec_h_layout.addWidget(self.sidebar)
 
         # Right Side Container (MarkerPanel + SpectrogramView)
@@ -280,7 +281,20 @@ class UIComponentsMixin:
             self.marker_panel.update_plugins_list(self._loaded_plugins)
         self.spec_v_layout.addWidget(self.marker_panel)
 
+        # Standard spectrogram view
         self.spectrogram_view = SpectrogramView(self)
+
+        # Multi-row view
+        from ..multi_row_view import MultiRowSpectrogramView
+        from PyQt6.QtWidgets import QStackedWidget
+        self.multi_row_view = MultiRowSpectrogramView(self)
+
+        # Stack replacing glw_plot inside spectrogram_view layout (col 1) so glw_hist (histogram / colorbar) stays on the right (col 2)
+        self.spectrogram_stack = QStackedWidget()
+        self.spectrogram_stack.addWidget(self.spectrogram_view.glw_plot)  # index 0
+        self.spectrogram_stack.addWidget(self.multi_row_view)              # index 1
+        self.spectrogram_view.layout.addWidget(self.spectrogram_stack, 0, 1)
+
         self.spec_v_layout.addWidget(self.spectrogram_view)
 
         # Add to tabs
