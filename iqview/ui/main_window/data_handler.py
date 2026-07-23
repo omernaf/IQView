@@ -204,6 +204,9 @@ class DataHandlerMixin:
         zoomed_start_sample = base_start + int(round(rel_start * base_spr))
         zoomed_spr          = max(1, int(round((rel_end - rel_start) * base_spr)))
 
+        self._multirow_start_sample   = zoomed_start_sample
+        self._multirow_samples_per_row = zoomed_spr
+
         # Filter frequencies
         f_min_rel, f_max_rel = None, None
         if self.filter_region:
