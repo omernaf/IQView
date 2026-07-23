@@ -711,8 +711,9 @@ class TimeDomainView(QWidget):
         y_max = np.max(self.current_plot_data)
         return y_min, y_max
 
-    def place_marker(self, scene_pos, drag_mode=False):
-        v_pos = self.view_box.mapSceneToView(scene_pos)
+    def place_marker(self, scene_pos, drag_mode=False, source_vb=None):
+        vb = source_vb if source_vb is not None else self.view_box
+        v_pos = vb.mapSceneToView(scene_pos)
         is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS', 'STATS'])
         is_endless = 'ENDLESS' in self.interaction_mode
         
@@ -991,8 +992,9 @@ class TimeDomainView(QWidget):
         if drag_mode: self.active_drag_marker = new_m
         self.update_marker_info()
 
-    def update_drag(self, scene_pos):
-        v_pos = self.view_box.mapSceneToView(scene_pos)
+    def update_drag(self, scene_pos, source_vb=None):
+        vb = source_vb if source_vb is not None else self.view_box
+        v_pos = vb.mapSceneToView(scene_pos)
         
         # 1.5 Handle Shadow Marker (Grid Line) dragging
         if getattr(self, 'active_drag_grid_info', None):

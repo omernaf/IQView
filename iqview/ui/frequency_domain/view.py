@@ -811,8 +811,9 @@ class FrequencyDomainView(QWidget):
         # 6. Reset UI
         self.update_marker_info()
 
-    def place_marker(self, scene_pos, drag_mode=False):
-        v_pos = self.view_box.mapSceneToView(scene_pos)
+    def place_marker(self, scene_pos, drag_mode=False, source_vb=None):
+        vb = source_vb if source_vb is not None else self.view_box
+        v_pos = vb.mapSceneToView(scene_pos)
 
         # --- FILTER mode: place/drag filter bounds ---
         if self.interaction_mode == 'FILTER':
@@ -1286,8 +1287,9 @@ class FrequencyDomainView(QWidget):
             count += 1
 
 
-    def update_drag(self, scene_pos):
-        v_pos = self.plot_item.vb.mapSceneToView(scene_pos)
+    def update_drag(self, scene_pos, source_vb=None):
+        vb = source_vb if source_vb is not None else self.view_box
+        v_pos = vb.mapSceneToView(scene_pos)
 
         # 0. Handle FILTER bound dragging
         if getattr(self, 'active_drag_filter_bound_idx', -1) != -1:
