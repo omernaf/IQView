@@ -504,6 +504,8 @@ class MultiRowSpectrogramView(QWidget):
         """Remove all synced overlay items from *row*."""
         for item in row.get('overlay_items', []):
             try:
+                if hasattr(item, 'detach_from_plot'):
+                    item.detach_from_plot()
                 row['plot'].removeItem(item)
             except Exception:
                 pass

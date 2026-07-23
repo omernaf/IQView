@@ -266,6 +266,10 @@ class OverlayManagerMixin:
             if hasattr(self.marker_panel, 'update_overlay_list'):
                 self.marker_panel.update_overlay_list(self.overlays)
 
+        if hasattr(self, 'update_marker_info'):
+            self.update_marker_info()
+        self.sync_multi_row_overlays()
+
     def get_overlays(self, source: Optional[str] = None) -> List[Overlay]:
         """Return overlays filtered by source, or all if source is None."""
         if source is None:
