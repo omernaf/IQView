@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.1] - 2026-07-23
+
+### Added
+- **Multi-Row Stacked Spectrogram View**: Added a Multi-Row Spectrogram mode for analyzing periodic signals across $N$ vertically stacked viewports. Includes configurable rows count, samples per row, and row period, real-time single-source-of-truth time/frequency axis synchronization, zoom level preservation, and full bi-directional synchronization with markers, BPF/BSF filter regions, overlays, and side-panel colormap controls.
+
 ## [0.6.0] - 2026-07-18
 
 ### Added

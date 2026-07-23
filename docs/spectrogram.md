@@ -108,3 +108,25 @@ Users can place overlay shapes directly on the spectrogram:
 Right-click the spectrogram to access export options:
 - **Capture Raw Image**: Saves the spectrogram pixels exactly as rendered, without axes or markers.
 - **Capture Full Plot**: Uses a high-quality renderer to export the entire plot area, including frequency/time labels and active markers.
+
+---
+
+## 🥞 Multi-Row Stacked Spectrogram View
+
+IQView features a **Multi-Row Stacked Spectrogram** mode designed for analyzing periodic signals, bursts, and multi-segment captures across vertically stacked viewports.
+
+### 1. Configuration & Parameters
+- **Rows Count ($N$)**: Sets the number of vertically stacked spectrogram rows.
+- **Samples per Row**: Length of the IQ segment displayed in each individual row.
+- **Row Period**: Sample interval between the start of consecutive rows.
+- **Zoom Level Preservation**: Transitioning from 1-Row to Multi-Row mode maintains the exact start sample and samples per row (`spr`) zoom window, adjusting only the period. Changing between multi-row counts preserves start sample, `spr`, and period.
+
+### 2. Synchronized Real-Time Navigation
+- **Single Source of Truth Axis Sync**: Mouse dragging (panning) updates all row plots' bottom time axes (ticks and seconds labels) and left frequency axes in 1:1 real-time.
+- **Synchronized Relative Zoom**: Zooming in or out on any single row automatically updates all other rows' relative time and absolute frequency axes to maintain identical zoom proportions.
+
+### 3. Integrated Marker, Filter & Overlay System
+- **Markers & Grid Lines**: Time and frequency markers, as well as shadow grid lines, are rendered across all stacked rows. Double-clicking a marker button clears markers of that type in both 1-row and multi-row modes.
+- **BPF / BSF Passband Region**: Placement of 1st and 2nd filter bound markers renders an orange preview line and a highlighted semi-transparent bandpass/bandstop region across all stacked rows. Active filter DSP settings are preserved bi-directionally when toggling between 1-row and multi-row modes.
+- **Shape Overlays**: All overlay shapes (`RECT`, `POLYGON`, `ELLIPSE`, `LINE`, `HLINE`, `X_REGION`, `Y_REGION`) and their display tags are rendered on rows covering their time/frequency span.
+- **Colormap & Level Controls**: Real-time intensity level clipping and colormap preset adjustments from the side panel instantly update all stacked row images.

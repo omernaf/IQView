@@ -2,7 +2,7 @@
 import numpy as np
 from iqview.plugins.plugin_result import PluginResult
 
-__version__ = "0.6.0"
+__version__ = "0.6.1"
 __all__ = ["view", "PluginResult", "__version__"]
 
 
