@@ -660,15 +660,161 @@ class MultiRowSpectrogramView(QWidget):
         except Exception:
             cmap = None
 
-        for row in self.rows:
-            row['img'].setLevels(levels)
-            if cmap is not None:
-                row['img'].setColorMap(cmap)
-            row['img'].update()
-            row['widget'].update()
+    # ------------------------------------------------------------------
+    # Single Source of Truth: Central Axis Update
+    # ------------------------------------------------------------------
 
-    def pan_view(self, dx, dy):
-        """Pan all multi-row plots in real time during mouse drag."""
+    def update_all_row_axes(self):
+        """Update PlotItem XRange and YRange for all rows based on current state:
+        _multirow_start_sample, _multirow_samples_per_row, _multirow_period,
+        _current_rel_time, and _current_freq_range."""
+        if not self.rows:
+            return
+
+        sr = max(getattr(self.parent_window, 'rate', 1.0), 1.0)
+        fc = getattr(self.parent_window, 'fc', 0.0)
+
+        start_s = getattr(self.parent_window, '_multirow_start_sample', 0)
+        spr     = getattr(self.parent_window, '_multirow_samples_per_row', 0)
+        period  = getattr(self.parent_window, '_multirow_period', spr)
+        if spr <= 0:
+            spr = 100000
+        if period <= 0:
+            period = spr
+
+        rel_t0, rel_t1 = getattr(self, '_current_rel_time', (0.0, 1.0))
+        f_min_default = fc - sr / 2.0
+        f_max_default = fc + sr / 2.0
+        f_lo, f_hi = getattr(self, '_current_freq_range', (f_min_default, f_max_default))
+
+        is_waterfall = self.parent_window.spectrogram_view.is_waterfall
+
+        self._syncing = True
+        try:
+            for i, row in enumerate(self.rows):
+                row_start_s = start_s + i * period
+                row_spr     = spr
+                row_t0      = row_start_s / sr
+                row_t_dur   = row_spr / sr
+
+                t_vis_0 = row_t0 + rel_t0 * row_t_dur
+                t_vis_1 = row_t0 + rel_t1 * row_t_dur
+
+                row['t_vis_start'] = t_vis_0
+                row['t_vis_end']   = t_vis_1
+
+                if len(self.rows) > 1:
+                    s_vis_0 = int(round(t_vis_0 * sr))
+                    s_vis_1 = int(round(t_vis_1 * sr))
+                    row['label'].setText(
+                        f"Row {i + 1}  │  Samples {s_vis_0:,} – {s_vis_1:,}"
+                        f"  │  {t_vis_0:.4f}s – {t_vis_1:.4f}s"
+                    )
+
+                if is_waterfall:
+                    row['plot'].setXRange(f_lo, f_hi, padding=0)
+                    row['plot'].setYRange(t_vis_0, t_vis_1, padding=0)
+                else:
+                    row['plot'].setXRange(t_vis_0, t_vis_1, padding=0)
+                    row['plot'].setYRange(f_lo, f_hi, padding=0)
+        finally:
+            self._syncing = False
+
+    # ------------------------------------------------------------------
+    # Frequency axis synchronization & sidebar feedback
+    # ------------------------------------------------------------------
+
+    def _on_row_range_changed(self, source_idx):
+        """Sync frequency and time zoom across all rows when one row changes."""
+        if self._syncing:
+            return
+        if source_idx >= len(self.rows):
+            return
+
+        s_row = self.rows[source_idx]
+        vb = s_row['plot'].getViewBox()
+        xr, yr = vb.viewRange()
+
+        is_waterfall = self.parent_window.spectrogram_view.is_waterfall
+        freq_range = xr if is_waterfall else yr
+        time_range = yr if is_waterfall else xr
+
+        sr = max(getattr(self.parent_window, 'rate', 1.0), 1.0)
+        start_s = getattr(self.parent_window, '_multirow_start_sample', 0)
+        spr     = getattr(self.parent_window, '_multirow_samples_per_row', 0)
+        period  = getattr(self.parent_window, '_multirow_period', spr)
+        if spr <= 0: spr = 100000
+        if period <= 0: period = spr
+
+        row_t0    = (start_s + source_idx * period) / sr
+        row_t_dur = max(1e-9, spr / sr)
+
+        rel_t0 = float(np.clip((time_range[0] - row_t0) / row_t_dur, 0.0, 1.0))
+        rel_t1 = float(np.clip((time_range[1] - row_t0) / row_t_dur, rel_t0 + 1e-6, 1.0))
+
+        # Push state to zoom history before updating
+        if hasattr(self.parent_window, 'push_multirow_zoom_state'):
+            self.parent_window.push_multirow_zoom_state()
+
+        self._current_rel_time   = (rel_t0, rel_t1)
+        self._current_freq_range = (float(freq_range[0]), float(freq_range[1]))
+
+        # Central update of ALL row axes
+        self.update_all_row_axes()
+
+        # Update sidebar text inputs
+        active_start_s = start_s + int(round(rel_t0 * spr))
+        active_spr     = max(1, int(round((rel_t1 - rel_t0) * spr)))
+        self._update_sidebar_inputs(freq_range[0], freq_range[1], active_start_s, active_spr)
+
+        # Sync markers & overlays across rows
+        if hasattr(self.parent_window, 'sync_multi_row_markers'):
+            self.parent_window.sync_multi_row_markers()
+        if hasattr(self.parent_window, 'sync_multi_row_overlays'):
+            self.parent_window.sync_multi_row_overlays()
+
+        # Trigger resolution re-render for the zoomed time window
+        if hasattr(self.parent_window, '_schedule_multirow_rerender'):
+            self.parent_window._schedule_multirow_rerender()
+
+    def _update_sidebar_inputs(self, f_lo, f_hi, base_start_sample=None, base_spr=None):
+        """Update Freq Min, Freq Max, Start Sample, and Samples Per Row text fields in sidebar."""
+        sb = getattr(self.parent_window, 'sidebar', None)
+        if not sb:
+            return
+
+        if hasattr(sb, 'freq_min_edit') and hasattr(sb, 'freq_max_edit'):
+            sb.freq_min_edit.set_hz(f_lo)
+            sb.freq_max_edit.set_hz(f_hi)
+
+        if hasattr(sb, 'start_sample_edit') and hasattr(sb, 'samples_per_row_edit'):
+            if base_start_sample is None:
+                base_start_sample = getattr(self.parent_window, '_multirow_start_sample', 0)
+            if base_spr is None:
+                base_spr = getattr(self.parent_window, '_multirow_samples_per_row', 0)
+
+            sb.start_sample_edit.blockSignals(True)
+            sb.samples_per_row_edit.blockSignals(True)
+            sb.start_sample_edit.setText(str(base_start_sample))
+            sb.samples_per_row_edit.setText(str(base_spr))
+            sb.start_sample_edit.blockSignals(False)
+            sb.samples_per_row_edit.blockSignals(False)
+
+    def set_freq_range(self, f_lo, f_hi):
+        """Programmatically zoom all rows to the given frequency range."""
+        fc   = getattr(self.parent_window, 'fc', 0.0)
+        rate = getattr(self.parent_window, 'rate', 1.0)
+        f_min_def = fc - rate / 2.0
+        f_max_def = fc + rate / 2.0
+
+        f_lo = float(np.clip(f_lo, f_min_def, f_max_def - 1.0))
+        f_hi = float(np.clip(f_hi, f_lo + 1.0, f_max_def))
+
+        self._current_freq_range = (f_lo, f_hi)
+        self.update_all_row_axes()
+
+    def pan_view_view_units(self, dx, dy):
+        """Pan all multi-row plot axes using view-unit deltas (seconds, Hz)."""
         if len(self.rows) == 0:
             return
 
@@ -677,118 +823,40 @@ class MultiRowSpectrogramView(QWidget):
         rate = max(self.parent_window.rate, 1.0)
         f_min_bounds = fc - rate / 2.0
         f_max_bounds = fc + rate / 2.0
+        sr = max(self.parent_window.rate, 1.0)
 
         dt = dx if not is_waterfall else dy
         df = dy if not is_waterfall else dx
 
-        base_start = getattr(self.parent_window, '_multirow_start_sample', 0)
-        base_spr   = getattr(self.parent_window, '_multirow_samples_per_row', 0)
-        fs         = max(self.parent_window.rate, 1.0)
-        base_dur   = (base_spr / fs) if base_spr > 0 else 1.0
+        curr_start = getattr(self.parent_window, '_multirow_start_sample', 0)
+        delta_samples = int(round(dt * sr))
+        base_spr = getattr(self.parent_window, '_multirow_samples_per_row', 100000)
+        total_samples = self.parent_window.get_total_samples() if hasattr(self.parent_window, 'get_total_samples') else 0
+        max_start = max(0, total_samples - base_spr) if total_samples > 0 else 1e9
 
-        row0 = self.rows[0]
-        xr0, yr0 = row0['plot'].viewRange()
-        f_curr = xr0 if is_waterfall else yr0
+        new_start = int(np.clip(curr_start - delta_samples, 0, max_start))
+        self.parent_window._multirow_start_sample = new_start
 
-        r0, r1 = getattr(self, '_current_rel_time', (0.0, 1.0))
-        rel_span = r1 - r0
+        f0, f1 = getattr(self, '_current_freq_range', (f_min_bounds, f_max_bounds))
+        f_span = f1 - f0
+        new_f0 = float(np.clip(f0 - df, f_min_bounds, f_max_bounds - f_span))
+        new_f1 = new_f0 + f_span
+        self._current_freq_range = (new_f0, new_f1)
 
-        vis_ratio_freq = (f_curr[1] - f_curr[0]) / rate
+        self.update_all_row_axes()
 
-        # 1. Frequency Panning (only if zoomed in on frequency)
-        if vis_ratio_freq <= 0.999 and df != 0.0:
-            f_span = f_curr[1] - f_curr[0]
-            new_f0 = f_curr[0] - df
-            new_f1 = f_curr[1] - df
-            if new_f0 < f_min_bounds:
-                new_f0, new_f1 = f_min_bounds, f_min_bounds + f_span
-            elif new_f1 > f_max_bounds:
-                new_f0, new_f1 = f_max_bounds - f_span, f_max_bounds
-            self.set_freq_range(new_f0, new_f1)
+        rel_t0, rel_t1 = getattr(self, '_current_rel_time', (0.0, 1.0))
+        active_start_s = new_start + int(round(rel_t0 * base_spr))
+        active_spr     = max(1, int(round((rel_t1 - rel_t0) * base_spr)))
+        self._update_sidebar_inputs(new_f0, new_f1, active_start_s, active_spr)
 
-        # 2. Time Panning / File Scrolling
-        if dt != 0.0:
-            if rel_span <= 0.999:
-                # Zoomed in: pan relative fraction (r0, r1)
-                dt_rel = dt / max(base_dur, 1e-9)
-                new_r0 = float(np.clip(r0 - dt_rel, 0.0, 1.0 - rel_span))
-                new_r1 = float(np.clip(new_r0 + rel_span, rel_span, 1.0))
-                self._current_rel_time = (new_r0, new_r1)
-
-                self._syncing = True
-                try:
-                    for row in self.rows:
-                        t_s, t_e = row['t_start'], row['t_end']
-                        dur = t_e - t_s
-                        v0 = t_s + (new_r0 - r0) / max(rel_span, 1e-9) * dur
-                        v1 = v0 + dur
-                        vb_other = row['plot'].getViewBox()
-                        vb_other.blockSignals(True)
-                        try:
-                            if is_waterfall:
-                                row['plot'].setYRange(v0, v1, padding=0)
-                            else:
-                                row['plot'].setXRange(v0, v1, padding=0)
-                        finally:
-                            vb_other.blockSignals(False)
-                finally:
-                    self._syncing = False
-
-                self._update_sidebar_inputs(f_curr[0], f_curr[1], new_r0, new_r1)
-            else:
-                # Unzoomed (100%): scroll file start_sample
-                delta_samples = int(round(dt * fs))
-                curr_start = getattr(self.parent_window, '_multirow_start_sample', 0)
-                total_samples = self.parent_window.get_total_samples() if hasattr(self.parent_window, 'get_total_samples') else 0
-                max_start = max(0, total_samples - base_spr) if total_samples > 0 else 1e9
-
-                new_start = int(np.clip(curr_start - delta_samples, 0, max_start))
-                if new_start != curr_start:
-                    self.parent_window._multirow_start_sample = new_start
-                    sb = getattr(self.parent_window, 'sidebar', None)
-                    if sb and hasattr(sb, 'start_sample_edit'):
-                        sb.start_sample_edit.blockSignals(True)
-                        sb.start_sample_edit.setText(str(new_start))
-                        sb.start_sample_edit.blockSignals(False)
-
-                    period = getattr(self.parent_window, '_multirow_period', base_spr)
-                    if period <= 0: period = base_spr
-
-                    self._syncing = True
-                    try:
-                        for i, row in enumerate(self.rows):
-                            row_s_idx = new_start + i * period
-                            t_s = row_s_idx / fs
-                            t_e = (row_s_idx + base_spr) / fs
-                            row['t_start'] = t_s
-                            row['t_end']   = t_e
-                            vb_other = row['plot'].getViewBox()
-                            vb_other.blockSignals(True)
-                            try:
-                                if is_waterfall:
-                                    row['plot'].setYRange(t_s, t_e, padding=0)
-                                else:
-                                    row['plot'].setXRange(t_s, t_e, padding=0)
-                            finally:
-                                vb_other.blockSignals(False)
-                    finally:
-                        self._syncing = False
-
-        # Sync existing markers and overlays to the new row layout
-        self.sync_markers(
-            getattr(self.parent_window, 'markers_time', []),
-            getattr(self.parent_window, 'markers_freq', []),
-            is_waterfall,
-            self.parent_window.settings_mgr.get("ui/theme", "Dark").lower(),
-            self.parent_window.settings_mgr
-        )
-        self.sync_overlays(getattr(self.parent_window, 'overlays', []), is_waterfall)
+        if hasattr(self.parent_window, 'sync_multi_row_markers'):
+            self.parent_window.sync_multi_row_markers()
+        if hasattr(self.parent_window, 'sync_multi_row_overlays'):
+            self.parent_window.sync_multi_row_overlays()
 
     # ------------------------------------------------------------------
     # Theming
-    # ------------------------------------------------------------------
-
-    def refresh_theme(self):
         """Apply theme to all row widgets using pyqtgraph's native API."""
         p = self._palette()
 

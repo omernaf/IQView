@@ -764,6 +764,11 @@ class ViewControllerMixin:
                 return
             if is_finish:
                 self.last_move_scene_pos = None
+                if hasattr(self, 'multi_row_view') and getattr(self.multi_row_view, 'rows', None):
+                    is_waterfall = self.spectrogram_view.is_waterfall
+                    row0_plot = self.multi_row_view.rows[0]['plot']
+                    row0_time_vr = row0_plot.viewRange()[1] if is_waterfall else row0_plot.viewRange()[0]
+                    self._multirow_start_sample = max(0, int(round(row0_time_vr[0] * self.rate)))
                 if hasattr(self, '_schedule_multirow_rerender'):
                     self._schedule_multirow_rerender()
                 return
@@ -772,27 +777,13 @@ class ViewControllerMixin:
 
             vb = source_vb if source_vb is not None else (self.multi_row_view.rows[0]['plot'].getViewBox() if len(self.multi_row_view.rows) > 0 else self.spectrogram_view.plot_item.vb)
             
-            dx_pix = scene_pos.x() - self.last_move_scene_pos.x()
-            dy_pix = scene_pos.y() - self.last_move_scene_pos.y()
-
-            xr, yr = vb.viewRange()
-            rect = vb.screenGeometry() if hasattr(vb, 'screenGeometry') else None
-            w_pix = max(1.0, float(rect.width())) if rect and rect.width() > 0 else 1000.0
-            h_pix = max(1.0, float(rect.height())) if rect and rect.height() > 0 else 500.0
-
-            x_span = xr[1] - xr[0]
-            y_span = yr[1] - yr[0]
-
-            waterfall = self.spectrogram_view.is_waterfall
-            if waterfall:
-                df = dx_pix * (x_span / w_pix)
-                dt = -dy_pix * (y_span / h_pix)
-            else:
-                dt = dx_pix * (x_span / w_pix)
-                df = -dy_pix * (y_span / h_pix)
+            p1 = vb.mapSceneToView(self.last_move_scene_pos)
+            p2 = vb.mapSceneToView(scene_pos)
+            dx = p2.x() - p1.x()
+            dy = p2.y() - p1.y()
 
             if hasattr(self, 'multi_row_view'):
-                self.multi_row_view.pan_view(dt, df)
+                self.multi_row_view.pan_view_view_units(dx, dy)
 
             self.last_move_scene_pos = scene_pos
             return
