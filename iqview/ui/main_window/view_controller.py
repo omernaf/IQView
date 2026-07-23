@@ -605,32 +605,44 @@ class ViewControllerMixin:
         if not enabled:
             for line in grid_lines: self.spectrogram_view.plot_item.removeItem(line)
             grid_lines.clear()
+            self.sync_multi_row_markers()
             return
         if not tracking and not force: return
         for line in grid_lines: self.spectrogram_view.plot_item.removeItem(line)
         grid_lines.clear()
-        if len(active_markers) != 2: return
+        if len(active_markers) != 2:
+            self.sync_multi_row_markers()
+            return
         p1, p2 = active_markers[0].value(), active_markers[1].value()
         delta = abs(p2 - p1)
-        if delta <= 0: return
+        if delta <= 0:
+            self.sync_multi_row_markers()
+            return
 
-        # Optimization: Only plot visible lines
-        vr = self.spectrogram_view.plot_item.viewRange()
-        # In standard mode: time on X (vr[0]), freq on Y (vr[1])
-        # In waterfall mode: freq on X (vr[0]), time on Y (vr[1])
-        if waterfall:
-            # freq lines are now vertical (angle=90, on X axis)
-            # time lines are now horizontal (angle=0, on Y axis)
-            axis_range = vr[0] if is_freq else vr[1]
-            line_angle = 90 if is_freq else 0
+        is_multirow = hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1 and hasattr(self, 'multi_row_view') and len(self.multi_row_view.rows) > 0
+
+        if is_multirow:
+            if is_freq:
+                vr = self.multi_row_view.rows[0]['plot'].viewRange()
+                axis_range = vr[0] if waterfall else vr[1]
+            else:
+                t_start_min = min(r['t_start'] for r in self.multi_row_view.rows)
+                t_end_max = max(r['t_end'] for r in self.multi_row_view.rows)
+                axis_range = [t_start_min, t_end_max]
+            line_angle = (90 if is_freq else 0) if waterfall else (0 if is_freq else 90)
         else:
-            # standard: freq lines horizontal (angle=0), time lines vertical (angle=90)
-            axis_range = vr[1] if is_freq else vr[0]
-            line_angle = 0 if is_freq else 90
+            vr = self.spectrogram_view.plot_item.viewRange()
+            if waterfall:
+                axis_range = vr[0] if is_freq else vr[1]
+                line_angle = 90 if is_freq else 0
+            else:
+                axis_range = vr[1] if is_freq else vr[0]
+                line_angle = 0 if is_freq else 90
         v_min_visible, v_max_visible = axis_range
-        
+
         # Guard against too many markers
-        if (v_max_visible - v_min_visible) / delta > 500:
+        if (v_max_visible - v_min_visible) / delta > 2000:
+            self.sync_multi_row_markers()
             return
 
         theme = self.settings_mgr.get("ui/theme", "Dark").lower()
@@ -659,13 +671,15 @@ class ViewControllerMixin:
         curr = p1 + start_count * delta
         
         count = 0
-        while curr <= v_max_visible + 1e-9 and count < 500:
+        while curr <= v_max_visible + 1e-9 and count < 2000:
             line = pg.InfiniteLine(pos=curr, angle=line_angle, pen=pen, movable=False)
             line.setZValue(5)
-            self.spectrogram_view.plot_item.addItem(line, ignoreBounds=True)
+            if not is_multirow:
+                self.spectrogram_view.plot_item.addItem(line, ignoreBounds=True)
             grid_lines.append(line)
             curr += delta
             count += 1
+        self.sync_multi_row_markers()
 
     def push_multirow_zoom_state(self):
         """Save current multi-row zoom parameters to multirow_zoom_history."""

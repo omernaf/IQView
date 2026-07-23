@@ -1018,9 +1018,13 @@ class MarkerManagerMixin:
 
     def sync_multi_row_markers(self):
         if hasattr(self, 'multi_row_view') and hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
+            all_time = list(self.markers_time) + list(getattr(self, 'markers_time_endless', []))
+            all_freq = list(self.markers_freq) + list(getattr(self, 'markers_freq_endless', []))
             self.multi_row_view.sync_markers(
-                self.markers_time, self.markers_freq,
+                all_time, all_freq,
                 self.spectrogram_view.is_waterfall,
                 self.settings_mgr.get("ui/theme", "Dark").lower(),
-                self.settings_mgr
+                self.settings_mgr,
+                grid_time=self.grid_lines_time if getattr(self, 'grid_time_enabled', False) else [],
+                grid_freq=self.grid_lines_freq if getattr(self, 'grid_freq_enabled', False) else []
             )

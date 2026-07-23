@@ -404,8 +404,8 @@ class MultiRowSpectrogramView(QWidget):
                 pass
         row['marker_items'] = []
 
-    def sync_markers(self, markers_time, markers_freq, is_waterfall, theme, settings_mgr):
-        """Re-render all time and frequency markers across all rows."""
+    def sync_markers(self, markers_time, markers_freq, is_waterfall, theme, settings_mgr, grid_time=None, grid_freq=None):
+        """Re-render all time and frequency markers and grid lines across all rows."""
         style_map = {
             "SolidLine": Qt.PenStyle.SolidLine,
             "DashLine": Qt.PenStyle.DashLine,
@@ -422,6 +422,20 @@ class MultiRowSpectrogramView(QWidget):
 
         t_pen = pg.mkPen(t_color, width=2, style=t_style)
         f_pen = pg.mkPen(f_color, width=2, style=f_style)
+
+        # Grid line styling
+        g_color = settings_mgr.get(f"ui/{theme}/marker_grid_color", "#c8c8ff")
+        g_style_name = settings_mgr.get(f"ui/{theme}/marker_grid_style", "SolidLine")
+        g_style = style_map.get(str(g_style_name), Qt.PenStyle.SolidLine)
+        g_alpha = int(settings_mgr.get("ui/marker_grid_alpha", 50))
+        g_width = int(settings_mgr.get("ui/marker_grid_width", 1))
+
+        qg_color = pg.mkColor(g_color)
+        qg_color.setAlpha(g_alpha)
+        g_pen = pg.mkPen(qg_color, width=g_width, style=g_style)
+
+        grid_time = grid_time or []
+        grid_freq = grid_freq or []
 
         for row in self.rows:
             self._clear_row_markers(row)
@@ -441,6 +455,23 @@ class MultiRowSpectrogramView(QWidget):
                 if row['t_start'] <= t_val <= row['t_end']:
                     line = pg.InfiniteLine(pos=t_val, angle=t_angle, movable=False, pen=t_pen)
                     line.setZValue(10)
+                    row['plot'].addItem(line, ignoreBounds=True)
+                    items.append(line)
+
+            # 3. Frequency Grid lines (Shadow Markers) — appear on ALL rows
+            for gl in grid_freq:
+                f_val = gl.value()
+                line = pg.InfiniteLine(pos=f_val, angle=f_angle, movable=False, pen=g_pen)
+                line.setZValue(5)
+                row['plot'].addItem(line, ignoreBounds=True)
+                items.append(line)
+
+            # 4. Time Grid lines (Shadow Markers) — appear on row IF time T is inside [row['t_start'], row['t_end']]
+            for gl in grid_time:
+                t_val = gl.value()
+                if row['t_start'] <= t_val <= row['t_end']:
+                    line = pg.InfiniteLine(pos=t_val, angle=t_angle, movable=False, pen=g_pen)
+                    line.setZValue(5)
                     row['plot'].addItem(line, ignoreBounds=True)
                     items.append(line)
 
