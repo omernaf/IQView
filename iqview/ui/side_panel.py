@@ -601,10 +601,12 @@ class SidePanel(QFrame):
             self.freq_max_edit.set_hz(self.fc + self.fs / 2.0)
         self.update_derived_values()
 
-    def update_multirow_defaults(self, samples_per_row, period):
+    def update_multirow_defaults(self, samples_per_row, period, start_sample=None):
         """Push auto-computed defaults into the multi-row tab inputs."""
         self.samples_per_row_edit.setText(str(samples_per_row))
         self.period_edit.setText(str(period))
+        if start_sample is not None and hasattr(self, 'start_sample_edit'):
+            self.start_sample_edit.setText(str(start_sample))
 
     # ------------------------------------------------------------------
     # Version checker

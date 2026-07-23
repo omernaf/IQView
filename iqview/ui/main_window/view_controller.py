@@ -193,28 +193,53 @@ class ViewControllerMixin:
             return
 
         prev_num_rows = getattr(self, '_multirow_num_rows', 1)
-        entering_multi_row = (prev_num_rows <= 1 and num_rows > 1)
-
-        # Auto-compute missing values from file if entering multi-row mode or if not specified
-        if self._has_data():
-            total = self.get_total_samples()
-            if entering_multi_row or spr <= 0:
-                spr = max(1, total // num_rows)
-            if entering_multi_row or period <= 0:
-                period = spr
-            if hasattr(self, 'sidebar'):
-                self.sidebar.update_multirow_defaults(spr, period)
-        else:
-            if entering_multi_row or spr <= 0:
-                spr = 100000
-            if entering_multi_row or period <= 0:
-                period = spr
-
-        # Check if processing parameters changed (only re-process if row segmentation params change)
         prev_start    = getattr(self, '_multirow_start_sample', 0)
         prev_spr      = getattr(self, '_multirow_samples_per_row', 0)
         prev_period   = getattr(self, '_multirow_period', 0)
 
+        entering_multi_row = (prev_num_rows <= 1 and num_rows > 1)
+
+        if entering_multi_row:
+            # Transitioning from 1-row mode to multi-row mode:
+            # Maintain the EXACT same zoom level (start_sample & samples_per_row) from 1-row view!
+            if hasattr(self, 'spectrogram_view') and hasattr(self.spectrogram_view, 'plot_item'):
+                vr = self.spectrogram_view.plot_item.viewRange()
+                waterfall = self.spectrogram_view.is_waterfall
+                axis_vr = vr[1] if waterfall else vr[0]
+                t_min = max(0.0, float(axis_vr[0]))
+                t_max = min(float(getattr(self, 'time_duration', 1.0)), float(axis_vr[1]))
+                start_sample = max(0, int(round(t_min * self.rate)))
+                spr = max(1, int(round((t_max - t_min) * self.rate)))
+            elif spr <= 0 and self._has_data():
+                total = self.get_total_samples()
+                start_sample = 0
+                spr = max(1, total // num_rows)
+            elif spr <= 0:
+                start_sample = 0
+                spr = 100000
+
+            # Only period changes when switching from 1 row to multiple (period = spr)
+            period = spr
+
+            if hasattr(self, 'sidebar'):
+                self.sidebar.update_multirow_defaults(spr, period, start_sample=start_sample)
+        else:
+            # Transitioning between multi-row counts (N1 > 1 -> N2 > 1):
+            # If changing row count, start_sample, spr, and period stay the same!
+            if num_rows != prev_num_rows:
+                start_sample = prev_start
+                spr = prev_spr if prev_spr > 0 else (self.get_total_samples() // num_rows if self._has_data() else 100000)
+                period = prev_period if prev_period > 0 else spr
+            else:
+                if spr <= 0:
+                    spr = prev_spr if prev_spr > 0 else (self.get_total_samples() // num_rows if self._has_data() else 100000)
+                if period <= 0:
+                    period = prev_period if prev_period > 0 else spr
+
+            if hasattr(self, 'sidebar'):
+                self.sidebar.update_multirow_defaults(spr, period, start_sample=start_sample)
+
+        # Check if processing parameters changed
         needs_reprocess = (
             num_rows != prev_num_rows or
             start_sample != prev_start or
