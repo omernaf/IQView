@@ -207,6 +207,11 @@ class DataHandlerMixin:
         self._multirow_start_sample   = zoomed_start_sample
         self._multirow_samples_per_row = zoomed_spr
 
+        # 300% buffer (100% left, 100% visible, 100% right) for seamless dragging
+        total_samples = self.get_total_samples()
+        read_start_sample = max(0, zoomed_start_sample - zoomed_spr)
+        read_spr          = min(total_samples - read_start_sample, zoomed_spr * 3)
+
         # Filter frequencies
         f_min_rel, f_max_rel = None, None
         if self.filter_region:
@@ -219,7 +224,7 @@ class DataHandlerMixin:
 
         self._multirow_worker = MultiRowProcessor(
             self.data_source, self.data_type, self.fft_size, self.rate,
-            num_rows, zoomed_start_sample, zoomed_spr, base_period,
+            num_rows, read_start_sample, read_spr, base_period,
             is_complex=self.is_complex,
             window_type=self.window_type,
             overlap_percent=self.overlap_percent,
@@ -237,9 +242,11 @@ class DataHandlerMixin:
         self._multirow_worker.start()
 
         self._multirow_display_params = {
-            'start_sample':    zoomed_start_sample,
-            'samples_per_row': zoomed_spr,
-            'period':          base_period,
+            'start_sample':        zoomed_start_sample,
+            'samples_per_row':     zoomed_spr,
+            'period':              base_period,
+            'read_start_sample':   read_start_sample,
+            'read_samples_per_row': read_spr,
         }
 
     def _schedule_lazy_render(self, delay_ms=80):
@@ -460,6 +467,10 @@ class DataHandlerMixin:
         if period <= 0:
             period = spr
 
+        total_samples = self.get_total_samples()
+        read_start_sample = max(0, start_sample - spr)
+        read_spr          = min(total_samples - read_start_sample, spr * 3)
+
         # Filter frequency offsets (relative to fc)
         f_min_rel, f_max_rel = None, None
         if self.filter_region:
@@ -469,7 +480,7 @@ class DataHandlerMixin:
 
         self._multirow_worker = MultiRowProcessor(
             self.data_source, self.data_type, self.fft_size, self.rate,
-            num_rows, start_sample, spr, period,
+            num_rows, read_start_sample, read_spr, period,
             is_complex=self.is_complex,
             window_type=self.window_type,
             overlap_percent=self.overlap_percent,
@@ -488,9 +499,11 @@ class DataHandlerMixin:
 
         # Stash params so display_multi_row can build start_samples list
         self._multirow_display_params = {
-            'start_sample':    start_sample,
-            'samples_per_row': spr,
-            'period':          period,
+            'start_sample':        start_sample,
+            'samples_per_row':     spr,
+            'period':              period,
+            'read_start_sample':   read_start_sample,
+            'read_samples_per_row': read_spr,
         }
 
         self.progress_bar.setValue(0)
@@ -509,16 +522,20 @@ class DataHandlerMixin:
         )
 
         p = getattr(self, '_multirow_display_params', {})
-        start_sample  = p.get('start_sample',    0)
-        spr           = max(1, p.get('samples_per_row', 1))
-        period        = p.get('period',          0)
+        vis_start_sample  = p.get('start_sample',    0)
+        vis_spr           = max(1, p.get('samples_per_row', 1))
+        period            = p.get('period',          0)
         if period <= 0:
-            period = spr
+            period = vis_spr
 
-        start_samples = [start_sample + i * period for i in range(len(spectra_list))]
+        read_start_sample = p.get('read_start_sample', vis_start_sample)
+        read_spr          = p.get('read_samples_per_row', vis_spr)
+
+        read_start_samples = [read_start_sample + i * period for i in range(len(spectra_list))]
+        vis_start_samples  = [vis_start_sample + i * period for i in range(len(spectra_list))]
 
         self.multi_row_view.update_spectrograms(
-            spectra_list, self.fc, self.rate, start_samples, spr
+            spectra_list, self.fc, self.rate, read_start_samples, read_spr, vis_start_samples, vis_spr
         )
         self.update_marker_info()
 

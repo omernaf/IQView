@@ -500,13 +500,19 @@ class MultiRowSpectrogramView(QWidget):
     # ------------------------------------------------------------------
 
     def update_spectrograms(self, spectra, fc, rate,
-                            start_samples, samples_per_row):
-        """Render one spectrogram per row."""
+                            read_start_samples, read_spr,
+                            vis_start_samples=None, vis_spr=None):
+        """Render one spectrogram per row with 300% buffer for seamless dragging."""
         n = len(spectra)
         if n == 0:
             return
 
         self._ensure_rows(n)
+
+        if vis_start_samples is None:
+            vis_start_samples = read_start_samples
+        if vis_spr is None:
+            vis_spr = read_spr
 
         f_min = fc - rate / 2.0
         sr    = max(rate, 1.0)
@@ -542,20 +548,24 @@ class MultiRowSpectrogramView(QWidget):
         self._syncing = True
         try:
             for i, (spec, row) in enumerate(zip(spectra, self.rows)):
-                s_start  = int(start_samples[i]) if i < len(start_samples) else 0
-                t_start  = s_start / sr
-                t_end    = (s_start + samples_per_row) / sr
-                duration = max(t_end - t_start, 1.0 / sr)
+                s_read = int(read_start_samples[i]) if i < len(read_start_samples) else 0
+                t_read_start  = s_read / sr
+                t_read_end    = (s_read + read_spr) / sr
+                read_duration = max(t_read_end - t_read_start, 1.0 / sr)
 
-                row['t_start'] = t_start
-                row['t_end']   = t_end
+                s_vis = int(vis_start_samples[i]) if i < len(vis_start_samples) else s_read
+                t_vis_start = s_vis / sr
+                t_vis_end   = (s_vis + vis_spr) / sr
+
+                row['t_start'] = t_read_start
+                row['t_end']   = t_read_end
 
                 # -- Label --
                 if n > 1:
                     row['label'].setText(
-                        f"Row {i + 1}  │  Samples {s_start:,} – "
-                        f"{s_start + samples_per_row:,}"
-                        f"  │  {t_start:.4f}s – {t_end:.4f}s"
+                        f"Row {i + 1}  │  Samples {s_vis:,} – "
+                        f"{s_vis + vis_spr:,}"
+                        f"  │  {t_vis_start:.4f}s – {t_vis_end:.4f}s"
                     )
                     row['label'].setVisible(True)
                 else:
@@ -572,20 +582,20 @@ class MultiRowSpectrogramView(QWidget):
                         display = np.ascontiguousarray(spec.T)
                         row['img'].setImage(display, autoLevels=False,
                                            levels=levels, autoDownsample=True)
-                        row['img'].setRect(QRectF(f_min, t_start, rate, duration))
+                        row['img'].setRect(QRectF(f_min, t_read_start, rate, read_duration))
                         row['plot'].setLabel('bottom', "Frequency", units='Hz')
                         row['plot'].setLabel('left',   "Time",      units='s')
                         row['plot'].getViewBox().invertY(True)
                         row['plot'].setXRange(f_view_lo, f_view_hi, padding=0)
-                        row['plot'].setYRange(t_start, t_end, padding=0)
+                        row['plot'].setYRange(t_vis_start, t_vis_end, padding=0)
                     else:
                         row['img'].setImage(spec, autoLevels=False,
                                            levels=levels, autoDownsample=True)
-                        row['img'].setRect(QRectF(t_start, f_min, duration, rate))
+                        row['img'].setRect(QRectF(t_read_start, f_min, read_duration, rate))
                         row['plot'].setLabel('bottom', "Time",      units='s')
                         row['plot'].setLabel('left',   "Frequency", units='Hz')
                         row['plot'].getViewBox().invertY(False)
-                        row['plot'].setXRange(t_start, t_end, padding=0)
+                        row['plot'].setXRange(t_vis_start, t_vis_end, padding=0)
                         row['plot'].setYRange(f_view_lo, f_view_hi, padding=0)
                 finally:
                     vb_curr.blockSignals(False)
