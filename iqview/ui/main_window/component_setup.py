@@ -278,6 +278,8 @@ class UIComponentsMixin:
         self.marker_panel.interactionModeChanged.connect(self.set_interaction_mode)
         self.marker_panel.resetZoomRequested.connect(self.reset_zoom)
         self.marker_panel.markerClearRequested.connect(self.handle_marker_clear)
+        if hasattr(self, '_loaded_plugins') and hasattr(self.marker_panel, 'update_plugins_list'):
+            self.marker_panel.update_plugins_list(self._loaded_plugins)
         self.spec_v_layout.addWidget(self.marker_panel)
 
         self.spectrogram_stack = QStackedWidget()

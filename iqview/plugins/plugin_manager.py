@@ -136,6 +136,9 @@ class PluginManagerMixin:
                 )
                 menu.addAction(action)
 
+        if hasattr(self, 'marker_panel') and hasattr(self.marker_panel, 'update_plugins_list'):
+            self.marker_panel.update_plugins_list(self._loaded_plugins)
+
     # ------------------------------------------------------------------
     # Load
     # ------------------------------------------------------------------
@@ -178,12 +181,23 @@ class PluginManagerMixin:
         run_on_main = getattr(module, "PLUGIN_RUN_ON_MAIN_THREAD", False)
 
         # If a plugin with the same display name is already loaded, replace it
+        params_spec = getattr(module, "PLUGIN_PARAMS", {})
+        active_params = {}
+        if isinstance(params_spec, dict):
+            for k, spec in params_spec.items():
+                if isinstance(spec, dict):
+                    active_params[k] = spec.get("default")
+                else:
+                    active_params[k] = spec
+
         self._loaded_plugins[name] = {
             "path":        path,
             "module":      module,
             "func":        module.run,
             "description": description,
             "run_on_main": run_on_main,
+            "params_spec": params_spec,
+            "params":      active_params
         }
 
         if _persist:
@@ -195,6 +209,13 @@ class PluginManagerMixin:
     # ------------------------------------------------------------------
     # Unload
     # ------------------------------------------------------------------
+
+    def unload_plugin(self, name: str) -> None:
+        if name in self._loaded_plugins:
+            del self._loaded_plugins[name]
+            self._save_plugin_paths()
+            self._rebuild_plugins_menu()
+            self.statusBar().showMessage(f"Plugin unloaded: {name}", 3000)
 
     def _unload_all_plugins(self) -> None:
         self._loaded_plugins.clear()
@@ -275,6 +296,7 @@ class PluginManagerMixin:
             # Deep copies — the background thread gets a safe, immutable snapshot.
             # Plugins can read .id, .shape, .points etc. directly on these objects.
             "overlays":    [copy.deepcopy(o) for o in self.overlays],
+            "params":      copy.deepcopy(info.get("params", {})),
         }
 
         # Run synchronously on main thread if requested (for GUI/matplotlib debugging)
