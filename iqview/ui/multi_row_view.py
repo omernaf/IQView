@@ -913,6 +913,9 @@ class MultiRowSpectrogramView(QWidget):
 
     # ------------------------------------------------------------------
     # Theming
+    # ------------------------------------------------------------------
+
+    def refresh_theme(self):
         """Apply theme to all row widgets using pyqtgraph's native API."""
         p = self._palette()
 
@@ -939,8 +942,9 @@ class MultiRowSpectrogramView(QWidget):
     # ------------------------------------------------------------------
 
     def apply_waterfall_mode(self):
-        """No-op: re-rendering is triggered by start_processing()."""
-        pass
+        """Re-render multi-row view when waterfall mode changes."""
+        if hasattr(self.parent_window, 'start_processing'):
+            self.parent_window.start_processing()
 
     # ------------------------------------------------------------------
     # Key event forwarding
