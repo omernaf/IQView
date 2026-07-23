@@ -117,10 +117,11 @@ class ViewControllerMixin:
 
     def on_filter_changed(self, mode):
         self.filter_mode = mode
+        self.full_spectrogram_cache = None
         if self.filter_region:
-            if mode and self.interaction_mode == 'FILTER' and getattr(self, 'filter_placed', False):
+            if mode and getattr(self, 'filter_placed', False):
                 self.filter_region.show()
-            elif self.interaction_mode != 'FILTER' or not getattr(self, 'filter_placed', False):
+            elif not mode:
                 self.filter_region.hide()
         
         # Trigger reprocessing if we have data
@@ -258,6 +259,7 @@ class ViewControllerMixin:
             self.multi_row_view.set_freq_range(f_min, f_max)
 
         if needs_reprocess and self._has_data():
+            self.full_spectrogram_cache = None
             self.start_processing()
 
     def refresh_cursor(self):

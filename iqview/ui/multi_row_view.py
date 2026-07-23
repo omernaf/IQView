@@ -404,8 +404,8 @@ class MultiRowSpectrogramView(QWidget):
                 pass
         row['marker_items'] = []
 
-    def sync_markers(self, markers_time, markers_freq, is_waterfall, theme, settings_mgr, grid_time=None, grid_freq=None):
-        """Re-render all time and frequency markers and grid lines across all rows."""
+    def sync_markers(self, markers_time, markers_freq, is_waterfall, theme, settings_mgr, grid_time=None, grid_freq=None, filter_bounds=None, filter_line_pos=None):
+        """Re-render all time, frequency, grid markers, and filter region/bound markers across all rows."""
         style_map = {
             "SolidLine": Qt.PenStyle.SolidLine,
             "DashLine": Qt.PenStyle.DashLine,
@@ -433,6 +433,8 @@ class MultiRowSpectrogramView(QWidget):
         qg_color = pg.mkColor(g_color)
         qg_color.setAlpha(g_alpha)
         g_pen = pg.mkPen(qg_color, width=g_width, style=g_style)
+
+        filter_pen = pg.mkPen('#ff6400', width=2, style=Qt.PenStyle.DashLine)
 
         grid_time = grid_time or []
         grid_freq = grid_freq or []
@@ -474,6 +476,27 @@ class MultiRowSpectrogramView(QWidget):
                     line.setZValue(5)
                     row['plot'].addItem(line, ignoreBounds=True)
                     items.append(line)
+
+            # 5. Filter preview line (1 bound marker placed) — appear on ALL rows
+            if filter_line_pos is not None:
+                line = pg.InfiniteLine(pos=filter_line_pos, angle=f_angle, movable=False, pen=filter_pen)
+                line.setZValue(9)
+                row['plot'].addItem(line, ignoreBounds=True)
+                items.append(line)
+
+            # 6. Filter region and bound markers (2 bound markers placed) — appear on ALL rows
+            if filter_bounds is not None and len(filter_bounds) == 2:
+                f1, f2 = filter_bounds[0], filter_bounds[1]
+                region = pg.LinearRegionItem(
+                    values=[f1, f2],
+                    orientation=(0 if is_waterfall else 1),
+                    brush=pg.mkBrush(255, 100, 0, 40),
+                    pen=pg.mkPen('#ff6400', width=2),
+                    movable=False
+                )
+                region.setZValue(9)
+                row['plot'].addItem(region)
+                items.append(region)
 
             row['marker_items'] = items
 

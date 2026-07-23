@@ -40,7 +40,24 @@ class DataHandlerMixin:
         except Exception:
             return 0
 
+    def get_active_filter_bounds(self):
+        """Return (f_min, f_max) absolute frequency bounds if filter_mode is active, else (None, None)."""
+        if not getattr(self, 'filter_mode', None):
+            return None, None
+        bounds = getattr(self, 'filter_bounds', None)
+        if bounds and len(bounds) == 2:
+            return float(min(bounds)), float(max(bounds))
+        fr = getattr(self, 'filter_region', None)
+        if fr:
+            try:
+                v_lo, v_hi = fr.getRegion()
+                return float(min(v_lo, v_hi)), float(max(v_lo, v_hi))
+            except Exception:
+                pass
+        return None, None
+
     def start_processing(self):
+        """Main entry point to start file/data processing and display."""
         if self.data_source is None:
             return  # nothing loaded yet — waiting for user to open a file
 
@@ -56,6 +73,8 @@ class DataHandlerMixin:
         # Single-row: ensure standard view is shown
         if hasattr(self, 'spectrogram_stack'):
             self.spectrogram_stack.setCurrentIndex(0)
+        if hasattr(self, 'restore_1row_filter_ui'):
+            self.restore_1row_filter_ui()
 
         self.progress_bar.setValue(0)
         self.progress_bar.setStyleSheet(
@@ -63,10 +82,7 @@ class DataHandlerMixin:
             "QProgressBar::chunk { background-color: #00aaff; }"
         )
 
-        f_min, f_max = None, None
-        if self.filter_region:
-            v_low, v_high = self.filter_region.getRegion()
-            f_min, f_max = min(v_low, v_high), max(v_low, v_high)
+        f_min, f_max = self.get_active_filter_bounds()
 
         # Make frequencies relative to Fc for the baseband DSP filter
         f_min_rel = (f_min - self.fc) if f_min is not None else None
@@ -213,11 +229,9 @@ class DataHandlerMixin:
         read_spr          = min(total_samples - read_start_sample, zoomed_spr * 3)
 
         # Filter frequencies
-        f_min_rel, f_max_rel = None, None
-        if self.filter_region:
-            v_lo, v_hi = self.filter_region.getRegion()
-            f_min_rel  = min(v_lo, v_hi) - self.fc
-            f_max_rel  = max(v_lo, v_hi) - self.fc
+        f_min, f_max = self.get_active_filter_bounds()
+        f_min_rel = (f_min - self.fc) if f_min is not None else None
+        f_max_rel = (f_max - self.fc) if f_max is not None else None
 
         if hasattr(self, '_multirow_worker') and self._multirow_worker.isRunning():
             self._multirow_worker.stop()
@@ -330,10 +344,7 @@ class DataHandlerMixin:
             else:
                 pixel_width = base_pixel_width
 
-        f_min, f_max = None, None
-        if self.filter_region:
-            v_low, v_high = self.filter_region.getRegion()
-            f_min, f_max = min(v_low, v_high), max(v_low, v_high)
+        f_min, f_max = self.get_active_filter_bounds()
         f_min_rel = (f_min - self.fc) if f_min is not None else None
         f_max_rel = (f_max - self.fc) if f_max is not None else None
 
@@ -472,11 +483,9 @@ class DataHandlerMixin:
         read_spr          = min(total_samples - read_start_sample, spr * 3)
 
         # Filter frequency offsets (relative to fc)
-        f_min_rel, f_max_rel = None, None
-        if self.filter_region:
-            v_lo, v_hi = self.filter_region.getRegion()
-            f_min_rel  = min(v_lo, v_hi) - self.fc
-            f_max_rel  = max(v_lo, v_hi) - self.fc
+        f_min, f_max = self.get_active_filter_bounds()
+        f_min_rel = (f_min - self.fc) if f_min is not None else None
+        f_max_rel = (f_max - self.fc) if f_max is not None else None
 
         self._multirow_worker = MultiRowProcessor(
             self.data_source, self.data_type, self.fft_size, self.rate,
@@ -597,11 +606,9 @@ class DataHandlerMixin:
                 complex_data = raw_data.astype(np.complex64)
 
             # Apply Filter if enabled
-            if hasattr(self, 'filter_mode') and self.filter_mode and self.filter_region:
+            f_min, f_max = self.get_active_filter_bounds()
+            if hasattr(self, 'filter_mode') and self.filter_mode and f_min is not None and f_max is not None:
                 from iqview.dsp import apply_filter
-                v_low, v_high = self.filter_region.getRegion()
-                f_min, f_max = min(v_low, v_high), max(v_low, v_high)
-
                 f_type = str(self.settings_mgr.get("core/filter_type", "Elliptic"))
                 f_order = int(self.settings_mgr.get("core/filter_order", 8))
                 f_ripple = float(self.settings_mgr.get("core/filter_ripple", 0.1))

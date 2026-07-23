@@ -67,28 +67,33 @@ class MarkerManagerMixin:
                 hit_threshold = 20 # pixels
                 best_idx = -1
                 min_dist = hit_threshold
-                
-                # Sticky Lock: If 2 bounds exist and a lock is on, always hit the closest one
-                is_locked = len(self.filter_bounds) == 2 and (
-                    self.marker_panel.btn_lock_delta.isChecked() or 
-                    self.marker_panel.btn_lock_center.isChecked()
-                )
-                
-                for i, b_val in enumerate(self.filter_bounds):
-                    if waterfall:
-                        p_scene = vb.mapViewToScene(pg.Point(0, b_val))
-                        dist = abs(scene_pos.x() - p_scene.x())
-                    else:
-                        p_scene = vb.mapViewToScene(pg.Point(0, b_val))
-                        dist = abs(scene_pos.y() - p_scene.y())
-                    if is_locked:
-                        # Bypass threshold, find global nearest
-                        if best_idx == -1 or dist < min_dist:
+
+                # Maintain active bound drag index while dragging mouse
+                if drag_mode and getattr(self, 'active_drag_filter_bound_idx', None) is not None:
+                    if 0 <= self.active_drag_filter_bound_idx < len(self.filter_bounds):
+                        best_idx = self.active_drag_filter_bound_idx
+                else:
+                    # Sticky Lock: If 2 bounds exist and a lock is on, always hit the closest one
+                    is_locked = len(self.filter_bounds) == 2 and (
+                        self.marker_panel.btn_lock_delta.isChecked() or 
+                        self.marker_panel.btn_lock_center.isChecked()
+                    )
+                    
+                    for i, b_val in enumerate(self.filter_bounds):
+                        if waterfall:
+                            p_scene = vb.mapViewToScene(pg.Point(0, b_val))
+                            dist = abs(scene_pos.x() - p_scene.x())
+                        else:
+                            p_scene = vb.mapViewToScene(pg.Point(0, b_val))
+                            dist = abs(scene_pos.y() - p_scene.y())
+                        if is_locked:
+                            # Bypass threshold, find global nearest
+                            if best_idx == -1 or dist < min_dist:
+                                min_dist = dist
+                                best_idx = i
+                        elif dist < min_dist:
                             min_dist = dist
                             best_idx = i
-                    elif dist < min_dist:
-                        min_dist = dist
-                        best_idx = i
                 
                 if best_idx != -1:
                     # Success: Drag existing bound
@@ -134,6 +139,7 @@ class MarkerManagerMixin:
                         if self.filter_line: self.filter_line.setPos(val)
                     else:
                         if self.filter_region: self.filter_region.setRegion(self.filter_bounds)
+                    self.sync_multi_row_markers()
                     self.update_marker_info()
                     return
 
@@ -183,9 +189,10 @@ class MarkerManagerMixin:
             if hasattr(self.marker_panel, 'cb_bpf'):
                 self.marker_panel.cb_bpf.setEnabled(True)
                 self.marker_panel.cb_bsf.setEnabled(True)
-                if not drag_mode:
+                if not drag_mode and len(self.filter_bounds) == 2:
                     self.on_filter_region_finished()
             
+            self.sync_multi_row_markers()
             self.update_marker_info()
             return
 
@@ -476,6 +483,7 @@ class MarkerManagerMixin:
             elif len(self.filter_bounds) == 2:
                 if self.filter_region: self.filter_region.setRegion(self.filter_bounds)
 
+            self.sync_multi_row_markers()
             self.update_marker_info()
             return
 
@@ -505,6 +513,7 @@ class MarkerManagerMixin:
             self.filter_region.show()
             if self.filter_line: self.filter_line.hide()
 
+            self.sync_multi_row_markers()
             self.update_marker_info()
             return
 
@@ -1020,11 +1029,75 @@ class MarkerManagerMixin:
         if hasattr(self, 'multi_row_view') and hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
             all_time = list(self.markers_time) + list(getattr(self, 'markers_time_endless', []))
             all_freq = list(self.markers_freq) + list(getattr(self, 'markers_freq_endless', []))
+
+            filter_bounds_raw = getattr(self, 'filter_bounds', [])
+            active_filter_region_bounds = None
+            filter_line_pos = None
+
+            if len(filter_bounds_raw) == 1:
+                filter_line_pos = filter_bounds_raw[0]
+                if hasattr(self, 'filter_region') and self.filter_region and self.filter_region.isVisible():
+                    try:
+                        active_filter_region_bounds = sorted(self.filter_region.getRegion())
+                    except Exception:
+                        pass
+            elif len(filter_bounds_raw) == 2:
+                active_filter_region_bounds = sorted(filter_bounds_raw)
+            elif hasattr(self, 'filter_region') and self.filter_region and self.filter_region.isVisible():
+                try:
+                    active_filter_region_bounds = sorted(self.filter_region.getRegion())
+                except Exception:
+                    pass
+
+            if filter_line_pos is None and hasattr(self, 'filter_line') and self.filter_line and self.filter_line.isVisible():
+                try:
+                    filter_line_pos = self.filter_line.value()
+                except Exception:
+                    pass
+
             self.multi_row_view.sync_markers(
                 all_time, all_freq,
                 self.spectrogram_view.is_waterfall,
                 self.settings_mgr.get("ui/theme", "Dark").lower(),
                 self.settings_mgr,
                 grid_time=self.grid_lines_time if getattr(self, 'grid_time_enabled', False) else [],
-                grid_freq=self.grid_lines_freq if getattr(self, 'grid_freq_enabled', False) else []
+                grid_freq=self.grid_lines_freq if getattr(self, 'grid_freq_enabled', False) else [],
+                filter_bounds=active_filter_region_bounds,
+                filter_line_pos=filter_line_pos
             )
+
+    def restore_1row_filter_ui(self):
+        """Ensure 1-row filter_region and filter_line items are attached and visible on 1-row spectrogram_view."""
+        bounds = getattr(self, 'filter_bounds', [])
+        waterfall = self.spectrogram_view.is_waterfall
+        filter_orient = 'vertical' if waterfall else 'horizontal'
+
+        if len(bounds) == 1:
+            val = bounds[0]
+            filter_line_angle = 90 if waterfall else 0
+            if not getattr(self, 'filter_line', None):
+                self.filter_line = pg.InfiniteLine(angle=filter_line_angle, pen=pg.mkPen('#ff6400', width=2, style=Qt.PenStyle.DashLine))
+                self.filter_line.setZValue(10)
+            if self.filter_line not in self.spectrogram_view.plot_item.items:
+                self.spectrogram_view.plot_item.addItem(self.filter_line)
+            self.filter_line.setPos(val)
+            self.filter_line.show()
+            if getattr(self, 'filter_region', None):
+                self.filter_region.hide()
+        elif len(bounds) == 2:
+            f1, f2 = bounds[0], bounds[1]
+            if getattr(self, 'filter_line', None):
+                self.filter_line.hide()
+            if not getattr(self, 'filter_region', None):
+                self.filter_region = pg.LinearRegionItem(
+                    values=[f1, f2], orientation=filter_orient,
+                    brush=pg.mkBrush(255, 100, 0, 40), pen=pg.mkPen('#ff6400', width=2),
+                    movable=False
+                )
+                self.filter_region.setZValue(9)
+                self.filter_region.sigRegionChanged.connect(self.on_filter_region_changed)
+                self.filter_region.sigRegionChangeFinished.connect(self.on_filter_region_finished)
+            if self.filter_region not in self.spectrogram_view.plot_item.items:
+                self.spectrogram_view.plot_item.addItem(self.filter_region)
+            self.filter_region.setRegion(sorted(bounds))
+            self.filter_region.show()
