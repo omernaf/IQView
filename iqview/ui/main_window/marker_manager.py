@@ -4,247 +4,274 @@ from PyQt6.QtCore import Qt
 from ..themes import get_palette
 
 class MarkerManagerMixin:
-    def place_marker(self, scene_pos, drag_mode=False):
+    def place_marker(self, scene_pos, drag_mode=False, source_vb=None):
         if self.interaction_mode in ['ZOOM', 'MOVE']:
             return
-            
-        if self.spectrogram_view.plot_item.sceneBoundingRect().contains(scene_pos):
+
+        # In multi-row mode the click comes from a different QGraphicsScene,
+        # so sceneBoundingRect() would always fail.  Use the calling viewbox
+        # directly if provided.
+        in_main_view = self.spectrogram_view.plot_item.sceneBoundingRect().contains(scene_pos)
+        in_multirow   = (source_vb is not None)
+
+        if not in_main_view and not in_multirow:
+            return
+
+        if in_multirow:
+            vb = source_vb
+        else:
             vb = self.spectrogram_view.plot_item.vb
-            mouse_v = vb.mapSceneToView(scene_pos)
-            waterfall = self.spectrogram_view.is_waterfall
+        mouse_v = vb.mapSceneToView(scene_pos)
+        waterfall = self.spectrogram_view.is_waterfall
+        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
+        is_endless = 'ENDLESS' in self.interaction_mode
+        
+        if is_endless:
+            active_markers = self.markers_time_endless if is_time else self.markers_freq_endless
+        else:
+            active_markers = self.markers_time if is_time else self.markers_freq
             
-            is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
-            is_endless = 'ENDLESS' in self.interaction_mode
-            
-            if is_endless:
-                active_markers = self.markers_time_endless if is_time else self.markers_freq_endless
-            else:
-                active_markers = self.markers_time if is_time else self.markers_freq
+        curr_min, curr_max = (0.0, self.time_duration) if is_time else (self.fc - self.rate/2, self.fc + self.rate/2)
+
+        # In standard mode: time markers are vertical (angle=90), placed on X.
+        #                   freq markers are horizontal (angle=0), placed on Y.
+        # In waterfall mode: time markers are horizontal (angle=0), placed on Y.
+        #                    freq markers are vertical (angle=90), placed on X.
+        if waterfall:
+            angle = 0 if is_time else 90
+        else:
+            angle = 90 if is_time else 0
+        
+        # 1. Determine the target logical value
+        if is_time:
+            # Time value is always on X in standard, Y in waterfall
+            raw_val = float(np.clip(
+                mouse_v.y() if waterfall else mouse_v.x(), 0.0, self.time_duration))
+            sample = int(round(raw_val * self.rate)) + 1
+            val = (sample - 1.0) / self.rate
+        else:
+            f_min = self.fc - self.rate/2
+            # Freq value is always on Y in standard, X in waterfall
+            raw_val = float(np.clip(
+                mouse_v.x() if waterfall else mouse_v.y(), f_min, self.fc + self.rate/2))
+            rbw = self.rate / self.fft_size
+            bin_idx = int(round((raw_val - f_min) / rbw)) + 1
+            val = f_min + (bin_idx - 1.0) * rbw
+
+        # 2. HIGHEST PRIORITY: Handle FILTER mode placement
+        if self.interaction_mode == 'FILTER':
+            # In waterfall mode the filter band spans time (Y); use vertical region.
+            filter_orient = 'vertical' if waterfall else 'horizontal'
+            # 1. Hit-test for existing bounds
+            if self.filter_bounds:
+                hit_threshold = 20 # pixels
+                best_idx = -1
+                min_dist = hit_threshold
                 
-            curr_min, curr_max = (0.0, self.time_duration) if is_time else (self.fc - self.rate/2, self.fc + self.rate/2)
-
-            # In standard mode: time markers are vertical (angle=90), placed on X.
-            #                   freq markers are horizontal (angle=0), placed on Y.
-            # In waterfall mode: time markers are horizontal (angle=0), placed on Y.
-            #                    freq markers are vertical (angle=90), placed on X.
-            if waterfall:
-                angle = 0 if is_time else 90
-            else:
-                angle = 90 if is_time else 0
-            
-            # 1. Determine the target logical value
-            if is_time:
-                # Time value is always on X in standard, Y in waterfall
-                raw_val = float(np.clip(
-                    mouse_v.y() if waterfall else mouse_v.x(), 0.0, self.time_duration))
-                sample = int(round(raw_val * self.rate)) + 1
-                val = (sample - 1.0) / self.rate
-            else:
-                f_min = self.fc - self.rate/2
-                # Freq value is always on Y in standard, X in waterfall
-                raw_val = float(np.clip(
-                    mouse_v.x() if waterfall else mouse_v.y(), f_min, self.fc + self.rate/2))
-                rbw = self.rate / self.fft_size
-                bin_idx = int(round((raw_val - f_min) / rbw)) + 1
-                val = f_min + (bin_idx - 1.0) * rbw
-
-            # 2. HIGHEST PRIORITY: Handle FILTER mode placement
-            if self.interaction_mode == 'FILTER':
-                # In waterfall mode the filter band spans time (Y); use vertical region.
-                filter_orient = 'vertical' if waterfall else 'horizontal'
-                # 1. Hit-test for existing bounds
-                if self.filter_bounds:
-                    hit_threshold = 20 # pixels
-                    vb = self.spectrogram_view.plot_item.vb
-                    best_idx = -1
-                    min_dist = hit_threshold
-                    
-                    # Sticky Lock: If 2 bounds exist and a lock is on, always hit the closest one
-                    is_locked = len(self.filter_bounds) == 2 and (
-                        self.marker_panel.btn_lock_delta.isChecked() or 
-                        self.marker_panel.btn_lock_center.isChecked()
-                    )
-                    
-                    for i, b_val in enumerate(self.filter_bounds):
-                        if waterfall:
-                            p_scene = vb.mapViewToScene(pg.Point(0, b_val))
-                            dist = abs(scene_pos.x() - p_scene.x())
-                        else:
-                            p_scene = vb.mapViewToScene(pg.Point(0, b_val))
-                            dist = abs(scene_pos.y() - p_scene.y())
-                        if is_locked:
-                            # Bypass threshold, find global nearest
-                            if best_idx == -1 or dist < min_dist:
-                                min_dist = dist
-                                best_idx = i
-                        elif dist < min_dist:
+                # Sticky Lock: If 2 bounds exist and a lock is on, always hit the closest one
+                is_locked = len(self.filter_bounds) == 2 and (
+                    self.marker_panel.btn_lock_delta.isChecked() or 
+                    self.marker_panel.btn_lock_center.isChecked()
+                )
+                
+                for i, b_val in enumerate(self.filter_bounds):
+                    if waterfall:
+                        p_scene = vb.mapViewToScene(pg.Point(0, b_val))
+                        dist = abs(scene_pos.x() - p_scene.x())
+                    else:
+                        p_scene = vb.mapViewToScene(pg.Point(0, b_val))
+                        dist = abs(scene_pos.y() - p_scene.y())
+                    if is_locked:
+                        # Bypass threshold, find global nearest
+                        if best_idx == -1 or dist < min_dist:
                             min_dist = dist
                             best_idx = i
-                    
-                    if best_idx != -1:
-                        # Success: Drag existing bound
-                        old_v = self.filter_bounds[best_idx]
-                        
-                        # --- LOCKED MOVEMENT SUPPORT ---
-                        if len(self.filter_bounds) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
-                            shift = val - old_v
-                            other_idx = 1 - best_idx
-                            other_old_v = self.filter_bounds[other_idx]
-                            
-                            f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
-                            
-                            if self.marker_panel.btn_lock_delta.isChecked():
-                                new_other_v = other_old_v + shift
-                                if f_min <= val <= f_max and f_min <= new_other_v <= f_max:
-                                    self.filter_bounds[best_idx] = val
-                                    self.filter_bounds[other_idx] = new_other_v
-                            elif self.marker_panel.btn_lock_center.isChecked():
-                                center = (old_v + other_old_v) / 2
-                                new_other_v = 2 * center - val
-                                if f_min <= val <= f_max and f_min <= new_other_v <= f_max:
-                                    self.filter_bounds[best_idx] = val
-                                    self.filter_bounds[other_idx] = new_other_v
-                            
-                            # Sync both values in the placement-order tracker
-                            for i, v in enumerate([old_v, other_old_v]):
-                                if v in self.filter_marker_order:
-                                    oidx = self.filter_marker_order.index(v)
-                                    self.filter_marker_order[oidx] = self.filter_bounds[best_idx if i==0 else other_idx]
-                        else:
-                            # Standard single bound jump
-                            self.filter_bounds[best_idx] = val 
-                            if old_v in self.filter_marker_order:
-                                oidx = self.filter_marker_order.index(old_v)
-                                self.filter_marker_order[oidx] = val
-                        
-                        # Maintain sorted state for UI/Region
-                        self.filter_bounds.sort()
-                        self.active_drag_filter_bound_idx = self.filter_bounds.index(val)
-                        
-                        if len(self.filter_bounds) == 1:
-                            if self.filter_line: self.filter_line.setPos(val)
-                        else:
-                            if self.filter_region: self.filter_region.setRegion(self.filter_bounds)
-                        self.update_marker_info()
-                        return
-
-                # 2. No hit - Place new bound or replace oldest in PLACEMENT ORDER
-                if len(self.filter_marker_order) >= 2:
-                    oldest_v = self.filter_marker_order.pop(0)
-                    if oldest_v in self.filter_bounds:
-                        self.filter_bounds.remove(oldest_v)
-
-                self.filter_marker_order.append(val)
-                self.filter_bounds.append(val)
-                self.filter_bounds.sort()
-                self.active_drag_filter_bound_idx = self.filter_bounds.index(val)
+                    elif dist < min_dist:
+                        min_dist = dist
+                        best_idx = i
                 
-                if len(self.filter_bounds) == 1:
-                    if not self.filter_line:
-                        # In waterfall mode the single-bound preview is a vertical line
-                        filter_line_angle = 90 if waterfall else 0
-                        self.filter_line = pg.InfiniteLine(angle=filter_line_angle, pen=pg.mkPen('#ff6400', width=2, style=Qt.PenStyle.DashLine))
-                        self.filter_line.setZValue(10)
-                    if self.filter_line not in self.spectrogram_view.plot_item.items:
-                        self.spectrogram_view.plot_item.addItem(self.filter_line)
-                    self.filter_line.setPos(val)
-                    self.filter_line.show()
-                else:
-                    if self.filter_line: self.filter_line.hide()
-                    f1 = self.filter_bounds[0]
-                    f2 = self.filter_bounds[1]
-                    if not self.filter_region:
-                        # Lazily create the region with the correct orientation
-                        self.filter_region = pg.LinearRegionItem(
-                            values=[f1, f2], orientation=filter_orient,
-                            brush=pg.mkBrush(255, 100, 0, 40), pen=pg.mkPen('#ff6400', width=2),
-                            movable=False
-                        )
-                        self.filter_region.setZValue(9)
-                        self.filter_region.sigRegionChanged.connect(self.on_filter_region_changed)
-                        self.filter_region.sigRegionChangeFinished.connect(self.on_filter_region_finished)
-
-                    if self.filter_region not in self.spectrogram_view.plot_item.items:
-                        self.spectrogram_view.plot_item.addItem(self.filter_region)
+                if best_idx != -1:
+                    # Success: Drag existing bound
+                    old_v = self.filter_bounds[best_idx]
+                    
+                    # --- LOCKED MOVEMENT SUPPORT ---
+                    if len(self.filter_bounds) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+                        shift = val - old_v
+                        other_idx = 1 - best_idx
+                        other_old_v = self.filter_bounds[other_idx]
+                        
+                        f_min, f_max = self.fc - self.rate/2, self.fc + self.rate/2
+                        
+                        if self.marker_panel.btn_lock_delta.isChecked():
+                            new_other_v = other_old_v + shift
+                            if f_min <= val <= f_max and f_min <= new_other_v <= f_max:
+                                self.filter_bounds[best_idx] = val
+                                self.filter_bounds[other_idx] = new_other_v
+                        elif self.marker_panel.btn_lock_center.isChecked():
+                            center = (old_v + other_old_v) / 2
+                            new_other_v = 2 * center - val
+                            if f_min <= val <= f_max and f_min <= new_other_v <= f_max:
+                                self.filter_bounds[best_idx] = val
+                                self.filter_bounds[other_idx] = new_other_v
+                        
+                        # Sync both values in the placement-order tracker
+                        for i, v in enumerate([old_v, other_old_v]):
+                            if v in self.filter_marker_order:
+                                oidx = self.filter_marker_order.index(v)
+                                self.filter_marker_order[oidx] = self.filter_bounds[best_idx if i==0 else other_idx]
                     else:
-                        self.filter_region.setRegion(self.filter_bounds)
-                        self.filter_region.show()
+                        # Standard single bound jump
+                        self.filter_bounds[best_idx] = val 
+                        if old_v in self.filter_marker_order:
+                            oidx = self.filter_marker_order.index(old_v)
+                            self.filter_marker_order[oidx] = val
                     
-                    self.filter_placed = True
-                if hasattr(self.marker_panel, 'cb_bpf'):
-                    self.marker_panel.cb_bpf.setEnabled(True)
-                    self.marker_panel.cb_bsf.setEnabled(True)
-                    if not drag_mode:
-                        self.on_filter_region_finished()
-                
-                self.update_marker_info()
-                return
+                    # Maintain sorted state for UI/Region
+                    self.filter_bounds.sort()
+                    self.active_drag_filter_bound_idx = self.filter_bounds.index(val)
+                    
+                    if len(self.filter_bounds) == 1:
+                        if self.filter_line: self.filter_line.setPos(val)
+                    else:
+                        if self.filter_region: self.filter_region.setRegion(self.filter_bounds)
+                    self.update_marker_info()
+                    return
 
-            # 3. SECOND PRIORITY: Hit-test for dragging a single marker or grid line
-            hit_threshold = 20 # pixels
-            best_marker = None
-            min_dist = float('inf')
+            # 2. No hit - Place new bound or replace oldest in PLACEMENT ORDER
+            if len(self.filter_marker_order) >= 2:
+                oldest_v = self.filter_marker_order.pop(0)
+                if oldest_v in self.filter_bounds:
+                    self.filter_bounds.remove(oldest_v)
+
+            self.filter_marker_order.append(val)
+            self.filter_bounds.append(val)
+            self.filter_bounds.sort()
+            self.active_drag_filter_bound_idx = self.filter_bounds.index(val)
             
-            for m in active_markers:
-                m_pos = m.value()
+            if len(self.filter_bounds) == 1:
+                if not self.filter_line:
+                    # In waterfall mode the single-bound preview is a vertical line
+                    filter_line_angle = 90 if waterfall else 0
+                    self.filter_line = pg.InfiniteLine(angle=filter_line_angle, pen=pg.mkPen('#ff6400', width=2, style=Qt.PenStyle.DashLine))
+                    self.filter_line.setZValue(10)
+                if self.filter_line not in self.spectrogram_view.plot_item.items:
+                    self.spectrogram_view.plot_item.addItem(self.filter_line)
+                self.filter_line.setPos(val)
+                self.filter_line.show()
+            else:
+                if self.filter_line: self.filter_line.hide()
+                f1 = self.filter_bounds[0]
+                f2 = self.filter_bounds[1]
+                if not self.filter_region:
+                    # Lazily create the region with the correct orientation
+                    self.filter_region = pg.LinearRegionItem(
+                        values=[f1, f2], orientation=filter_orient,
+                        brush=pg.mkBrush(255, 100, 0, 40), pen=pg.mkPen('#ff6400', width=2),
+                        movable=False
+                    )
+                    self.filter_region.setZValue(9)
+                    self.filter_region.sigRegionChanged.connect(self.on_filter_region_changed)
+                    self.filter_region.sigRegionChangeFinished.connect(self.on_filter_region_finished)
+
+                if self.filter_region not in self.spectrogram_view.plot_item.items:
+                    self.spectrogram_view.plot_item.addItem(self.filter_region)
+                else:
+                    self.filter_region.setRegion(self.filter_bounds)
+                    self.filter_region.show()
+                
+                self.filter_placed = True
+            if hasattr(self.marker_panel, 'cb_bpf'):
+                self.marker_panel.cb_bpf.setEnabled(True)
+                self.marker_panel.cb_bsf.setEnabled(True)
+                if not drag_mode:
+                    self.on_filter_region_finished()
+            
+            self.update_marker_info()
+            return
+
+        # 3. SECOND PRIORITY: Hit-test for dragging a single marker or grid line
+        hit_threshold = 20 # pixels
+        best_marker = None
+        min_dist = float('inf')
+        
+        for m in active_markers:
+            m_pos = m.value()
+            if waterfall:
+                # time markers live on Y; freq markers live on X
+                if is_time:
+                    p_scene = vb.mapViewToScene(pg.Point(0, m_pos))
+                    dist = abs(scene_pos.y() - p_scene.y())
+                else:
+                    p_scene = vb.mapViewToScene(pg.Point(m_pos, 0))
+                    dist = abs(scene_pos.x() - p_scene.x())
+            else:
+                p_scene = vb.mapViewToScene(pg.Point(m_pos, 0)) if is_time else vb.mapViewToScene(pg.Point(0, m_pos))
+                dist = abs(scene_pos.x() - p_scene.x()) if is_time else abs(scene_pos.y() - p_scene.y())
+            
+            # Skip the locked marker so only the free one is draggable
+            if len(active_markers) == 2 and (
+                self.marker_panel.btn_lock_m1.isChecked() or
+                self.marker_panel.btn_lock_m2.isChecked()
+            ):
+                sorted_m = sorted(active_markers, key=lambda m: m.value())
+                locked_marker = sorted_m[0] if self.marker_panel.btn_lock_m1.isChecked() else sorted_m[1]
+                if m is locked_marker:
+                    continue
+
+            if dist < hit_threshold and dist < min_dist:
+                min_dist = dist
+                best_marker = m
+
+        # If we hit a marker, move it and handle the logic (may move others if locked)
+        if best_marker:
+            is_drag_target = (self.active_drag_marker == best_marker)
+            
+            # If a lock is active, move the other marker too
+            if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+                other_marker = [m for m in active_markers if m is not best_marker][0]
+                shift = val - best_marker.value()
+                
+                old_v1, old_v2 = best_marker.value(), other_marker.value()
+                f_min, f_max = (0.0, self.time_duration) if is_time else (self.fc - self.rate/2, self.fc + self.rate/2)
+                
+                if self.marker_panel.btn_lock_delta.isChecked():
+                    new_other_v = old_v2 + shift
+                    if f_min <= val <= f_max and f_min <= new_other_v <= f_max:
+                        best_marker.setValue(val)
+                        other_marker.setValue(new_other_v)
+                elif self.marker_panel.btn_lock_center.isChecked():
+                    center = (old_v1 + old_v2) / 2
+                    new_other_v = 2 * center - val
+                    if f_min <= val <= f_max and f_min <= new_other_v <= f_max:
+                        best_marker.setValue(val)
+                        other_marker.setValue(new_other_v)
+            else:
+                best_marker.setValue(val)
+
+            if drag_mode:
+                self.active_drag_marker = best_marker
+            self.update_marker_info()
+            return
+
+        # 4. THIRD PRIORITY: Hit-test for SHADOW MARKERS (grid lines)
+        if is_time:
+            grid_lines = getattr(self, 'grid_lines_time', [])
+            grid_enabled = getattr(self, 'grid_time_enabled', False)
+            grid_tracking = getattr(self, 'grid_time_tracking', False)
+        else:
+            grid_lines = getattr(self, 'grid_lines_freq', [])
+            grid_enabled = getattr(self, 'grid_freq_enabled', False)
+            grid_tracking = getattr(self, 'grid_freq_tracking', False)
+
+        if grid_enabled and len(grid_lines) > 0:
+            for gl in grid_lines:
+                gl_pos = gl.value()
                 if waterfall:
-                    # time markers live on Y; freq markers live on X
-                    if is_time:
-                        p_scene = vb.mapViewToScene(pg.Point(0, m_pos))
-                        dist = abs(scene_pos.y() - p_scene.y())
-                    else:
-                        p_scene = vb.mapViewToScene(pg.Point(m_pos, 0))
-                        dist = abs(scene_pos.x() - p_scene.x())
+                    p_scene = vb.mapViewToScene(pg.Point(0, gl_pos)) if is_time else vb.mapViewToScene(pg.Point(gl_pos, 0))
+                    dist = abs(scene_pos.y() - p_scene.y()) if is_time else abs(scene_pos.x() - p_scene.x())
                 else:
-                    p_scene = vb.mapViewToScene(pg.Point(m_pos, 0)) if is_time else vb.mapViewToScene(pg.Point(0, m_pos))
+                    p_scene = vb.mapViewToScene(pg.Point(gl_pos, 0)) if is_time else vb.mapViewToScene(pg.Point(0, gl_pos))
                     dist = abs(scene_pos.x() - p_scene.x()) if is_time else abs(scene_pos.y() - p_scene.y())
-                
-                # Skip the locked marker so only the free one is draggable
-                if len(active_markers) == 2 and (
-                    self.marker_panel.btn_lock_m1.isChecked() or
-                    self.marker_panel.btn_lock_m2.isChecked()
-                ):
-                    sorted_m = sorted(active_markers, key=lambda m: m.value())
-                    locked_marker = sorted_m[0] if self.marker_panel.btn_lock_m1.isChecked() else sorted_m[1]
-                    if m is locked_marker:
-                        continue
-
-                if dist < hit_threshold and dist < min_dist:
-                    min_dist = dist
-                    best_marker = m
-
-            # If we hit a marker, move it and handle the logic (may move others if locked)
-            if best_marker:
-                is_drag_target = (self.active_drag_marker == best_marker) # Not really needed here, we just hit it
-                
-                # If a lock is active, move the other marker too
-                if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
-                    old_v = best_marker.value()
-                    shift = val - old_v
-                    other = active_markers[0] if active_markers[1] == best_marker else active_markers[1]
-                    
-                    if self.marker_panel.btn_lock_delta.isChecked():
-                        other_new = other.value() + shift
-                        if curr_min <= val <= curr_max and curr_min <= other_new <= curr_max:
-                            best_marker.setPos(val)
-                            other.setPos(other_new)
-                    elif self.marker_panel.btn_lock_center.isChecked():
-                        ct = (old_v + other.value()) / 2
-                        other_new = 2 * ct - val
-                        if curr_min <= val <= curr_max and curr_min <= other_new <= curr_max:
-                            best_marker.setPos(val)
-                            other.setPos(other_new)
-                else:
-                    best_marker.setPos(val)
-
-                if drag_mode: self.active_drag_marker = best_marker
-                self.update_marker_info()
-                return
-
-            # Check for Grid Lines (Shadow Markers)
-            if self.interaction_mode in ['TIME', 'FREQ']:
-                grid_lines = getattr(self, 'grid_lines_time' if is_time else 'grid_lines_freq', [])
-                best_gl = None
                 min_gl_dist = 20 # pixels
                 
                 for gl in grid_lines:
@@ -753,6 +780,7 @@ class MarkerManagerMixin:
 
         self.update_grid('TIME')
         self.update_grid('FREQ')
+        self.sync_multi_row_markers()
 
     def marker_edit_finished(self):
         sender = self.sender()
@@ -991,3 +1019,13 @@ class MarkerManagerMixin:
         for m in self.markers_freq:
             m.setPen(pg.mkPen(f_color, width=2, style=f_style))
             m.setAngle(f_angle)
+        self.sync_multi_row_markers()
+
+    def sync_multi_row_markers(self):
+        if hasattr(self, 'multi_row_view') and hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
+            self.multi_row_view.sync_markers(
+                self.markers_time, self.markers_freq,
+                self.spectrogram_view.is_waterfall,
+                self.settings_mgr.get("ui/theme", "Dark").lower(),
+                self.settings_mgr
+            )

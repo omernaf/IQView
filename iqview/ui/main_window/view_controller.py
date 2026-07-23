@@ -153,6 +153,82 @@ class ViewControllerMixin:
         if getattr(self, 'filter_mode', None) and self._has_data():
             self.start_processing()
 
+    def on_multirow_changed(self, params):
+        """Slot for SidePanel.multirowChanged signal.
+
+        Validates / auto-computes missing values, stores them, and triggers
+        reprocessing.  Also switches the QStackedWidget back to the standard
+        view when num_rows <= 1.
+        """
+        num_rows = max(1, params.get('num_rows', 1))
+
+        if num_rows <= 1:
+            # Return to single-row / standard mode
+            self._multirow_num_rows = 1
+            if hasattr(self, 'spectrogram_stack'):
+                self.spectrogram_stack.setCurrentIndex(0)
+            if self._has_data():
+                self.start_processing()
+            return
+
+        # --- Multi-row active ---
+        start_sample = max(0, params.get('start_sample', 0))
+        spr          = max(0, params.get('samples_per_row', 0))
+        period       = max(0, params.get('period', 0))
+
+        # Auto-compute missing values from file
+        if self._has_data():
+            total = self.get_total_samples()
+            if spr <= 0:
+                spr = max(1, total // num_rows)
+            if period <= 0:
+                period = spr
+            # Update sidebar with computed defaults
+            if hasattr(self, 'sidebar'):
+                self.sidebar.update_multirow_defaults(spr, period)
+        else:
+            spr    = max(1, spr)
+            period = max(1, period)
+
+        # Clamp/validate frequency boundaries to [fc - fs/2, fc + fs/2]
+        f_min_def = self.fc - self.rate / 2.0
+        f_max_def = self.fc + self.rate / 2.0
+
+        f_min = params.get('freq_min', f_min_def)
+        f_max = params.get('freq_max', f_max_def)
+
+        f_min = float(np.clip(f_min, f_min_def, f_max_def - 1.0))
+        f_max = float(np.clip(f_max, f_min + 1.0, f_max_def))
+
+        # Push back validated bounds to sidebar inputs
+        if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'freq_min_edit'):
+            self.sidebar.freq_min_edit.set_hz(f_min)
+            self.sidebar.freq_max_edit.set_hz(f_max)
+
+        # Check if processing parameters changed (only re-process if row segmentation params change)
+        prev_num_rows = getattr(self, '_multirow_num_rows', 1)
+        prev_start    = getattr(self, '_multirow_start_sample', 0)
+        prev_spr      = getattr(self, '_multirow_samples_per_row', 0)
+        prev_period   = getattr(self, '_multirow_period', 0)
+
+        needs_reprocess = (
+            num_rows != prev_num_rows or
+            start_sample != prev_start or
+            spr != prev_spr or
+            period != prev_period
+        )
+
+        self._multirow_num_rows       = num_rows
+        self._multirow_start_sample   = start_sample
+        self._multirow_samples_per_row = spr
+        self._multirow_period         = period
+
+        if hasattr(self, 'multi_row_view'):
+            self.multi_row_view.set_freq_range(f_min, f_max)
+
+        if needs_reprocess and self._has_data():
+            self.start_processing()
+
     def refresh_cursor(self):
         active_tab = self.tabs.currentWidget()
         if active_tab and active_tab != self.spectrogram_view:
@@ -322,16 +398,20 @@ class ViewControllerMixin:
 
     def reset_zoom(self):
         active_tab = self.tabs.currentWidget()
-        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'reset_zoom'):
+        if active_tab and active_tab != self.spec_tab_page and hasattr(active_tab, 'reset_zoom'):
             active_tab.reset_zoom()
+        elif hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
+            self.multi_row_view.reset_zoom()
         else:
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             self._zoom_to_full_range()
 
     def reset_zoom_x(self):
         active_tab = self.tabs.currentWidget()
-        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'reset_zoom_x'):
+        if active_tab and active_tab != self.spec_tab_page and hasattr(active_tab, 'reset_zoom_x'):
             active_tab.reset_zoom_x()
+        elif hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
+            self.multi_row_view.reset_zoom_x()
         else:
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             sv = self.spectrogram_view
@@ -351,8 +431,10 @@ class ViewControllerMixin:
 
     def reset_zoom_y(self):
         active_tab = self.tabs.currentWidget()
-        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'reset_zoom_y'):
+        if active_tab and active_tab != self.spec_tab_page and hasattr(active_tab, 'reset_zoom_y'):
             active_tab.reset_zoom_y()
+        elif hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
+            self.multi_row_view.reset_zoom_y()
         else:
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             sv = self.spectrogram_view
@@ -386,10 +468,12 @@ class ViewControllerMixin:
         else:
             sv.plot_item.autoRange()
 
-    def handle_zoom_rectangle(self, rect, zoom_type='BOTH'):
+    def handle_zoom_rectangle(self, rect, zoom_type='BOTH', source_vb=None):
         active_tab = self.tabs.currentWidget()
-        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'handle_zoom_rectangle'):
+        if active_tab and active_tab != self.spec_tab_page and hasattr(active_tab, 'handle_zoom_rectangle'):
             active_tab.handle_zoom_rectangle(rect, zoom_type)
+        elif hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
+            self.multi_row_view.handle_zoom_rectangle(rect, zoom_type, source_vb=source_vb)
         else:
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             if rect.width() <= 0 and zoom_type != 'Y_ONLY': return
@@ -400,7 +484,7 @@ class ViewControllerMixin:
 
     def fit_to_markers(self):
         active_tab = self.tabs.currentWidget()
-        if active_tab and active_tab != self.spectrogram_view and hasattr(active_tab, 'fit_to_markers'):
+        if active_tab and active_tab != self.spec_tab_page and hasattr(active_tab, 'fit_to_markers'):
             active_tab.fit_to_markers()
             return
 
@@ -410,6 +494,11 @@ class ViewControllerMixin:
             active_markers = self.markers_freq_endless if is_freq else self.markers_time_endless
         else:
             active_markers = self.markers_freq if is_freq else self.markers_time
+
+        if hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
+            self.multi_row_view.fit_to_markers(active_markers)
+            return
+
         if len(active_markers) == 2:
             self.zoom_history.append(self.spectrogram_view.plot_item.viewRect())
             v1, v2 = active_markers[0].value(), active_markers[1].value()
@@ -794,6 +883,16 @@ class ViewControllerMixin:
 
         # Clear all markers using refactored method
         self.clear_all_markers()
+
+        # Reset multi-row state for the new file
+        self._multirow_num_rows        = 1
+        self._multirow_start_sample    = 0
+        self._multirow_samples_per_row = 0
+        self._multirow_period          = 0
+        if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'num_rows_edit'):
+            self.sidebar.num_rows_edit.setText('1')
+        if hasattr(self, 'spectrogram_stack'):
+            self.spectrogram_stack.setCurrentIndex(0)
 
         # Close all Time Domain tabs (keep index 0 = Spectrogram)
 

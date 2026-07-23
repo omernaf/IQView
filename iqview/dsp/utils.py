@@ -509,3 +509,195 @@ class ViewportAwareReader(QThread):
     def stop(self):
         self.running = False
         self.wait()
+
+
+class MultiRowProcessor(QThread):
+    """Compute spectrograms for multiple row segments of an IQ file.
+
+    Each row covers the sample range
+        [start_sample + i * period,  start_sample + i * period + samples_per_row]
+
+    Signals
+    -------
+    progress(current_row, total_rows)
+    finished(list_of_ndarrays)
+        Each element has shape (fft_size, num_time_cols).
+    """
+
+    progress = pyqtSignal(int, int)
+    finished = pyqtSignal(list)
+
+    MAX_COLS = 2000  # cap time-bins per row to prevent memory blowup
+
+    def __init__(self, source, dtype, fft_size, sample_rate, num_rows,
+                 start_sample, samples_per_row, period,
+                 is_complex=True, window_type="Hanning", overlap_percent=99.0,
+                 window_size=None, filter_mode=None, f_min=None, f_max=None,
+                 **kwargs):
+        super().__init__()
+        self.source         = source
+        self.dtype          = dtype
+        self.fft_size       = fft_size
+        self.sample_rate    = sample_rate
+        self.num_rows       = int(num_rows)
+        self.start_sample   = int(start_sample)
+        self.samples_per_row = int(max(1, samples_per_row))
+        self.period         = int(max(1, period))
+        self.is_complex     = is_complex
+        self.window_size    = window_size if window_size is not None else fft_size
+        self.running        = True
+
+        # Window function
+        if window_type == "Hanning":
+            self.window = np.hanning(self.window_size).astype(np.float32)
+        elif window_type == "Hamming":
+            self.window = np.hamming(self.window_size).astype(np.float32)
+        elif window_type == "Blackman":
+            self.window = np.blackman(self.window_size).astype(np.float32)
+        elif window_type == "Bartlett":
+            self.window = np.bartlett(self.window_size).astype(np.float32)
+        else:
+            self.window = np.ones(self.window_size, dtype=np.float32)
+
+        # Compute step size, capping time columns to MAX_COLS
+        req_step = max(1, int(self.window_size * (1.0 - overlap_percent / 100.0)))
+        if self.samples_per_row > self.window_size:
+            natural_cols = (self.samples_per_row - self.window_size) // req_step + 1
+        else:
+            natural_cols = 1
+
+        if natural_cols > self.MAX_COLS:
+            # Scale step up so we get at most MAX_COLS columns
+            self.step_size = max(
+                req_step,
+                (self.samples_per_row - self.window_size) // (self.MAX_COLS - 1)
+            )
+            self.num_cols = min(
+                self.MAX_COLS,
+                max(1, (self.samples_per_row - self.window_size) // self.step_size + 1)
+            )
+        else:
+            self.step_size = req_step
+            self.num_cols  = max(1, natural_cols)
+
+        # Precompute frequency-domain BPF/BSF mask
+        self.freq_mask = None
+        if filter_mode in ['bpf', 'bsf'] and f_min is not None and f_max is not None:
+            filter_data, f_center, is_fir = design_filter(sample_rate, f_min, f_max, **kwargs)
+            if filter_data is not None:
+                bin_freqs = np.fft.fftshift(np.fft.fftfreq(fft_size, 1.0 / sample_rate))
+                f_eval    = bin_freqs - f_center
+                if is_fir:
+                    _, h = signal.freqz(filter_data, [1.0], f_eval, fs=sample_rate)
+                else:
+                    _, h = signal.sosfreqz(filter_data, f_eval, fs=sample_rate)
+                h_abs = np.abs(h).astype(np.float32)
+                self.freq_mask = (1.0 - h_abs) if filter_mode == 'bsf' else h_abs
+
+    # ------------------------------------------------------------------
+    def run(self):
+        try:
+            item_size  = np.dtype(self.dtype).itemsize
+            read_mult  = 2 if self.is_complex else 1
+
+            # Total samples available in the source
+            if isinstance(self.source, (bytes, bytearray)):
+                file_size = len(self.source)
+            else:
+                file_size = os.path.getsize(self.source)
+            total_samples = (file_size // item_size) // read_mult
+
+            if isinstance(self.source, (bytes, bytearray)):
+                data_file = io.BytesIO(self.source)
+            else:
+                data_file = open(self.source, 'rb')
+
+            results = []
+            with data_file as f:
+                for row_i in range(self.num_rows):
+                    if not self.running:
+                        return
+
+                    seg_start = self.start_sample + row_i * self.period
+                    seg_end   = seg_start + self.samples_per_row
+
+                    # Clamp to file bounds
+                    actual_start = max(0, seg_start)
+                    actual_end   = min(total_samples, seg_end)
+
+                    if actual_end <= actual_start or self.num_cols <= 0:
+                        results.append(
+                            np.full((self.fft_size, 1), -100.0, dtype=np.float32)
+                        )
+                        self.progress.emit(row_i + 1, self.num_rows)
+                        continue
+
+                    # Read segment bytes
+                    offset_bytes = actual_start * read_mult * item_size
+                    f.seek(offset_bytes)
+                    raw_bytes = f.read((actual_end - actual_start) * read_mult * item_size)
+
+                    # Truncate to a whole number of samples
+                    usable    = (len(raw_bytes) // item_size) * item_size
+                    raw_bytes = raw_bytes[:usable]
+
+                    if len(raw_bytes) == 0:
+                        results.append(
+                            np.full((self.fft_size, 1), -100.0, dtype=np.float32)
+                        )
+                        self.progress.emit(row_i + 1, self.num_rows)
+                        continue
+
+                    raw_array = np.frombuffer(raw_bytes, dtype=self.dtype).astype(np.float32)
+                    if self.dtype == np.int16:
+                        raw_array /= 32768.0
+
+                    if self.is_complex:
+                        complex_data = raw_array[0::2] + 1j * raw_array[1::2]
+                    else:
+                        complex_data = raw_array.astype(np.complex64)
+
+                    # Zero-pad if shorter than samples_per_row
+                    if len(complex_data) < self.samples_per_row:
+                        padded    = np.zeros(self.samples_per_row, dtype=np.complex64)
+                        lead_pad  = max(0, -seg_start)          # zeros before file
+                        end_idx   = lead_pad + len(complex_data)
+                        if end_idx > self.samples_per_row:
+                            complex_data = complex_data[: self.samples_per_row - lead_pad]
+                            end_idx      = self.samples_per_row
+                        padded[lead_pad:end_idx] = complex_data
+                        complex_data = padded
+
+                    # Compute spectrogram — shape (num_cols, fft_size)
+                    spec = np.zeros((self.num_cols, self.fft_size), dtype=np.float32)
+                    for col_i in range(self.num_cols):
+                        s     = col_i * self.step_size
+                        chunk = complex_data[s: s + self.window_size]
+                        if len(chunk) < self.window_size:
+                            pad   = np.zeros(self.window_size, dtype=np.complex64)
+                            pad[:len(chunk)] = chunk
+                            chunk = pad
+                        windowed = chunk * self.window
+                        fft_out  = np.fft.fft(windowed, n=self.fft_size)
+                        shifted  = np.fft.fftshift(fft_out)
+                        if self.freq_mask is not None:
+                            shifted *= self.freq_mask
+                        mag       = np.abs(shifted)
+                        mag       = np.maximum(mag, np.float32(1e-10))
+                        spec[col_i] = 20.0 * np.log10(mag)
+
+                    # Transpose to (fft_size, num_cols) — matches SpectrogramView convention
+                    results.append(spec.T)
+                    self.progress.emit(row_i + 1, self.num_rows)
+
+            if self.running:
+                self.finished.emit(results)
+
+        except Exception as e:
+            print(f"[MultiRowProcessor] Error: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def stop(self):
+        self.running = False
+        self.wait()

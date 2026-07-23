@@ -121,6 +121,8 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
         if hasattr(self, 'spectrogram_view'):
             self.spectrogram_view.refresh_theme()
             self.refresh_spectrogram_markers()
+        if hasattr(self, 'multi_row_view'):
+            self.multi_row_view.refresh_theme()
         if hasattr(self, '_overlay_items'):
             self.refresh_overlays_theme()
         
