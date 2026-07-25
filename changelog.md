@@ -5,6 +5,9 @@
 ### Added
 - **Multi-Row Stacked Spectrogram View**: Added a Multi-Row Spectrogram mode for analyzing periodic signals across $N$ vertically stacked viewports. Includes configurable rows count, samples per row, and row period, real-time single-source-of-truth time/frequency axis synchronization, zoom level preservation, and full bi-directional synchronization with markers, BPF/BSF filter regions, overlays, and side-panel colormap controls.
 
+### Fixed
+- **Full Mode Zoom Out Crash**: Fixed a `TypeError` crash (`SpectrogramView.update_spectrogram() missing 1 required positional argument: 't_end'`) when zooming out after zooming in while running in full mode. Added missing time range parameters when restoring the cached full spectrogram and made `t_end` optional in `update_spectrogram()` for backward compatibility.
+
 ## [0.6.0] - 2026-07-18
 
 ### Added
