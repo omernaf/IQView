@@ -44,6 +44,7 @@ iqview/ui/detached_window.py
 iqview/ui/export_dialog.py
 iqview/ui/eye_diagram_dialog.py
 iqview/ui/marker_panel.py
+iqview/ui/multi_row_view.py
 iqview/ui/overlay.py
 iqview/ui/overlay_dialog.py
 iqview/ui/settings_dialog.py

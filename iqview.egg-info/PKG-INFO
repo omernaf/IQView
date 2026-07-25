@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: iqview
-Version: 0.6.0
+Version: 0.6.1
 Summary: High-performance Static RF Spectrogram Viewer
 Requires-Python: >=3.9
 Description-Content-Type: text/markdown
@@ -213,7 +213,7 @@ For a deep dive into the specific features and mathematical foundations of each 
 
 - [🌌 **Spectrogram View**](docs/spectrogram.md): STFT, windowing, colormaps, and OpenGL rendering.
 - [⏳ **Time Domain View**](docs/time_domain.md): Plot modes, marker locking logic, and statistics.
-- [📶 **Frequency Domain View**](docs/frequency_domain.md): FFT analysis, PSD estimation, and integrated power.
+- [📶 **Frequency Domain View**](docs/frequency_domain.md): FFT analysis, PSD estimation, preprocessing operators, and integrated power.
 - [👁️ **Eye Diagram View**](docs/eye_diagram.md): Symbol timing visualization, fractional Nsps, and phase alignment.
 
 ---
