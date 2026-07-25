@@ -8,10 +8,10 @@ Features:
  - Integer Downsampling Factor N (with Baud Rate info)
  - Dynamic Sample Offset slider ranging from 0 to N-1
  - Two-tier (Coarse + Fine) Carrier Phase sliders centered at 0°
- - Three-tier (Coarse + Medium + Fine) Frequency Offset sliders centered at 0 Hz
+ - Three-tier (Coarse + Medium + Fine) Frequency Offset sliders dynamically scaled with fs
  - Mini waveform overview with two draggable range handles
  - Plot controls: Point size, trajectory lines, quadrant crosshairs, unit circle
- - High-contrast Dark/Light theme integration
+ - High-contrast Dark/Light theme integration with fully functional spinbox buttons
 """
 
 from __future__ import annotations
@@ -100,9 +100,9 @@ class ConstellationView(QWidget):
         self._sample_offset = 0
         self._phase_coarse = 0.0     # [-180, +180] deg
         self._phase_fine = 0.0       # [-5, +5] deg
-        self._freq_coarse = 0.0      # [-rate/2, +rate/2] Hz (Coarse / Wide)
-        self._freq_medium = 0.0      # [-1000, +1000] Hz (Medium)
-        self._freq_fine = 0.0        # [-50, +50] Hz (Fine)
+        self._freq_coarse = 0.0      # [-rate/2, +rate/2] Hz
+        self._freq_medium = 0.0      # [-coarse/1000, +coarse/1000] Hz
+        self._freq_fine = 0.0        # [-medium/1000, +medium/1000] Hz
 
         # Plot customization
         self._point_size = 4
@@ -174,14 +174,15 @@ class ConstellationView(QWidget):
         tl.setContentsMargins(8, 4, 8, 4)
         tl.setSpacing(12)
 
-        # Point size (adequately sized spinbox)
+        # Point size (adequately sized spinbox with working step controls)
         lbl_pt = QLabel("Point Size:")
         tl.addWidget(lbl_pt)
         self._spin_point_size = QSpinBox()
         self._spin_point_size.setRange(1, 20)
+        self._spin_point_size.setSingleStep(1)
         self._spin_point_size.setValue(self._point_size)
-        self._spin_point_size.setFixedWidth(75)
-        self._spin_point_size.setMinimumWidth(75)
+        self._spin_point_size.setFixedWidth(80)
+        self._spin_point_size.setMinimumWidth(80)
         self._spin_point_size.valueChanged.connect(self._on_point_size_changed)
         tl.addWidget(self._spin_point_size)
 
@@ -296,7 +297,7 @@ class ConstellationView(QWidget):
                 return s._lo + (s.value() / s._ticks) * (s._hi - s._lo)
 
             def _set(v):
-                frac = (v - s._lo) / (s._hi - s._lo)
+                frac = (v - s._lo) / (s._hi - s._lo) if (s._hi != s._lo) else 0.0
                 s.setValue(int(round(max(0.0, min(1.0, frac)) * s._ticks)))
 
             _set(init)
@@ -311,8 +312,9 @@ class ConstellationView(QWidget):
         self._sld_downsample = _make_int_slider(1, 500, init=1)
         self._spin_downsample = QSpinBox()
         self._spin_downsample.setRange(1, 10000)
+        self._spin_downsample.setSingleStep(1)
         self._spin_downsample.setValue(1)
-        self._spin_downsample.setFixedWidth(75)
+        self._spin_downsample.setFixedWidth(80)
 
         row_ds = QHBoxLayout()
         row_ds.addWidget(self._sld_downsample)
@@ -323,8 +325,9 @@ class ConstellationView(QWidget):
         self._sld_offset = _make_int_slider(0, 0, init=0)
         self._spin_offset = QSpinBox()
         self._spin_offset.setRange(0, 0)
+        self._spin_offset.setSingleStep(1)
         self._spin_offset.setValue(0)
-        self._spin_offset.setFixedWidth(75)
+        self._spin_offset.setFixedWidth(80)
 
         row_off = QHBoxLayout()
         row_off.addWidget(self._sld_offset)
@@ -346,9 +349,10 @@ class ConstellationView(QWidget):
         self._sld_p_coarse, self._get_p_coarse, self._set_p_coarse = _make_float_slider(-180.0, 180.0, 0.0)
         self._spin_p_coarse = QDoubleSpinBox()
         self._spin_p_coarse.setRange(-180.0, 180.0)
+        self._spin_p_coarse.setSingleStep(1.0)
         self._spin_p_coarse.setDecimals(1)
         self._spin_p_coarse.setSuffix("°")
-        self._spin_p_coarse.setFixedWidth(75)
+        self._spin_p_coarse.setFixedWidth(85)
 
         row_pc = QHBoxLayout()
         row_pc.addWidget(self._sld_p_coarse)
@@ -358,9 +362,10 @@ class ConstellationView(QWidget):
         self._sld_p_fine, self._get_p_fine, self._set_p_fine = _make_float_slider(-5.0, 5.0, 0.0)
         self._spin_p_fine = QDoubleSpinBox()
         self._spin_p_fine.setRange(-5.0, 5.0)
+        self._spin_p_fine.setSingleStep(0.1)
         self._spin_p_fine.setDecimals(2)
         self._spin_p_fine.setSuffix("°")
-        self._spin_p_fine.setFixedWidth(75)
+        self._spin_p_fine.setFixedWidth(85)
 
         row_pf = QHBoxLayout()
         row_pf.addWidget(self._sld_p_fine)
@@ -368,7 +373,7 @@ class ConstellationView(QWidget):
         fl_phase.addRow("Fine:", row_pf)
 
         btn_reset_phase = QPushButton("Reset 0°")
-        btn_reset_phase.setFixedWidth(75)
+        btn_reset_phase.setFixedWidth(85)
         btn_reset_phase.clicked.connect(self._on_reset_phase)
         fl_phase.addRow("", btn_reset_phase)
 
@@ -379,45 +384,55 @@ class ConstellationView(QWidget):
 
         cl.addWidget(grp_phase, stretch=2)
 
-        # ── 3. Frequency Offset Group (3 Tiers) ─────────────────────────────
+        # ── 3. Frequency Offset Group (Dynamically Scaled with fs) ─────────
         grp_freq = QGroupBox("Frequency Offset")
         fl_freq = QFormLayout(grp_freq)
         fl_freq.setSpacing(4)
 
-        max_fc = float(self._rate / 2.0)
-        # Tier 1: Coarse [-fs/2, +fs/2]
-        self._sld_f_coarse, self._get_f_coarse, self._set_f_coarse = _make_float_slider(-max_fc, max_fc, 0.0)
+        # Dynamic frequency bounds based on fs:
+        # Tier 1: Coarse  [-fs/2, +fs/2]
+        # Tier 2: Medium  1000x finer than Coarse -> [-coarse/1000, +coarse/1000]
+        # Tier 3: Fine    1000x finer than Medium -> [-medium/1000, +medium/1000]
+        max_f_coarse = max(10.0, float(self._rate / 2.0))
+        max_f_medium = max(0.1, max_f_coarse / 1000.0)
+        max_f_fine = max(0.0001, max_f_medium / 1000.0)
+
+        # Tier 1: Coarse
+        self._sld_f_coarse, self._get_f_coarse, self._set_f_coarse = _make_float_slider(-max_f_coarse, max_f_coarse, 0.0)
         self._spin_f_coarse = QDoubleSpinBox()
-        self._spin_f_coarse.setRange(-max_fc, max_fc)
+        self._spin_f_coarse.setRange(-max_f_coarse, max_f_coarse)
+        self._spin_f_coarse.setSingleStep(max(0.1, round(max_f_coarse / 100.0, 1)))
         self._spin_f_coarse.setDecimals(1)
         self._spin_f_coarse.setSuffix(" Hz")
-        self._spin_f_coarse.setFixedWidth(95)
+        self._spin_f_coarse.setFixedWidth(105)
 
         row_fc = QHBoxLayout()
         row_fc.addWidget(self._sld_f_coarse)
         row_fc.addWidget(self._spin_f_coarse)
         fl_freq.addRow("Coarse:", row_fc)
 
-        # Tier 2: Medium [-1000, +1000] Hz
-        self._sld_f_medium, self._get_f_medium, self._set_f_medium = _make_float_slider(-1000.0, 1000.0, 0.0)
+        # Tier 2: Medium (1000x finer)
+        self._sld_f_medium, self._get_f_medium, self._set_f_medium = _make_float_slider(-max_f_medium, max_f_medium, 0.0)
         self._spin_f_medium = QDoubleSpinBox()
-        self._spin_f_medium.setRange(-1000.0, 1000.0)
-        self._spin_f_medium.setDecimals(1)
+        self._spin_f_medium.setRange(-max_f_medium, max_f_medium)
+        self._spin_f_medium.setSingleStep(max(0.01, round(max_f_medium / 100.0, 3)))
+        self._spin_f_medium.setDecimals(3 if max_f_medium < 100 else 1)
         self._spin_f_medium.setSuffix(" Hz")
-        self._spin_f_medium.setFixedWidth(95)
+        self._spin_f_medium.setFixedWidth(105)
 
         row_fm = QHBoxLayout()
         row_fm.addWidget(self._sld_f_medium)
         row_fm.addWidget(self._spin_f_medium)
         fl_freq.addRow("Medium:", row_fm)
 
-        # Tier 3: Fine [-50, +50] Hz
-        self._sld_f_fine, self._get_f_fine, self._set_f_fine = _make_float_slider(-50.0, 50.0, 0.0)
+        # Tier 3: Fine (1000x finer than Medium)
+        self._sld_f_fine, self._get_f_fine, self._set_f_fine = _make_float_slider(-max_f_fine, max_f_fine, 0.0)
         self._spin_f_fine = QDoubleSpinBox()
-        self._spin_f_fine.setRange(-50.0, 50.0)
-        self._spin_f_fine.setDecimals(2)
+        self._spin_f_fine.setRange(-max_f_fine, max_f_fine)
+        self._spin_f_fine.setSingleStep(max(0.0001, round(max_f_fine / 100.0, 5)))
+        self._spin_f_fine.setDecimals(5 if max_f_fine < 1 else 3)
         self._spin_f_fine.setSuffix(" Hz")
-        self._spin_f_fine.setFixedWidth(95)
+        self._spin_f_fine.setFixedWidth(105)
 
         row_ff = QHBoxLayout()
         row_ff.addWidget(self._sld_f_fine)
@@ -425,7 +440,7 @@ class ConstellationView(QWidget):
         fl_freq.addRow("Fine:", row_ff)
 
         btn_reset_freq = QPushButton("Reset 0 Hz")
-        btn_reset_freq.setFixedWidth(95)
+        btn_reset_freq.setFixedWidth(105)
         btn_reset_freq.clicked.connect(self._on_reset_freq)
         fl_freq.addRow("", btn_reset_freq)
 
@@ -763,7 +778,7 @@ class ConstellationView(QWidget):
                 pi.getAxis(ax).setPen(p.text_dim)
                 pi.getAxis(ax).setTextPen(p.text_dim)
 
-        # High-contrast theme stylesheet for controls and headers
+        # High-contrast theme stylesheet with fully functional spinbox subcontrols
         style = f"""
             QWidget {{
                 color: {p.text_main};
@@ -795,7 +810,36 @@ class ConstellationView(QWidget):
                 color: {p.text_main};
                 border: 1px solid {p.border};
                 border-radius: 3px;
-                padding: 2px 4px;
+                padding: 2px 18px 2px 4px;
+            }}
+            QSpinBox::up-button, QDoubleSpinBox::up-button {{
+                subcontrol-origin: border;
+                subcontrol-position: top right;
+                width: 16px;
+                border-left: 1px solid {p.border};
+                border-bottom: 1px solid {p.border};
+                background-color: {p.bg_widget};
+            }}
+            QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover {{
+                background-color: {p.accent_dim};
+            }}
+            QSpinBox::down-button, QDoubleSpinBox::down-button {{
+                subcontrol-origin: border;
+                subcontrol-position: bottom right;
+                width: 16px;
+                border-left: 1px solid {p.border};
+                background-color: {p.bg_widget};
+            }}
+            QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{
+                background-color: {p.accent_dim};
+            }}
+            QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
+                width: 7px;
+                height: 7px;
+            }}
+            QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
+                width: 7px;
+                height: 7px;
             }}
             QPushButton {{
                 background-color: {p.bg_widget};
