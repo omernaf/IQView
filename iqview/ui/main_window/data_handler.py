@@ -297,7 +297,7 @@ class DataHandlerMixin:
             if getattr(self, '_zoom_hires_active', False):
                 self.spectrogram_view.update_spectrogram(
                     self.full_spectrogram_cache, self.fc, self.rate,
-                    self.time_duration, auto_range=False
+                    0.0, self.time_duration, auto_range=False
                 )
                 self._zoom_hires_active = False
             return

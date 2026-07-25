@@ -76,7 +76,7 @@ class ViewControllerMixin:
 
             if not needs_reprocess and hasattr(self, 'full_spectrogram_cache'):
                 self.spectrogram_view.update_spectrogram(
-                    self.full_spectrogram_cache, self.fc, self.rate, self.time_duration, auto_range=False
+                    self.full_spectrogram_cache, self.fc, self.rate, 0.0, self.time_duration, auto_range=False
                 )
         self.update_marker_info()
 

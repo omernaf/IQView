@@ -187,6 +187,7 @@ class SpectrogramView(QWidget):
                     self._last_spectrogram,
                     self._last_fc,
                     self._last_rate,
+                    self.full_t_range[0],
                     self.full_t_range[1],
                     auto_range=True,
                 )
@@ -451,7 +452,10 @@ class SpectrogramView(QWidget):
 
         self._update_spectrum_envelope(spectrogram, fc, rate, min_v, max_v, auto_range)
 
-    def update_spectrogram(self, full_spectrogram, fc, rate, t_start, t_end, auto_range=True):
+    def update_spectrogram(self, full_spectrogram, fc, rate, t_start, t_end=None, auto_range=True):
+        if t_end is None:
+            t_end = t_start
+            t_start = 0.0
         min_v, max_v = self._compute_auto_levels(full_spectrogram)
         
         # Current levels
