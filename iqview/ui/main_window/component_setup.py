@@ -432,14 +432,16 @@ class UIComponentsMixin:
             self.update_tab_names()
 
     def update_tab_names(self):
-        """Update tab names dynamically: 'Time Domain', 'Freq Domain', or 'Eye Diagram'."""
+        """Update tab names dynamically: 'Time Domain', 'Freq Domain', 'Eye Diagram', or 'Constellation'."""
         from ..time_domain.view import TimeDomainView
         from ..frequency_domain.view import FrequencyDomainView
         from ..eye_diagram_dialog import EyeDiagramView
+        from ..constellation_dialog import ConstellationView
 
         td_indices = []
         fd_indices = []
         ed_indices = []
+        cd_indices = []
 
         for i in range(1, self.tabs.count()):
             widget = self.tabs.widget(i)
@@ -449,6 +451,8 @@ class UIComponentsMixin:
                 fd_indices.append(i)
             elif isinstance(widget, EyeDiagramView):
                 ed_indices.append(i)
+            elif isinstance(widget, ConstellationView):
+                cd_indices.append(i)
 
         # Update Time Domain tabs
         if len(td_indices) == 1:
@@ -470,3 +474,10 @@ class UIComponentsMixin:
         elif len(ed_indices) > 1:
             for i, idx in enumerate(ed_indices):
                 self.tabs.setTabText(idx, f"Eye Diagram ({i+1})")
+
+        # Update Constellation tabs
+        if len(cd_indices) == 1:
+            self.tabs.setTabText(cd_indices[0], "Constellation")
+        elif len(cd_indices) > 1:
+            for i, idx in enumerate(cd_indices):
+                self.tabs.setTabText(idx, f"Constellation ({i+1})")

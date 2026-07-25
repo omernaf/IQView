@@ -567,6 +567,9 @@ class CustomViewBox(pg.ViewBox):
             ed_popup_act = menu.addAction("Eye Diagram Popup")
             ed_popup_act.triggered.connect(self.ui_controller.open_eye_diagram_tab)
 
+            cd_popup_act = menu.addAction("Constellation Popup")
+            cd_popup_act.triggered.connect(self.ui_controller.open_constellation_tab)
+
         # Add Dock Back if detached
         # To avoid circular imports, check if the window class name is DetachedViewWindow
         if self.ui_controller.window().__class__.__name__ == "DetachedViewWindow":

@@ -380,6 +380,28 @@ class ViewControllerMixin:
             self.tabs.setCurrentWidget(view)
             self.update_tab_names()
 
+    def open_constellation_tab(self):
+        """Extracts IQ data for the selected time range and opens a Constellation / Scatter Plot tab."""
+        markers = self.markers_time
+        if len(markers) < 2:
+            xr, yr = self.spectrogram_view.view_box.viewRange()
+            time_range = yr if self.spectrogram_view.is_waterfall else xr
+            start_t, end_t = time_range
+        else:
+            sorted_m = sorted(markers, key=lambda m: m.value())
+            start_t, end_t = sorted_m[0].value(), sorted_m[1].value()
+
+        if not self._confirm_large_segment(start_t, end_t, "Constellation"):
+            return
+
+        segment = self.extract_iq_segment(start_t, end_t)
+        if segment is not None:
+            from ..constellation_dialog import ConstellationView
+            view = ConstellationView(segment, self.rate, parent_window=self)
+            self.tabs.addTab(view, "Constellation")
+            self.tabs.setCurrentWidget(view)
+            self.update_tab_names()
+
     def undock_tab(self, index, initial_pos=None):
         """Moves a tab from the QTabWidget to a standalone window.
         
@@ -430,11 +452,14 @@ class ViewControllerMixin:
         from ..time_domain.view import TimeDomainView
         from ..frequency_domain.view import FrequencyDomainView
         from ..eye_diagram_dialog import EyeDiagramView
+        from ..constellation_dialog import ConstellationView
 
         if isinstance(widget, TimeDomainView):
             label = "Time Domain"
         elif isinstance(widget, EyeDiagramView):
             label = "Eye Diagram"
+        elif isinstance(widget, ConstellationView):
+            label = "Constellation"
         else:
             label = "Freq Domain"
         self.tabs.addTab(widget, label)
