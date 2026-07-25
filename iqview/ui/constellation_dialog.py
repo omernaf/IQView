@@ -107,7 +107,7 @@ class ConstellationView(QWidget):
         # Plot customization
         self._point_size = 4
         self._show_trajectory = False
-        self._show_crosshairs = True
+        self._show_crosshairs = False
 
         # Suppress recursive slider signal loops
         self._updating = False
@@ -125,7 +125,7 @@ class ConstellationView(QWidget):
         self._plot_item = self._plot_widget.getPlotItem()
         self._plot_item.setMenuEnabled(False)
         self._plot_item.hideButtons()
-        self._plot_item.showGrid(x=True, y=True, alpha=0.2)
+        self._plot_item.showGrid(x=self._show_crosshairs, y=self._show_crosshairs, alpha=0.2)
         self._plot_item.setLabel('bottom', 'In-Phase (I)')
         self._plot_item.setLabel('left', 'Quadrature (Q)')
         self._plot_item.setAspectLocked(True, 1.0)
@@ -133,6 +133,8 @@ class ConstellationView(QWidget):
         # Crosshairs at I=0, Q=0
         self._cross_v = pg.InfiniteLine(pos=0, angle=90, pen=pg.mkPen('#555555', width=1, style=Qt.PenStyle.DashLine))
         self._cross_h = pg.InfiniteLine(pos=0, angle=0, pen=pg.mkPen('#555555', width=1, style=Qt.PenStyle.DashLine))
+        self._cross_v.setVisible(self._show_crosshairs)
+        self._cross_h.setVisible(self._show_crosshairs)
         self._plot_item.addItem(self._cross_v)
         self._plot_item.addItem(self._cross_h)
 
@@ -142,6 +144,7 @@ class ConstellationView(QWidget):
             np.cos(t_circle), np.sin(t_circle),
             pen=pg.mkPen('#444444', width=1, style=Qt.PenStyle.DotLine)
         )
+        self._unit_circle.setVisible(self._show_crosshairs)
         self._plot_item.addItem(self._unit_circle)
 
         # Constellation data item
@@ -673,6 +676,7 @@ class ConstellationView(QWidget):
 
     def _on_crosshairs_toggled(self, checked: bool):
         self._show_crosshairs = checked
+        self._plot_item.showGrid(x=checked, y=checked, alpha=0.2)
         self._cross_v.setVisible(checked)
         self._cross_h.setVisible(checked)
         self._unit_circle.setVisible(checked)
