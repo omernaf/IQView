@@ -3,6 +3,7 @@
 ## [0.6.1] - 2026-07-23
 
 ### Added
+- **Interactive Scatter Plot Popup View**: Added a new **Scatter Plot Popup** analysis tab (`Scatter Plot`) for IQ constellation visualization and tuning. Features integer downsampling ($N \ge 1$), a dynamic sub-symbol offset slider ($0 \dots N-1$), two-tier coarse and fine carrier phase rotation controls, three-tier frequency offset despinning sliders (Coarse $\pm f_s/2$, Medium $\pm f_s/2000$, Fine $\pm f_s/2,000,000$), point size controls, trajectory tracing, $I/Q$ crosshairs, unit circle overlays, a mini waveform overview with draggable segment handles, and full docking/undocking support.
 - **Multi-Row Stacked Spectrogram View**: Added a Multi-Row Spectrogram mode for analyzing periodic signals across $N$ vertically stacked viewports. Includes configurable rows count, samples per row, and row period, real-time single-source-of-truth time/frequency axis synchronization, zoom level preservation, and full bi-directional synchronization with markers, BPF/BSF filter regions, overlays, and side-panel colormap controls.
 
 ### Fixed
