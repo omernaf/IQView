@@ -1018,11 +1018,15 @@ class MarkerManagerMixin:
         f_angle = 90 if waterfall else 0
         
         for m in list(self.markers_time) + list(getattr(self, 'markers_time_endless', [])):
+            val = m.value()
             m.setPen(pg.mkPen(t_color, width=2, style=t_style))
             m.setAngle(t_angle)
+            m.setPos(val)
         for m in list(self.markers_freq) + list(getattr(self, 'markers_freq_endless', [])):
+            val = m.value()
             m.setPen(pg.mkPen(f_color, width=2, style=f_style))
             m.setAngle(f_angle)
+            m.setPos(val)
         self.sync_multi_row_markers()
 
     def sync_multi_row_markers(self):
