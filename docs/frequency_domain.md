@@ -45,6 +45,25 @@ Applying a window function $w[n]$ (e.g. Hamming, Hann) attenuates signal power a
 
 ---
 
+## ⚡ Preprocessing Operators
+
+The Frequency Domain view includes a **Preprocessing** dropdown in the control bar. Preprocessing applies mathematical or demodulation transformations to the time-domain signal segment $x[n]$ prior to computing the FFT or PSD. This enables searching for hidden periodicities, carrier recovery harmonics, symbol rates, and modulation characteristics.
+
+| Operator | Formula / Definition | Primary Applications & Use Cases |
+| :--- | :--- | :--- |
+| **Normal** | $x[n]$ | Unmodified input signal (standard spectrum). |
+| **2nd Power** | $x[n]^2$ | **BPSK Carrier & Symbol Rate Recovery**: Squares the complex signal to eliminate 180° phase reversals, producing a distinct spectral peak at $2f_c$ or $2 \times \text{baud rate}$. |
+| **4th Power** | $x[n]^4$ | **QPSK / 4-QAM Carrier Recovery**: Raises complex samples to the 4th power to remove 90° phase constellation ambiguity, revealing the carrier harmonic at $4f_c$. |
+| **Absolute Value** | $\|x[n]\|$ | **Envelope & AM Spectrum**: Computes the magnitude envelope of the signal. Ideal for AM demodulation, symbol rate harmonic extraction, and OOK/ASK pulse analysis. |
+| **FM Demod** | $f_{\text{inst}}[n] = \frac{\text{unwrap}(\Delta \arg(x[n]))}{2\pi} f_s$ | **FM/FSK Baseband Spectrum**: Derives instantaneous frequency over time using phase differentiation (including Hilbert transform for real signals and median filtering). Computes the spectrum of the demodulated FM message or FSK tones. |
+| **2nd Power FM** | $(f_{\text{inst}}[n])^2$ | **Nonlinear FM / Sub-Carrier Analysis**: Squares the instantaneous frequency series to highlight periodic sub-carriers or sweep rates in FSK/Chirp signals. |
+| **Delay & Multiply** | $x[n] \cdot x^*[n-1]$ | **Clock & Baud Rate Recovery**: Computes the differential phase product (1-sample lag autocorrelation). Generates strong spectral spikes at the symbol/baud clock frequency for non-coherent DPSK, GFSK, and CPM signals. |
+
+> [!NOTE]
+> When a non-Normal preprocessing operator is selected, interactive frequency filtering (BPF/BSF) is disabled as filtering applies to original baseband signals rather than nonlinearly transformed sequences.
+
+---
+
 ## 🛠️ Filter Overlays & Zero-Phase Filtering
 
 Users can interactively design and apply Band-Pass (BPF) and Band-Stop (BSF) filters directly from the Frequency Domain view:
