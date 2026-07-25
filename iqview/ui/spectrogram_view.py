@@ -175,13 +175,23 @@ class SpectrogramView(QWidget):
         """Re-render the current cached image in the new orientation and update all
         axis labels, scrollbars, and the spectrum envelope sync.
         Called from on_settings_applied() after the user changes the waterfall checkbox."""
+        # 1. Capture current viewport bounds before orientation toggle
+        xr, yr = self.view_box.viewRange()
+        prev_was_waterfall = not self.is_waterfall
+        if prev_was_waterfall:
+            f_min, f_max = xr[0], xr[1]
+            t_min, t_max = yr[0], yr[1]
+        else:
+            t_min, t_max = xr[0], xr[1]
+            f_min, f_max = yr[0], yr[1]
+
         self._apply_axis_labels()
 
         # In waterfall mode time is on the Y axis; invert it so t=0 is at the top
         # (newest data scrolls down, matching the conventional waterfall direction).
         self.view_box.invertY(self.is_waterfall)
 
-        # Re-render using cached data if available
+        # Re-render using cached data if available (with auto_range=False to preserve zoom)
         if self._last_spectrogram is not None and self._last_fc is not None:
             if self._last_t_start is not None:
                 # lazy tile path
@@ -191,7 +201,7 @@ class SpectrogramView(QWidget):
                     self._last_rate,
                     self._last_t_start,
                     self._last_t_end,
-                    auto_range=True,
+                    auto_range=False,
                 )
             else:
                 # full spectrogram path
@@ -201,12 +211,28 @@ class SpectrogramView(QWidget):
                     self._last_rate,
                     self.full_t_range[0],
                     self.full_t_range[1],
-                    auto_range=True,
+                    auto_range=False,
                 )
+
+        # Restore the exact zoomed range in the new orientation
+        if (t_max > t_min) and (f_max > f_min):
+            if self.is_waterfall:
+                self.plot_item.setXRange(f_min, f_max, padding=0)
+                self.plot_item.setYRange(t_min, t_max, padding=0)
+            else:
+                self.plot_item.setXRange(t_min, t_max, padding=0)
+                self.plot_item.setYRange(f_min, f_max, padding=0)
+
         self.update_scrollbars()
         # Update angles of any already-placed markers
         if hasattr(self.parent_window, 'refresh_spectrogram_markers'):
             self.parent_window.refresh_spectrogram_markers()
+        # Update filter region and filter line orientation
+        if hasattr(self.parent_window, 'restore_1row_filter_ui'):
+            self.parent_window.restore_1row_filter_ui()
+        # Update custom overlays for the new orientation
+        if hasattr(self.parent_window, 'refresh_overlays_theme'):
+            self.parent_window.refresh_overlays_theme()
         # Update marker button icons/tooltips in the panel
         if hasattr(self.parent_window, 'marker_panel'):
             self.parent_window.marker_panel.refresh_waterfall_ui()

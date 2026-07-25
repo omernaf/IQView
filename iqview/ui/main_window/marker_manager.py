@@ -1017,10 +1017,10 @@ class MarkerManagerMixin:
         # Standard: freq=horizontal(0), waterfall: freq=vertical(90)
         f_angle = 90 if waterfall else 0
         
-        for m in self.markers_time:
+        for m in list(self.markers_time) + list(getattr(self, 'markers_time_endless', [])):
             m.setPen(pg.mkPen(t_color, width=2, style=t_style))
             m.setAngle(t_angle)
-        for m in self.markers_freq:
+        for m in list(self.markers_freq) + list(getattr(self, 'markers_freq_endless', [])):
             m.setPen(pg.mkPen(f_color, width=2, style=f_style))
             m.setAngle(f_angle)
         self.sync_multi_row_markers()
@@ -1078,6 +1078,8 @@ class MarkerManagerMixin:
             if not getattr(self, 'filter_line', None):
                 self.filter_line = pg.InfiniteLine(angle=filter_line_angle, pen=pg.mkPen('#ff6400', width=2, style=Qt.PenStyle.DashLine))
                 self.filter_line.setZValue(10)
+            else:
+                self.filter_line.setAngle(filter_line_angle)
             if self.filter_line not in self.spectrogram_view.plot_item.items:
                 self.spectrogram_view.plot_item.addItem(self.filter_line)
             self.filter_line.setPos(val)
@@ -1088,6 +1090,14 @@ class MarkerManagerMixin:
             f1, f2 = bounds[0], bounds[1]
             if getattr(self, 'filter_line', None):
                 self.filter_line.hide()
+
+            # Recreate filter_region if orientation changed
+            if getattr(self, 'filter_region', None) is not None:
+                if self.filter_region.orientation != filter_orient:
+                    if self.filter_region in self.spectrogram_view.plot_item.items:
+                        self.spectrogram_view.plot_item.removeItem(self.filter_region)
+                    self.filter_region = None
+
             if not getattr(self, 'filter_region', None):
                 self.filter_region = pg.LinearRegionItem(
                     values=[f1, f2], orientation=filter_orient,

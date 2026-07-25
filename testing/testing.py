@@ -43,9 +43,9 @@ def main():
         sys.executable, main_py,
         "-f", filename,
         "-r", str(sample_rate),
-        "--lazy",
+        # "--lazy",
         # "--name", "lazy"
-        # "--full",
+        "--full",
         # "--name", "full"
     ]
     
