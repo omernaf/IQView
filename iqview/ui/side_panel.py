@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (QFrame, QGridLayout, QLabel, QLineEdit,
                               QVBoxLayout, QHBoxLayout, QComboBox,
-                              QPushButton, QTabWidget, QWidget)
+                              QPushButton, QTabWidget, QWidget, QCheckBox)
 from PyQt6.QtCore import pyqtSignal, Qt, QObject
 from PyQt6.QtGui import QFont, QPixmap
 from PyQt6 import QtGui
@@ -374,8 +374,13 @@ class SidePanel(QFrame):
         lyt.setSpacing(2)
         lyt.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        # --- MULTI-ROW SETTINGS ---
-        self._add_section_header(lyt, "Multi-Row")
+        # --- SPECTROGRAM SETTINGS ---
+        self._add_section_header(lyt, "Spectrogram Settings")
+
+        self.waterfall_cb = QCheckBox("Waterfall Mode")
+        self.waterfall_cb.setToolTip("Toggle Waterfall Orientation for the current session (Freq → X, Time → Y)")
+        self.waterfall_cb.toggled.connect(self.on_waterfall_toggled)
+        lyt.addWidget(self.waterfall_cb)
 
         lyt.addWidget(QLabel("Number of Rows"))
         self.num_rows_edit = QLineEdit("1")
@@ -419,14 +424,15 @@ class SidePanel(QFrame):
         lyt.addWidget(self.freq_min_edit)
 
         tip = QLabel(
-            "Set Rows > 1 and press\n"
-            "Enter to activate multi-row."
+            "Press Enter in any field to\n"
+            "update view range & zoom.\n"
+            "Set Rows > 1 for multi-row."
         )
         tip.setStyleSheet("color: #666; font-size: 10px; margin-top: 8px;")
         lyt.addWidget(tip)
 
         lyt.addStretch()
-        self.tab_widget.addTab(tab, "Multi-Row")
+        self.tab_widget.addTab(tab, "Spectrogram\nSettings")
 
     # ------------------------------------------------------------------
     # Settings dialog
@@ -607,6 +613,19 @@ class SidePanel(QFrame):
         self.period_edit.setText(str(period))
         if start_sample is not None and hasattr(self, 'start_sample_edit'):
             self.start_sample_edit.setText(str(start_sample))
+
+    def on_waterfall_toggled(self, checked):
+        """Slot when the user toggles Waterfall Mode in the Spectrogram Settings tab."""
+        if self.parent_window and hasattr(self.parent_window, 'spectrogram_view'):
+            if self.parent_window.spectrogram_view.is_waterfall != checked:
+                self.parent_window.spectrogram_view.set_waterfall_mode(checked)
+
+    def update_waterfall_checkbox(self):
+        """Sync checkbox state with active spectrogram view orientation."""
+        if hasattr(self, 'waterfall_cb') and self.parent_window and hasattr(self.parent_window, 'spectrogram_view'):
+            self.waterfall_cb.blockSignals(True)
+            self.waterfall_cb.setChecked(self.parent_window.spectrogram_view.is_waterfall)
+            self.waterfall_cb.blockSignals(False)
 
     # ------------------------------------------------------------------
     # Version checker

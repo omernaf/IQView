@@ -283,6 +283,8 @@ class UIComponentsMixin:
 
         # Standard spectrogram view
         self.spectrogram_view = SpectrogramView(self)
+        if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'update_waterfall_checkbox'):
+            self.sidebar.update_waterfall_checkbox()
 
         # Multi-row view
         from ..multi_row_view import MultiRowSpectrogramView

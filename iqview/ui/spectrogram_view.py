@@ -130,6 +130,9 @@ class SpectrogramView(QWidget):
         self._last_t_end = None    # for lazy tiles
         self._last_auto_range = False
 
+        # Session-specific waterfall override (None = fallback to Settings default)
+        self._session_waterfall = None
+
         # Connect signals
         self.view_box.sigRangeChanged.connect(self.update_scrollbars)
         self.view_box.sigRangeChanged.connect(lambda: self.parent_window.update_grid('TIME'))
@@ -145,7 +148,16 @@ class SpectrogramView(QWidget):
     @property
     def is_waterfall(self):
         """True when waterfall mode is enabled (Freq→X, Time→Y)."""
-        return bool(self.parent_window.settings_mgr.get("ui/waterfall", False))
+        if self._session_waterfall is not None:
+            return self._session_waterfall
+        if self.parent_window and hasattr(self.parent_window, 'settings_mgr'):
+            return bool(self.parent_window.settings_mgr.get("ui/waterfall", False))
+        return False
+
+    def set_waterfall_mode(self, enabled):
+        """Set waterfall mode for current session and re-render."""
+        self._session_waterfall = bool(enabled)
+        self.apply_waterfall_mode()
 
     def _axis_labels_for_mode(self):
         """Return (bottom_label, left_label) appropriate for current mode."""
@@ -198,6 +210,9 @@ class SpectrogramView(QWidget):
         # Update marker button icons/tooltips in the panel
         if hasattr(self.parent_window, 'marker_panel'):
             self.parent_window.marker_panel.refresh_waterfall_ui()
+        # Sync sidebar checkbox
+        if hasattr(self.parent_window, 'sidebar') and hasattr(self.parent_window.sidebar, 'update_waterfall_checkbox'):
+            self.parent_window.sidebar.update_waterfall_checkbox()
 
     # ---- Level / Gradient ----
 

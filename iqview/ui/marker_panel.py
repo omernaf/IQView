@@ -429,7 +429,7 @@ class MarkerPanel(QFrame):
     def refresh_waterfall_ui(self):
         """Called from apply_waterfall_mode() when the user toggles the Waterfall setting.
         Swaps button icons and refreshes the current table headers."""
-        waterfall = self.parent_window.settings_mgr.get("ui/waterfall", False)
+        waterfall = self.parent_window.spectrogram_view.is_waterfall if (hasattr(self, 'parent_window') and hasattr(self.parent_window, 'spectrogram_view')) else False
         self._apply_marker_button_icons(waterfall)
         # Re-apply current mode so row labels also refresh
         self.update_headers(self.current_mode)
@@ -577,7 +577,7 @@ class MarkerPanel(QFrame):
         self.current_mode = mode
         
         # Keep marker button icons in sync with the current waterfall setting
-        waterfall = self.parent_window.settings_mgr.get("ui/waterfall", False)
+        waterfall = self.parent_window.spectrogram_view.is_waterfall if (hasattr(self, 'parent_window') and hasattr(self.parent_window, 'spectrogram_view')) else False
         self._apply_marker_button_icons(waterfall)
         
         # Track the last valid marker mode to display in the table
@@ -995,7 +995,7 @@ class MarkerPanel(QFrame):
         self.btn_overlay.setIcon(self._get_icon("overlays"))
         
         # TIME/FREQ marker icons depend on waterfall state — delegate
-        waterfall = self.parent_window.settings_mgr.get("ui/waterfall", False)
+        waterfall = self.parent_window.spectrogram_view.is_waterfall if (hasattr(self, 'parent_window') and hasattr(self.parent_window, 'spectrogram_view')) else False
         self._apply_marker_button_icons(waterfall)
         
         self.setStyleSheet(f"""

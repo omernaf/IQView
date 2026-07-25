@@ -186,11 +186,23 @@ class ViewControllerMixin:
             self._multirow_num_rows = 1
             if hasattr(self, 'spectrogram_stack'):
                 self.spectrogram_stack.setCurrentIndex(0)
-            if hasattr(self, 'spectrogram_view'):
-                if self.spectrogram_view.is_waterfall:
-                    self.spectrogram_view.plot_item.setXRange(f_min, f_max, padding=0)
+            if hasattr(self, 'spectrogram_view') and self.spectrogram_view:
+                waterfall = self.spectrogram_view.is_waterfall
+                rate = max(getattr(self, 'rate', 1.0), 1.0)
+                if spr > 0:
+                    t_min = start_sample / rate
+                    t_max = (start_sample + spr) / rate
+                    if waterfall:
+                        self.spectrogram_view.plot_item.setXRange(f_min, f_max, padding=0)
+                        self.spectrogram_view.plot_item.setYRange(t_min, t_max, padding=0)
+                    else:
+                        self.spectrogram_view.plot_item.setXRange(t_min, t_max, padding=0)
+                        self.spectrogram_view.plot_item.setYRange(f_min, f_max, padding=0)
                 else:
-                    self.spectrogram_view.plot_item.setYRange(f_min, f_max, padding=0)
+                    if waterfall:
+                        self.spectrogram_view.plot_item.setXRange(f_min, f_max, padding=0)
+                    else:
+                        self.spectrogram_view.plot_item.setYRange(f_min, f_max, padding=0)
             return
 
         prev_num_rows = getattr(self, '_multirow_num_rows', 1)

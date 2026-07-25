@@ -145,7 +145,11 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
         
         # Re-render spectrogram in the new orientation (waterfall toggle, etc.)
         if hasattr(self, 'spectrogram_view'):
+            self.spectrogram_view._session_waterfall = None
             self.spectrogram_view.apply_waterfall_mode()
+            
+        if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'update_waterfall_checkbox'):
+            self.sidebar.update_waterfall_checkbox()
         
         # Immediately push setting changes to marker panel layouts
         if hasattr(self, 'marker_panel'):
