@@ -7,6 +7,7 @@
 
 ### Fixed
 - **Full Mode Zoom Out Crash**: Fixed a `TypeError` crash (`SpectrogramView.update_spectrogram() missing 1 required positional argument: 't_end'`) when zooming out after zooming in while running in full mode. Added missing time range parameters when restoring the cached full spectrogram and made `t_end` optional in `update_spectrogram()` for backward compatibility.
+- **Popup Views Zoom Box Crash**: Fixed a `TypeError` crash (`FrequencyDomainView.handle_zoom_rectangle() got an unexpected keyword argument 'source_vb'`) when dragging a rubberband zoom box in the Frequency Domain and Time Domain popup views. Updated `handle_zoom_rectangle()` signatures to accept `source_vb` and arbitrary keyword arguments.
 
 ## [0.6.0] - 2026-07-18
 

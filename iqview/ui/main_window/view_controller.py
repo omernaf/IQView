@@ -501,10 +501,10 @@ class ViewControllerMixin:
         else:
             sv.plot_item.autoRange()
 
-    def handle_zoom_rectangle(self, rect, zoom_type='BOTH', source_vb=None):
+    def handle_zoom_rectangle(self, rect, zoom_type='BOTH', source_vb=None, **kwargs):
         active_tab = self.tabs.currentWidget()
         if active_tab and active_tab != self.spec_tab_page and hasattr(active_tab, 'handle_zoom_rectangle'):
-            active_tab.handle_zoom_rectangle(rect, zoom_type)
+            active_tab.handle_zoom_rectangle(rect, zoom_type, source_vb=source_vb)
         elif hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
             self.multi_row_view.handle_zoom_rectangle(rect, zoom_type, source_vb=source_vb)
         else:

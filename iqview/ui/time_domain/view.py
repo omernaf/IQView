@@ -292,7 +292,7 @@ class TimeDomainView(QWidget):
         self.zoom_history.append(self.plot_item.viewRect())
         self.plot_item.enableAutoRange(axis='y')
 
-    def handle_zoom_rectangle(self, rect, zoom_type='BOTH'):
+    def handle_zoom_rectangle(self, rect, zoom_type='BOTH', source_vb=None, **kwargs):
         self.zoom_history.append(self.plot_item.viewRect())
         if rect.width() <= 0 and zoom_type != 'Y_ONLY': return
         if rect.height() <= 0 and zoom_type != 'X_ONLY': return
@@ -1398,7 +1398,7 @@ class TimeDomainView(QWidget):
             prev_rect = self.zoom_history.pop()
             self.plot_item.setRange(rect=prev_rect, padding=0)
 
-    def handle_zoom_rectangle(self, rect, zoom_type):
+    def handle_zoom_rectangle(self, rect, zoom_type='BOTH', source_vb=None, **kwargs):
         self.zoom_history.append(self.plot_item.viewRect())
         if zoom_type == 'X_ONLY': self.plot_item.setXRange(rect.left(), rect.right(), padding=0)
         elif zoom_type == 'Y_ONLY': self.plot_item.setYRange(rect.top(), rect.bottom(), padding=0)
