@@ -475,9 +475,9 @@ class UIComponentsMixin:
             for i, idx in enumerate(ed_indices):
                 self.tabs.setTabText(idx, f"Eye Diagram ({i+1})")
 
-        # Update Constellation tabs
+        # Update Scatter Plot tabs
         if len(cd_indices) == 1:
-            self.tabs.setTabText(cd_indices[0], "Constellation")
+            self.tabs.setTabText(cd_indices[0], "Scatter Plot")
         elif len(cd_indices) > 1:
             for i, idx in enumerate(cd_indices):
-                self.tabs.setTabText(idx, f"Constellation ({i+1})")
+                self.tabs.setTabText(idx, f"Scatter Plot ({i+1})")

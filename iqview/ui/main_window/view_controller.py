@@ -391,14 +391,14 @@ class ViewControllerMixin:
             sorted_m = sorted(markers, key=lambda m: m.value())
             start_t, end_t = sorted_m[0].value(), sorted_m[1].value()
 
-        if not self._confirm_large_segment(start_t, end_t, "Constellation"):
+        if not self._confirm_large_segment(start_t, end_t, "Scatter Plot"):
             return
 
         segment = self.extract_iq_segment(start_t, end_t)
         if segment is not None:
             from ..constellation_dialog import ConstellationView
             view = ConstellationView(segment, self.rate, parent_window=self)
-            self.tabs.addTab(view, "Constellation")
+            self.tabs.addTab(view, "Scatter Plot")
             self.tabs.setCurrentWidget(view)
             self.update_tab_names()
 
@@ -459,7 +459,7 @@ class ViewControllerMixin:
         elif isinstance(widget, EyeDiagramView):
             label = "Eye Diagram"
         elif isinstance(widget, ConstellationView):
-            label = "Constellation"
+            label = "Scatter Plot"
         else:
             label = "Freq Domain"
         self.tabs.addTab(widget, label)
