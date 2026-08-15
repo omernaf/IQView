@@ -25,6 +25,8 @@ class SettingsManager:
             '.32fc': 'complex64',
             '.bin': 'complex64',
             '.iq': 'complex64',
+            '.r3f': 'complex64',
+            '.mat': 'complex64',
             # Audio formats — loaded via soundfile/scipy, sample rate from header
             '.wav': 'audio',
             '.flac': 'audio',

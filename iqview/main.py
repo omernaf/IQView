@@ -14,7 +14,11 @@ import pyqtgraph as pg
 from PyQt6.QtWidgets import QApplication
 from iqview.ui import SpectrogramWindow
 from iqview.utils.settings_manager import SettingsManager
-from iqview.utils.helpers import DTYPE_MAP, AUDIO_EXTENSIONS, detect_type_from_ext, detect_params_from_filename, load_mat_file, load_audio_file, MatFileFormatError
+from iqview.utils.helpers import (
+    DTYPE_MAP, AUDIO_EXTENSIONS, detect_type_from_ext, detect_params_from_filename,
+    load_mat_file, load_audio_file, MatFileFormatError,
+    load_r3f_file, R3FFileFormatError
+)
 
 # Canonical AppUserModelID — must match exactly across main.py, main_window, and any .lnk shortcut
 APP_USER_MODEL_ID = "OmerNaf.IQView.0.6.2"
@@ -304,6 +308,33 @@ def main():
                     sys.exit(1)
                 if stop_byte is not None and stop_byte > mat_size:
                     print(f"Warning: Requested stop byte ({stop_byte:,}) exceeds .mat data size ({mat_size:,} bytes). Reading to end of data.", file=sys.stderr)
+                data_source = data_source[sb:stop_byte]
+            # CLI flags take priority over values read from the file
+            if user_rate:
+                fs = args.rate
+                print(f"Sample rate overridden by -r: {fs/1e6:g} MHz")
+            if user_fc:
+                fc = args.fc
+                print(f"Center frequency overridden by -c: {fc/1e6:g} MHz")
+        else:
+            sys.exit(1)
+    elif file_path and file_path.lower().endswith('.r3f'):
+        try:
+            r3f_data = load_r3f_file(file_path)
+        except R3FFileFormatError as exc:
+            print(f"\nError: {exc}", file=sys.stderr)
+            if exc.detail:
+                print(exc.detail, file=sys.stderr)
+            sys.exit(1)
+        if r3f_data:
+            data_source, type_str, fs, fc, is_complex = r3f_data
+            if has_byte_slice and isinstance(data_source, (bytes, bytearray)):
+                r3f_size = len(data_source)
+                if sb >= r3f_size:
+                    print(f"Error: Start byte ({sb:,}) exceeds .r3f IQ data size ({r3f_size:,} bytes).", file=sys.stderr)
+                    sys.exit(1)
+                if stop_byte is not None and stop_byte > r3f_size:
+                    print(f"Warning: Requested stop byte ({stop_byte:,}) exceeds .r3f IQ data size ({r3f_size:,} bytes). Reading to end of data.", file=sys.stderr)
                 data_source = data_source[sb:stop_byte]
             # CLI flags take priority over values read from the file
             if user_rate:

@@ -3,6 +3,7 @@
 ## [0.6.2] - 2026-08-15
 
 ### Added
+- **Tektronix `.r3f` File Format Support**: Added native support for reading and loading Tektronix SignalVu-PC / RSA spectrum analyzer `.r3f` files. Automatically parses hardware RF center frequency ($F_c$), real ADC sampling rate ($F_{s,\text{real}}$), IF center frequency ($F_{c,\text{IF}}$), and voltage scaling factors from the 16 KB header frame, and performs real-time vectorized Digital Down-Conversion (DDC) and decimation to baseband complex IQ samples ($F_s = F_{s,\text{real}} / 2$). Supported across CLI, GUI Open File dialog, and drag-and-drop.
 - **CLI Byte Slicing Flags**: Added terminal command-line options (`--start-byte`, `--stop-byte`, and `--bytes START:STOP`, with aliases like `--start-index`, `--stop-index`, `--start-offset`, `--end-offset`, `-b`) to load arbitrary byte ranges from binary IQ files or stdin. Offsets do not need to be multiples of data type sizes (e.g. 3-byte offset on 4-byte float data). Trailing incomplete element or complex pair bytes are safely truncated to avoid numpy buffer errors, and a warning is emitted if the requested stop byte exceeds the file or stream size.
 
 ### Fixed

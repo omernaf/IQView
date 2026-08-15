@@ -3,7 +3,11 @@ import pyqtgraph as pg
 import numpy as np
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
-from iqview.utils.helpers import DTYPE_MAP, AUDIO_EXTENSIONS, detect_type_from_ext, detect_params_from_filename, load_mat_file, load_audio_file, MatFileFormatError
+from iqview.utils.helpers import (
+    DTYPE_MAP, AUDIO_EXTENSIONS, detect_type_from_ext, detect_params_from_filename,
+    load_mat_file, load_audio_file, MatFileFormatError,
+    load_r3f_file, R3FFileFormatError
+)
 from ..detached_window import DetachedViewWindow
 
 class ViewControllerMixin:
@@ -877,9 +881,9 @@ class ViewControllerMixin:
 
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Open IQ / Audio File",
+            "Open IQ / Audio / Tektronix File",
             os.path.dirname(self.file_path) if isinstance(self.file_path, str) else "",
-            f"IQ Files ({exts});;Audio Files ({audio_exts_str});;All Files (*)"
+            f"IQ Files ({exts});;Tektronix Files (*.r3f);;Audio Files ({audio_exts_str});;All Files (*)"
         )
         if path:
             self.load_new_file(path)
@@ -991,6 +995,34 @@ class ViewControllerMixin:
             else:
                 # Error loading .mat file, return early
                 return
+
+        # Check if it's a Tektronix .r3f file
+        elif path.lower().endswith('.r3f'):
+            try:
+                r3f_data = load_r3f_file(path)
+            except R3FFileFormatError as exc:
+                QMessageBox.critical(
+                    self,
+                    "Unsupported .r3f File Format",
+                    f"<b>{exc}</b><br><br><pre style='font-family:Consolas;'>{exc.detail}</pre>",
+                )
+                return
+            if r3f_data:
+                data_source, loaded_type_str, loaded_fs, loaded_fc, is_complex = r3f_data
+                self.data_source = data_source
+                self.file_path = path
+                self.rate = fs if fs is not None else loaded_fs
+                self.fc = fc if fc is not None else loaded_fc
+                self.is_complex = is_complex
+                type_str = loaded_type_str
+                self.data_type = np.float32
+
+                # Update sidebar parameters
+                if hasattr(self, 'sidebar'):
+                    self.sidebar.update_params(fs=self.rate, fc=self.fc)
+            else:
+                return
+
         else:
             # Update data source and file path
             self.data_source = path

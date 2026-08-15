@@ -48,6 +48,9 @@ def detect_type_from_ext(path):
     if ext in AUDIO_EXTENSIONS:
         return 'audio'
 
+    if ext in ('.r3f', '.mat'):
+        return 'complex64'
+
     # Load mapping from settings manager dynamically
     from iqview.utils.settings_manager import SettingsManager
     sm = SettingsManager()
@@ -320,3 +323,137 @@ def load_audio_file(path, complex_iq=False):
     except Exception as e:
         print(f"Error loading audio file '{path}': {e}")
         return None, str(e), None, None, None
+
+
+class R3FFileFormatError(ValueError):
+    """
+    Raised when a Tektronix .r3f file does not conform to the expected format.
+    The ``detail`` attribute holds additional diagnostic context shown to the user.
+    """
+    def __init__(self, message: str, detail: str = ""):
+        super().__init__(message)
+        self.detail = detail
+
+
+def load_r3f_file(path):
+    """
+    Loads a Tektronix SignalVu-PC / RSA .r3f file, performs Digital Down-Conversion (DDC)
+    and decimation to baseband complex IQ samples, and extracts Fs and Fc.
+
+    Returns:
+        tuple: (data_bytes, type_str, fs, fc, is_complex)
+               data_bytes — raw bytes of complex64 samples (interleaved float32 I/Q)
+               type_str   — 'complex64'
+               fs         — complex sample rate in Hz (Fs_real / 2)
+               fc         — center frequency in Hz (from header)
+               is_complex — True
+
+    Raises:
+        R3FFileFormatError: if the file is invalid, too short, or corrupted.
+    """
+    import struct
+
+    if not os.path.isfile(path):
+        raise R3FFileFormatError(f"File not found: '{path}'")
+
+    file_size = os.path.getsize(path)
+    RSA_FRAME_BYTES = 16384  # 2^14 bytes per frame
+
+    if file_size < RSA_FRAME_BYTES:
+        raise R3FFileFormatError(
+            f"File '{os.path.basename(path)}' is too small to be a valid Tektronix .r3f file.",
+            detail=f"File size is {file_size:,} bytes (minimum is {RSA_FRAME_BYTES:,} bytes for header frame)."
+        )
+
+    num_blocks = file_size // RSA_FRAME_BYTES
+    num_data_blocks = num_blocks - 1
+
+    if num_data_blocks <= 0:
+        raise R3FFileFormatError(
+            f"File '{os.path.basename(path)}' contains only header information and no data frames.",
+            detail="At least one data block (16,384 bytes) after the header is required."
+        )
+
+    try:
+        with open(path, 'rb') as f:
+            # ── 1. Read Header Frame (Block 0: 0..16383) ─────────────────────
+            header_bytes = f.read(RSA_FRAME_BYTES)
+
+            # Endianness check at offset 512 (int32)
+            endian_chk = struct.unpack_from('<i', header_bytes, 512)[0]
+            endian_prefix = '<'
+            if endian_chk == 0x78563412:
+                endian_prefix = '>'
+
+            # Instrument state at offset 1024 (1 KB)
+            # Offset 1032: Center Frequency Fc (double)
+            fc = struct.unpack_from(f'{endian_prefix}d', header_bytes, 1032)[0]
+
+            # Data format at offset 2048 (2 KB)
+            # Offset 2076: Fc_IF (double)
+            # Offset 2084: Fs_real (double)
+            fc_if, fs_real = struct.unpack_from(f'{endian_prefix}dd', header_bytes, 2076)
+
+            # Signal path at offset 3072 (3 KB)
+            # Offset 3072: Sample_Gain_Scaling_Factor (double)
+            gain_factor = struct.unpack_from(f'{endian_prefix}d', header_bytes, 3072)[0]
+
+            # Fallbacks for zero / nan / invalid header values
+            if not np.isfinite(fc):
+                fc = 0.0
+            if not np.isfinite(fc_if):
+                fc_if = 28e6
+            if not np.isfinite(fs_real) or fs_real <= 0:
+                fs_real = 112e6
+            if not np.isfinite(gain_factor) or gain_factor == 0:
+                gain_factor = 1.0 / 32768.0
+
+            # ── 2. Read Data Blocks ──────────────────────────────────────────
+            # Each data block has 16,356 data bytes (8,178 int16) + 28 footer bytes
+            FOOTER_BYTES = 28
+            REAL_SAMPLES_PER_BLOCK = (RSA_FRAME_BYTES - FOOTER_BYTES) // 2  # 8178 int16s
+
+            raw_data_bytes = f.read(num_data_blocks * RSA_FRAME_BYTES)
+
+    except Exception as exc:
+        raise R3FFileFormatError(
+            f"Error reading header from '{os.path.basename(path)}': {exc}",
+            detail=str(exc)
+        ) from exc
+
+    # Reshape all data blocks into 2D array (num_data_blocks, 16384)
+    # Then take the data part [:16356] as int16 (num_data_blocks, 8178)
+    byte_array = np.frombuffer(raw_data_bytes[:num_data_blocks * RSA_FRAME_BYTES], dtype=np.uint8)
+    blocks = byte_array.reshape(num_data_blocks, RSA_FRAME_BYTES)
+    data_int16 = blocks[:, :REAL_SAMPLES_PER_BLOCK * 2].view(np.dtype(f'{endian_prefix}i2'))
+
+    # ── 3. High-Performance Vectorized Digital Down-Conversion (DDC) ────────
+    # DDC mixing vector within a block: exp(-j * 2 * pi * Fc_IF / Fs_real * k)
+    k = np.arange(REAL_SAMPLES_PER_BLOCK, dtype=np.float64)
+    ddc_block = np.exp(-1j * (2.0 * np.pi * fc_if / fs_real) * k).astype(np.complex64)
+
+    # Continuous block phase correction: exp(-j * 2 * pi * Fc_IF / Fs_real * (K * idx))
+    idx = np.arange(num_data_blocks, dtype=np.float64)
+    block_phases = np.exp(-1j * (2.0 * np.pi * fc_if / fs_real * REAL_SAMPLES_PER_BLOCK) * idx).astype(np.complex64)
+
+    # Mixed complex samples for all blocks: (num_data_blocks, 8178)
+    shifted = (data_int16.astype(np.float32) * ddc_block[None, :]) * block_phases[:, None]
+
+    # Decimate by 2 with 2-tap moving sum: (num_data_blocks, 4089)
+    # y[m] = shifted[2m] + shifted[2m+1]
+    decimated = shifted[:, 0::2] + shifted[:, 1::2]
+
+    # Apply voltage gain factor
+    if gain_factor != 1.0:
+        decimated *= np.float32(gain_factor)
+
+    # Flatten to contiguous 1D complex64 array
+    complex_samples = np.ascontiguousarray(decimated.ravel(), dtype=np.complex64)
+
+    complex_fs = fs_real / 2.0
+
+    print(f"Successfully loaded Tektronix .r3f file: {len(complex_samples):,} IQ samples, "
+          f"Fs={complex_fs/1e6:g} MHz (real ADC Fs={fs_real/1e6:g} MHz), Fc={fc/1e6:g} MHz, "
+          f"Fc_IF={fc_if/1e6:g} MHz")
+
+    return complex_samples.tobytes(), 'complex64', float(complex_fs), float(fc), True

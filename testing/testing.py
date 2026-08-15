@@ -49,8 +49,8 @@ def main():
         # "--name", "lazy"
         "--full",
         # "--name", "full"
-        "--start-byte", "4",
-        "--stop-byte", "4e6",
+        # "--start-byte", "4",
+        # "--stop-byte", "4e6",
         # "--bytes", "12:5e5",
     ]
     

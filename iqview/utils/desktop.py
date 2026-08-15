@@ -9,7 +9,7 @@ def _get_supported_extensions():
     # Baseline factory-supported extensions
     exts = {
         ".32f", ".64f", ".16tc", ".16sc", ".64fc", ".32fc", 
-        ".bin", ".iq", ".sigmf", ".sigmf-data", ".mat"
+        ".bin", ".iq", ".sigmf", ".sigmf-data", ".mat", ".r3f"
     }
     
     try:
@@ -87,9 +87,9 @@ def _create_shortcut(exe_path, icon_path):
     
     result = subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], capture_output=True, text=True)
     if result.returncode == 0:
-        print(f"  \u2713 Shortcut created at {shortcut_path}")
+        print(f"  [OK] Shortcut created at {shortcut_path}")
     else:
-        print(f"  \u2717 Failed to create shortcut: {result.stderr}")
+        print(f"  [X] Failed to create shortcut: {result.stderr}")
 
 def _register_file_associations(exe_path, icon_path, extensions=None):
     import winreg
@@ -123,7 +123,7 @@ def _register_file_associations(exe_path, icon_path, extensions=None):
             except Exception:
                 pass
                 
-            print(f"  \u2713 Associated {ext}")
+            print(f"  [OK] Associated {ext}")
                 
         # 3. Notify Windows shell to update icons/associations
         # Using PowerShell to call SHChangeNotify
@@ -138,9 +138,9 @@ def _register_file_associations(exe_path, icon_path, extensions=None):
             "[Shell]::SHChangeNotify(0x08000000, 0x0000, [IntPtr]::Zero, [IntPtr]::Zero);"
         )
         subprocess.run(["powershell", "-NoProfile", "-Command", ps_notify], capture_output=True)
-        print("  \u2713 Registered file associations successfully")
+        print("  [OK] Registered file associations successfully")
     except Exception as e:
-        print(f"  \u2717 Failed to register file associations: {e}")
+        print(f"  [X] Failed to register file associations: {e}")
 
 def _remove_shortcut():
     print("Removing Start Menu shortcut...")
@@ -150,11 +150,11 @@ def _remove_shortcut():
     try:
         if os.path.exists(shortcut_path):
             os.remove(shortcut_path)
-            print("  \u2713 Shortcut removed")
+            print("  [OK] Shortcut removed")
         else:
             print("  - Shortcut not found")
     except Exception as e:
-        print(f"  \u2717 Failed to remove shortcut: {e}")
+        print(f"  [X] Failed to remove shortcut: {e}")
 
 def _delete_reg_key(key_root, sub_key):
     """Recursively delete a registry key."""
@@ -187,14 +187,14 @@ def _unregister_file_associations(extensions=None):
                     val, _ = winreg.QueryValueEx(key, "")
                     if val == APP_PROG_ID:
                         winreg.DeleteValue(key, "")
-                        print(f"  \u2713 Unassociated {ext}")
+                        print(f"  [OK] Unassociated {ext}")
             except OSError:
                 pass # Doesn't exist or not set as default
                 
         # 2. Delete the ProgID if it's a full unregister (no extensions specified)
         if extensions == _get_supported_extensions():
             _delete_reg_key(winreg.HKEY_CURRENT_USER, fr"Software\Classes\{APP_PROG_ID}")
-            print("  \u2713 Unregistered ProgID")
+            print("  [OK] Unregistered ProgID")
         
         # 3. Notify Windows shell to update icons/associations
         ps_notify = (
@@ -209,7 +209,7 @@ def _unregister_file_associations(extensions=None):
         )
         subprocess.run(["powershell", "-NoProfile", "-Command", ps_notify], capture_output=True)
     except Exception as e:
-        print(f"  \u2717 Failed to unregister file associations: {e}")
+        print(f"  [X] Failed to unregister file associations: {e}")
 
 def _install_linux_desktop(exe_path, icon_path):
     print("Creating Linux .desktop file...")
@@ -244,9 +244,9 @@ StartupWMClass=iqview
             mime_type = f"application/x-extension-{ext[1:]}"
             subprocess.run(["xdg-mime", "default", desktop_filename, mime_type], capture_output=True)
             
-        print(f"  \u2713 Desktop file created at {desktop_file}")
+        print(f"  [OK] Desktop file created at {desktop_file}")
     except Exception as e:
-        print(f"  \u2717 Failed to create .desktop file: {e}")
+        print(f"  [X] Failed to create .desktop file: {e}")
 
 def _uninstall_linux_desktop():
     print("Removing Linux .desktop file...")
@@ -256,9 +256,9 @@ def _uninstall_linux_desktop():
             os.remove(desktop_file)
             desktop_dir = os.path.dirname(desktop_file)
             subprocess.run(["update-desktop-database", desktop_dir], capture_output=True)
-            print("  \u2713 .desktop file removed")
+            print("  [OK] .desktop file removed")
         except Exception as e:
-            print(f"  \u2717 Failed to remove .desktop file: {e}")
+            print(f"  [X] Failed to remove .desktop file: {e}")
     else:
         print("  - .desktop file not found")
 
