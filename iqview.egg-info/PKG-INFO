@@ -215,6 +215,7 @@ For a deep dive into the specific features and mathematical foundations of each 
 - [⏳ **Time Domain View**](docs/time_domain.md): Plot modes, marker locking logic, and statistics.
 - [📶 **Frequency Domain View**](docs/frequency_domain.md): FFT analysis, PSD estimation, preprocessing operators, and integrated power.
 - [👁️ **Eye Diagram View**](docs/eye_diagram.md): Symbol timing visualization, fractional Nsps, and phase alignment.
+- [✨ **Scatter Plot View**](docs/scatter_plot.md): IQ constellation visualization, integer downsampling, carrier phase, and 3-tier frequency offset tuning.
 
 ---
 
