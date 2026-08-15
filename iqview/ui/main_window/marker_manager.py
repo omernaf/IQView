@@ -789,8 +789,12 @@ class MarkerManagerMixin:
     def marker_edit_finished(self):
         sender = self.sender()
         name = sender.objectName()
-        is_freq = (self.interaction_mode in ['FREQ', 'FREQ_ENDLESS'])
-        is_filter = (self.interaction_mode == 'FILTER')
+        # Resolve effective mode: fall back to last_marker_mode when panning/zooming
+        eff_mode = self.interaction_mode
+        if eff_mode in ['ZOOM', 'MOVE']:
+            eff_mode = getattr(self.marker_panel, 'last_marker_mode', 'TIME')
+        is_freq = (eff_mode in ['FREQ', 'FREQ_ENDLESS'])
+        is_filter = (eff_mode == 'FILTER')
         
         if is_filter:
             if not self.filter_region: return

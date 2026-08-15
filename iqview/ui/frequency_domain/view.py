@@ -1102,8 +1102,12 @@ class FrequencyDomainView(QWidget):
     def marker_edit_finished(self):
         sender = self.sender()
         name = sender.objectName()
-        is_freq = (self.interaction_mode in ['FREQ', 'FREQ_ENDLESS'])
-        is_endless = 'ENDLESS' in self.interaction_mode
+        # Resolve effective mode: fall back to last_marker_mode when panning/zooming
+        eff_mode = self.interaction_mode
+        if eff_mode in ['ZOOM', 'MOVE']:
+            eff_mode = getattr(self.marker_panel, 'last_marker_mode', 'FREQ')
+        is_freq = (eff_mode in ['FREQ', 'FREQ_ENDLESS'])
+        is_endless = 'ENDLESS' in eff_mode
         
         try:
             val = float(sender.text())

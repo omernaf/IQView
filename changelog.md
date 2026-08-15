@@ -4,6 +4,7 @@
 
 ### Fixed
 - **Time and Frequency Domain Move/Pan Drag Crash**: Fixed a `TypeError` crash (`TypeError: TimeDomainView.handle_move_drag() got an unexpected keyword argument 'source_vb'`) when attempting to drag and pan the plot window while zoomed in in the Time Domain and Frequency Domain popup views. Updated `handle_move_drag()` signatures in `TimeDomainView` and `FrequencyDomainView` to accept `source_vb` and keyword arguments, and cleaned up duplicate method definitions.
+- **Marker Table Manual Entry in Non-Marker Modes**: Fixed an issue where manually entering a position value in the marker table (pressing Enter) would silently fail when the current interaction mode was not the corresponding marker mode (e.g., editing a Time or Frequency marker's position while in Zoom or Move mode). All three `marker_edit_finished()` implementations (spectrogram, Time Domain, Frequency Domain) now resolve the effective display mode using `last_marker_mode` as a fallback when in ZOOM or MOVE mode, making manual marker positioning work in all modes.
 
 ## [0.6.1] - 2026-07-23
 
