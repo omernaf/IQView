@@ -1309,14 +1309,51 @@ class FrequencyDomainView(QWidget):
             idx = self.active_drag_filter_bound_idx
             f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
             val = max(f_min, min(f_max, v_pos.x()))
+            
             if len(self.filter_bounds) == 2:
-                self.filter_bounds[idx] = val
-                self.filter_bounds.sort()
-                try:
-                    self.active_drag_filter_bound_idx = self.filter_bounds.index(val)
-                except ValueError:
-                    pass
-                self.filter_region.setRegion(self.filter_bounds)
+                b0, b1 = self.filter_bounds[0], self.filter_bounds[1]
+                if self.marker_panel.btn_lock_delta.isChecked():
+                    delta = b1 - b0
+                    if idx == 0:
+                        new_b0 = val
+                        new_b1 = new_b0 + delta
+                        if new_b1 > f_max:
+                            new_b1 = f_max
+                            new_b0 = f_max - delta
+                        if new_b0 < f_min:
+                            new_b0 = f_min
+                            new_b1 = f_min + delta
+                        self.active_drag_filter_bound_idx = 0
+                    else:
+                        new_b1 = val
+                        new_b0 = new_b1 - delta
+                        if new_b0 < f_min:
+                            new_b0 = f_min
+                            new_b1 = f_min + delta
+                        if new_b1 > f_max:
+                            new_b1 = f_max
+                            new_b0 = f_max - delta
+                        self.active_drag_filter_bound_idx = 1
+                    self.filter_bounds = [new_b0, new_b1]
+                elif self.marker_panel.btn_lock_center.isChecked():
+                    center = (b0 + b1) / 2
+                    half_delta = abs(val - center)
+                    max_half_delta = min(center - f_min, f_max - center)
+                    half_delta = min(half_delta, max_half_delta)
+                    new_b0 = center - half_delta
+                    new_b1 = center + half_delta
+                    self.filter_bounds = [new_b0, new_b1]
+                    self.active_drag_filter_bound_idx = 0 if val < center else 1
+                else:
+                    self.filter_bounds[idx] = val
+                    self.filter_bounds.sort()
+                    try:
+                        self.active_drag_filter_bound_idx = self.filter_bounds.index(val)
+                    except ValueError:
+                        pass
+                
+                self.filter_marker_order = list(self.filter_bounds)
+                if self.filter_region: self.filter_region.setRegion(self.filter_bounds)
             elif len(self.filter_bounds) == 1:
                 self.filter_bounds[0] = val
                 if self.filter_line: self.filter_line.setPos(val)
@@ -1644,6 +1681,58 @@ class FrequencyDomainView(QWidget):
         f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
         val = max(f_min, min(f_max, v_pos.x()))
 
+        # If 2 bounds exist and Delta or Center is locked:
+        # Teleport nearest bound to mouse and keep locked relationship immediately!
+        if len(self.filter_bounds) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
+            sorted_bounds = sorted(self.filter_bounds)
+            b0, b1 = sorted_bounds[0], sorted_bounds[1]
+            
+            if self.marker_panel.btn_lock_delta.isChecked():
+                delta = b1 - b0
+                dist0 = abs(val - b0)
+                dist1 = abs(val - b1)
+                if dist0 <= dist1:
+                    new_b0 = val
+                    new_b1 = val + delta
+                    if new_b1 > f_max:
+                        new_b1 = f_max
+                        new_b0 = f_max - delta
+                    if new_b0 < f_min:
+                        new_b0 = f_min
+                        new_b1 = f_min + delta
+                    self.active_drag_filter_bound_idx = 0
+                else:
+                    new_b1 = val
+                    new_b0 = val - delta
+                    if new_b0 < f_min:
+                        new_b0 = f_min
+                        new_b1 = f_min + delta
+                    if new_b1 > f_max:
+                        new_b1 = f_max
+                        new_b0 = f_max - delta
+                    self.active_drag_filter_bound_idx = 1
+                self.filter_bounds = [new_b0, new_b1]
+            elif self.marker_panel.btn_lock_center.isChecked():
+                center = (b0 + b1) / 2
+                half_delta = abs(val - center)
+                max_half_delta = min(center - f_min, f_max - center)
+                half_delta = min(half_delta, max_half_delta)
+                new_b0 = center - half_delta
+                new_b1 = center + half_delta
+                self.filter_bounds = [new_b0, new_b1]
+                self.active_drag_filter_bound_idx = 0 if val < center else 1
+
+            self.filter_marker_order = list(self.filter_bounds)
+            if self.filter_region:
+                self.filter_region.setRegion(self.filter_bounds)
+                self.filter_region.show()
+            if self.filter_line: self.filter_line.hide()
+            self.filter_placed = True
+            if hasattr(self.marker_panel, 'set_filter_checkboxes_enabled'):
+                self.marker_panel.set_filter_checkboxes_enabled(True)
+            self.update_marker_info()
+            return
+
         # Hit-test existing bounds within ~20 screen-pixels
         if self.filter_bounds:
             view_range = self.plot_item.viewRange()[0]
@@ -1657,7 +1746,21 @@ class FrequencyDomainView(QWidget):
                     if dist < HIT_PX and dist < best_dist:
                         best_dist, best_idx = dist, i
                 if best_idx != -1:
-                    self.active_drag_filter_bound_idx = best_idx
+                    old_v = self.filter_bounds[best_idx]
+                    self.filter_bounds[best_idx] = val
+                    if old_v in self.filter_marker_order:
+                        oidx = self.filter_marker_order.index(old_v)
+                        self.filter_marker_order[oidx] = val
+                    self.filter_bounds.sort()
+                    try:
+                        self.active_drag_filter_bound_idx = self.filter_bounds.index(val)
+                    except ValueError:
+                        self.active_drag_filter_bound_idx = 0
+                    if len(self.filter_bounds) == 1:
+                        if self.filter_line: self.filter_line.setPos(val)
+                    else:
+                        if self.filter_region: self.filter_region.setRegion(self.filter_bounds)
+                    self.update_marker_info()
                     return
 
         # FIFO: remove oldest when both bounds already placed
