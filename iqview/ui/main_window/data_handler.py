@@ -587,10 +587,16 @@ class DataHandlerMixin:
             offset = start_sample * read_multiplier * item_size
 
             # Open the source — either an in-memory BytesIO or a real file
+            elem_mult = read_multiplier * item_size
             if isinstance(self.data_source, (bytes, bytearray)):
                 f = io.BytesIO(self.data_source)
                 f.seek(offset)
-                raw_data = np.frombuffer(f.read(num_samples * read_multiplier * item_size), dtype=self.data_type).astype(np.float32)
+                chunk_bytes = f.read(num_samples * elem_mult)
+                if len(chunk_bytes) % elem_mult != 0:
+                    chunk_bytes = chunk_bytes[:(len(chunk_bytes) // elem_mult) * elem_mult]
+                if not chunk_bytes:
+                    return None
+                raw_data = np.frombuffer(chunk_bytes, dtype=self.data_type).astype(np.float32)
             else:
                 with open(self.data_source, 'rb') as f:
                     f.seek(offset)

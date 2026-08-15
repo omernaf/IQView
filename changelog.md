@@ -2,6 +2,9 @@
 
 ## [0.6.2] - 2026-08-15
 
+### Added
+- **CLI Byte Slicing Flags**: Added terminal command-line options (`--start-byte`, `--stop-byte`, and `--bytes START:STOP`, with aliases like `--start-index`, `--stop-index`, `--start-offset`, `--end-offset`, `-b`) to load arbitrary byte ranges from binary IQ files or stdin. Offsets do not need to be multiples of data type sizes (e.g. 3-byte offset on 4-byte float data). Trailing incomplete element or complex pair bytes are safely truncated to avoid numpy buffer errors, and a warning is emitted if the requested stop byte exceeds the file or stream size.
+
 ### Fixed
 - **Time and Frequency Domain Move/Pan Drag Crash**: Fixed a `TypeError` crash (`TypeError: TimeDomainView.handle_move_drag() got an unexpected keyword argument 'source_vb'`) when attempting to drag and pan the plot window while zoomed in in the Time Domain and Frequency Domain popup views. Updated `handle_move_drag()` signatures in `TimeDomainView` and `FrequencyDomainView` to accept `source_vb` and keyword arguments, and cleaned up duplicate method definitions.
 - **Marker Table Manual Entry in Non-Marker Modes**: Fixed an issue where manually entering a position value in the marker table (pressing Enter) would silently fail when the current interaction mode was not the corresponding marker mode (e.g., editing a Time or Frequency marker's position while in Zoom or Move mode). All three `marker_edit_finished()` implementations (spectrogram, Time Domain, Frequency Domain) now resolve the effective display mode using `last_marker_mode` as a fallback when in ZOOM or MOVE mode, making manual marker positioning work in all modes.

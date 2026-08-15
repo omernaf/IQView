@@ -147,18 +147,24 @@ class FileReaderThread(QThread):
                     data_bytes = f.read(total_samples_to_read * read_multiplier * item_size)
                     read_time += (time.time() - t_read_start)
                     
-                    if not data_bytes or len(data_bytes) < (total_samples_to_read * read_multiplier * item_size):
-                        # Handle end of file or incomplete read
-                        if not data_bytes: break
-                    
+                    if not data_bytes:
+                        break
+
+                    elem_mult = read_multiplier * item_size
+                    if len(data_bytes) % elem_mult != 0:
+                        usable_len = (len(data_bytes) // elem_mult) * elem_mult
+                        data_bytes = data_bytes[:usable_len]
+                        if not data_bytes:
+                            break
+
                     # DSP Time (Batch)
                     t_dsp_start = time.time()
                     # Convert raw bytes to complex array
                     raw_array = np.frombuffer(data_bytes, dtype=self.dtype).astype(np.float32)
-                    
+
                     if self.dtype == np.int16:
                         raw_array /= 32768.0
-                    
+
                     if self.is_complex:
                         # Real/Imag de-interleave
                         full_complex = raw_array[0::2] + 1j * raw_array[1::2]
