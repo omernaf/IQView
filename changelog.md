@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.2] - 2026-08-15
+
+### Fixed
+- **Time and Frequency Domain Move/Pan Drag Crash**: Fixed a `TypeError` crash (`TypeError: TimeDomainView.handle_move_drag() got an unexpected keyword argument 'source_vb'`) when attempting to drag and pan the plot window while zoomed in in the Time Domain and Frequency Domain popup views. Updated `handle_move_drag()` signatures in `TimeDomainView` and `FrequencyDomainView` to accept `source_vb` and keyword arguments, and cleaned up duplicate method definitions.
+
 ## [0.6.1] - 2026-07-23
 
 ### Added
