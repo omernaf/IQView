@@ -1,8 +1,14 @@
 # Changelog
 
+## [0.6.2] - 2026-08-15
+
+### Fixed
+- **Time and Frequency Domain Move/Pan Drag Crash**: Fixed a `TypeError` crash (`TypeError: TimeDomainView.handle_move_drag() got an unexpected keyword argument 'source_vb'`) when attempting to drag and pan the plot window while zoomed in in the Time Domain and Frequency Domain popup views. Updated `handle_move_drag()` signatures in `TimeDomainView` and `FrequencyDomainView` to accept `source_vb` and keyword arguments, and cleaned up duplicate method definitions.
+
 ## [0.6.1] - 2026-07-23
 
 ### Added
+- **Interactive Scatter Plot Popup View**: Added a new **Scatter Plot Popup** analysis tab (`Scatter Plot`) for IQ constellation visualization and tuning. Features integer downsampling ($N \ge 1$), a dynamic sub-symbol offset slider ($0 \dots N-1$), two-tier coarse and fine carrier phase rotation controls, three-tier frequency offset despinning sliders (Coarse $\pm f_s/2$, Medium $\pm f_s/2000$, Fine $\pm f_s/2,000,000$), point size controls, trajectory tracing, $I/Q$ crosshairs, unit circle overlays, a mini waveform overview with draggable segment handles, and full docking/undocking support.
 - **Multi-Row Stacked Spectrogram View**: Added a Multi-Row Spectrogram mode for analyzing periodic signals across $N$ vertically stacked viewports. Includes configurable rows count, samples per row, and row period, real-time single-source-of-truth time/frequency axis synchronization, zoom level preservation, and full bi-directional synchronization with markers, BPF/BSF filter regions, overlays, and side-panel colormap controls.
 
 ### Fixed

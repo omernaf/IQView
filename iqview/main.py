@@ -17,7 +17,7 @@ from iqview.utils.settings_manager import SettingsManager
 from iqview.utils.helpers import DTYPE_MAP, AUDIO_EXTENSIONS, detect_type_from_ext, detect_params_from_filename, load_mat_file, load_audio_file, MatFileFormatError
 
 # Canonical AppUserModelID — must match exactly across main.py, main_window, and any .lnk shortcut
-APP_USER_MODEL_ID = "OmerNaf.IQView.0.6.1"
+APP_USER_MODEL_ID = "OmerNaf.IQView.0.6.2"
 
 # Fix taskbar grouping on Windows (must be done before creating QApplication)
 if sys.platform == "win32":

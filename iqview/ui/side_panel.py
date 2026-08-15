@@ -239,7 +239,7 @@ class SidePanel(QFrame):
                 from importlib.metadata import version
                 ver = version('iqview')
             except Exception:
-                ver = "0.6.1"
+                ver = "0.6.2"
 
         self.current_version = ver
         version_lbl = QLabel(f"v{ver}")

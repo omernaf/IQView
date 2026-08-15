@@ -24,6 +24,7 @@ class TimeDomainView(QWidget):
         self.interaction_mode = 'TIME'
         self.zoom_mode = False
         self.active_drag_marker = None
+        self.last_move_scene_pos = None
         self.markers_time = []
         self._block_signals = False
         # Age tracking: maps each InfiniteLine → insertion order (lower = older)
@@ -300,25 +301,34 @@ class TimeDomainView(QWidget):
         elif zoom_type == 'X_ONLY': self.plot_item.setXRange(rect.left(), rect.right(), padding=0)
         else: self.plot_item.setRange(rect, padding=0)
 
+    def handle_move_drag(self, pos, is_start=False, is_finish=False, source_vb=None, **kwargs):
+        if is_start: self.last_move_scene_pos = pos; return
+        if self.last_move_scene_pos is None: return
+        vb = source_vb if source_vb is not None else self.view_box
+        p1 = vb.mapSceneToView(self.last_move_scene_pos)
+        p2 = vb.mapSceneToView(pos)
+        dx = p2.x() - p1.x()
+        dy = p2.y() - p1.y()
+        vb.translateBy(x=-dx, y=-dy)
+        self.last_move_scene_pos = pos
+        if is_finish: self.last_move_scene_pos = None
+
     def fit_to_markers(self):
-        is_freq = (self.interaction_mode in ['MAG', 'Y', 'MAG_ENDLESS'])
+        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
         is_endless = 'ENDLESS' in self.interaction_mode
         if is_endless:
-            active_markers = self.markers_time_endless if not is_freq else []
+            active_markers = self.markers_time_endless if is_time else self.markers_y_endless_dict.get(self.y_label_text, [])
         else:
-            active_markers = self.markers_time if not is_freq else []
+            active_markers = self.markers_time if is_time else self.markers_y_dict.get(self.y_label_text, [])
             
-        if not active_markers and self.interaction_mode in ['MAG', 'Y', 'MAG_ENDLESS']:
-            label = self.y_label_text
-            if is_endless: active_markers = self.markers_y_endless_dict.get(label, [])
-            else: active_markers = self.markers_y_dict.get(label, [])
-
-        if len(active_markers) == 2:
+        if len(active_markers) >= 2:
             self.zoom_history.append(self.plot_item.viewRect())
-            v1, v2 = active_markers[0].value(), active_markers[1].value()
-            v_min, v_max = min(v1, v2), max(v1, v2)
-            if is_freq: self.plot_item.setYRange(v_min, v_max, padding=0)
-            else: self.plot_item.setXRange(v_min, v_max, padding=0)
+            sorted_m = sorted(active_markers, key=lambda m: m.value())
+            v1, v2 = sorted_m[0].value(), sorted_m[-1].value()
+            if is_time:
+                self.plot_item.setXRange(v1, v2, padding=0)
+            else:
+                self.plot_item.setYRange(v1, v2, padding=0)
 
 
     def plot_real(self):
@@ -1389,46 +1399,7 @@ class TimeDomainView(QWidget):
         
         self.update_marker_info()
 
-    def reset_zoom(self):
-        self.zoom_history.append(self.plot_item.viewRect())
-        self.plot_item.autoRange()
 
-    def undo_zoom(self):
-        if self.zoom_history:
-            prev_rect = self.zoom_history.pop()
-            self.plot_item.setRange(rect=prev_rect, padding=0)
-
-    def handle_zoom_rectangle(self, rect, zoom_type='BOTH', source_vb=None, **kwargs):
-        self.zoom_history.append(self.plot_item.viewRect())
-        if zoom_type == 'X_ONLY': self.plot_item.setXRange(rect.left(), rect.right(), padding=0)
-        elif zoom_type == 'Y_ONLY': self.plot_item.setYRange(rect.top(), rect.bottom(), padding=0)
-        else: self.plot_item.setRange(rect, padding=0)
-
-    def handle_move_drag(self, pos, is_start=False, is_finish=False):
-        if is_start: self.last_move_scene_pos = pos; return
-        if self.last_move_scene_pos is None: return
-        delta = pos - self.last_move_scene_pos
-        self.view_box.translateBy(x=-self.view_box.mapSceneToView(delta).x() + self.view_box.mapSceneToView(pg.Point(0,0)).x(),
-                                  y=-self.view_box.mapSceneToView(delta).y() + self.view_box.mapSceneToView(pg.Point(0,0)).y())
-        self.last_move_scene_pos = pos
-        if is_finish: self.last_move_scene_pos = None
-
-    def fit_to_markers(self):
-        is_time = (self.interaction_mode in ['TIME', 'TIME_ENDLESS'])
-        is_endless = 'ENDLESS' in self.interaction_mode
-        if is_endless:
-            active_markers = self.markers_time_endless if is_time else self.markers_y_endless_dict[self.y_label_text]
-        else:
-            active_markers = self.markers_time if is_time else self.markers_y_dict[self.y_label_text]
-            
-        if len(active_markers) >= 2:
-            self.zoom_history.append(self.plot_item.viewRect())
-            sorted_m = sorted(active_markers, key=lambda m: m.value())
-            v1, v2 = sorted_m[0].value(), sorted_m[-1].value()
-            if is_time:
-                self.plot_item.setXRange(v1, v2, padding=0)
-            else:
-                self.plot_item.setYRange(v1, v2, padding=0)
 
     def toggle_grid(self, axis, enabled):
         if axis == 'TIME': self.grid_time_enabled = enabled
