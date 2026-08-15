@@ -335,6 +335,7 @@ class ViewControllerMixin:
             self.tabs.addTab(view, "Time Domain")
             self.tabs.setCurrentWidget(view)
             self.update_tab_names()
+            view.reset_zoom()
 
     def open_frequency_domain_tab(self):
         """Extracts IQ data for the selected time range and opens a Frequency Domain analysis tab."""
@@ -357,6 +358,7 @@ class ViewControllerMixin:
             self.tabs.addTab(view, "Freq Domain")
             self.tabs.setCurrentWidget(view)
             self.update_tab_names()
+            view.reset_zoom()
 
     def open_eye_diagram_tab(self):
         """Extracts IQ data for the selected time range and opens an Eye Diagram tab."""
@@ -379,6 +381,8 @@ class ViewControllerMixin:
             self.tabs.addTab(view, "Eye Diagram")
             self.tabs.setCurrentWidget(view)
             self.update_tab_names()
+            if hasattr(view, 'reset_zoom'):
+                view.reset_zoom()
 
     def open_constellation_tab(self):
         """Extracts IQ data for the selected time range and opens a Constellation / Scatter Plot tab."""
@@ -401,6 +405,8 @@ class ViewControllerMixin:
             self.tabs.addTab(view, "Scatter Plot")
             self.tabs.setCurrentWidget(view)
             self.update_tab_names()
+            if hasattr(view, 'reset_zoom'):
+                view.reset_zoom()
 
     def undock_tab(self, index, initial_pos=None):
         """Moves a tab from the QTabWidget to a standalone window.
