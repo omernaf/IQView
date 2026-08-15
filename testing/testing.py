@@ -16,7 +16,7 @@ def main():
     args, unknown = parser.parse_known_args()
 
     # filename = "samples/temp_10Msps_433MHz.32fc"
-    # filename = "samples/mavic_air_2.16tc"
+    filename = "samples/mavic_air_2.16tc"
     # filename = "samples/long_sweep.32fc"
     # filename = "samples/very_long_sweep.32fc"
     # filename = "samples/long_cw.32fc"
@@ -28,7 +28,7 @@ def main():
     # filename = "samples/mavic_long_50MHz.32fc"
     # filename = "samples/burst_cw.32fc";
     # filename = "samples/QPSK_RC_10sps.32fc"
-    filename = "samples/LoRa_401MHz_4MHz/lora_process_energy_1.bin"
+    # filename = "samples/LoRa_401MHz_4MHz/lora_process_energy_1.bin"
     sample_rate = 1e6  # 2 MHz
     duration = 10.0    # 10 seconds of simulated RF recording
     if args.line_profile:

@@ -27,11 +27,13 @@ class AnalysisStatsMixin:
             pen=pg.mkPen('#ff6400', width=2),
             movable=False
         )
+        self.stats_region.setZValue(10)
         self.stats_region.sigRegionChanged.connect(self.update_statistics)
         self.plot_item.addItem(self.stats_region)
         self.stats_region.hide()
 
         self.stats_markers = pg.ScatterPlotItem(size=10)
+        self.stats_markers.setZValue(20)
         self.plot_item.addItem(self.stats_markers)
         self.stats_markers.hide()
 
@@ -90,7 +92,7 @@ class AnalysisStatsMixin:
                 )
                 self.stats_line.setHoverPen(pg.mkPen(255, 0, 0, width=2))
                 self.stats_line.setAcceptHoverEvents(True)
-                self.stats_line.setZValue(10)
+                self.stats_line.setZValue(15)
             if self.stats_line not in self.plot_item.items:
                 self.plot_item.addItem(self.stats_line)
             self.stats_line.setPos(val)

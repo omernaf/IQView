@@ -28,6 +28,7 @@ class FrequencyDomainFilterMixin:
             pen=pg.mkPen('#ff6400', width=2),
             movable=False
         )
+        self.filter_region.setZValue(10)
         self.filter_region.sigRegionChanged.connect(self._on_filter_changed)
         self.filter_region.sigRegionChangeFinished.connect(self.on_filter_region_finished)
         self.plot_item.addItem(self.filter_region)
@@ -148,7 +149,7 @@ class FrequencyDomainFilterMixin:
                     pen=pg.mkPen(p.accent, width=2, style=Qt.PenStyle.DashLine),
                     movable=False
                 )
-                self.filter_line.setZValue(9)
+                self.filter_line.setZValue(15)
                 self.plot_item.addItem(self.filter_line)
             else:
                 self.filter_line.setPos(val)

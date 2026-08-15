@@ -234,13 +234,20 @@ class FrequencyDomainPlotsMixin:
 
         # Re-add items
         if getattr(self, 'stats_line', None) is not None:
+            self.stats_line.setZValue(15)
             self.plot_item.addItem(self.stats_line)
-        self.plot_item.addItem(self.stats_region)
-        self.plot_item.addItem(self.stats_markers)
+        if hasattr(self, 'stats_region') and self.stats_region is not None:
+            self.stats_region.setZValue(10)
+            self.plot_item.addItem(self.stats_region)
+        if hasattr(self, 'stats_markers') and self.stats_markers is not None:
+            self.stats_markers.setZValue(20)
+            self.plot_item.addItem(self.stats_markers)
 
         if hasattr(self, 'filter_line') and self.filter_line is not None:
+            self.filter_line.setZValue(15)
             self.plot_item.addItem(self.filter_line)
         if hasattr(self, 'filter_region') and self.filter_region is not None:
+            self.filter_region.setZValue(10)
             self.plot_item.addItem(self.filter_region)
 
         self.plot_item.getAxis('left').setLabel(y_label)
@@ -248,7 +255,8 @@ class FrequencyDomainPlotsMixin:
         theme = self.settings_mgr.get("ui/theme", "Dark") if self.settings_mgr else "Dark"
         p = get_palette(theme)
         pen = pg.mkPen(p.accent, width=1.5)
-        self.plot_item.plot(self.freq_axis, data, pen=pen)
+        curve = self.plot_item.plot(self.freq_axis, data, pen=pen)
+        curve.setZValue(0)
 
         # Restore markers
         for m in self.markers_primary:
