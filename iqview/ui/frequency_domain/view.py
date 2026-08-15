@@ -219,9 +219,9 @@ class FrequencyDomainView(BaseAnalysisView, AnalysisMarkerMixin, AnalysisStatsMi
     def _format_stats_region_readouts(self, b1, b2):
         prec1 = int(self.settings_mgr.get("ui/label_precision", 9)) if self.settings_mgr else 9
         if hasattr(self.marker_panel, 'st_row_v1_lbl'):
-            self.marker_panel.st_row_v1_lbl.setText("Index")
+            self.marker_panel.st_row_v1_lbl.setText("Region (Hz)")
         if hasattr(self.marker_panel, 'st_row_v2_lbl'):
-            self.marker_panel.st_row_v2_lbl.setText("Region (Hz)")
+            self.marker_panel.st_row_v2_lbl.setText("Index")
         if hasattr(self.marker_panel, 'st_row_v3_lbl'):
             self.marker_panel.st_row_v3_lbl.setText("Rel Freq (Hz)")
 

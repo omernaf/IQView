@@ -188,40 +188,69 @@ class AnalysisStatsMixin:
         self._format_stats_region_readouts(b1, b2)
 
         mp = self.marker_panel
-        mp.stats_max_val.setText(f"{p_max:.6g}")
-        mp.stats_min_val.setText(f"{p_min:.6g}")
-        mp.stats_mean_val.setText(f"{p_mean:.6g}")
-        mp.stats_median_val.setText(f"{p_median:.6g}")
-        mp.stats_90th_val.setText(f"{p_90:.6g}")
-        mp.stats_10th_val.setText(f"{p_10:.6g}")
-        mp.stats_diff_val.setText(f"{p_diff:.6g}")
+        mp.stats_max_val.setText(f"{p_max:.4g}")
+        mp.stats_min_val.setText(f"{p_min:.4g}")
+        mp.stats_median_val.setText(f"{p_median:.4g}")
+        mp.stats_90th_val.setText(f"{p_90:.4g}")
+        mp.stats_10th_val.setText(f"{p_10:.4g}")
+        mp.stats_diff_val.setText(f"{p_diff:.4g}")
 
-        if hasattr(mp, 'stats_max_time'):
-            mp.stats_max_time.setText(f"{x_max:.6f}")
-            mp.stats_min_time.setText(f"{x_min:.6f}")
-        elif hasattr(mp, 'stats_max_freq'):
-            mp.stats_max_freq.setText(f"{x_max:.6f}")
-            mp.stats_min_freq.setText(f"{x_min:.6f}")
-
-        if hasattr(mp, 'stats_max_idx'):
-            mp.stats_max_idx.setText(f"{idx_max}")
-        if hasattr(mp, 'stats_min_idx'):
-            mp.stats_min_idx.setText(f"{idx_min}")
-        if hasattr(mp, 'stats_max_bin'):
-            mp.stats_max_bin.setText(f"{idx_max}")
-        if hasattr(mp, 'stats_min_bin'):
-            mp.stats_min_bin.setText(f"{idx_min}")
-
+        # Integrated Power & Mean Power calculation
         if hasattr(mp, 'stats_total_power'):
+            # Frequency Domain
+            # 1. Convert slice_data to Linear Power
             if "[dB]" in self.y_label_text:
-                factor = 10 if "magnitude^2" in self.y_label_text.lower() or "psd" in self.y_label_text.lower() else 20
-                lin_data = 10 ** (slice_data / factor)
-                tot_lin = np.sum(lin_data)
-                tot_db = factor * np.log10(tot_lin + 1e-15)
-                mp.stats_total_power.setText(f"{tot_db:.6g}")
+                # slice_data is either 20*log10(mag) or 10*log10(psd).
+                # To get power, divide by 10 and pow(10, x).
+                lin_pow_slice = 10.0 ** (slice_data / 10.0)
             else:
-                total_power = float(np.sum(slice_data))
-                mp.stats_total_power.setText(f"{total_power:.6g}")
+                if "magnitude^2" in self.y_label_text.lower() or "psd" in self.y_label_text.lower():
+                    lin_pow_slice = slice_data
+                else:
+                    lin_pow_slice = slice_data ** 2
+
+            # 2. Calculate Mean Power in selection
+            p_mean_lin = np.mean(lin_pow_slice)
+
+            # 3. Calculate Integrated Power in selection
+            total_p_lin = np.sum(lin_pow_slice)
+
+            # Update UI text
+            if "[dB]" in self.y_label_text:
+                p_mean_db = 10.0 * np.log10(p_mean_lin + 1e-18)
+                mp.stats_mean_val.setText(f"{p_mean_db:.2f} dB")
+                total_p_db = 10.0 * np.log10(total_p_lin + 1e-15)
+                mp.stats_total_power.setText(f"{total_p_db:.2f} dB")
+            else:
+                mp.stats_mean_val.setText(f"{p_mean_lin:.4g}")
+                mp.stats_total_power.setText(f"{total_p_lin:.4g}")
+
+            if hasattr(mp, 'stats_max_freq'):
+                mp.stats_max_freq.setText(f"{x_max:,.0f}")
+                mp.stats_min_freq.setText(f"{x_min:,.0f}")
+            if hasattr(mp, 'stats_max_idx'):
+                mp.stats_max_idx.setText(f"{idx_max:,}")
+                mp.stats_min_idx.setText(f"{idx_min:,}")
+        else:
+            # Time Domain
+            if "[dB]" in self.y_label_text:
+                factor = 10.0 if "magnitude^2" in self.y_label_text.lower() else 20.0
+                lin_data = 10.0 ** (slice_data / factor)
+                lin_mean = np.mean(lin_data)
+                p_mean = factor * np.log10(lin_mean + 1e-15)
+            else:
+                p_mean = np.mean(slice_data)
+            mp.stats_mean_val.setText(f"{p_mean:.4g}")
+
+            prec1 = int(self.settings_mgr.get("ui/label_precision", 9)) if self.settings_mgr else 9
+            if hasattr(mp, 'stats_max_time'):
+                mp.stats_max_time.setText(f"{x_max:.{prec1}f}")
+                mp.stats_min_time.setText(f"{x_min:.{prec1}f}")
+            if hasattr(mp, 'stats_max_idx'):
+                s_max = int(round(x_max * self.rate)) + 1
+                s_min = int(round(x_min * self.rate)) + 1
+                mp.stats_max_idx.setText(f"{s_max}")
+                mp.stats_min_idx.setText(f"{s_min}")
 
         # Update graphical scatter indicators
         self.stats_markers.setData([
