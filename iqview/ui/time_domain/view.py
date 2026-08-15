@@ -858,8 +858,10 @@ class TimeDomainView(QWidget):
             return
             
         # 2. Check for Grid Lines (Shadow Markers)
-        lock_delta = self.marker_panel.btn_lock_delta.isChecked()
-        if not lock_delta and (self.interaction_mode in ['TIME', 'MAG', 'Y']):
+        # Note: lock_delta does NOT prevent shadow-marker dragging — the update_drag
+        # handler already handles it correctly (shifts the whole pair when locked).
+        if self.interaction_mode in ['TIME', 'MAG', 'Y']:
+            lock_delta = self.marker_panel.btn_lock_delta.isChecked()
             grid_lines = self.grid_lines_time if is_time else self.grid_lines_mag
             best_gl = None
             min_gl_dist = 20 # pixels

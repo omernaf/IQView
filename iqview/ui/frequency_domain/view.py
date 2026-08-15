@@ -950,8 +950,7 @@ class FrequencyDomainView(QWidget):
             return
 
         # 1.5 Check for Grid Lines (Shadow Markers)
-        lock_delta = self.marker_panel.btn_lock_delta.isChecked()
-        if not lock_delta and (self.interaction_mode in ['FREQ', 'MAG', 'Y']):
+        if self.interaction_mode in ['FREQ', 'MAG', 'Y']:
             grid_lines = self.grid_lines_freq if is_freq else self.grid_lines_mag
             best_gl = None
             min_gl_dist = 20 # pixels
@@ -972,6 +971,7 @@ class FrequencyDomainView(QWidget):
                 
                 lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
                 lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
+                lock_delta = self.marker_panel.btn_lock_delta.isChecked()
                 lock_center = self.marker_panel.btn_lock_center.isChecked()
                 
                 move_p1 = (k < 0.5)
