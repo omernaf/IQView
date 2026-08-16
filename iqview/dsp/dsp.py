@@ -36,6 +36,14 @@ def design_filter(fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=
     """
     if f_min >= f_max:
         return None, 0.0, False
+
+    # Support keyword aliases from different callers/settings
+    filter_type = kwargs.get('filter_type', filter_type)
+    order = kwargs.get('filter_order', order)
+    rp = kwargs.get('filter_ripple', rp)
+    rs = kwargs.get('filter_stopband', rs)
+    filter_taps = kwargs.get('filter_taps', filter_taps)
+    fir_window = kwargs.get('fir_window', fir_window)
         
     f_center = (f_min + f_max) / 2.0
     bandwidth = f_max - f_min
@@ -53,7 +61,7 @@ def design_filter(fs, f_min, f_max, filter_type="Elliptic", order=8, rp=0.1, rs=
     elif filter_type == "Chebyshev II":
         filter_data = signal.cheby2(order, rs, cutoff, btype='low', output='sos')
     elif filter_type == "Bessel":
-        b_norm = kwargs.get('bessel_norm', 'phase')
+        b_norm = kwargs.get('filter_bessel_norm', kwargs.get('bessel_norm', 'phase'))
         filter_data = signal.bessel(order, cutoff, btype='low', output='sos', norm=b_norm)
     elif is_fir:
         numtaps = filter_taps

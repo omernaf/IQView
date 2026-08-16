@@ -421,6 +421,12 @@ class DataHandlerMixin:
         if was_first and hasattr(self, 'load_overlay_sidecar'):
             self.load_overlay_sidecar()
 
+        # If reprocessing completed while zoomed in (e.g. filter enabled/modified, or parameters changed in full mode),
+        # trigger high-res zoom re-render so the zoomed-in viewport readjusts quality immediately.
+        if not was_first and not self._lazy_enabled:
+            self._zoom_hires_active = False
+            self.on_viewport_changed()
+
     @pyqtSlot(np.ndarray, float, float)
     def display_lazy_tile(self, spectrogram, t_start, t_end):
         """Slot for ViewportAwareReader — updates only the visible image."""
