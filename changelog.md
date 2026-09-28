@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.0] - 2026-09-28
+
+### Fixed
+- **Full Mode and Stdin Zoom Resolution on Parameter Updates**: Fixed an issue where zooming in on a large file in Full Mode or when streaming from stdin resulted in pixelated or blurry image-level zoom without recalculating at the DSP level. Additionally, when updating DSP parameters (such as changing the FFT size, window type/size, overlap percentage, or modifying/enabling filters) while zoomed in, `display_spectrogram()` previously overwrote the high-resolution viewport tile with the downsampled full-file cache and relied on a delayed debounced timer, causing noticeable resolution loss, visual flickering, and potential race conditions. The processing pipeline now directly checks if the viewport is zoomed in via `_is_zoomed_in()`; when reprocessing completes while zoomed in, it retains the active viewport and directly executes `ViewportAwareReader` to compute a crisp, high-resolution spectrogram tile for the visible region without flashing the low-resolution full-file image.
+
 ## [0.6.2] - 2026-08-15
 
 ### Added
