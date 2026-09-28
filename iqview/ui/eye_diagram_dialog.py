@@ -281,7 +281,7 @@ class EyeDiagramView(QWidget):
 
         self._mini_curve = pg.PlotDataItem(
             np.arange(n, dtype=np.float32), norm,
-            pen=pg.mkPen('#00aaff', width=1)
+            pen=pg.mkPen('#0072BD', width=0.5)
         )
         self._mini_item.addItem(self._mini_curve)
         self._mini_item.setXRange(0, n, padding=0)
@@ -728,10 +728,10 @@ class EyeDiagramView(QWidget):
         self._mini_widget.setBackground(p.plot_bg)
 
         # Eye diagram line colour
-        self._eye_data_item.setPen(pg.mkPen(p.accent, width=1))
+        self._eye_data_item.setPen(pg.mkPen('#0072BD', width=0.5))
 
         # Mini curve colour
-        self._mini_curve.setPen(pg.mkPen(p.accent, width=1))
+        self._mini_curve.setPen(pg.mkPen('#0072BD', width=0.5))
 
         # Axis pens
         for pi in (self._eye_plot_item, self._mini_item):

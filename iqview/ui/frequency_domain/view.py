@@ -590,7 +590,7 @@ class FrequencyDomainView(QWidget):
         
         theme = self.settings_mgr.get("ui/theme", "Dark")
         p = get_palette(theme)
-        pen = pg.mkPen(p.accent, width=1.5)
+        pen = pg.mkPen('#0072BD', width=0.5)
         curve = self.plot_item.plot(freqs, data, pen=pen)
         curve.setZValue(0)
         
@@ -675,7 +675,7 @@ class FrequencyDomainView(QWidget):
         
         theme = self.settings_mgr.get("ui/theme", "Dark")
         p = get_palette(theme)
-        pen = pg.mkPen(p.accent, width=1.5)
+        pen = pg.mkPen('#0072BD', width=0.5)
         curve = self.plot_item.plot(self.fft_freq_axis, data, pen=pen)
         curve.setZValue(0)
         

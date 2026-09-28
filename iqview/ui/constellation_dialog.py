@@ -153,7 +153,7 @@ class ConstellationView(QWidget):
             symbol='o',
             symbolSize=self._point_size,
             symbolPen=None,
-            symbolBrush=pg.mkBrush('#00aaff')
+            symbolBrush=pg.mkBrush('#0072BD')
         )
         self._plot_item.addItem(self._scatter_item)
         root.addWidget(self._plot_widget, stretch=3)
@@ -235,7 +235,7 @@ class ConstellationView(QWidget):
 
         self._mini_curve = pg.PlotDataItem(
             np.arange(n, dtype=np.float32), norm,
-            pen=pg.mkPen('#00aaff', width=1)
+            pen=pg.mkPen('#0072BD', width=0.5)
         )
         self._mini_item.addItem(self._mini_curve)
         self._mini_item.setXRange(0, n, padding=0)
@@ -669,8 +669,7 @@ class ConstellationView(QWidget):
     def _on_trajectory_toggled(self, checked: bool):
         self._show_trajectory = checked
         if checked:
-            p = get_palette(self.settings_mgr.get("ui/theme", "Dark") if self.settings_mgr else "Dark")
-            self._scatter_item.setPen(pg.mkPen(p.accent, width=1))
+            self._scatter_item.setPen(pg.mkPen('#0072BD', width=0.5))
         else:
             self._scatter_item.setPen(None)
 
@@ -769,12 +768,12 @@ class ConstellationView(QWidget):
         self._mini_widget.setBackground(p.plot_bg)
 
         # Symbols & trajectory pen
-        self._scatter_item.setSymbolBrush(pg.mkBrush(p.accent))
+        self._scatter_item.setSymbolBrush(pg.mkBrush('#0072BD'))
         if self._show_trajectory:
-            self._scatter_item.setPen(pg.mkPen(p.accent, width=1))
+            self._scatter_item.setPen(pg.mkPen('#0072BD', width=0.5))
 
         # Mini curve colour
-        self._mini_curve.setPen(pg.mkPen(p.accent, width=1))
+        self._mini_curve.setPen(pg.mkPen('#0072BD', width=0.5))
 
         # Axis pens
         for pi in (self._plot_item, self._mini_item):

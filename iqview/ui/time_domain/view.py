@@ -601,7 +601,7 @@ class TimeDomainView(QWidget):
         
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
         p = get_palette(theme)
-        pen = pg.mkPen(p.accent, width=1.5)
+        pen = pg.mkPen('#0072BD', width=0.5)
         self.plot_item.plot(self.time_axis, data, pen=pen)
         
         # 4. Restore markers
