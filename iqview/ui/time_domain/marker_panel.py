@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QPushButton, QHBoxLayout, QButtonGroup, QStackedWidget, QWidget, QVBoxLayout, QScrollArea
+from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QPushButton, QHBoxLayout, QButtonGroup, QStackedWidget, QWidget, QVBoxLayout, QScrollArea, QCheckBox
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QFont, QIcon, QPixmap
 import importlib.resources
@@ -281,8 +281,16 @@ class TimeDomainMarkerPanel(QFrame):
         self.st_layout.setHorizontalSpacing(10)
         self.st_layout.setVerticalSpacing(4)
 
-        # Region Definition Content
-        self.st_layout.addWidget(QLabel(""), 0, 0) 
+        # Region Definition Column Titles
+        lbl_st_m1 = QLabel("Marker 1"); lbl_st_m1.setFont(self.header_font); lbl_st_m1.setAlignment(Qt.AlignmentFlag.AlignCenter); lbl_st_m1.setObjectName("header_label")
+        lbl_st_m2 = QLabel("Marker 2"); lbl_st_m2.setFont(self.header_font); lbl_st_m2.setAlignment(Qt.AlignmentFlag.AlignCenter); lbl_st_m2.setObjectName("header_label")
+        lbl_st_delta = QLabel("Delta (Δ)"); lbl_st_delta.setFont(self.header_font); lbl_st_delta.setAlignment(Qt.AlignmentFlag.AlignCenter); lbl_st_delta.setObjectName("header_label")
+        lbl_st_center = QLabel("Center"); lbl_st_center.setFont(self.header_font); lbl_st_center.setAlignment(Qt.AlignmentFlag.AlignCenter); lbl_st_center.setObjectName("header_label")
+
+        self.st_layout.addWidget(lbl_st_m1, 0, 1)
+        self.st_layout.addWidget(lbl_st_m2, 0, 2)
+        self.st_layout.addWidget(lbl_st_delta, 0, 3)
+        self.st_layout.addWidget(lbl_st_center, 0, 4) 
 
         self.st_widgets = []
         for i in range(2):
@@ -360,12 +368,37 @@ class TimeDomainMarkerPanel(QFrame):
         self.res_layout.addWidget(self.stats_median_val, 2, 4)
 
         # Percentiles (Cols 5-6)
+        w_90 = QWidget()
+        l_90 = QHBoxLayout(w_90)
+        l_90.setContentsMargins(0, 0, 0, 0)
+        l_90.setSpacing(4)
+        l_90.addStretch()
+        self.cb_p90 = QCheckBox()
+        self.cb_p90.setChecked(True)
+        self.cb_p90.setToolTip("Toggle 90th percentile indicator line (red)")
         self.st_res_lbl_90th = QLabel("90th % (dB)"); self.st_res_lbl_90th.setObjectName("header_label")
+        l_90.addWidget(self.cb_p90)
+        l_90.addWidget(self.st_res_lbl_90th)
+
+        w_10 = QWidget()
+        l_10 = QHBoxLayout(w_10)
+        l_10.setContentsMargins(0, 0, 0, 0)
+        l_10.setSpacing(4)
+        l_10.addStretch()
+        self.cb_p10 = QCheckBox()
+        self.cb_p10.setChecked(True)
+        self.cb_p10.setToolTip("Toggle 10th percentile indicator line (green)")
         self.st_res_lbl_10th = QLabel("10th % (dB)"); self.st_res_lbl_10th.setObjectName("header_label")
+        l_10.addWidget(self.cb_p10)
+        l_10.addWidget(self.st_res_lbl_10th)
+
+        self.cb_p90.toggled.connect(self._on_percentile_toggled)
+        self.cb_p10.toggled.connect(self._on_percentile_toggled)
+
         self.st_res_lbl_diff = QLabel("90-10 Diff (dB)"); self.st_res_lbl_diff.setObjectName("header_label")
-        self.res_layout.addWidget(self.st_res_lbl_90th, 1, 5, Qt.AlignmentFlag.AlignRight)
-        self.res_layout.addWidget(self.st_res_lbl_10th, 2, 5, Qt.AlignmentFlag.AlignRight)
-        self.res_layout.addWidget(self.st_res_lbl_diff, 3, 5, Qt.AlignmentFlag.AlignRight)
+        self.res_layout.addWidget(w_90, 1, 5, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.res_layout.addWidget(w_10, 2, 5, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.res_layout.addWidget(self.st_res_lbl_diff, 3, 5, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         self.stats_90th_val = FormattedLineEdit(); self.stats_90th_val.setFixedWidth(110); self.stats_90th_val.setReadOnly(True); self.stats_90th_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stats_10th_val = FormattedLineEdit(); self.stats_10th_val.setFixedWidth(110); self.stats_10th_val.setReadOnly(True); self.stats_10th_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -382,6 +415,10 @@ class TimeDomainMarkerPanel(QFrame):
 
         # Apply theme (must be done AFTER buttons are initialized)
         self.refresh_theme()
+
+    def _on_percentile_toggled(self, checked=False):
+        if hasattr(self.controller, 'update_statistics'):
+            self.controller.update_statistics()
 
     def _get_icon(self, name, theme="Light"):
         """Helper to load icons from resources/assets."""

@@ -18,6 +18,8 @@
   - Separated `Mean`, `Median`, and `Integrated` into an independent vertical column with individual unit declarations (`Mean (dBFS)` / `Mean (dB/Hz)`, `Median (dBFS)` / `Median (dB/Hz)`, `Integrated (dB)`).
   - Separated Percentiles into an independent vertical column with individual unit declarations (`90th % (dBFS)` / `90th % (dB/Hz)`, `10th % (dBFS)` / `10th % (dB/Hz)`, `90-10 Diff (dB)`).
   - Added horizontal visual indicators spanning the entire plot for the selected region's distribution: a dotted green line for the **10th percentile** and a dotted red line for the **90th percentile**.
+  - Added interactive toggle checkboxes (`QCheckBox`, enabled by default) next to the 10th and 90th percentile labels in both Time Domain and Frequency Domain panels to dynamically show/hide the percentile indicator lines.
+  - Added explicit column titles (`Marker 1`, `Marker 2`, `Delta (Δ)`, `Center`) in the **Region Definition** tab of the statistical region panel.
 
 - **Endless Marker Table Header Labels**: Fixed swapped column headers in the endless marker table for both Time and Frequency modes. The header row previously inverted the position header (`Pos (sec)` / `Pos (Hz)`) and sample/bin sub-unit header (`Sam` / `Bin`), displaying seconds/Hz over the sample/bin integer column and `Sam`/`Bin` over the time/frequency values. Corrected the header role mappings, added column alignment spacing for the delete button, and removed a redundant duplicate update block.
 - **Endless Marker Dragging and Table Value Synchronization**: Fixed an issue where dragging an endless marker to a new position either failed to update its value in the table or updated the wrong marker. The root causes were:

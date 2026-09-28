@@ -558,12 +558,14 @@ class TimeDomainView(QWidget):
         ])
 
         # 10th and 90th percentile horizontal dotted lines spanning the full plot
+        show_p10 = self.marker_panel.cb_p10.isChecked() if hasattr(self.marker_panel, 'cb_p10') else True
+        show_p90 = self.marker_panel.cb_p90.isChecked() if hasattr(self.marker_panel, 'cb_p90') else True
         if hasattr(self, 'stats_p10_line'):
             self.stats_p10_line.setPos(p_10)
-            self.stats_p10_line.show()
+            self.stats_p10_line.setVisible(show_p10)
         if hasattr(self, 'stats_p90_line'):
             self.stats_p90_line.setPos(p_90)
-            self.stats_p90_line.show()
+            self.stats_p90_line.setVisible(show_p90)
 
     def _update_plot(self, data, y_label):
         # 1. Save current view ranges (if not first run)
@@ -859,8 +861,10 @@ class TimeDomainView(QWidget):
                 self.stats_region.setRegion(self.stats_bounds)
                 self.stats_region.show()
                 self.stats_markers.show()
-                if getattr(self, 'stats_p10_line', None): self.stats_p10_line.show()
-                if getattr(self, 'stats_p90_line', None): self.stats_p90_line.show()
+                show_p10 = self.marker_panel.cb_p10.isChecked() if hasattr(self.marker_panel, 'cb_p10') else True
+                show_p90 = self.marker_panel.cb_p90.isChecked() if hasattr(self.marker_panel, 'cb_p90') else True
+                if getattr(self, 'stats_p10_line', None): self.stats_p10_line.setVisible(show_p10)
+                if getattr(self, 'stats_p90_line', None): self.stats_p90_line.setVisible(show_p90)
                 
             self.update_statistics()
             return
