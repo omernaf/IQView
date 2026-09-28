@@ -43,10 +43,10 @@ class SettingsManager:
             '.sd2': 'audio',
         },
         "core/time_plots": [
-            "instant frequency", 
-            "magnitude [dB]", 
-            "Real", 
-            "Imaginary"
+            "magnitude [dB]",
+            "Real",
+            "Imaginary",
+            "instant frequency"
         ],
         "core/inst_freq_filter_len": 7,
         "core/frequency_plots": [

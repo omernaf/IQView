@@ -132,6 +132,7 @@ class SpectrogramView(QWidget):
 
         # Session-specific waterfall override (None = fallback to Settings default)
         self._session_waterfall = None
+        self._applied_waterfall = self.is_waterfall
 
         # Connect signals
         self.view_box.sigRangeChanged.connect(self.update_scrollbars)
@@ -171,19 +172,27 @@ class SpectrogramView(QWidget):
         self.plot_item.setLabel('bottom', bl, units=bu)
         self.plot_item.setLabel('left', ll, units=lu)
 
-    def apply_waterfall_mode(self):
+    def apply_waterfall_mode(self, force=False):
         """Re-render the current cached image in the new orientation and update all
         axis labels, scrollbars, and the spectrum envelope sync.
         Called from on_settings_applied() after the user changes the waterfall checkbox."""
+        current_waterfall = self.is_waterfall
+        prev_was_waterfall = getattr(self, '_applied_waterfall', current_waterfall)
+
+        if not force and (prev_was_waterfall == current_waterfall):
+            # Waterfall orientation has not changed; do not swap axes or viewport bounds
+            return
+
         # 1. Capture current viewport bounds before orientation toggle
         xr, yr = self.view_box.viewRange()
-        prev_was_waterfall = not self.is_waterfall
         if prev_was_waterfall:
             f_min, f_max = xr[0], xr[1]
             t_min, t_max = yr[0], yr[1]
         else:
             t_min, t_max = xr[0], xr[1]
             f_min, f_max = yr[0], yr[1]
+
+        self._applied_waterfall = current_waterfall
 
         self._apply_axis_labels()
 
