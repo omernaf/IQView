@@ -173,7 +173,7 @@ class SidePanel(QFrame):
     multirowChanged   = pyqtSignal(dict)
 
     def __init__(self, fs, fc, fft_size, window_type="Hamming",
-                 overlap_percent=99.0, window_size=None, parent_window=None):
+                 overlap_percent=100.0, window_size=None, parent_window=None):
         super().__init__()
         self.parent_window   = parent_window
         self.fs              = fs
@@ -181,7 +181,13 @@ class SidePanel(QFrame):
         self.fft_size        = fft_size
         self.window_size     = window_size if window_size is not None else fft_size
         self.window_type     = window_type
-        self.overlap_percent = overlap_percent
+        if str(overlap_percent).upper() == "MAX":
+            self.overlap_percent = 100.0
+        else:
+            try:
+                self.overlap_percent = float(overlap_percent)
+            except Exception:
+                self.overlap_percent = 100.0
         
         self.setup_ui()
         self.update_derived_values()
@@ -321,7 +327,8 @@ class SidePanel(QFrame):
         lyt.addWidget(self.window_size_edit)
 
         lyt.addWidget(QLabel("Overlap (%)"))
-        self.overlap_edit = QLineEdit(str(self.overlap_percent))
+        ov_str = "MAX" if (isinstance(self.overlap_percent, (int, float)) and self.overlap_percent >= 100.0) or str(self.overlap_percent).upper() == "MAX" else f"{float(self.overlap_percent):.1f}"
+        self.overlap_edit = QLineEdit(ov_str)
         self.overlap_edit.returnPressed.connect(self.on_overlap_edited)
         lyt.addWidget(self.overlap_edit)
 
@@ -481,8 +488,11 @@ class SidePanel(QFrame):
             self.rbw_display.setText(f"{rbw:.2f} Hz")
         
         # dt = step_size / Fs
-        step_size = int(self.window_size * (1.0 - self.overlap_percent / 100.0))
-        step_size = max(1, step_size)
+        if self.overlap_percent >= 100.0:
+            step_size = 1
+        else:
+            step_size = int(self.window_size * (1.0 - self.overlap_percent / 100.0))
+            step_size = max(1, step_size)
         
         if self.fs == 0:
             self.dt_display.setText("inf")
@@ -526,13 +536,27 @@ class SidePanel(QFrame):
         self.on_edit_finished()
         
     def on_overlap_edited(self):
+        text = self.overlap_edit.text().strip()
+        if text.upper() == "MAX" or text in ("100", "100.0", "100%") or text.startswith("100"):
+            self.overlap_percent = 100.0
+            self.overlap_edit.setText("MAX")
+            self.on_edit_finished()
+            return
+
         try:
-            self.overlap_percent = np.clip(
-                float(self.overlap_edit.text()), 0, 99.9
-            )
-            self.overlap_edit.setText(f"{self.overlap_percent:.1f}")
+            val = float(text.replace("%", "").strip())
+            if val >= 100.0:
+                self.overlap_percent = 100.0
+                self.overlap_edit.setText("MAX")
+            else:
+                self.overlap_percent = float(np.clip(val, 0.0, 99.99))
+                self.overlap_edit.setText(f"{self.overlap_percent:.1f}")
             self.on_edit_finished()
         except ValueError:
+            if self.overlap_percent >= 100.0:
+                self.overlap_edit.setText("MAX")
+            else:
+                self.overlap_edit.setText(f"{self.overlap_percent:.1f}")
             self.update_derived_values()
 
     def on_edit_finished(self):

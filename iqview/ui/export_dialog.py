@@ -300,7 +300,7 @@ class ExportDialog(QtWidgets.QDialog):
                 f"Center Freq: {s.fc / 1e6:.3f} MHz",
                 f"Sample Rate: {s.rate / 1e6:.3f} MHz",
                 f"FFT Size: {s.fft_size}",
-                f"Overlap: {s.overlap_percent}%",
+                f"Overlap: {'MAX' if getattr(s, 'overlap_percent', 0) >= 100.0 else f'{s.overlap_percent}%'}",
                 f"Duration: {s.time_duration:.3f} s",
                 f"Data Type: {s.data_type}"
             ]

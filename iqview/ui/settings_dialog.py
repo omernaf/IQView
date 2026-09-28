@@ -137,7 +137,10 @@ class SettingsDialog(QDialog):
             default_val = self.mgr.get_default(key)
             
             if isinstance(widget, QLineEdit):
-                widget.setText(str(default_val))
+                if key == "core/overlap" and (default_val >= 100.0 or str(default_val).upper() == "MAX"):
+                    widget.setText("MAX")
+                else:
+                    widget.setText(str(default_val))
             elif isinstance(widget, QComboBox):
                 if isinstance(default_val, bool):
                     target_text = "On" if default_val else "Off"
@@ -276,7 +279,9 @@ class SettingsDialog(QDialog):
         self.fft_combo.addItems([str(p) for p in powers])
         self.fft_combo.setCurrentText(str(self.mgr.get("core/fft_size")))
 
-        self.overlap_edit = QLineEdit(str(self.mgr.get("core/overlap")))
+        ov_val = self.mgr.get("core/overlap", 100.0)
+        ov_str = "MAX" if (str(ov_val).upper() == "MAX" or (isinstance(ov_val, (int, float)) and float(ov_val) >= 100.0)) else str(ov_val)
+        self.overlap_edit = QLineEdit(ov_str)
         self.window_combo = QComboBox()
         self.window_combo.addItems(["Hanning", "Hamming", "Blackman", "Bartlett", "Rectangular"])
         self.window_combo.setCurrentText(str(self.mgr.get("core/window_type")))
@@ -668,7 +673,16 @@ class SettingsDialog(QDialog):
             self.mgr.set("core/fc", float(self.fc_edit.text()))
             self.mgr.set("core/type", self.type_combo.currentText())
             self.mgr.set("core/fft_size", int(self.fft_combo.currentText()))
-            self.mgr.set("core/overlap", float(self.overlap_edit.text()))
+            ov_text = self.overlap_edit.text().strip()
+            if ov_text.upper() == "MAX" or ov_text in ("100", "100.0", "100%") or ov_text.startswith("100"):
+                self.mgr.set("core/overlap", 100.0)
+            else:
+                try:
+                    ov_val = float(ov_text.replace("%", "").strip())
+                    ov_val = float(np.clip(ov_val, 0.0, 100.0))
+                    self.mgr.set("core/overlap", ov_val)
+                except ValueError:
+                    self.mgr.set("core/overlap", 100.0)
             self.mgr.set("core/window_type", self.window_combo.currentText())
             self.mgr.set("ui/theme", self.theme_combo.currentText())
             self.mgr.set("ui/colormap", self.cmap_combo.currentText())

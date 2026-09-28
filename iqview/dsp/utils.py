@@ -66,9 +66,12 @@ class FileReaderThread(QThread):
         else: # Rectangular / None
             self.window = np.ones(self.window_size, dtype=np.float32)
         
-        # Calculate step size based on requested overlap
-        req_step_size = int(self.window_size * (1.0 - overlap_percent / 100.0))
-        req_step_size = max(1, req_step_size)
+        # Calculate step size based on requested overlap (100% / MAX = 1 new sample per window)
+        if overlap_percent >= 100.0:
+            req_step_size = 1
+        else:
+            req_step_size = int(self.window_size * (1.0 - overlap_percent / 100.0))
+            req_step_size = max(1, req_step_size)
         
         item_size = np.dtype(self.dtype).itemsize
         # Determine data size — works for both file paths and in-memory bytes
@@ -357,7 +360,10 @@ class ViewportAwareReader(QThread):
         # appearance while completely dodging the 20,000+ row read bottlenecks.
         target_rows = max(1, self.pixel_width * 4)
 
-        req_step     = max(1, int(self.window_size * (1.0 - overlap_percent / 100.0)))
+        if overlap_percent >= 100.0:
+            req_step = 1
+        else:
+            req_step = max(1, int(self.window_size * (1.0 - overlap_percent / 100.0)))
         natural_step = max(1, (view_samples - self.window_size) // max(target_rows - 1, 1))
         self.step_size = max(req_step, natural_step)
 
@@ -537,7 +543,7 @@ class MultiRowProcessor(QThread):
 
     def __init__(self, source, dtype, fft_size, sample_rate, num_rows,
                  start_sample, samples_per_row, period,
-                 is_complex=True, window_type="Hanning", overlap_percent=99.0,
+                 is_complex=True, window_type="Hanning", overlap_percent=100.0,
                  window_size=None, filter_mode=None, f_min=None, f_max=None,
                  **kwargs):
         super().__init__()
@@ -566,7 +572,10 @@ class MultiRowProcessor(QThread):
             self.window = np.ones(self.window_size, dtype=np.float32)
 
         # Compute step size, capping time columns to MAX_COLS
-        req_step = max(1, int(self.window_size * (1.0 - overlap_percent / 100.0)))
+        if overlap_percent >= 100.0:
+            req_step = 1
+        else:
+            req_step = max(1, int(self.window_size * (1.0 - overlap_percent / 100.0)))
         if self.samples_per_row > self.window_size:
             natural_cols = (self.samples_per_row - self.window_size) // req_step + 1
         else:

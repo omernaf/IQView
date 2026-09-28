@@ -69,7 +69,14 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
         self.fft_size = fft_size
         self.window_size = fft_size
         self.window_type = self.settings_mgr.get("core/window_type", "Hamming")
-        self.overlap_percent = float(self.settings_mgr.get("core/overlap", 99.0))
+        ov = self.settings_mgr.get("core/overlap", 100.0)
+        if str(ov).upper() == "MAX":
+            self.overlap_percent = 100.0
+        else:
+            try:
+                self.overlap_percent = float(ov)
+            except Exception:
+                self.overlap_percent = 100.0
         self.data_type = data_type
         self.is_complex = is_complex
         self.profile_enabled = profile_enabled
