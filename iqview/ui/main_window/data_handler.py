@@ -15,6 +15,18 @@ class DataHandlerMixin:
         """True when a data source has been loaded (works in both lazy and full-file modes)."""
         return self.data_source is not None
 
+    def _is_zoomed_in(self):
+        """Check if the viewport is zoomed in past the rerender threshold."""
+        if not hasattr(self, 'spectrogram_view'):
+            return False
+        xr, yr = self.spectrogram_view.view_box.viewRange()
+        time_range = yr if self.spectrogram_view.is_waterfall else xr
+        visible_duration = max(time_range[1] - time_range[0], 0.0)
+        total_duration = getattr(self, 'time_duration', 1.0)
+        if total_duration <= 0:
+            return False
+        return (visible_duration / total_duration) < _ZOOM_RERENDER_THRESHOLD
+
     @property
     def _lazy_enabled(self):
         """Per-instance lazy mode flag.
@@ -285,26 +297,15 @@ class DataHandlerMixin:
         if getattr(self, 'full_spectrogram_cache', None) is None:
             return
 
-        xr, yr = self.spectrogram_view.view_box.viewRange()
-        time_range = yr if self.spectrogram_view.is_waterfall else xr
-        visible_duration = max(time_range[1] - time_range[0], 0.0)
-        total_duration = getattr(self, 'time_duration', 1.0)
-
-        visible_fraction = visible_duration / total_duration if total_duration > 0 else 1.0
-
-        if visible_fraction >= _ZOOM_RERENDER_THRESHOLD:
+        if self._is_zoomed_in():
+            # Zoomed in past threshold — launch a viewport-aware high-res render
+            self._do_lazy_render()   # reuses all existing lazy machinery
+        else:
             # Zoomed out enough — restore the full cached spectrogram
-            if getattr(self, '_zoom_hires_active', False):
-                self.spectrogram_view.update_spectrogram(
-                    self.full_spectrogram_cache, self.fc, self.rate,
-                    0.0, self.time_duration, auto_range=False
-                )
-                self._zoom_hires_active = False
-            return
-
-        # Zoomed in past threshold — launch a viewport-aware high-res render
-        self._zoom_hires_active = True
-        self._do_lazy_render()   # reuses all existing lazy machinery
+            self.spectrogram_view.update_spectrogram(
+                self.full_spectrogram_cache, self.fc, self.rate,
+                0.0, self.time_duration, auto_range=False
+            )
 
     def _do_lazy_render(self):
         """Build and launch a ViewportAwareReader for the current viewport."""
@@ -411,21 +412,31 @@ class DataHandlerMixin:
         total_duration = self._estimate_file_duration()
         self.time_duration = total_duration
         self.total_samples_in_cache = int(round(total_duration * self.rate))
-        self.spectrogram_view.update_spectrogram(
-            full_spectrogram, self.fc, self.rate, t_start, t_end,
-            auto_range=self.is_first_load
-        )
+
+        zoomed_in = not was_first and not self._lazy_enabled and self._is_zoomed_in()
+
+        if zoomed_in:
+            # Zoomed in during a reprocess (filter/FFT/window change):
+            # Do NOT overwrite the visible image with the low-res full-file
+            # spectrogram.  Just update the backing cache and full ranges so
+            # scrollbars and zoom-out work, then immediately launch a hi-res
+            # viewport render.
+            self.spectrogram_view.full_t_range = (0.0, total_duration)
+            self.spectrogram_view.full_f_range = (
+                self.fc - self.rate / 2, self.fc + self.rate / 2)
+            self._do_lazy_render()
+        else:
+            self.spectrogram_view.update_spectrogram(
+                full_spectrogram, self.fc, self.rate, t_start, t_end,
+                auto_range=self.is_first_load
+            )
+
         self.is_first_load = False
         self.update_marker_info()
         # Load persisted overlays on first display
         if was_first and hasattr(self, 'load_overlay_sidecar'):
             self.load_overlay_sidecar()
 
-        # If reprocessing completed while zoomed in (e.g. filter enabled/modified, or parameters changed in full mode),
-        # trigger high-res zoom re-render so the zoomed-in viewport readjusts quality immediately.
-        if not was_first and not self._lazy_enabled:
-            self._zoom_hires_active = False
-            self.on_viewport_changed()
 
     @pyqtSlot(np.ndarray, float, float)
     def display_lazy_tile(self, spectrogram, t_start, t_end):

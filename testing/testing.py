@@ -25,7 +25,8 @@ def main():
     # filename = "samples/saved/iq1.mat"
     # filename = "samples/file_example_WAV_5MG.wav"
     # filename = "samples/temp.32fc"
-    filename = "samples/mavic_long_50MHz.32fc"
+    # filename = "samples/mavic_long_50MHz.32fc"
+    filename = "samples/mavic_long.mat"
     # filename = "samples/burst_cw.32fc";
     # filename = "samples/QPSK_RC_10sps.32fc"
     # filename = "samples/LoRa_401MHz_4MHz/lora_process_energy_1.bin"
