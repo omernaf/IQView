@@ -24,6 +24,17 @@ class ViewControllerMixin:
         
         if hasattr(self, '_add_recent_file') and getattr(self, 'file_path', None):
             self._add_recent_file(self.file_path, type_str=getattr(self, 'current_type_str', None), fs=self.rate, fc=self.fc)
+
+        # When sample rate (fs) changes, PSD (dB/Hz) shifts by -10*log10(new_fs / old_fs)
+        delta_psd = 0.0
+        if old_rate > 0 and self.rate > 0 and old_rate != self.rate:
+            delta_psd = float(-10.0 * np.log10(self.rate / old_rate))
+            if hasattr(self, 'spectrogram_view') and hasattr(self.spectrogram_view, 'level_region'):
+                low, high = self.spectrogram_view.level_region.getRegion()
+                b_lo, b_hi = self.spectrogram_view.level_region.bounds
+                if b_lo is not None and b_hi is not None:
+                    self.spectrogram_view.level_region.setBounds([b_lo + delta_psd, b_hi + delta_psd])
+                self.spectrogram_view.level_region.setRegion([low + delta_psd, high + delta_psd])
         
         if needs_reprocess:
             self.start_processing()
@@ -78,10 +89,22 @@ class ViewControllerMixin:
                 rel_f = (marker.value() - old_bottom) / old_rate
                 marker.setPos(new_bottom + rel_f * self.rate)
 
-            if not needs_reprocess and hasattr(self, 'full_spectrogram_cache'):
-                self.spectrogram_view.update_spectrogram(
-                    self.full_spectrogram_cache, self.fc, self.rate, 0.0, self.time_duration, auto_range=False
-                )
+            if not needs_reprocess:
+                if getattr(self, 'full_spectrogram_cache', None) is not None:
+                    if delta_psd != 0.0:
+                        self.full_spectrogram_cache = self.full_spectrogram_cache + np.float32(delta_psd)
+                    self.spectrogram_view.update_spectrogram(
+                        self.full_spectrogram_cache, self.fc, self.rate, 0.0, self.time_duration, auto_range=False
+                    )
+                elif getattr(self.spectrogram_view, '_last_spectrogram', None) is not None:
+                    if delta_psd != 0.0:
+                        self.spectrogram_view._last_spectrogram = self.spectrogram_view._last_spectrogram + np.float32(delta_psd)
+                    scale_t = self.time_duration / old_duration
+                    t0 = (self.spectrogram_view._last_t_start or 0.0) * scale_t
+                    t1 = (self.spectrogram_view._last_t_end or old_duration) * scale_t
+                    self.spectrogram_view.update_lazy_tile(
+                        self.spectrogram_view._last_spectrogram, self.fc, self.rate, t0, t1, auto_range=False
+                    )
         self.update_marker_info()
 
     def set_interaction_mode(self, mode):

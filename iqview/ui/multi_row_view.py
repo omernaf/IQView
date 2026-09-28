@@ -619,7 +619,10 @@ class MultiRowSpectrogramView(QWidget):
 
         # Auto-initialize levels if they are still at default [0.0, 1.0]
         if abs(levels[0]) < 1e-6 and abs(levels[1] - 1.0) < 1e-6:
-            valid_chunks = [s.ravel()[s.ravel() > -190.0] for s in spectra]
+            valid_chunks = [
+                s.ravel()[np.isfinite(s.ravel()) & (s.ravel() > float(np.max(s)) - 180.0)]
+                for s in spectra if s.size > 0 and np.any(np.isfinite(s))
+            ]
             valid_chunks = [c for c in valid_chunks if len(c) > 0]
             if valid_chunks:
                 combined = np.concatenate(valid_chunks)
@@ -627,6 +630,9 @@ class MultiRowSpectrogramView(QWidget):
                 hi = float(np.percentile(combined, 98))
                 levels = [lo, hi]
                 sv.level_region.setRegion([lo, hi])
+
+        if hasattr(sv, 'colorbar_axis') and len(levels) == 2:
+            sv.colorbar_axis.setRange(float(levels[0]), float(levels[1]))
 
         cmap         = sv.gradient.colorMap()
         is_waterfall = sv.is_waterfall

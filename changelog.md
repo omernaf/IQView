@@ -22,6 +22,10 @@
   - Added explicit column titles (`Marker 1`, `Marker 2`, `Delta (Δ)`, `Center`) in the **Region Definition** tab of the statistical region panel.
 - **MATLAB Plot Styling**:
   - Updated all non-spectrogram plot curves (Time Domain, Frequency Domain FFT/PSD, Eye Diagram, Constellation trajectories and scatter points, and overview mini-curves) to use the signature MATLAB blue (`#0072BD`) with a line width of `0.5`, leaving markers, indicator lines, and grid styling untouched.
+- **Spectrogram PSD (`dB/Hz`) Normalization & Dynamic Colorbar Axis**:
+  - Normalized all spectrogram DSP pipelines (`FileReaderThread`, `ViewportAwareReader`, `MultiRowProcessor`, and `postprocess_fft`) by window energy and sample rate ($10\log_{10}(f_s \sum w^2[n])$) so pixel intensities represent true Power Spectral Density in $\text{dB/Hz}$ invariant to window type, window length, and FFT size.
+  - Added a custom `ColorbarAxisItem` (`dB/Hz`) flush against the right edge of the spectrogram colorbar gradient while keeping axis values hidden on the miniature spectrum envelope plot.
+  - Synchronized the colorbar axis dynamically with the draggable min/max level lines (`level_region`) and sample rate ($f_s$) updates so the $\text{dB/Hz}$ scale updates in real time as the color mapping changes.
 
 - **Endless Marker Table Header Labels**: Fixed swapped column headers in the endless marker table for both Time and Frequency modes. The header row previously inverted the position header (`Pos (sec)` / `Pos (Hz)`) and sample/bin sub-unit header (`Sam` / `Bin`), displaying seconds/Hz over the sample/bin integer column and `Sam`/`Bin` over the time/frequency values. Corrected the header role mappings, added column alignment spacing for the delete button, and removed a redundant duplicate update block.
 - **Endless Marker Dragging and Table Value Synchronization**: Fixed an issue where dragging an endless marker to a new position either failed to update its value in the table or updated the wrong marker. The root causes were:

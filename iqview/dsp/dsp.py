@@ -11,9 +11,18 @@ def preprocess_chunk(data_array, window, fft_size):
     # Apply window
     return complex_data * window
 
-def postprocess_fft(fft_result, fft_size):
+def compute_psd_norm_db(window, sample_rate):
     """
-    Applies fftshift and computes log magnitude in dB.
+    Computes the 10*log10(fs * sum(w^2)) normalization offset (in dB)
+    to convert raw FFT magnitude (20*log10|X|) into Power Spectral Density (dB/Hz).
+    """
+    s2 = float(np.sum(np.asarray(window, dtype=np.float64) ** 2))
+    fs = max(float(sample_rate), 1e-12)
+    return np.float32(10.0 * np.log10(max(fs * s2, 1e-30)))
+
+def postprocess_fft(fft_result, fft_size, psd_norm_db=0.0):
+    """
+    Applies fftshift and computes log magnitude in dB (or PSD in dB/Hz if psd_norm_db is provided).
     Vectorized version.
     """
     # Use NumPy's vectorized fftshift and magnitude calculation
@@ -21,11 +30,11 @@ def postprocess_fft(fft_result, fft_size):
     mag = np.abs(shifted)
     
     # Clip to epsilon to avoid log10(0)
-    epsilon = np.float32(1e-10)
+    epsilon = np.float32(1e-12)
     mag = np.maximum(mag, epsilon)
     
-# Convert to dB
-    return 20.0 * np.log10(mag)
+    # Convert to dB / dB/Hz
+    return 20.0 * np.log10(mag) - np.float32(psd_norm_db)
 
 from scipy import signal
 

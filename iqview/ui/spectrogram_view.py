@@ -9,6 +9,53 @@ import numpy as np
 import copy
 from .themes import get_palette, get_scrollbar_stylesheet
 
+class ColorbarAxisItem(pg.AxisItem):
+    """Vertical AxisItem aligned to the top and bottom of a GradientEditorItem's color bar."""
+    def __init__(self, gradient_item, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._gradient_item = gradient_item
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        self.picture = None
+        self.update()
+
+    def generateDrawSpecs(self, p):
+        specs = super().generateDrawSpecs(p)
+        if specs is None or self._gradient_item is None:
+            return specs
+        axisSpec, tickSpecs, textSpecs = specs
+        H = self.geometry().height()
+        if H <= 0:
+            return specs
+        gr = self._gradient_item.mapRectToParent(self._gradient_item.gradRect.rect())
+        gr_local = self.mapRectFromParent(gr)
+        y_top = gr_local.top()
+        y_bot = gr_local.bottom()
+        span_h = y_bot - y_top
+        if span_h <= 0:
+            return specs
+
+        def map_y(y):
+            return y_top + (y / H) * span_h
+
+        pen, a1, a2 = axisSpec
+        axisSpec = (pen, pg.Point(a1.x(), y_top), pg.Point(a2.x(), y_bot))
+
+        new_ticks = []
+        for t_pen, p1, p2 in tickSpecs:
+            ny = map_y(p1.y())
+            new_ticks.append((t_pen, pg.Point(p1.x(), ny), pg.Point(p2.x(), ny)))
+
+        new_texts = []
+        for rect, flags, vstr in textSpecs:
+            cy = map_y(rect.center().y())
+            new_rect = QRectF(rect.x(), cy - rect.height() / 2.0, rect.width(), rect.height())
+            new_texts.append((new_rect, flags, vstr))
+
+        return axisSpec, new_ticks, new_texts
+
+
 class SpectrogramView(QWidget):
     def __init__(self, parent_window):
         super().__init__()
@@ -38,10 +85,11 @@ class SpectrogramView(QWidget):
         self.layout.addWidget(self.y_scroll, 0, 0) # Left side
         self.layout.addWidget(self.x_scroll, 1, 1) # Under the plot
         
-        # Internal Graphics Layout for Histogram -> Now Spectrum Envelope
+        # Internal Graphics Layout for Histogram -> Now Spectrum Envelope + Colorbar
         self.glw_hist = pg.GraphicsLayoutWidget()
         # Background set in refresh_theme
-        self.glw_hist.setFixedWidth(180) # Slightly wider for the new dual-control
+        self.glw_hist.setFixedWidth(225)
+        self.glw_hist.ci.layout.setHorizontalSpacing(0)
         self.layout.addWidget(self.glw_hist, 0, 2)
         
         # 1. Spectrum Plot (Min/Max Envelope)
@@ -53,7 +101,7 @@ class SpectrogramView(QWidget):
         self.spectrum_plot.setMouseEnabled(x=False, y=False)
         self.spectrum_plot.getAxis('left').setStyle(showValues=False)
         self.spectrum_plot.getAxis('bottom').setStyle(showValues=False)
-        self.spectrum_plot.getAxis('left').setWidth(10) # Reduce width since numbers are gone
+        self.spectrum_plot.getAxis('left').setWidth(8) # Reduce width since numbers are gone
         self.spectrum_plot.hideButtons()
         
         self.min_env_curve = pg.PlotDataItem(pen=pg.mkPen('#555', width=1)) # Noise Floor (Gray)
@@ -70,13 +118,21 @@ class SpectrogramView(QWidget):
         
         self.spectrum_plot.addItem(self.level_region)
         
-        # 3. Gradient Editor (Vertical, aligned with Level axis)
-        self.gradient = pg.GradientEditorItem(orientation='right')
+        # 3. Gradient Editor (Vertical, handles on left so flat colorbar edge meets axis on right)
+        self.gradient = pg.GradientEditorItem(orientation='left')
         self.glw_hist.addItem(self.gradient, row=0, col=1)
+
+        # 4. Dynamic Colorbar dB/Hz Axis (attached to right edge of colorbar)
+        self.colorbar_axis = ColorbarAxisItem(self.gradient, orientation='right')
+        self.colorbar_axis.enableAutoSIPrefix(False)
+        self.colorbar_axis.setLabel('dB/Hz')
+        self.colorbar_axis.setRange(-100.0, 0.0)
+        self.glw_hist.addItem(self.colorbar_axis, row=0, col=2)
         
         # Stretch factors for the GLW
         self.glw_hist.ci.layout.setColumnStretchFactor(0, 1)
         self.glw_hist.ci.layout.setColumnStretchFactor(1, 0)
+        self.glw_hist.ci.layout.setColumnStretchFactor(2, 0)
 
         # Stretch factors for main layout
         self.layout.setColumnStretch(0, 0)
@@ -254,6 +310,8 @@ class SpectrogramView(QWidget):
     def on_levels_changed(self):
         low, high = self.level_region.getRegion()
         self.img.setLevels([low, high])
+        if hasattr(self, 'colorbar_axis'):
+            self.colorbar_axis.setRange(low, high)
         if hasattr(self.parent_window, 'multi_row_view') and hasattr(self.parent_window, 'spectrogram_stack'):
             if self.parent_window.spectrogram_stack.currentIndex() == 1:
                 self.parent_window.multi_row_view.apply_levels_and_colormap()
@@ -400,8 +458,15 @@ class SpectrogramView(QWidget):
     # ---- Image display helpers ----
 
     def _compute_auto_levels(self, spectrogram):
-        """Compute sensible (min_v, max_v) from spectrogram data."""
-        valid_data = spectrogram[spectrogram > -190.0]
+        """Compute sensible (min_v, max_v) in dB/Hz from spectrogram data."""
+        finite_mask = np.isfinite(spectrogram)
+        if np.any(finite_mask):
+            max_all = float(np.max(spectrogram[finite_mask]))
+            # Exclude digital-zero epsilon floor (which sits >200 dB below raw 1.0)
+            valid_data = spectrogram[finite_mask & (spectrogram > max_all - 180.0)]
+        else:
+            valid_data = np.array([], dtype=np.float32)
+
         if len(valid_data) > 0:
             max_v = float(np.max(valid_data))
             p5 = float(np.percentile(valid_data, 5))
@@ -440,7 +505,7 @@ class SpectrogramView(QWidget):
     def _update_spectrum_envelope(self, spectrogram, fc, rate, min_v, max_v, auto_range):
         """Refresh the right-side spectrum envelope panel.
 
-        The envelope always shows Frequency on its X axis and dB on its Y axis,
+        The envelope always shows Frequency on its X axis and dB/Hz on its Y axis,
         regardless of the main plot orientation.
         """
         # full_spectrogram shape: (Freq, Time) — statistics across Time (axis 1)
@@ -453,9 +518,16 @@ class SpectrogramView(QWidget):
         self.spectrum_plot.setXRange(fc - rate / 2, fc + rate / 2, padding=0)
 
         if auto_range:
-            pad = (max_v - min_v) * 0.1
+            pad = max((max_v - min_v) * 0.1, 1.0)
             self.spectrum_plot.setYRange(min_v, max_v, padding=0.1)
             self.level_region.setBounds([min_v - pad, max_v + pad])
+        else:
+            cur_low, cur_high = self.level_region.getRegion()
+            env_lo = min(min_v, cur_low)
+            env_hi = max(max_v, cur_high)
+            pad = max((env_hi - env_lo) * 0.1, 1.0)
+            self.spectrum_plot.setYRange(env_lo, env_hi, padding=0.1)
+            self.level_region.setBounds([env_lo - pad, env_hi + pad])
 
     # ---- Public update methods ----
 
@@ -476,6 +548,9 @@ class SpectrogramView(QWidget):
         else:
             levels = [min_v, max_v]
             self.level_region.setRegion([min_v, max_v])
+
+        if hasattr(self, 'colorbar_axis') and levels is not None:
+            self.colorbar_axis.setRange(float(levels[0]), float(levels[1]))
 
         # Cache for orientation re-renders
         self._last_spectrogram = spectrogram
@@ -510,10 +585,13 @@ class SpectrogramView(QWidget):
         
         # Current levels
         if not auto_range:
-            levels = self.img.levels
+            levels = self.img.levels if self.img.levels is not None else [min_v, max_v]
         else:
             levels = [min_v, max_v]
             self.level_region.setRegion([min_v, max_v])
+
+        if hasattr(self, 'colorbar_axis') and levels is not None:
+            self.colorbar_axis.setRange(float(levels[0]), float(levels[1]))
 
         # Cache for orientation re-renders
         self._last_spectrogram = full_spectrogram
@@ -688,6 +766,12 @@ class SpectrogramView(QWidget):
             
             self.spectrum_plot.getAxis('left').setPen(p.text_dim)
             self.spectrum_plot.getAxis('bottom').setPen(p.text_dim)
+
+            if hasattr(self, 'colorbar_axis'):
+                self.colorbar_axis.setTickFont(font)
+                self.colorbar_axis.setPen(p.text_dim)
+                self.colorbar_axis.setTextPen(p.text_dim)
+                self.colorbar_axis.setLabel('dB/Hz', color=p.text_dim, **{'font-size': f'{font.pointSize()}pt'})
             
             # Update main plot axes
             self.plot_item.getAxis('left').setTickFont(font)

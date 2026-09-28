@@ -3,7 +3,7 @@ import os
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
 from scipy import signal
-from .dsp import preprocess_chunk, postprocess_fft, apply_filter, design_filter
+from .dsp import preprocess_chunk, postprocess_fft, apply_filter, design_filter, compute_psd_norm_db
 
 class FileReaderThread(QThread):
     """
@@ -65,6 +65,7 @@ class FileReaderThread(QThread):
             self.window = np.bartlett(self.window_size).astype(np.float32)
         else: # Rectangular / None
             self.window = np.ones(self.window_size, dtype=np.float32)
+        self.psd_norm_db = compute_psd_norm_db(self.window, self.sample_rate)
         
         # Calculate step size based on requested overlap (100% / MAX = 1 new sample per window)
         if overlap_percent >= 100.0:
@@ -210,9 +211,9 @@ class FileReaderThread(QThread):
                         shifted_batch *= self.freq_mask # broadcast across batch, zero-cost
                         
                     mag_batch = np.abs(shifted_batch)
-                    epsilon = np.float32(1e-10)
+                    epsilon = np.float32(1e-12)
                     mag_batch = np.maximum(mag_batch, epsilon)
-                    db_batch = 20.0 * np.log10(mag_batch)
+                    db_batch = 20.0 * np.log10(mag_batch) - self.psd_norm_db
                     
                     self.spectrogram[row_idx : row_idx + rows_to_process, :] = db_batch
                     dsp_time += (time.time() - t_dsp_start)
@@ -330,6 +331,7 @@ class ViewportAwareReader(QThread):
             self.window = np.bartlett(self.window_size).astype(np.float32)
         else:
             self.window = np.ones(self.window_size, dtype=np.float32)
+        self.psd_norm_db = compute_psd_norm_db(self.window, self.sample_rate)
 
         # --- Derive sample indices ---
         item_size = np.dtype(dtype).itemsize
@@ -468,8 +470,8 @@ class ViewportAwareReader(QThread):
                         if self.freq_mask is not None:
                             shifted *= self.freq_mask
                         mag       = np.abs(shifted)
-                        mag       = np.maximum(mag, np.float32(1e-10))
-                        db        = 20.0 * np.log10(mag)
+                        mag       = np.maximum(mag, np.float32(1e-12))
+                        db        = 20.0 * np.log10(mag) - self.psd_norm_db
                         spectrogram[row_idx] = db[0]
                     else:
                         # Batch rows using as_strided
@@ -495,8 +497,8 @@ class ViewportAwareReader(QThread):
                         if self.freq_mask is not None:
                             shifted *= self.freq_mask  # broadcast across rows, zero-cost
                         mag       = np.abs(shifted)
-                        mag       = np.maximum(mag, np.float32(1e-10))
-                        db        = 20.0 * np.log10(mag)
+                        mag       = np.maximum(mag, np.float32(1e-12))
+                        db        = 20.0 * np.log10(mag) - self.psd_norm_db
                         spectrogram[row_idx:row_idx + batch_now] = db
 
                     row_idx += batch_now
@@ -570,6 +572,7 @@ class MultiRowProcessor(QThread):
             self.window = np.bartlett(self.window_size).astype(np.float32)
         else:
             self.window = np.ones(self.window_size, dtype=np.float32)
+        self.psd_norm_db = compute_psd_norm_db(self.window, self.sample_rate)
 
         # Compute step size, capping time columns to MAX_COLS
         if overlap_percent >= 100.0:
@@ -642,7 +645,7 @@ class MultiRowProcessor(QThread):
 
                     if actual_end <= actual_start or self.num_cols <= 0:
                         results.append(
-                            np.full((self.fft_size, 1), -100.0, dtype=np.float32)
+                            np.full((self.fft_size, 1), -100.0 - self.psd_norm_db, dtype=np.float32)
                         )
                         self.progress.emit(row_i + 1, self.num_rows)
                         continue
@@ -658,7 +661,7 @@ class MultiRowProcessor(QThread):
 
                     if len(raw_bytes) == 0:
                         results.append(
-                            np.full((self.fft_size, 1), -100.0, dtype=np.float32)
+                            np.full((self.fft_size, 1), -100.0 - self.psd_norm_db, dtype=np.float32)
                         )
                         self.progress.emit(row_i + 1, self.num_rows)
                         continue
@@ -698,8 +701,8 @@ class MultiRowProcessor(QThread):
                         if self.freq_mask is not None:
                             shifted *= self.freq_mask
                         mag       = np.abs(shifted)
-                        mag       = np.maximum(mag, np.float32(1e-10))
-                        spec[col_i] = 20.0 * np.log10(mag)
+                        mag       = np.maximum(mag, np.float32(1e-12))
+                        spec[col_i] = 20.0 * np.log10(mag) - self.psd_norm_db
 
                     # Transpose to (fft_size, num_cols) — matches SpectrogramView convention
                     results.append(spec.T)
