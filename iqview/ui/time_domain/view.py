@@ -163,6 +163,17 @@ class TimeDomainView(QWidget):
         self.stats_markers = pg.ScatterPlotItem(size=10, pen=pg.mkPen(None), brush=pg.mkBrush(255, 0, 0, 200))
         self.stats_markers.hide()
         self.plot_item.addItem(self.stats_markers)
+
+        # 10th percentile (dotted green) and 90th percentile (dotted red) horizontal indicator lines
+        self.stats_p10_line = pg.PlotCurveItem(pen=pg.mkPen('#00e676', width=1.5, style=Qt.PenStyle.DotLine))
+        self.stats_p10_line.setZValue(10)
+        self.stats_p10_line.hide()
+        self.plot_item.addItem(self.stats_p10_line)
+
+        self.stats_p90_line = pg.PlotCurveItem(pen=pg.mkPen('#ff3232', width=1.5, style=Qt.PenStyle.DotLine))
+        self.stats_p90_line.setZValue(10)
+        self.stats_p90_line.hide()
+        self.plot_item.addItem(self.stats_p90_line)
         
         self.time_axis = np.linspace(start_time, end_time, len(samples))
         self.stats_region.setBounds([self.time_axis[0], self.time_axis[-1]])
@@ -498,6 +509,34 @@ class TimeDomainView(QWidget):
         else: self.marker_panel.st_center_v3.setText("∞")
 
         # --- Update Statistics Results ---
+        unit_str = ""
+        if "[dB]" in self.y_label_text or "dB" in self.y_label_text:
+            unit_str = "dB"
+        elif "rad" in self.y_label_text.lower() or "phase" in self.y_label_text.lower():
+            unit_str = "rad"
+        elif "hz" in self.y_label_text.lower():
+            unit_str = "Hz"
+        elif "magnitude^2" in self.y_label_text.lower():
+            unit_str = "Linear²"
+        elif "magnitude" in self.y_label_text.lower() or "real" in self.y_label_text.lower() or "imag" in self.y_label_text.lower():
+            unit_str = "Linear"
+
+        panel = self.marker_panel
+        diff_unit_str = "dB" if ("db" in self.y_label_text.lower()) else unit_str
+
+        if hasattr(panel, 'st_res_lbl_val'):
+            panel.st_res_lbl_val.setText(f"Value ({unit_str})" if unit_str else "Value")
+        if hasattr(panel, 'st_res_lbl_mean'):
+            panel.st_res_lbl_mean.setText(f"Mean ({unit_str})" if unit_str else "Mean")
+        if hasattr(panel, 'st_res_lbl_median'):
+            panel.st_res_lbl_median.setText(f"Median ({unit_str})" if unit_str else "Median")
+        if hasattr(panel, 'st_res_lbl_90th'):
+            panel.st_res_lbl_90th.setText(f"90th % ({unit_str})" if unit_str else "90th %")
+        if hasattr(panel, 'st_res_lbl_10th'):
+            panel.st_res_lbl_10th.setText(f"10th % ({unit_str})" if unit_str else "10th %")
+        if hasattr(panel, 'st_res_lbl_diff'):
+            panel.st_res_lbl_diff.setText(f"90-10 Diff ({diff_unit_str})" if diff_unit_str else "90-10 Diff")
+
         self.marker_panel.stats_max_val.setText(f"{p_max:.6g}")
         self.marker_panel.stats_min_val.setText(f"{p_min:.6g}")
         self.marker_panel.stats_mean_val.setText(f"{p_mean:.6g}")
@@ -517,6 +556,14 @@ class TimeDomainView(QWidget):
             {'pos': (t_max, p_max), 'brush': pg.mkBrush(255, 50, 50), 'pen': pg.mkPen('#ff3232', width=2), 'symbol': 'o'},
             {'pos': (t_min, p_min), 'brush': pg.mkBrush(50, 255, 50), 'pen': pg.mkPen('#32ff32', width=2), 'symbol': 't'}
         ])
+
+        # 10th and 90th percentile horizontal dotted lines spanning the region
+        if hasattr(self, 'stats_p10_line'):
+            self.stats_p10_line.setData([b1, b2], [p_10, p_10])
+            self.stats_p10_line.show()
+        if hasattr(self, 'stats_p90_line'):
+            self.stats_p90_line.setData([b1, b2], [p_90, p_90])
+            self.stats_p90_line.show()
 
     def _update_plot(self, data, y_label):
         # 1. Save current view ranges (if not first run)
@@ -708,6 +755,8 @@ class TimeDomainView(QWidget):
         if self.stats_region: self.stats_region.hide()
         if self.stats_line: self.stats_line.hide()
         if self.stats_markers: self.stats_markers.clear()
+        if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide(); self.stats_p10_line.setData([], [])
+        if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide(); self.stats_p90_line.setData([], [])
         
         # 4. Clear grid lines
         self.toggle_grid('TIME', False)
@@ -796,11 +845,15 @@ class TimeDomainView(QWidget):
                 self.stats_line.show()
                 self.stats_region.hide()
                 self.stats_markers.hide()
+                if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide()
+                if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide()
             else:
                 if self.stats_line: self.stats_line.hide()
                 self.stats_region.setRegion(self.stats_bounds)
                 self.stats_region.show()
                 self.stats_markers.show()
+                if getattr(self, 'stats_p10_line', None): self.stats_p10_line.show()
+                if getattr(self, 'stats_p90_line', None): self.stats_p90_line.show()
                 
             self.update_statistics()
             return
@@ -1383,6 +1436,8 @@ class TimeDomainView(QWidget):
                 self.stats_line = None
             self.stats_region.hide()
             self.stats_markers.hide()
+            if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide(); self.stats_p10_line.setData([], [])
+            if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide(); self.stats_p90_line.setData([], [])
         else: # 'Y'
             for m in self.markers_y_dict[self.y_label_text]:
                 self.plot_item.removeItem(m)

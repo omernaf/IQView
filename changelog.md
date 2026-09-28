@@ -8,6 +8,16 @@
 ### Changed
 - **Default Overlap Changed to `MAX`**: Changed the application default overlap from 99% to `MAX` (100% / 1 sample step) across all DSP reader pipelines, settings managers, and UI panels.
 - **Time Domain Default Plots Order**: Updated the default plot mode arrangement in the Time Domain view and settings to: 1. `magnitude [dB]`, 2. `Real`, 3. `Imaginary`, 4. `instant frequency`.
+- **Frequency Domain Magnitude in `dBFS` and PSD in `dB/Hz`**:
+  - Standardized frequency-domain magnitude plots (`magnitude [dBFS]`, `real [dBFS]`, `imag [dBFS]`) to full-scale decibels ($\text{dBFS}$).
+  - Updated Power Spectral Density (PSD) computation to true continuous power spectral density in $\text{dB/Hz}$ ($\text{V}^2/\text{Hz}$ with $10\log_{10}$ scaling).
+  - Graph Y-axis labels now explicitly show the active unit (`magnitude [dBFS]`, `PSD [dB/Hz]`).
+  - Updated the Frequency Marker Table and Region Statistics Tool to dynamically display the active unit in row header labels (`Magnitude (dBFS)`, `PSD (dB/Hz)`, `Value (dBFS)`, `Value (dB/Hz)`, `Pos (dBFS)`, `Pos (dB/Hz)`), while keeping numerical text boxes strictly numeric without embedded unit text.
+  - Region Statistics Tool integrated power now computes $\sum S_{xx}(f) \cdot \Delta f$ for PSD and $\sum |X[k]|^2$ for Magnitude, providing mathematically consistent channel power in $\text{dBFS}$.
+- **Region Statistics Window Layout & Percentile Indicators**:
+  - Separated `Mean`, `Median`, and `Integrated` into an independent vertical column with individual unit declarations (`Mean (dBFS)` / `Mean (dB/Hz)`, `Median (dBFS)` / `Median (dB/Hz)`, `Integrated (dB)`).
+  - Separated Percentiles into an independent vertical column with individual unit declarations (`90th % (dBFS)` / `90th % (dB/Hz)`, `10th % (dBFS)` / `10th % (dB/Hz)`, `90-10 Diff (dB)`).
+  - Added horizontal visual indicators in the plot for the selected region: a dotted green line for the **10th percentile** and a dotted red line for the **90th percentile**.
 
 - **Endless Marker Table Header Labels**: Fixed swapped column headers in the endless marker table for both Time and Frequency modes. The header row previously inverted the position header (`Pos (sec)` / `Pos (Hz)`) and sample/bin sub-unit header (`Sam` / `Bin`), displaying seconds/Hz over the sample/bin integer column and `Sam`/`Bin` over the time/frequency values. Corrected the header role mappings, added column alignment spacing for the delete button, and removed a redundant duplicate update block.
 - **Endless Marker Dragging and Table Value Synchronization**: Fixed an issue where dragging an endless marker to a new position either failed to update its value in the table or updated the wrong marker. The root causes were:

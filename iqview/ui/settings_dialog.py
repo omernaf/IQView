@@ -573,23 +573,30 @@ class SettingsDialog(QDialog):
         self.freq_plots_list.setDefaultDropAction(Qt.DropAction.MoveAction)
         
         all_freq_plots = [
-            "magnitude", "magnitude [dB]", "magnitude^2", 
+            "magnitude", "magnitude [dBFS]", "magnitude^2", 
             "power spectrum density (PSD)",
-            "real", "real [dB]", 
-            "imag", "imag [dB]", "phase", "unwrapped phase"
+            "real", "real [dBFS]", 
+            "imag", "imag [dBFS]", "phase", "unwrapped phase"
         ]
         
         saved_freq_plots = self.mgr.get("core/frequency_plots", [])
         psd_algo = str(self.mgr.get("core/psd_algorithm", "Welch"))
         
-        # 1. Add saved ones
+        # 1. Add saved ones (with alias mapping)
+        mapped_saved = []
         for p in saved_freq_plots:
+            if p == "magnitude [dB]": mapped_saved.append("magnitude [dBFS]")
+            elif p == "real [dB]": mapped_saved.append("real [dBFS]")
+            elif p == "imag [dB]": mapped_saved.append("imag [dBFS]")
+            else: mapped_saved.append(p)
+
+        for p in mapped_saved:
             if p in all_freq_plots:
                 add_plot_item(self.freq_plots_list, p, True, psd_algo=psd_algo if "PSD" in p else None)
                 
         # 2. Add remaining
         for p in all_freq_plots:
-            if p not in saved_freq_plots:
+            if p not in mapped_saved:
                 add_plot_item(self.freq_plots_list, p, False, psd_algo=psd_algo if "PSD" in p else None)
                 
         self.freq_plots_layout.addWidget(self.freq_plots_list)
@@ -598,13 +605,13 @@ class SettingsDialog(QDialog):
         def reset_freq_plots():
             self.freq_plots_list.clear()
             defaults = self.mgr.get_default("core/frequency_plots")
-            if not defaults: defaults = ["magnitude", "magnitude [dB]"]
+            if not defaults: defaults = ["power spectrum density (PSD)", "magnitude [dBFS]", "magnitude"]
             for p in defaults:
                 if p in all_freq_plots:
-                    add_plot_item(self.freq_plots_list, p, True)
+                    add_plot_item(self.freq_plots_list, p, True, psd_algo=psd_algo if "PSD" in p else None)
             for p in all_freq_plots:
                 if p not in defaults:
-                    add_plot_item(self.freq_plots_list, p, False)
+                    add_plot_item(self.freq_plots_list, p, False, psd_algo=psd_algo if "PSD" in p else None)
         reset_freq_plots_btn.clicked.connect(reset_freq_plots)
         self.freq_plots_layout.addWidget(reset_freq_plots_btn)
         

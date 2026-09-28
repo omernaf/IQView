@@ -51,7 +51,7 @@ class SettingsManager:
         "core/inst_freq_filter_len": 7,
         "core/frequency_plots": [
             "power spectrum density (PSD)",
-            "magnitude [dB]",
+            "magnitude [dBFS]",
             "magnitude"
         ],
         "core/psd_algorithm": "Welch",

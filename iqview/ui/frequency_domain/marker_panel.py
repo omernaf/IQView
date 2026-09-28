@@ -336,47 +336,61 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.res_layout.setHorizontalSpacing(10)
         self.res_layout.setVerticalSpacing(4)
 
-        res_headers = ["Maximum", "Minimum", "Mean", "Median", "Integrated"]
-        for i, h in enumerate(res_headers):
-            lbl = QLabel(h); lbl.setFont(self.header_font); lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl.setStyleSheet("color: #888; text-transform: uppercase; font-size: 10px;")
-            self.res_layout.addWidget(lbl, 0, i + 1)
+        lbl_max = QLabel("Maximum"); lbl_max.setFont(self.header_font); lbl_max.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_max.setStyleSheet("color: #888; text-transform: uppercase; font-size: 10px;")
+        lbl_min = QLabel("Minimum"); lbl_min.setFont(self.header_font); lbl_min.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_min.setStyleSheet("color: #888; text-transform: uppercase; font-size: 10px;")
+        self.res_layout.addWidget(lbl_max, 0, 1)
+        self.res_layout.addWidget(lbl_min, 0, 2)
 
-        lbl_val = QLabel("Value"); lbl_val.setObjectName("header_label")
-        lbl_idx = QLabel("Index"); lbl_idx.setObjectName("header_label")
-        lbl_freq = QLabel("Freq (Hz)"); lbl_freq.setObjectName("header_label")
-        self.res_layout.addWidget(lbl_val, 1, 0, Qt.AlignmentFlag.AlignRight)
-        self.res_layout.addWidget(lbl_idx, 2, 0, Qt.AlignmentFlag.AlignRight)
-        self.res_layout.addWidget(lbl_freq, 3, 0, Qt.AlignmentFlag.AlignRight)
+        # Min / Max Table (Cols 0-2)
+        self.st_res_lbl_val = QLabel("Value (dBFS)"); self.st_res_lbl_val.setObjectName("header_label")
+        self.st_res_lbl_idx = QLabel("Index"); self.st_res_lbl_idx.setObjectName("header_label")
+        self.st_res_lbl_freq = QLabel("Freq (Hz)"); self.st_res_lbl_freq.setObjectName("header_label")
+        self.res_layout.addWidget(self.st_res_lbl_val, 1, 0, Qt.AlignmentFlag.AlignRight)
+        self.res_layout.addWidget(self.st_res_lbl_idx, 2, 0, Qt.AlignmentFlag.AlignRight)
+        self.res_layout.addWidget(self.st_res_lbl_freq, 3, 0, Qt.AlignmentFlag.AlignRight)
 
         self.stats_max_val = FormattedLineEdit(); self.stats_max_val.setFixedWidth(110); self.stats_max_val.setReadOnly(True); self.stats_max_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stats_min_val = FormattedLineEdit(); self.stats_min_val.setFixedWidth(110); self.stats_min_val.setReadOnly(True); self.stats_min_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_mean_val = FormattedLineEdit(); self.stats_mean_val.setFixedWidth(110); self.stats_mean_val.setReadOnly(True); self.stats_mean_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_median_val = FormattedLineEdit(); self.stats_median_val.setFixedWidth(110); self.stats_median_val.setReadOnly(True); self.stats_median_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_total_power = FormattedLineEdit(); self.stats_total_power.setFixedWidth(110); self.stats_total_power.setReadOnly(True); self.stats_total_power.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_max_freq = FormattedLineEdit(); self.stats_max_freq.setFixedWidth(110); self.stats_max_freq.setReadOnly(True); self.stats_max_freq.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_min_freq = FormattedLineEdit(); self.stats_min_freq.setFixedWidth(110); self.stats_min_freq.setReadOnly(True); self.stats_min_freq.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stats_max_idx = FormattedLineEdit(); self.stats_max_idx.setFixedWidth(110); self.stats_max_idx.setReadOnly(True); self.stats_max_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stats_min_idx = FormattedLineEdit(); self.stats_min_idx.setFixedWidth(110); self.stats_min_idx.setReadOnly(True); self.stats_min_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_max_freq = FormattedLineEdit(); self.stats_max_freq.setFixedWidth(110); self.stats_max_freq.setReadOnly(True); self.stats_max_freq.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_min_freq = FormattedLineEdit(); self.stats_min_freq.setFixedWidth(110); self.stats_min_freq.setReadOnly(True); self.stats_min_freq.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.res_layout.addWidget(self.stats_max_val, 1, 1); self.res_layout.addWidget(self.stats_min_val, 1, 2)
-        self.res_layout.addWidget(self.stats_mean_val, 1, 3); self.res_layout.addWidget(self.stats_median_val, 1, 4)
-        self.res_layout.addWidget(self.stats_total_power, 1, 5)
         self.res_layout.addWidget(self.stats_max_idx, 2, 1); self.res_layout.addWidget(self.stats_min_idx, 2, 2)
         self.res_layout.addWidget(self.stats_max_freq, 3, 1); self.res_layout.addWidget(self.stats_min_freq, 3, 2)
 
-        lbl_90th = QLabel("90th %"); lbl_10th = QLabel("10th %"); lbl_diff = QLabel("90-10 Diff")
-        for lbl in [lbl_90th, lbl_10th, lbl_diff]: lbl.setObjectName("header_label")
-        self.res_layout.addWidget(lbl_90th, 1, 6, Qt.AlignmentFlag.AlignRight)
-        self.res_layout.addWidget(lbl_10th, 2, 6, Qt.AlignmentFlag.AlignRight)
-        self.res_layout.addWidget(lbl_diff, 3, 6, Qt.AlignmentFlag.AlignRight)
+        # Mean / Median / Integrated (Cols 3-4)
+        self.st_res_lbl_mean = QLabel("Mean (dBFS)"); self.st_res_lbl_mean.setObjectName("header_label")
+        self.st_res_lbl_median = QLabel("Median (dBFS)"); self.st_res_lbl_median.setObjectName("header_label")
+        self.st_res_lbl_integrated = QLabel("Integrated (dB)"); self.st_res_lbl_integrated.setObjectName("header_label")
+        self.res_layout.addWidget(self.st_res_lbl_mean, 1, 3, Qt.AlignmentFlag.AlignRight)
+        self.res_layout.addWidget(self.st_res_lbl_median, 2, 3, Qt.AlignmentFlag.AlignRight)
+        self.res_layout.addWidget(self.st_res_lbl_integrated, 3, 3, Qt.AlignmentFlag.AlignRight)
+
+        self.stats_mean_val = FormattedLineEdit(); self.stats_mean_val.setFixedWidth(110); self.stats_mean_val.setReadOnly(True); self.stats_mean_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_median_val = FormattedLineEdit(); self.stats_median_val.setFixedWidth(110); self.stats_median_val.setReadOnly(True); self.stats_median_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stats_total_power = FormattedLineEdit(); self.stats_total_power.setFixedWidth(110); self.stats_total_power.setReadOnly(True); self.stats_total_power.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.res_layout.addWidget(self.stats_mean_val, 1, 4)
+        self.res_layout.addWidget(self.stats_median_val, 2, 4)
+        self.res_layout.addWidget(self.stats_total_power, 3, 4)
+
+        # Percentiles (Cols 5-6)
+        self.st_res_lbl_90th = QLabel("90th % (dBFS)"); self.st_res_lbl_90th.setObjectName("header_label")
+        self.st_res_lbl_10th = QLabel("10th % (dBFS)"); self.st_res_lbl_10th.setObjectName("header_label")
+        self.st_res_lbl_diff = QLabel("90-10 Diff (dB)"); self.st_res_lbl_diff.setObjectName("header_label")
+        self.res_layout.addWidget(self.st_res_lbl_90th, 1, 5, Qt.AlignmentFlag.AlignRight)
+        self.res_layout.addWidget(self.st_res_lbl_10th, 2, 5, Qt.AlignmentFlag.AlignRight)
+        self.res_layout.addWidget(self.st_res_lbl_diff, 3, 5, Qt.AlignmentFlag.AlignRight)
 
         self.stats_90th_val = FormattedLineEdit(); self.stats_90th_val.setFixedWidth(110); self.stats_90th_val.setReadOnly(True); self.stats_90th_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stats_10th_val = FormattedLineEdit(); self.stats_10th_val.setFixedWidth(110); self.stats_10th_val.setReadOnly(True); self.stats_10th_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stats_diff_val = FormattedLineEdit(); self.stats_diff_val.setFixedWidth(110); self.stats_diff_val.setReadOnly(True); self.stats_diff_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.res_layout.addWidget(self.stats_90th_val, 1, 7)
-        self.res_layout.addWidget(self.stats_10th_val, 2, 7)
-        self.res_layout.addWidget(self.stats_diff_val, 3, 7)
+        self.res_layout.addWidget(self.stats_90th_val, 1, 6)
+        self.res_layout.addWidget(self.stats_10th_val, 2, 6)
+        self.res_layout.addWidget(self.stats_diff_val, 3, 6)
 
         self.stats_sub_stack.setCurrentIndex(1) # Now it's safe to set index 1
 
@@ -445,7 +459,12 @@ class FrequencyDomainMarkerPanel(QFrame):
             self.grid.addWidget(self.center_v2, 1, 4); self.center_v2.show()
             self.grid.addWidget(self.center_v1, 2, 4); self.center_v1.show()
         else: # MAG
-            self.row_v1_label.setText(y_axis_label)
+            display_label = y_axis_label
+            if "[" in y_axis_label and "]" in y_axis_label:
+                display_label = y_axis_label.replace("[", "(").replace("]", ")")
+            if not display_label.startswith("PSD"):
+                display_label = display_label.capitalize()
+            self.row_v1_label.setText(display_label)
             self.row_v1_label.show()
             self.row_v2_label.hide()
             self.filter_container.hide()
@@ -512,6 +531,11 @@ class FrequencyDomainMarkerPanel(QFrame):
     def update_endless_list(self, markers, mode):
         is_freq = 'FREQ' in mode
         unit_main = "Hz" if is_freq else self.controller.y_label_text
+        if not is_freq:
+            if "[" in unit_main and "]" in unit_main:
+                unit_main = unit_main.split("[")[-1].rstrip("]")
+            elif not unit_main.startswith("PSD"):
+                unit_main = unit_main.capitalize()
         unit_sub = "Bin" if is_freq else ""
         
         if not hasattr(self, '_endless_rows'):

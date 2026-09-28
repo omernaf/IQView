@@ -49,11 +49,11 @@ class FrequencyDomainView(QWidget):
         
         # Mode-specific Magnitude markers
         self.markers_y_dict = {
-            "magnitude": [], "magnitude [dB]": [], 
+            "magnitude": [], "magnitude [dBFS]": [], "magnitude [dB]": [], 
             "magnitude^2": [],
-            "power spectrum density (PSD)": [], "PSD [dB]": [],
-            "real": [], "real [dB]": [], 
-            "imag": [], "imag [dB]": [],
+            "power spectrum density (PSD)": [], "PSD [dB/Hz]": [], "PSD [dB]": [],
+            "real": [], "real [dBFS]": [], "real [dB]": [], 
+            "imag": [], "imag [dBFS]": [], "imag [dB]": [],
             "phase": [], "unwrapped phase": []
         }
         self.markers_y_endless_dict = {k: [] for k in self.markers_y_dict.keys()}
@@ -167,6 +167,17 @@ class FrequencyDomainView(QWidget):
         self.stats_markers.hide()
         self.plot_item.addItem(self.stats_markers)
 
+        # 10th percentile (dotted green) and 90th percentile (dotted red) horizontal indicator lines
+        self.stats_p10_line = pg.PlotCurveItem(pen=pg.mkPen('#00e676', width=1.5, style=Qt.PenStyle.DotLine))
+        self.stats_p10_line.setZValue(10)
+        self.stats_p10_line.hide()
+        self.plot_item.addItem(self.stats_p10_line)
+
+        self.stats_p90_line = pg.PlotCurveItem(pen=pg.mkPen('#ff3232', width=1.5, style=Qt.PenStyle.DotLine))
+        self.stats_p90_line.setZValue(10)
+        self.stats_p90_line.hide()
+        self.plot_item.addItem(self.stats_p90_line)
+
         # --- Filter Region ---
         self.filter_region = pg.LinearRegionItem(
             orientation='vertical',
@@ -182,12 +193,17 @@ class FrequencyDomainView(QWidget):
         
         raw_modes = {
             "magnitude": self.plot_magnitude,
+            "magnitude [dBFS]": self.plot_magnitude_db,
             "magnitude [dB]": self.plot_magnitude_db,
             "magnitude^2": self.plot_magnitude_squared,
             "power spectrum density (PSD)": self.plot_psd,
+            "PSD [dB/Hz]": self.plot_psd,
+            "PSD [dB]": self.plot_psd,
             "real": self.plot_real,
+            "real [dBFS]": self.plot_real_db,
             "real [dB]": self.plot_real_db,
             "imag": self.plot_imag,
+            "imag [dBFS]": self.plot_imag_db,
             "imag [dB]": self.plot_imag_db,
             "phase": self.plot_phase,
             "unwrapped phase": self.plot_unwrapped_phase
@@ -342,24 +358,31 @@ class FrequencyDomainView(QWidget):
             active_plots = self.settings_mgr.get("core/frequency_plots", [])
             
         if not active_plots:
-            active_plots = ["magnitude", "magnitude [dB]"]
+            active_plots = ["power spectrum density (PSD)", "magnitude [dBFS]", "magnitude"]
             
         for i, name in enumerate(active_plots):
-            if name in self.available_modes:
-                btn = QPushButton(name)
+            resolved_name = name
+            if name == "magnitude [dB]": resolved_name = "magnitude [dBFS]"
+            elif name in ("power spectrum density (PSD)", "PSD [dB]"): resolved_name = "PSD [dB/Hz]"
+            elif name == "real [dB]": resolved_name = "real [dBFS]"
+            elif name == "imag [dB]": resolved_name = "imag [dBFS]"
+            
+            target_fn = self.available_modes.get(name) or self.available_modes.get(resolved_name)
+            if target_fn:
+                btn = QPushButton(resolved_name)
                 btn.setCheckable(True)
                 self.mode_group.addButton(btn, i)
                 self.plot_buttons_layout.addWidget(btn)
-                btn.clicked.connect(self.available_modes[name])
+                btn.clicked.connect(target_fn)
                 self.plot_buttons.append(btn)
                 if i == 0: btn.setChecked(True)
         
         if self.plot_buttons and not any(b.isChecked() for b in self.plot_buttons):
             self.plot_buttons[0].setChecked(True)
-            self.available_modes[self.plot_buttons[0].text()]()
+            self.available_modes.get(self.plot_buttons[0].text(), self.plot_magnitude)()
         elif any(b.isChecked() for b in self.plot_buttons):
             checked_btn = next(b for b in self.plot_buttons if b.isChecked())
-            self.available_modes[checked_btn.text()]()
+            self.available_modes.get(checked_btn.text(), self.plot_magnitude)()
 
     def set_interaction_mode(self, mode):
         if mode == 'Y': mode = 'MAG'
@@ -474,18 +497,18 @@ class FrequencyDomainView(QWidget):
     def plot_magnitude_db(self):
         data = np.abs(self.fft_data)
         data[data < 1e-15] = 1e-15
-        self._update_plot(20 * np.log10(data), "magnitude [dB]")
+        self._update_plot(20 * np.log10(data), "magnitude [dBFS]")
     def plot_magnitude_squared(self): self._update_plot(np.abs(self.fft_data)**2, "magnitude^2")
     def plot_real(self): self._update_plot(self.fft_data.real, "real")
     def plot_real_db(self):
         data = np.abs(self.fft_data.real)
         data[data < 1e-15] = 1e-15
-        self._update_plot(20 * np.log10(data), "real [dB]")
+        self._update_plot(20 * np.log10(data), "real [dBFS]")
     def plot_imag(self): self._update_plot(self.fft_data.imag, "imag")
     def plot_imag_db(self):
         data = np.abs(self.fft_data.imag)
         data[data < 1e-15] = 1e-15
-        self._update_plot(20 * np.log10(data), "imag [dB]")
+        self._update_plot(20 * np.log10(data), "imag [dBFS]")
     def plot_phase(self): self._update_plot(np.angle(self.fft_data), "phase")
     def plot_unwrapped_phase(self): self._update_plot(np.unwrap(np.angle(self.fft_data)), "unwrapped phase")
 
@@ -501,10 +524,8 @@ class FrequencyDomainView(QWidget):
         # Use a reasonable segment length for Welch based on processed samples
         nperseg = 4096 if len(src) > 4096 else 1024
         
-        # Fix: Use fs=1.0 density and divide by N to get Power per Bin
-        freqs, psd = compute_psd(src, fs=1.0, method=method, nperseg=nperseg)
-        # Power per Bin (independent of fs)
-        psd_bin_power = psd / len(psd)
+        # Compute true continuous PSD in V^2 / Hz (fs = self.rate, scaling = 'density')
+        freqs, psd = compute_psd(src, fs=self.rate, method=method, nperseg=nperseg)
         
         # Determine center frequency based on the operator
         operator = self.operator_combo.currentText()
@@ -517,19 +538,13 @@ class FrequencyDomainView(QWidget):
         else:
             cf = self.center_freq
             
-        # Scale frequencies and center them based on the operator
-        freqs = freqs * self.rate + cf
+        # Shift frequencies by center frequency (fs scaling was already done in compute_psd)
+        freqs = freqs + cf
         
-        # PSD is viewed as Power per Bin in dB
-        psd_db = 10 * np.log10(psd_bin_power + 1e-20)
+        # PSD in dB/Hz
+        psd_db = 10 * np.log10(psd + 1e-20)
         
-        # We need to ensure freqs match self.freq_axis for markers if they are tied to indices
-        # but compute_psd might return a different number of points (e.g. nperseg for Welch)
-        # So we update current_plot_data and ALSO freq_axis if needed, 
-        # but that might break existing markers that rely on length.
-        # However, the user wants to VIEW it, so we should update the plot correctly.
-        
-        self._update_plot_dynamic(freqs, psd_db, "PSD [dB]")
+        self._update_plot_dynamic(freqs, psd_db, "PSD [dB/Hz]")
 
     def _update_plot_dynamic(self, freqs, data, y_label):
         """Standard update but allows changing frequency axis (used for PSD)."""
@@ -741,30 +756,70 @@ class FrequencyDomainView(QWidget):
         self.marker_panel.st_center_v2.blockSignals(True); self.marker_panel.st_center_v2.setText(f"{self.freq_to_index(cv)}"); self.marker_panel.st_center_v2.blockSignals(False)
 
         # --- Update Statistics Results ---
-        # 1. Convert slice_data to Linear Power
-        if "[dB]" in self.y_label_text:
-            # slice_data is either 20*log10(mag) or 10*log10(psd).
-            # To get power, divide by 10 and pow(10, x).
+        # Update row labels in the stats results table
+        unit_str = ""
+        if "dBFS" in self.y_label_text:
+            unit_str = "dBFS"
+        elif "dB/Hz" in self.y_label_text or "dB / Hz" in self.y_label_text:
+            unit_str = "dB/Hz"
+        elif "[dB]" in self.y_label_text or "dB" in self.y_label_text:
+            unit_str = "dB"
+        elif "rad" in self.y_label_text.lower() or "phase" in self.y_label_text.lower():
+            unit_str = "rad"
+        elif "magnitude^2" in self.y_label_text.lower():
+            unit_str = "Linear²"
+        elif "magnitude" in self.y_label_text.lower() or "real" in self.y_label_text.lower() or "imag" in self.y_label_text.lower():
+            unit_str = "Linear"
+
+        is_psd = ("psd" in self.y_label_text.lower() or "db/hz" in self.y_label_text.lower())
+        is_db = ("db" in self.y_label_text.lower())
+        
+        int_unit_str = "dB" if (is_db or is_psd) else unit_str
+        diff_unit_str = "dB" if (is_db or is_psd) else unit_str
+
+        if hasattr(panel, 'st_res_lbl_val'):
+            panel.st_res_lbl_val.setText(f"Value ({unit_str})" if unit_str else "Value")
+        if hasattr(panel, 'st_res_lbl_mean'):
+            panel.st_res_lbl_mean.setText(f"Mean ({unit_str})" if unit_str else "Mean")
+        if hasattr(panel, 'st_res_lbl_median'):
+            panel.st_res_lbl_median.setText(f"Median ({unit_str})" if unit_str else "Median")
+        if hasattr(panel, 'st_res_lbl_integrated'):
+            panel.st_res_lbl_integrated.setText(f"Integrated ({int_unit_str})" if int_unit_str else "Integrated")
+        if hasattr(panel, 'st_res_lbl_90th'):
+            panel.st_res_lbl_90th.setText(f"90th % ({unit_str})" if unit_str else "90th %")
+        if hasattr(panel, 'st_res_lbl_10th'):
+            panel.st_res_lbl_10th.setText(f"10th % ({unit_str})" if unit_str else "10th %")
+        if hasattr(panel, 'st_res_lbl_diff'):
+            panel.st_res_lbl_diff.setText(f"90-10 Diff ({diff_unit_str})" if diff_unit_str else "90-10 Diff")
+
+        # 1. Convert slice_data to Linear Power & Calculate Mean / Integrated Power
+        if is_psd:
+            # slice_data is in dB/Hz -> linear PSD S_xx(f) in V^2/Hz
             lin_pow_slice = 10**(slice_data / 10.0)
+            df = float(self.freq_axis[1] - self.freq_axis[0]) if len(self.freq_axis) > 1 else 1.0
+            # Integrated power over band = sum(S_xx(f) * df)
+            total_p_lin = np.sum(lin_pow_slice) * df
+            p_mean_lin = np.mean(lin_pow_slice)
+            p_mean_db = 10 * np.log10(p_mean_lin + 1e-20)
+            total_p_db = 10 * np.log10(total_p_lin + 1e-20)
+            panel.stats_mean_val.setText(f"{p_mean_db:.2f}")
+            panel.stats_total_power.setText(f"{total_p_db:.2f}")
+        elif is_db:
+            # slice_data is in dBFS (20*log10(mag))
+            lin_pow_slice = 10**(slice_data / 10.0)
+            p_mean_lin = np.mean(lin_pow_slice)
+            total_p_lin = np.sum(lin_pow_slice)
+            p_mean_db = 10 * np.log10(p_mean_lin + 1e-18)
+            total_p_db = 10 * np.log10(total_p_lin + 1e-15)
+            panel.stats_mean_val.setText(f"{p_mean_db:.2f}")
+            panel.stats_total_power.setText(f"{total_p_db:.2f}")
         else:
-            if "magnitude^2" in self.y_label_text.lower() or "psd" in self.y_label_text.lower():
+            if "magnitude^2" in self.y_label_text.lower():
                 lin_pow_slice = slice_data
             else:
                 lin_pow_slice = slice_data**2
-        
-        # 2. Calculate Mean Power in selection
-        p_mean_lin = np.mean(lin_pow_slice)
-        
-        # 3. Calculate Integrated Power in selection
-        total_p_lin = np.sum(lin_pow_slice)
-        
-        # Update UI text
-        if "[dB]" in self.y_label_text:
-            p_mean_db = 10 * np.log10(p_mean_lin + 1e-18)
-            panel.stats_mean_val.setText(f"{p_mean_db:.2f} dB")
-            total_p_db = 10 * np.log10(total_p_lin + 1e-15)
-            panel.stats_total_power.setText(f"{total_p_db:.2f} dB")
-        else:
+            p_mean_lin = np.mean(lin_pow_slice)
+            total_p_lin = np.sum(lin_pow_slice)
             panel.stats_mean_val.setText(f"{p_mean_lin:.4g}")
             panel.stats_total_power.setText(f"{total_p_lin:.4g}")
             
@@ -781,6 +836,14 @@ class FrequencyDomainView(QWidget):
             {'pos': (f_max, p_max), 'brush': pg.mkBrush(255, 50, 50), 'pen': pg.mkPen('#ff3232', width=2), 'symbol': 'o'},
             {'pos': (f_min, p_min), 'brush': pg.mkBrush(50, 255, 50), 'pen': pg.mkPen('#32ff32', width=2), 'symbol': 't'}
         ])
+
+        # 10th and 90th percentile horizontal dotted lines spanning the region
+        if hasattr(self, 'stats_p10_line'):
+            self.stats_p10_line.setData([b1, b2], [p_10, p_10])
+            self.stats_p10_line.show()
+        if hasattr(self, 'stats_p90_line'):
+            self.stats_p90_line.setData([b1, b2], [p_90, p_90])
+            self.stats_p90_line.show()
 
     def freq_to_index(self, freq):
         return np.searchsorted(self.freq_axis, freq)
@@ -809,6 +872,8 @@ class FrequencyDomainView(QWidget):
         if getattr(self, 'stats_region', None): self.stats_region.hide()
         if getattr(self, 'stats_line', None): self.stats_line.hide()
         if getattr(self, 'stats_markers', None): self.stats_markers.clear()
+        if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide(); self.stats_p10_line.setData([], [])
+        if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide(); self.stats_p90_line.setData([], [])
 
         # 4. Clear filter bounds and replot unfiltered
         self._clear_filter_state(replot=True)
@@ -894,11 +959,15 @@ class FrequencyDomainView(QWidget):
                 self.stats_line.show()
                 self.stats_region.hide()
                 self.stats_markers.hide()
+                if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide()
+                if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide()
             else:
                 if self.stats_line: self.stats_line.hide()
                 self.stats_region.setRegion(self.stats_bounds)
                 self.stats_region.show()
                 self.stats_markers.show()
+                if getattr(self, 'stats_p10_line', None): self.stats_p10_line.show()
+                if getattr(self, 'stats_p90_line', None): self.stats_p90_line.show()
                 
             self.update_statistics()
             return
@@ -1642,6 +1711,8 @@ class FrequencyDomainView(QWidget):
                 self.stats_line = None
             self.stats_region.hide()
             self.stats_markers.hide()
+            if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide(); self.stats_p10_line.setData([], [])
+            if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide(); self.stats_p90_line.setData([], [])
         elif mode == 'FILTER':
             self._clear_filter_state(replot=True)
         self.update_marker_info()

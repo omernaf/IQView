@@ -340,10 +340,11 @@ class ExportDialog(QtWidgets.QDialog):
         plot_item = s.plot_widget.plotItem
         view_box = plot_item.vb
         
-        # Identify and temporarily hide non-curve items (markers, regions, stats dots)
+        # Identify and temporarily hide non-curve items (markers, regions, stats dots/lines)
         hidden_items = []
         for item in plot_item.items:
-            if isinstance(item, (pg.InfiniteLine, pg.LinearRegionItem, pg.ScatterPlotItem)):
+            if isinstance(item, (pg.InfiniteLine, pg.LinearRegionItem, pg.ScatterPlotItem)) or \
+               item is getattr(s, 'stats_p10_line', None) or item is getattr(s, 'stats_p90_line', None):
                 if item.isVisible():
                     item.hide()
                     hidden_items.append(item)
