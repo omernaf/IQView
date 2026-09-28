@@ -908,12 +908,13 @@ class FrequencyDomainView(QWidget):
 
         # 1. Hit test EXISTING MARKERS
         found_marker = None
+        min_dist = float('inf')
         for i, m in enumerate(active_markers):
             pi = self.view_box.mapViewToScene(pg.Point(m.value(), 0) if is_freq else pg.Point(0, m.value()))
             dist = abs(scene_pos.x() - pi.x()) if is_freq else abs(scene_pos.y() - pi.y())
-            if dist < 20: # Match time domain distance
+            if dist < 20 and dist < min_dist:
+                min_dist = dist
                 found_marker = m
-                break
         
         if found_marker:
             if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
@@ -1546,12 +1547,11 @@ class FrequencyDomainView(QWidget):
             return
 
         is_freq = 'FREQ' in self.interaction_mode
-        active_markers = (self.markers_freq + self.markers_freq_endless) if is_freq else \
-                         (self.markers_y_dict.get(self.y_label_text, []) + self.markers_y_endless_dict.get(self.y_label_text, []))
-        
         if 'ENDLESS' in self.interaction_mode:
+            active_markers = self.markers_freq_endless if is_freq else self.markers_y_endless_dict.get(self.y_label_text, [])
             self.marker_panel.update_endless_list(active_markers, self.interaction_mode)
         else:
+            active_markers = self.markers_freq if is_freq else self.markers_y_dict.get(self.y_label_text, [])
             sorted_markers = sorted(active_markers, key=lambda m: m.value())
             
             prec1 = int(self.settings_mgr.get("ui/label_precision", 9)) if is_freq else int(self.settings_mgr.get("ui/label_precision", 6))

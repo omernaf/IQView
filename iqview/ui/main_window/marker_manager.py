@@ -635,6 +635,14 @@ class MarkerManagerMixin:
 
         if is_endless:
             self.active_drag_marker.setPos(new_v)
+            oid = self._find_overlay_id_for_item(self.active_drag_marker)
+            if oid:
+                overlay = self._get_overlay_by_id(oid)
+                if overlay:
+                    if is_time:
+                        overlay.points = [(new_v, 0.0)]
+                    else:
+                        overlay.points = [(0.0, new_v)]
         elif len(active_markers) == 2:
             other_marker = active_markers[0] if active_markers[1] == self.active_drag_marker else active_markers[1]
             old_v = get_pos(self.active_drag_marker)
@@ -838,13 +846,21 @@ class MarkerManagerMixin:
                     marker = active_list[idx]
                     if is_freq:
                         bin_val = max(1, min(val, self.fft_size))
-                        new_p = np.clip(f_min + (bin_val - 1) * rbw if unit == 'sam' else val, f_min, f_max)
+                        new_p = np.clip(f_min + (bin_val - 1) * rbw if unit in ['sam', 'bin'] else val, f_min, f_max)
                     else:
                         max_s = getattr(self, 'total_samples_in_cache', 1e9)
-                        s_val = np.clip(val if unit == 'sam' else val * self.rate + 1.0, 1, max_s)
+                        s_val = np.clip(val if unit in ['sam', 'bin'] else val * self.rate + 1.0, 1, max_s)
                         new_p = np.clip((s_val - 1.0) / self.rate, 0.0, self.time_duration)
                     
                     marker.setPos(new_p)
+                    oid = self._find_overlay_id_for_item(marker)
+                    if oid:
+                        overlay = self._get_overlay_by_id(oid)
+                        if overlay:
+                            if not is_freq:
+                                overlay.points = [(new_p, 0.0)]
+                            else:
+                                overlay.points = [(0.0, new_p)]
                     self.update_marker_info()
                 return
 

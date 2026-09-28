@@ -807,6 +807,7 @@ class TimeDomainView(QWidget):
         
         # 1. Hit test EXISTING MARKERS
         found_marker = None
+        min_dist = float('inf')
         for i, m in enumerate(active_markers):
             # Check if this marker is locked
             is_m_locked = (i == 0 and self.marker_panel.btn_lock_m1.isChecked()) or \
@@ -821,7 +822,9 @@ class TimeDomainView(QWidget):
             m_is_time = m in self.markers_time or m in self.markers_time_endless
             m_pixel = self.view_box.mapViewToScene(pg.Point(m.value(), 0) if m_is_time else pg.Point(0, m.value()))
             dist = abs(scene_pos.x() - m_pixel.x()) if m_is_time else abs(scene_pos.y() - m_pixel.y())
-            if dist < 20: found_marker = m; break
+            if dist < 20 and dist < min_dist:
+                min_dist = dist
+                found_marker = m
         
         if found_marker:
             if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):

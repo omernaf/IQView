@@ -510,6 +510,8 @@ class CustomViewBox(pg.ViewBox):
                             self.ui_controller.active_drag_filter_bound_idx = -1
                         if getattr(self.ui_controller, 'active_drag_stats_bound_idx', -1) != -1:
                             self.ui_controller.active_drag_stats_bound_idx = -1
+                        if hasattr(self.ui_controller, 'update_marker_info'):
+                            self.ui_controller.update_marker_info()
                     else:
                         self.ui_controller.update_drag(ev.scenePos(), source_vb=self)
                 ev.accept()

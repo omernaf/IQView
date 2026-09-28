@@ -346,7 +346,7 @@ class OverlayManagerMixin:
             angle = 90 if is_time else 0
 
         pos = overlay.points[0][0] if is_time else overlay.points[0][1]
-        movable = not overlay.locked
+        movable = False
 
         bc = overlay.border_color or overlay.color
         pen = pg.mkPen(
@@ -372,17 +372,6 @@ class OverlayManagerMixin:
         )
         if overlay.hover_str:
             line.setToolTip(overlay.hover_str)
-
-        if movable:
-            oid = overlay.id
-            def _on_line_moved(line=line, overlay=overlay, oid=oid):
-                pos_val = line.value()
-                if overlay.shape == OverlayShape.LINE:
-                    overlay.points = [(pos_val, 0.0)]
-                else:
-                    overlay.points = [(0.0, pos_val)]
-                self._persist_overlay_drag(oid, points=overlay.points)
-            line.sigPositionChangeFinished.connect(_on_line_moved)
 
         return line
 

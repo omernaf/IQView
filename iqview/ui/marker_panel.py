@@ -878,10 +878,13 @@ class MarkerPanel(QFrame):
             l_main = QLabel(f"Pos ({unit_main})")
             l_main.setObjectName("header_label")
             l_main.setProperty("role", "pos_header")
+            l_del = QLabel("")
+            l_del.setFixedWidth(28)
             
             h_layout.addWidget(l_id)
             h_layout.addWidget(l_sub, 1)
             h_layout.addWidget(l_main, 1)
+            h_layout.addWidget(l_del)
             self.scroll_layout.insertWidget(0, self._header_widget)
 
         # 2. Update header labels
@@ -942,16 +945,6 @@ class MarkerPanel(QFrame):
                 'btn_del': btn_del
             })
 
-        # 3. Update header widget if units changed
-        # (Assuming the header is the first item in scroll_layout)
-        header_widget = self.scroll_layout.itemAt(0).widget()
-        if header_widget and header_widget.findChild(QLabel, "header_label"):
-            # Update labels to Hz/sec etc if needed
-            labels = header_widget.findChildren(QLabel, "header_label")
-            if len(labels) >= 2:
-                labels[1].setText(f"Pos ({unit_main})")
-                labels[2].setText(unit_sub)
-
         # 4. Update data for all rows
         for i, m in enumerate(markers):
             row_data = self._endless_rows[i]
@@ -962,7 +955,7 @@ class MarkerPanel(QFrame):
             
             # Update position
             row_data['edit_pos'].blockSignals(True)
-            row_data['edit_pos'].setObjectName(f"em_{i}_sec")
+            row_data['edit_pos'].setObjectName(f"em_{i}_hz" if is_freq else f"em_{i}_sec")
             row_data['edit_pos'].setText(f"{val:.{prec}f}")
             row_data['edit_pos'].blockSignals(False)
             
@@ -974,7 +967,7 @@ class MarkerPanel(QFrame):
                 sub_val = int(round(val * self.parent_window.rate)) + 1
             
             row_data['edit_sub'].blockSignals(True)
-            row_data['edit_sub'].setObjectName(f"em_{i}_sam")
+            row_data['edit_sub'].setObjectName(f"em_{i}_bin" if is_freq else f"em_{i}_sam")
             row_data['edit_sub'].setText(f"{sub_val}")
             row_data['edit_sub'].blockSignals(False)
             
