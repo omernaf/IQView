@@ -164,14 +164,14 @@ class TimeDomainView(QWidget):
         self.stats_markers.hide()
         self.plot_item.addItem(self.stats_markers)
 
-        # 10th percentile (dotted green) and 90th percentile (dotted red) horizontal indicator lines
-        self.stats_p10_line = pg.PlotCurveItem(pen=pg.mkPen('#00e676', width=1.5, style=Qt.PenStyle.DotLine))
-        self.stats_p10_line.setZValue(10)
+        # 10th percentile (dotted green) and 90th percentile (dotted red) horizontal indicator lines (spanning full plot)
+        self.stats_p10_line = pg.InfiniteLine(angle=0, pen=pg.mkPen('#00e676', width=1.5, style=Qt.PenStyle.DotLine), movable=False)
+        self.stats_p10_line.setZValue(90)
         self.stats_p10_line.hide()
         self.plot_item.addItem(self.stats_p10_line)
 
-        self.stats_p90_line = pg.PlotCurveItem(pen=pg.mkPen('#ff3232', width=1.5, style=Qt.PenStyle.DotLine))
-        self.stats_p90_line.setZValue(10)
+        self.stats_p90_line = pg.InfiniteLine(angle=0, pen=pg.mkPen('#ff3232', width=1.5, style=Qt.PenStyle.DotLine), movable=False)
+        self.stats_p90_line.setZValue(90)
         self.stats_p90_line.hide()
         self.plot_item.addItem(self.stats_p90_line)
         
@@ -557,12 +557,12 @@ class TimeDomainView(QWidget):
             {'pos': (t_min, p_min), 'brush': pg.mkBrush(50, 255, 50), 'pen': pg.mkPen('#32ff32', width=2), 'symbol': 't'}
         ])
 
-        # 10th and 90th percentile horizontal dotted lines spanning the region
+        # 10th and 90th percentile horizontal dotted lines spanning the full plot
         if hasattr(self, 'stats_p10_line'):
-            self.stats_p10_line.setData([b1, b2], [p_10, p_10])
+            self.stats_p10_line.setPos(p_10)
             self.stats_p10_line.show()
         if hasattr(self, 'stats_p90_line'):
-            self.stats_p90_line.setData([b1, b2], [p_90, p_90])
+            self.stats_p90_line.setPos(p_90)
             self.stats_p90_line.show()
 
     def _update_plot(self, data, y_label):
@@ -577,10 +577,6 @@ class TimeDomainView(QWidget):
         self.y_label_text = y_label
         self.marker_panel.update_headers(self.interaction_mode, y_label)
         
-        # Update stats if visible
-        if hasattr(self, 'stats_region') and self.stats_region.isVisible():
-            self.update_statistics()
-        
         # 3. Clear and Re-plot
         self.plot_item.clear()
         self.stats_markers.clear() # clear previous indicators if persisting
@@ -590,6 +586,14 @@ class TimeDomainView(QWidget):
             self.plot_item.addItem(self.stats_line)
         self.plot_item.addItem(self.stats_region)
         self.plot_item.addItem(self.stats_markers)
+        if hasattr(self, 'stats_p10_line') and self.stats_p10_line:
+            if self.stats_p10_line not in self.plot_item.items:
+                self.plot_item.addItem(self.stats_p10_line)
+            self.stats_p10_line.setZValue(90)
+        if hasattr(self, 'stats_p90_line') and self.stats_p90_line:
+            if self.stats_p90_line not in self.plot_item.items:
+                self.plot_item.addItem(self.stats_p90_line)
+            self.stats_p90_line.setZValue(90)
         
         self.plot_item.getAxis('left').setLabel(y_label)
         
@@ -653,6 +657,9 @@ class TimeDomainView(QWidget):
         self.view_box.setLimits(xMin=t_start - t_pad, xMax=t_end + t_pad,
                                 yMin=y_min_data - y_pad, yMax=y_max_data + y_pad)
         
+        if hasattr(self, 'stats_region') and self.stats_region.isVisible():
+            self.update_statistics()
+
         # Explicitly update scrollbars
         self.update_scrollbars()
 
@@ -755,8 +762,8 @@ class TimeDomainView(QWidget):
         if self.stats_region: self.stats_region.hide()
         if self.stats_line: self.stats_line.hide()
         if self.stats_markers: self.stats_markers.clear()
-        if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide(); self.stats_p10_line.setData([], [])
-        if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide(); self.stats_p90_line.setData([], [])
+        if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide()
+        if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide()
         
         # 4. Clear grid lines
         self.toggle_grid('TIME', False)
@@ -1436,8 +1443,8 @@ class TimeDomainView(QWidget):
                 self.stats_line = None
             self.stats_region.hide()
             self.stats_markers.hide()
-            if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide(); self.stats_p10_line.setData([], [])
-            if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide(); self.stats_p90_line.setData([], [])
+            if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide()
+            if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide()
         else: # 'Y'
             for m in self.markers_y_dict[self.y_label_text]:
                 self.plot_item.removeItem(m)

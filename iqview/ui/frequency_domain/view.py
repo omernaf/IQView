@@ -167,14 +167,14 @@ class FrequencyDomainView(QWidget):
         self.stats_markers.hide()
         self.plot_item.addItem(self.stats_markers)
 
-        # 10th percentile (dotted green) and 90th percentile (dotted red) horizontal indicator lines
-        self.stats_p10_line = pg.PlotCurveItem(pen=pg.mkPen('#00e676', width=1.5, style=Qt.PenStyle.DotLine))
-        self.stats_p10_line.setZValue(10)
+        # 10th percentile (dotted green) and 90th percentile (dotted red) horizontal indicator lines (spanning full plot)
+        self.stats_p10_line = pg.InfiniteLine(angle=0, pen=pg.mkPen('#00e676', width=1.5, style=Qt.PenStyle.DotLine), movable=False)
+        self.stats_p10_line.setZValue(90)
         self.stats_p10_line.hide()
         self.plot_item.addItem(self.stats_p10_line)
 
-        self.stats_p90_line = pg.PlotCurveItem(pen=pg.mkPen('#ff3232', width=1.5, style=Qt.PenStyle.DotLine))
-        self.stats_p90_line.setZValue(10)
+        self.stats_p90_line = pg.InfiniteLine(angle=0, pen=pg.mkPen('#ff3232', width=1.5, style=Qt.PenStyle.DotLine), movable=False)
+        self.stats_p90_line.setZValue(90)
         self.stats_p90_line.hide()
         self.plot_item.addItem(self.stats_p90_line)
 
@@ -570,6 +570,14 @@ class FrequencyDomainView(QWidget):
         self.stats_region.setZValue(50)
         self.plot_item.addItem(self.stats_markers)
         self.stats_markers.setZValue(100)
+        if hasattr(self, 'stats_p10_line') and self.stats_p10_line:
+            if self.stats_p10_line not in self.plot_item.items:
+                self.plot_item.addItem(self.stats_p10_line)
+            self.stats_p10_line.setZValue(90)
+        if hasattr(self, 'stats_p90_line') and self.stats_p90_line:
+            if self.stats_p90_line not in self.plot_item.items:
+                self.plot_item.addItem(self.stats_p90_line)
+            self.stats_p90_line.setZValue(90)
         # Always re-add filter overlays — plot_item.clear() removes them from the scene;
         # visibility is controlled by show()/hide(), not scene membership.
         if hasattr(self, 'filter_region'):
@@ -647,6 +655,14 @@ class FrequencyDomainView(QWidget):
         self.stats_region.setZValue(50)
         self.plot_item.addItem(self.stats_markers)
         self.stats_markers.setZValue(100)
+        if hasattr(self, 'stats_p10_line') and self.stats_p10_line:
+            if self.stats_p10_line not in self.plot_item.items:
+                self.plot_item.addItem(self.stats_p10_line)
+            self.stats_p10_line.setZValue(90)
+        if hasattr(self, 'stats_p90_line') and self.stats_p90_line:
+            if self.stats_p90_line not in self.plot_item.items:
+                self.plot_item.addItem(self.stats_p90_line)
+            self.stats_p90_line.setZValue(90)
         # Always re-add filter overlays — plot_item.clear() removes them from the scene;
         # visibility is controlled by show()/hide(), not scene membership.
         if hasattr(self, 'filter_region'):
@@ -683,6 +699,12 @@ class FrequencyDomainView(QWidget):
             m.setZValue(20)
             self.plot_item.addItem(m)
 
+        active_y_endless = self.markers_y_endless_dict.get(y_label, [])
+        for m in active_y_endless:
+            m.setPen(pg.mkPen(p.marker_mag, width=2, style=Qt.PenStyle.DashLine))
+            m.setZValue(20)
+            self.plot_item.addItem(m)
+
         # Defensive check for y_min, y_max
         valid_data = data[np.isfinite(data)]
         if len(valid_data) > 0:
@@ -709,6 +731,7 @@ class FrequencyDomainView(QWidget):
         if old_x_range: self.plot_item.setXRange(*old_x_range, padding=0)
         else: self.plot_item.setXRange(f_start, f_end, padding=0)
         
+        if self.stats_region.isVisible(): self.update_statistics()
         self.update_scrollbars()
 
     def update_statistics(self):
@@ -837,12 +860,12 @@ class FrequencyDomainView(QWidget):
             {'pos': (f_min, p_min), 'brush': pg.mkBrush(50, 255, 50), 'pen': pg.mkPen('#32ff32', width=2), 'symbol': 't'}
         ])
 
-        # 10th and 90th percentile horizontal dotted lines spanning the region
+        # 10th and 90th percentile horizontal dotted lines spanning the full plot
         if hasattr(self, 'stats_p10_line'):
-            self.stats_p10_line.setData([b1, b2], [p_10, p_10])
+            self.stats_p10_line.setPos(p_10)
             self.stats_p10_line.show()
         if hasattr(self, 'stats_p90_line'):
-            self.stats_p90_line.setData([b1, b2], [p_90, p_90])
+            self.stats_p90_line.setPos(p_90)
             self.stats_p90_line.show()
 
     def freq_to_index(self, freq):
@@ -872,8 +895,8 @@ class FrequencyDomainView(QWidget):
         if getattr(self, 'stats_region', None): self.stats_region.hide()
         if getattr(self, 'stats_line', None): self.stats_line.hide()
         if getattr(self, 'stats_markers', None): self.stats_markers.clear()
-        if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide(); self.stats_p10_line.setData([], [])
-        if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide(); self.stats_p90_line.setData([], [])
+        if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide()
+        if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide()
 
         # 4. Clear filter bounds and replot unfiltered
         self._clear_filter_state(replot=True)
@@ -1711,8 +1734,8 @@ class FrequencyDomainView(QWidget):
                 self.stats_line = None
             self.stats_region.hide()
             self.stats_markers.hide()
-            if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide(); self.stats_p10_line.setData([], [])
-            if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide(); self.stats_p90_line.setData([], [])
+            if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide()
+            if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide()
         elif mode == 'FILTER':
             self._clear_filter_state(replot=True)
         self.update_marker_info()
