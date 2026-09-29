@@ -7,6 +7,7 @@ from PyQt6.QtGui import QKeySequence
 from ..widgets import CustomViewBox, key_event_to_name, format_tooltip_with_keybind
 from .marker_panel import TimeDomainMarkerPanel
 from ..themes import get_palette, get_scrollbar_stylesheet
+from ...dsp.domain_transforms import compute_time_domain_trace, compute_region_statistics
 
 class TimeDomainView(QWidget):
     """
@@ -453,86 +454,43 @@ class TimeDomainView(QWidget):
                 self.plot_item.setYRange(v1, v2, padding=0)
 
 
+    def _plot_mode(self, mode_name: str):
+        filter_len = int(self.settings_mgr.get("core/inst_freq_filter_len", 7)) if self.settings_mgr else 7
+        data, label = compute_time_domain_trace(self.samples, mode_name, self.rate, filter_len)
+        self._update_plot(data, label)
+
     def plot_real(self):
-        self._update_plot(self.samples.real, "Real")
+        self._plot_mode("Real")
 
     def plot_real_db(self):
-        data = np.abs(self.samples.real)
-        data[data < 1e-12] = 1e-12
-        self._update_plot(20 * np.log10(data), "Real [dB]")
+        self._plot_mode("Real [dB]")
 
     def plot_imaginary(self):
-        self._update_plot(self.samples.imag, "Imaginary")
-        
+        self._plot_mode("Imaginary")
+
     def plot_imaginary_db(self):
-        data = np.abs(self.samples.imag)
-        data[data < 1e-12] = 1e-12
-        self._update_plot(20 * np.log10(data), "Imaginary [dB]")
+        self._plot_mode("Imaginary [dB]")
 
     def plot_magnitude(self):
-        self._update_plot(np.abs(self.samples), "magnitude")
-        
+        self._plot_mode("magnitude")
+
     def plot_magnitude_db(self):
-        data = np.abs(self.samples)
-        data[data < 1e-12] = 1e-12
-        self._update_plot(20 * np.log10(data), "magnitude [dB]")
-        
+        self._plot_mode("magnitude [dB]")
+
     def plot_magnitude_squared(self):
-        self._update_plot(np.abs(self.samples)**2, "magnitude^2")
-        
+        self._plot_mode("magnitude^2")
+
     def plot_magnitude_squared_db(self):
-        data = np.abs(self.samples)**2
-        data[data < 1e-18] = 1e-18
-        self._update_plot(10 * np.log10(data), "magnitude^2 [dB]")
+        self._plot_mode("magnitude^2 [dB]")
 
     def plot_inst_freq(self):
-        from scipy.signal import hilbert, butter, sosfiltfilt
-
-        samples = self.samples
-
-        # Detect real signal: imaginary part is negligible
-        is_real_signal = not np.any(np.iscomplex(samples)) or np.max(np.abs(samples.imag)) < 1e-9 * (np.max(np.abs(samples.real)) + 1e-30)
-
-        if is_real_signal:
-            # For real signals, phase is only 0 or π which makes naive
-            # instantaneous frequency meaningless.  Convert to analytic signal
-            # via Hilbert transform to get a meaningful single-sided phase.
-            real_part = samples.real.astype(np.float64)
-            analytic = hilbert(real_part)
-
-            # DC-block: very wide HPF (0.5 % of Nyquist) to remove any DC
-            # offset that the Hilbert path may introduce, without affecting
-            # the actual signal content.
-            try:
-                sos = butter(2, 0.005, btype='high', output='sos')
-                analytic = sosfiltfilt(sos, analytic.real) + 1j * sosfiltfilt(sos, analytic.imag)
-            except Exception:
-                pass  # Fall back without DC-blocking if filter fails
-
-            samples = analytic
-
-        dphi = np.diff(np.angle(samples))
-        wrapped_dphi = (dphi + np.pi) % (2 * np.pi) - np.pi
-        freq = wrapped_dphi / (2 * np.pi) * self.rate
-
-        # Apply Moving Median Filter to reduce noise
-        filter_len = int(self.settings_mgr.get("core/inst_freq_filter_len", 7))
-        if filter_len > 1:
-            from scipy.signal import medfilt
-            # medfilt kernel_size must be positive odd integer
-            if filter_len % 2 == 0:
-                filter_len += 1
-            freq = medfilt(freq, kernel_size=filter_len)
-
-        pad_freq = np.concatenate(([freq[0]], freq))
-        self._update_plot(pad_freq, "instant frequency")
-
+        self._plot_mode("instant frequency")
 
     def plot_phase(self):
-        self._update_plot(np.angle(self.samples), "Phase")
+        self._plot_mode("Phase")
 
     def plot_unwrapped_phase(self):
-        self._update_plot(np.unwrap(np.angle(self.samples)), "Unwrapped phase")
+        self._plot_mode("Unwrapped phase")
 
     def update_statistics(self):
         """Calculates Min, Max, Mean, Median for the active region and updates the marker panel UI."""
@@ -553,102 +511,58 @@ class TimeDomainView(QWidget):
             return
         if len(self.current_plot_data) == 0:
             return
-            
+
         r_min, r_max = self.stats_region.getRegion()
-        
-        # Find indices
-        i_min = np.searchsorted(self.time_axis, r_min)
-        i_max = np.searchsorted(self.time_axis, r_max)
-        
-        # Safety bounds
-        i_min = max(0, min(len(self.time_axis) - 1, i_min))
-        i_max = max(0, min(len(self.time_axis), i_max))
-        
-        if i_min >= i_max:
-            return # Region is zero-width or out of bounds
-            
-        slice_data = self.current_plot_data[i_min:i_max]
-        
-        if len(slice_data) == 0:
+        stats = compute_region_statistics(
+            self.time_axis,
+            self.current_plot_data,
+            r_min,
+            r_max,
+            self.y_label_text,
+            is_freq_domain=False,
+        )
+        if stats is None:
             return
-            
-        p_max = np.max(slice_data)
-        p_min = np.min(slice_data)
-        p_median = np.median(slice_data)
-        p_10, p_90 = np.percentile(slice_data, [10, 90])
-        p_diff = p_90 - p_10
-        
-        # Mean Calculation: For dB plots, average in linear domain
-        if "[dB]" in self.y_label_text:
-            # Detect if it's 10log (Magnitude^2) or 20log (Magnitude/Real/Imag)
-            factor = 10 if "magnitude^2" in self.y_label_text.lower() else 20
-            # Convert back to linear
-            lin_data = 10**(slice_data / factor)
-            lin_mean = np.mean(lin_data)
-            # Re-convert to dB, adding a small epsilon to avoid log10(0)
-            p_mean = factor * np.log10(lin_mean + 1e-15)
-        else:
-            p_mean = np.mean(slice_data)
-        
-        # Find exact relative position
-        idx_max = i_min + np.argmax(slice_data)
-        idx_min = i_min + np.argmin(slice_data)
-        
-        t_max = self.time_axis[idx_max]
-        t_min = self.time_axis[idx_min]
-        
-        # Update Marker Panel readouts
+
+        b1, b2 = stats.b1, stats.b2
+        t_max, t_min = stats.x_max, stats.x_min
+
         # --- Update Marker Panel Region Definition ---
         prec1 = int(self.settings_mgr.get("ui/label_precision", 9))
         self.marker_panel.st_row_v1_lbl.setText("Samples")
         self.marker_panel.st_row_v2_lbl.setText("Region (s)")
         self.marker_panel.st_row_v3_lbl.setText("1/T (Hz)")
-        
-        # In case they were swapped during drag
-        b1, b2 = sorted([r_min, r_max])
-        
-        # Bounds (M1, M2)
+
         for i, val in enumerate([b1, b2]):
             w = self.marker_panel.st_widgets[i]
             w['v1'].blockSignals(True); w['v1'].setText(f"{val:.{prec1}f}"); w['v1'].blockSignals(False)
-            
+
             abs_s = int(round(val * self.rate)) + 1
             w['v2'].blockSignals(True); w['v2'].setText(f"{abs_s}"); w['v2'].blockSignals(False)
-            
+
             inv_val = (1.0 / val) if abs(val) > 1e-12 else float('inf')
             w['v3'].blockSignals(True); w['v3'].setText(f"{inv_val:.{prec1}f}" if inv_val != float('inf') else "∞"); w['v3'].blockSignals(False)
 
         # Delta/Center
         dv = abs(b2 - b1)
         cv = (b1 + b2) / 2
-        
+
         self.marker_panel.st_delta_v1.blockSignals(True); self.marker_panel.st_delta_v1.setText(f"{dv:.{prec1}f}"); self.marker_panel.st_delta_v1.blockSignals(False)
         self.marker_panel.st_center_v1.blockSignals(True); self.marker_panel.st_center_v1.setText(f"{cv:.{prec1}f}"); self.marker_panel.st_center_v1.blockSignals(False)
-        
+
         s1, s2 = int(round(b1 * self.rate)) + 1, int(round(b2 * self.rate)) + 1
         self.marker_panel.st_delta_v2.blockSignals(True); self.marker_panel.st_delta_v2.setText(f"{abs(s2-s1)+1}"); self.marker_panel.st_delta_v2.blockSignals(False)
         self.marker_panel.st_center_v2.blockSignals(True); self.marker_panel.st_center_v2.setText(f"{int(round(cv*self.rate))+1}"); self.marker_panel.st_center_v2.blockSignals(False)
-        
+
         if dv > 1e-12: self.marker_panel.st_delta_v3.setText(f"{1.0/dv:.{prec1}f}")
         else: self.marker_panel.st_delta_v3.setText("∞")
         if abs(cv) > 1e-12: self.marker_panel.st_center_v3.setText(f"{1.0/cv:.{prec1}f}")
         else: self.marker_panel.st_center_v3.setText("∞")
 
         # --- Update Statistics Results ---
-        unit_str = ""
-        if "[dB]" in self.y_label_text or "dB" in self.y_label_text:
-            unit_str = "dB"
-        elif "rad" in self.y_label_text.lower() or "phase" in self.y_label_text.lower():
-            unit_str = "rad"
-        elif "hz" in self.y_label_text.lower():
-            unit_str = "Hz"
-        elif "magnitude^2" in self.y_label_text.lower():
-            unit_str = "Linear²"
-        elif "magnitude" in self.y_label_text.lower() or "real" in self.y_label_text.lower() or "imag" in self.y_label_text.lower():
-            unit_str = "Linear"
-
+        unit_str = stats.unit_str
+        diff_unit_str = stats.diff_unit_str
         panel = self.marker_panel
-        diff_unit_str = "dB" if ("db" in self.y_label_text.lower()) else unit_str
 
         if hasattr(panel, 'st_res_lbl_val'):
             panel.st_res_lbl_val.setText(f"Value ({unit_str})" if unit_str else "Value")
@@ -663,34 +577,34 @@ class TimeDomainView(QWidget):
         if hasattr(panel, 'st_res_lbl_diff'):
             panel.st_res_lbl_diff.setText(f"90-10 Diff ({diff_unit_str})" if diff_unit_str else "90-10 Diff")
 
-        self.marker_panel.stats_max_val.setText(f"{p_max:.6g}")
-        self.marker_panel.stats_min_val.setText(f"{p_min:.6g}")
-        self.marker_panel.stats_mean_val.setText(f"{p_mean:.6g}")
-        self.marker_panel.stats_median_val.setText(f"{p_median:.6g}")
-        self.marker_panel.stats_90th_val.setText(f"{p_90:.6g}")
-        self.marker_panel.stats_10th_val.setText(f"{p_10:.6g}")
-        self.marker_panel.stats_diff_val.setText(f"{p_diff:.6g}")
-        
+        self.marker_panel.stats_max_val.setText(f"{stats.p_max:.6g}")
+        self.marker_panel.stats_min_val.setText(f"{stats.p_min:.6g}")
+        self.marker_panel.stats_mean_val.setText(f"{stats.p_mean:.6g}")
+        self.marker_panel.stats_median_val.setText(f"{stats.p_median:.6g}")
+        self.marker_panel.stats_90th_val.setText(f"{stats.p_90:.6g}")
+        self.marker_panel.stats_10th_val.setText(f"{stats.p_10:.6g}")
+        self.marker_panel.stats_diff_val.setText(f"{stats.p_diff:.6g}")
+
         self.marker_panel.stats_max_time.setText(f"{t_max:.6f}")
         self.marker_panel.stats_min_time.setText(f"{t_min:.6f}")
-        
-        self.marker_panel.stats_max_idx.setText(f"{idx_max}")
-        self.marker_panel.stats_min_idx.setText(f"{idx_min}")
-        
+
+        self.marker_panel.stats_max_idx.setText(f"{stats.idx_max}")
+        self.marker_panel.stats_min_idx.setText(f"{stats.idx_min}")
+
         # Update graphical indicators
         self.stats_markers.setData([
-            {'pos': (t_max, p_max), 'brush': pg.mkBrush(255, 50, 50), 'pen': pg.mkPen('#ff3232', width=2), 'symbol': 'o'},
-            {'pos': (t_min, p_min), 'brush': pg.mkBrush(50, 255, 50), 'pen': pg.mkPen('#32ff32', width=2), 'symbol': 't'}
+            {'pos': (t_max, stats.p_max), 'brush': pg.mkBrush(255, 50, 50), 'pen': pg.mkPen('#ff3232', width=2), 'symbol': 'o'},
+            {'pos': (t_min, stats.p_min), 'brush': pg.mkBrush(50, 255, 50), 'pen': pg.mkPen('#32ff32', width=2), 'symbol': 't'}
         ])
 
         # 10th and 90th percentile horizontal dotted lines spanning the full plot
         show_p10 = self.marker_panel.cb_p10.isChecked() if hasattr(self.marker_panel, 'cb_p10') else True
         show_p90 = self.marker_panel.cb_p90.isChecked() if hasattr(self.marker_panel, 'cb_p90') else True
         if hasattr(self, 'stats_p10_line'):
-            self.stats_p10_line.setPos(p_10)
+            self.stats_p10_line.setPos(stats.p_10)
             self.stats_p10_line.setVisible(show_p10)
         if hasattr(self, 'stats_p90_line'):
-            self.stats_p90_line.setPos(p_90)
+            self.stats_p90_line.setPos(stats.p_90)
             self.stats_p90_line.setVisible(show_p90)
 
     def _update_plot(self, data, y_label):

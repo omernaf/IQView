@@ -9,6 +9,13 @@ from ..widgets import CustomViewBox, key_event_to_name, format_tooltip_with_keyb
 from .marker_panel import FrequencyDomainMarkerPanel
 from ..themes import get_palette, get_scrollbar_stylesheet
 from ...dsp.dsp import compute_psd
+from ...dsp.domain_transforms import (
+    apply_signal_operator,
+    resolve_operator_center_freq,
+    compute_frequency_domain_fft,
+    compute_frequency_domain_trace,
+    compute_region_statistics,
+)
 
 class FrequencyDomainView(QWidget):
     """
@@ -228,61 +235,9 @@ class FrequencyDomainView(QWidget):
     def get_processed_samples(self):
         """Applies the selected preprocessing operator to the source samples."""
         src = self._filtered_samples if (getattr(self, '_filtered_samples', None) is not None) else self.samples
-        if src is None or len(src) == 0:
-            return np.array([], dtype=np.complex64)
-            
         operator = self.operator_combo.currentText()
-        if operator == "2nd Power":
-            return src ** 2
-        elif operator == "4th Power":
-            return src ** 4
-        elif operator == "Absolute Value":
-            return np.abs(src)
-        elif operator in ("FM Demod", "2nd Power FM"):
-            from scipy.signal import hilbert, butter, sosfiltfilt
-            
-            # Detect real signal: imaginary part is negligible
-            is_real = not np.any(np.iscomplex(src)) or np.max(np.abs(src.imag)) < 1e-9 * (np.max(np.abs(src.real)) + 1e-30)
-            if is_real:
-                real_part = src.real.astype(np.float64)
-                try:
-                    analytic = hilbert(real_part)
-                    sos = butter(2, 0.005, btype='high', output='sos')
-                    analytic = sosfiltfilt(sos, analytic.real) + 1j * sosfiltfilt(sos, analytic.imag)
-                    src = analytic
-                except Exception:
-                    pass
-            
-            dphi = np.diff(np.angle(src))
-            wrapped_dphi = (dphi + np.pi) % (2 * np.pi) - np.pi
-            freq = wrapped_dphi / (2 * np.pi) * self.rate
-            
-            # Apply moving median filter if configured
-            filter_len = 1
-            if self.settings_mgr:
-                filter_len = int(self.settings_mgr.get("core/inst_freq_filter_len", 7))
-            if filter_len > 1:
-                from scipy.signal import medfilt
-                if filter_len % 2 == 0:
-                    filter_len += 1
-                try:
-                    freq = medfilt(freq, kernel_size=filter_len)
-                except Exception:
-                    pass
-            
-            if len(freq) > 0:
-                freq = np.concatenate(([freq[0]], freq))
-            
-            if operator == "2nd Power FM":
-                return freq ** 2
-            return freq
-        elif operator == "Delay & Multiply":
-            if len(src) > 1:
-                res = src[1:] * np.conj(src[:-1])
-                return np.concatenate(([res[0]], res))
-            else:
-                return np.array([], dtype=np.complex64)
-        return src
+        filter_len = int(self.settings_mgr.get("core/inst_freq_filter_len", 7)) if self.settings_mgr else 1
+        return apply_signal_operator(src, self.rate, operator, filter_len)
 
     def on_operator_changed(self):
         """Called when the user selects a new preprocessing operator."""
@@ -313,30 +268,14 @@ class FrequencyDomainView(QWidget):
 
     def compute_fft(self):
         """Perform FFT processing on the sample segment using signal length N."""
-        # Use preprocessed samples
         src = self.get_processed_samples()
-        n = len(src)
-        if n == 0: return
+        if len(src) == 0:
+            return
 
-        # Rectangular window (no window at all)
-        window = np.ones(n)
-
-        fft_res = np.fft.fft(src * window) / n
-        self.fft_data = np.fft.fftshift(fft_res)
-
-        # Determine center frequency based on the operator
         operator = self.operator_combo.currentText()
-        if operator in ("Absolute Value", "FM Demod", "2nd Power FM", "Delay & Multiply"):
-            cf = 0.0
-        elif operator == "2nd Power":
-            cf = 2 * self.center_freq
-        elif operator == "4th Power":
-            cf = 4 * self.center_freq
-        else:
-            cf = self.center_freq
-
-        # freq_axis is always based on processed sample count so sizes match
-        self.fft_freq_axis = np.fft.fftshift(np.fft.fftfreq(n, 1/self.rate)) + cf
+        self.fft_data, self.fft_freq_axis = compute_frequency_domain_fft(
+            src, self.rate, self.center_freq, operator
+        )
         self.freq_axis = self.fft_freq_axis
         self.stats_region.setBounds([self.freq_axis[0], self.freq_axis[-1]])
         if hasattr(self, 'filter_region'):
@@ -517,55 +456,35 @@ class FrequencyDomainView(QWidget):
             else:
                 self.plot_item.setYRange(v1, v2, padding=0)
 
-    def plot_magnitude(self): self._update_plot(np.abs(self.fft_data), "magnitude")
-    def plot_magnitude_db(self):
-        data = np.abs(self.fft_data)
-        data[data < 1e-15] = 1e-15
-        self._update_plot(20 * np.log10(data), "magnitude [dBFS]")
-    def plot_magnitude_squared(self): self._update_plot(np.abs(self.fft_data)**2, "magnitude^2")
-    def plot_real(self): self._update_plot(self.fft_data.real, "real")
-    def plot_real_db(self):
-        data = np.abs(self.fft_data.real)
-        data[data < 1e-15] = 1e-15
-        self._update_plot(20 * np.log10(data), "real [dBFS]")
-    def plot_imag(self): self._update_plot(self.fft_data.imag, "imag")
-    def plot_imag_db(self):
-        data = np.abs(self.fft_data.imag)
-        data[data < 1e-15] = 1e-15
-        self._update_plot(20 * np.log10(data), "imag [dBFS]")
-    def plot_phase(self): self._update_plot(np.angle(self.fft_data), "phase")
-    def plot_unwrapped_phase(self): self._update_plot(np.unwrap(np.angle(self.fft_data)), "unwrapped phase")
+    def _plot_mode(self, mode_name: str):
+        data, label = compute_frequency_domain_trace(self.fft_data, mode_name)
+        self._update_plot(data, label)
+
+    def plot_magnitude(self): self._plot_mode("magnitude")
+    def plot_magnitude_db(self): self._plot_mode("magnitude [dBFS]")
+    def plot_magnitude_squared(self): self._plot_mode("magnitude^2")
+    def plot_real(self): self._plot_mode("real")
+    def plot_real_db(self): self._plot_mode("real [dBFS]")
+    def plot_imag(self): self._plot_mode("imag")
+    def plot_imag_db(self): self._plot_mode("imag [dBFS]")
+    def plot_phase(self): self._plot_mode("phase")
+    def plot_unwrapped_phase(self): self._plot_mode("unwrapped phase")
 
     def plot_psd(self):
         method = "Welch"
         if self.settings_mgr:
             method = self.settings_mgr.get("core/psd_algorithm", "Welch")
         
-        # Use processed samples
         src = self.get_processed_samples()
-        if len(src) == 0: return
+        if len(src) == 0:
+            return
         
-        # Use a reasonable segment length for Welch based on processed samples
         nperseg = 4096 if len(src) > 4096 else 1024
-        
-        # Compute true continuous PSD in V^2 / Hz (fs = self.rate, scaling = 'density')
         freqs, psd = compute_psd(src, fs=self.rate, method=method, nperseg=nperseg)
         
-        # Determine center frequency based on the operator
         operator = self.operator_combo.currentText()
-        if operator in ("Absolute Value", "FM Demod", "2nd Power FM", "Delay & Multiply"):
-            cf = 0.0
-        elif operator == "2nd Power":
-            cf = 2 * self.center_freq
-        elif operator == "4th Power":
-            cf = 4 * self.center_freq
-        else:
-            cf = self.center_freq
-            
-        # Shift frequencies by center frequency (fs scaling was already done in compute_psd)
+        cf = resolve_operator_center_freq(self.center_freq, operator)
         freqs = freqs + cf
-        
-        # PSD in dB/Hz
         psd_db = 10 * np.log10(psd + 1e-20)
         
         self._update_plot_dynamic(freqs, psd_db, "PSD [dB/Hz]")
@@ -771,70 +690,52 @@ class FrequencyDomainView(QWidget):
                 idx = self.freq_to_index(val)
                 w['v2'].blockSignals(True); w['v2'].setText(f"{idx}"); w['v2'].blockSignals(False)
             return
-        if len(self.current_plot_data) == 0: return
+        if len(self.current_plot_data) == 0:
+            return
+
         r_min, r_max = self.stats_region.getRegion()
-        i_min = np.searchsorted(self.freq_axis, r_min)
-        i_max = np.searchsorted(self.freq_axis, r_max)
-        i_min, i_max = max(0, i_min), min(len(self.freq_axis), i_max)
-        if i_min >= i_max: return
-        
-        slice_data = self.current_plot_data[i_min:i_max]
-        p_max, p_min, p_median = np.max(slice_data), np.min(slice_data), np.median(slice_data)
-        p_10, p_90 = np.percentile(slice_data, [10, 90])
-        p_diff = p_90 - p_10
-        
-        idx_max, idx_min = i_min + np.argmax(slice_data), i_min + np.argmin(slice_data)
-        f_max, f_min = self.freq_axis[idx_max], self.freq_axis[idx_min]
+        stats = compute_region_statistics(
+            self.freq_axis,
+            self.current_plot_data,
+            r_min,
+            r_max,
+            self.y_label_text,
+            is_freq_domain=True,
+        )
+        if stats is None:
+            return
+
+        b1, b2 = stats.b1, stats.b2
+        f_max, f_min = stats.x_max, stats.x_min
         panel = self.marker_panel
-        
+
         # --- Update Marker Panel Region Definition ---
         prec1 = int(self.settings_mgr.get("ui/label_precision", 9))
         self.marker_panel.st_row_v1_lbl.setText("Region (Hz)")
         self.marker_panel.st_row_v2_lbl.setText("Index")
-        
-        # In case they were swapped during drag
-        b1, b2 = sorted([r_min, r_max])
-        
-        # Bounds (M1, M2)
+
         for i, val in enumerate([b1, b2]):
             w = self.marker_panel.st_widgets[i]
             w['v1'].blockSignals(True); w['v1'].setText(f"{val:.{prec1}f}"); w['v1'].blockSignals(False)
-            
+
             idx = self.freq_to_index(val)
             w['v2'].blockSignals(True); w['v2'].setText(f"{idx}"); w['v2'].blockSignals(False)
 
         # Delta/Center
         dv = abs(b2 - b1)
         cv = (b1 + b2) / 2
-        
+
         self.marker_panel.st_delta_v1.blockSignals(True); self.marker_panel.st_delta_v1.setText(f"{dv:.{prec1}f}"); self.marker_panel.st_delta_v1.blockSignals(False)
         self.marker_panel.st_center_v1.blockSignals(True); self.marker_panel.st_center_v1.setText(f"{cv:.{prec1}f}"); self.marker_panel.st_center_v1.blockSignals(False)
-        
+
         idx1, idx2 = self.freq_to_index(b1), self.freq_to_index(b2)
         self.marker_panel.st_delta_v2.blockSignals(True); self.marker_panel.st_delta_v2.setText(f"{abs(idx2-idx1)+1}"); self.marker_panel.st_delta_v2.blockSignals(False)
         self.marker_panel.st_center_v2.blockSignals(True); self.marker_panel.st_center_v2.setText(f"{self.freq_to_index(cv)}"); self.marker_panel.st_center_v2.blockSignals(False)
 
         # --- Update Statistics Results ---
-        # Update row labels in the stats results table
-        unit_str = ""
-        if "dBFS" in self.y_label_text:
-            unit_str = "dBFS"
-        elif "dB/Hz" in self.y_label_text or "dB / Hz" in self.y_label_text:
-            unit_str = "dB/Hz"
-        elif "[dB]" in self.y_label_text or "dB" in self.y_label_text:
-            unit_str = "dB"
-        elif "rad" in self.y_label_text.lower() or "phase" in self.y_label_text.lower():
-            unit_str = "rad"
-        elif "magnitude^2" in self.y_label_text.lower():
-            unit_str = "Linear²"
-        elif "magnitude" in self.y_label_text.lower() or "real" in self.y_label_text.lower() or "imag" in self.y_label_text.lower():
-            unit_str = "Linear"
-
-        is_psd = ("psd" in self.y_label_text.lower() or "db/hz" in self.y_label_text.lower())
-        is_db = ("db" in self.y_label_text.lower())
-        
-        int_unit_str = "dB" if (is_db or is_psd) else unit_str
-        diff_unit_str = "dB" if (is_db or is_psd) else unit_str
+        unit_str = stats.unit_str
+        int_unit_str = stats.int_unit_str
+        diff_unit_str = stats.diff_unit_str
 
         if hasattr(panel, 'st_res_lbl_val'):
             panel.st_res_lbl_val.setText(f"Value ({unit_str})" if unit_str else "Value")
@@ -851,59 +752,34 @@ class FrequencyDomainView(QWidget):
         if hasattr(panel, 'st_res_lbl_diff'):
             panel.st_res_lbl_diff.setText(f"90-10 Diff ({diff_unit_str})" if diff_unit_str else "90-10 Diff")
 
-        # 1. Convert slice_data to Linear Power & Calculate Mean / Integrated Power
-        if is_psd:
-            # slice_data is in dB/Hz -> linear PSD S_xx(f) in V^2/Hz
-            lin_pow_slice = 10**(slice_data / 10.0)
-            df = float(self.freq_axis[1] - self.freq_axis[0]) if len(self.freq_axis) > 1 else 1.0
-            # Integrated power over band = sum(S_xx(f) * df)
-            total_p_lin = np.sum(lin_pow_slice) * df
-            p_mean_lin = np.mean(lin_pow_slice)
-            p_mean_db = 10 * np.log10(p_mean_lin + 1e-20)
-            total_p_db = 10 * np.log10(total_p_lin + 1e-20)
-            panel.stats_mean_val.setText(f"{p_mean_db:.2f}")
-            panel.stats_total_power.setText(f"{total_p_db:.2f}")
-        elif is_db:
-            # slice_data is in dBFS (20*log10(mag))
-            lin_pow_slice = 10**(slice_data / 10.0)
-            p_mean_lin = np.mean(lin_pow_slice)
-            total_p_lin = np.sum(lin_pow_slice)
-            p_mean_db = 10 * np.log10(p_mean_lin + 1e-18)
-            total_p_db = 10 * np.log10(total_p_lin + 1e-15)
-            panel.stats_mean_val.setText(f"{p_mean_db:.2f}")
-            panel.stats_total_power.setText(f"{total_p_db:.2f}")
+        if stats.is_psd or stats.is_db:
+            panel.stats_mean_val.setText(f"{stats.p_mean:.2f}")
+            panel.stats_total_power.setText(f"{stats.total_power:.2f}")
         else:
-            if "magnitude^2" in self.y_label_text.lower():
-                lin_pow_slice = slice_data
-            else:
-                lin_pow_slice = slice_data**2
-            p_mean_lin = np.mean(lin_pow_slice)
-            total_p_lin = np.sum(lin_pow_slice)
-            panel.stats_mean_val.setText(f"{p_mean_lin:.4g}")
-            panel.stats_total_power.setText(f"{total_p_lin:.4g}")
-            
-        panel.stats_max_val.setText(f"{p_max:.4g}"); panel.stats_min_val.setText(f"{p_min:.4g}")
-        panel.stats_median_val.setText(f"{p_median:.4g}")
-        panel.stats_90th_val.setText(f"{p_90:.4g}")
-        panel.stats_10th_val.setText(f"{p_10:.4g}")
-        panel.stats_diff_val.setText(f"{p_diff:.4g}")
-        
+            panel.stats_mean_val.setText(f"{stats.p_mean:.4g}")
+            panel.stats_total_power.setText(f"{stats.total_power:.4g}")
+
+        panel.stats_max_val.setText(f"{stats.p_max:.4g}"); panel.stats_min_val.setText(f"{stats.p_min:.4g}")
+        panel.stats_median_val.setText(f"{stats.p_median:.4g}")
+        panel.stats_90th_val.setText(f"{stats.p_90:.4g}")
+        panel.stats_10th_val.setText(f"{stats.p_10:.4g}")
+        panel.stats_diff_val.setText(f"{stats.p_diff:.4g}")
+
         panel.stats_max_freq.setText(f"{f_max:,.0f}"); panel.stats_min_freq.setText(f"{f_min:,.0f}")
-        panel.stats_max_idx.setText(f"{idx_max:,}"); panel.stats_min_idx.setText(f"{idx_min:,}")
-        
+        panel.stats_max_idx.setText(f"{stats.idx_max:,}"); panel.stats_min_idx.setText(f"{stats.idx_min:,}")
+
         self.stats_markers.setData([
-            {'pos': (f_max, p_max), 'brush': pg.mkBrush(255, 50, 50), 'pen': pg.mkPen('#ff3232', width=2), 'symbol': 'o'},
-            {'pos': (f_min, p_min), 'brush': pg.mkBrush(50, 255, 50), 'pen': pg.mkPen('#32ff32', width=2), 'symbol': 't'}
+            {'pos': (f_max, stats.p_max), 'brush': pg.mkBrush(255, 50, 50), 'pen': pg.mkPen('#ff3232', width=2), 'symbol': 'o'},
+            {'pos': (f_min, stats.p_min), 'brush': pg.mkBrush(50, 255, 50), 'pen': pg.mkPen('#32ff32', width=2), 'symbol': 't'}
         ])
 
-        # 10th and 90th percentile horizontal dotted lines spanning the full plot
         show_p10 = self.marker_panel.cb_p10.isChecked() if hasattr(self.marker_panel, 'cb_p10') else True
         show_p90 = self.marker_panel.cb_p90.isChecked() if hasattr(self.marker_panel, 'cb_p90') else True
         if hasattr(self, 'stats_p10_line'):
-            self.stats_p10_line.setPos(p_10)
+            self.stats_p10_line.setPos(stats.p_10)
             self.stats_p10_line.setVisible(show_p10)
         if hasattr(self, 'stats_p90_line'):
-            self.stats_p90_line.setPos(p_90)
+            self.stats_p90_line.setPos(stats.p_90)
             self.stats_p90_line.setVisible(show_p90)
 
     def freq_to_index(self, freq):
