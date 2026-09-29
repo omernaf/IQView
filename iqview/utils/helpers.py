@@ -148,9 +148,9 @@ def detect_params_from_filename(filename):
 _MAT_FORMAT_EXAMPLE = """\
 Expected MATLAB struct saved with save() or from Keysight / R&S instruments:
 
-  Y            — 1-D complex IQ samples  (e.g. complex double or single)
-  XDelta       — scalar, sample interval in seconds  (1 / sample_rate)
-  InputCenter  — scalar, centre frequency in Hz
+  Y            - 1-D complex IQ samples  (e.g. complex double or single)
+  XDelta       - scalar, sample interval in seconds  (1 / sample_rate)
+  InputCenter  - scalar, centre frequency in Hz
 
 Example (MATLAB / Octave):
 

@@ -943,35 +943,24 @@ class ViewControllerMixin:
                 self._remove_recent_file(path)
             return
 
-        # Save current user overlays before switching
-        if hasattr(self, 'save_overlay_sidecar'):
-            self.save_overlay_sidecar()
-
-        # Clear previous user overlays (do NOT call clear_all_markers here —
-        # it would also wipe markers which the user may want to keep).
-        if hasattr(self, 'clear_overlays'):
-            self.clear_overlays(source='user')
-
-        # Update window title
-        if getattr(self, 'custom_window_name', None):
-            self.setWindowTitle(f"IQView - {self.custom_window_name}")
-        else:
-            self.setWindowTitle(f"IQView - {path}")
+        new_data_source = None
+        new_file_path = None
+        new_rate = self.rate
+        new_fc = self.fc
+        new_is_complex = self.is_complex
+        new_data_type = self.data_type
+        new_type_str = type_str
 
         if os.path.splitext(path)[1].lower() in AUDIO_EXTENSIONS:
             data_bytes, err_or_type, loaded_fs, loaded_fc, is_complex = load_audio_file(path)
             if data_bytes is not None:
-                self.data_source = data_bytes
-                self.file_path = path
-                self.rate = fs if fs is not None else loaded_fs
-                self.fc = fc if fc is not None else loaded_fc
-                self.is_complex = is_complex
-                self.data_type = np.float32
-                type_str = err_or_type  # 'float32' on success
-
-                # Update sidebar parameters
-                if hasattr(self, 'sidebar'):
-                    self.sidebar.update_params(fs=self.rate, fc=self.fc)
+                new_data_source = data_bytes
+                new_file_path = path
+                new_rate = fs if fs is not None else loaded_fs
+                new_fc = fc if fc is not None else loaded_fc
+                new_is_complex = is_complex
+                new_data_type = np.float32
+                new_type_str = err_or_type  # 'float32' on success
             else:
                 QMessageBox.critical(
                     self,
@@ -995,26 +984,21 @@ class ViewControllerMixin:
                 return
             if mat_data:
                 data_source, loaded_type_str, loaded_fs, loaded_fc, is_complex = mat_data
-                self.data_source = data_source
-                self.file_path = path
-                self.rate = fs if fs is not None else loaded_fs
-                self.fc = fc if fc is not None else loaded_fc
-                self.is_complex = is_complex
-                type_str = loaded_type_str
+                new_data_source = data_source
+                new_file_path = path
+                new_rate = fs if fs is not None else loaded_fs
+                new_fc = fc if fc is not None else loaded_fc
+                new_is_complex = is_complex
+                new_type_str = loaded_type_str
                 
-                # Update sidebar parameters
-                if hasattr(self, 'sidebar'):
-                    self.sidebar.update_params(fs=fs, fc=fc)
-                
-                dtype = DTYPE_MAP.get(type_str, np.complex64)
+                dtype = DTYPE_MAP.get(new_type_str, np.complex64)
                 if dtype == np.complex64:
-                    self.data_type = np.float32
+                    new_data_type = np.float32
                 elif dtype == np.complex128:
-                    self.data_type = np.float64
+                    new_data_type = np.float64
                 else:
-                    self.data_type = dtype
+                    new_data_type = dtype
             else:
-                # Error loading .mat file, return early
                 return
 
         # Check if it's a Tektronix .r3f file
@@ -1030,60 +1014,79 @@ class ViewControllerMixin:
                 return
             if r3f_data:
                 data_source, loaded_type_str, loaded_fs, loaded_fc, is_complex = r3f_data
-                self.data_source = data_source
-                self.file_path = path
-                self.rate = fs if fs is not None else loaded_fs
-                self.fc = fc if fc is not None else loaded_fc
-                self.is_complex = is_complex
-                type_str = loaded_type_str
-                self.data_type = np.float32
-
-                # Update sidebar parameters
-                if hasattr(self, 'sidebar'):
-                    self.sidebar.update_params(fs=self.rate, fc=self.fc)
+                new_data_source = data_source
+                new_file_path = path
+                new_rate = fs if fs is not None else loaded_fs
+                new_fc = fc if fc is not None else loaded_fc
+                new_is_complex = is_complex
+                new_type_str = loaded_type_str
+                new_data_type = np.float32
             else:
                 return
 
         else:
-            # Update data source and file path
-            self.data_source = path
-            self.file_path   = path
+            new_data_source = path
+            new_file_path   = path
             
             # Detect fs and fc from filename if possible
             params = detect_params_from_filename(path)
             fs_detected = fs if fs is not None else params.get('fs')
             fc_detected = fc if fc is not None else params.get('fc')
-            if fs_detected is not None or fc_detected is not None:
-                if fs_detected is not None:
-                    self.rate = fs_detected
-                if fc_detected is not None:
-                    self.fc = fc_detected
-                if hasattr(self, 'sidebar'):
-                    self.sidebar.update_params(fs=fs_detected, fc=fc_detected)
+            if fs_detected is not None:
+                new_rate = fs_detected
+            if fc_detected is not None:
+                new_fc = fc_detected
 
             # Priority: 1. Argument, 2. Auto-detection from filename, 3. App Settings
-            if type_str is None:
+            if new_type_str is None:
                 auto_type = detect_type_from_ext(path)
                 if auto_type:
-                    type_str = auto_type
+                    new_type_str = auto_type
                 else:
-                    type_str = str(self.settings_mgr.get("core/type", "complex64"))
+                    new_type_str = str(self.settings_mgr.get("core/type", "complex64"))
 
-            dtype = DTYPE_MAP.get(type_str, np.complex64)
-            self.is_complex = dtype in [np.complex64, np.complex128, np.int16]
+            dtype = DTYPE_MAP.get(new_type_str, np.complex64)
+            new_is_complex = dtype in [np.complex64, np.complex128, np.int16]
             
             if dtype == np.complex64:
-                self.data_type = np.float32
+                new_data_type = np.float32
             elif dtype == np.complex128:
-                self.data_type = np.float64
+                new_data_type = np.float64
             else:
-                self.data_type = dtype
+                new_data_type = dtype
 
-        self.current_type_str = type_str
+        # Save current user overlays before switching
+        if hasattr(self, 'save_overlay_sidecar'):
+            self.save_overlay_sidecar()
+
+        # Clear previous user overlays
+        if hasattr(self, 'clear_overlays'):
+            self.clear_overlays(source='user')
+
+        # Apply loaded parameters to state
+        self.data_source = new_data_source
+        self.file_path = new_file_path
+        self.rate = new_rate
+        self.fc = new_fc
+        self.is_complex = new_is_complex
+        self.data_type = new_data_type
+        self.current_type_str = new_type_str
+
+        # Update sidebar parameters
+        if hasattr(self, 'sidebar'):
+            self.sidebar.update_params(fs=self.rate, fc=self.fc)
+
+        # Update window title
+        if getattr(self, 'custom_window_name', None):
+            self.setWindowTitle(f"IQView - {self.custom_window_name}")
+        elif self.file_path:
+            self.setWindowTitle(f"IQView - {self.file_path}")
+        else:
+            self.setWindowTitle("IQView - No File Loaded")
         
         # Save to recent files list
-        if hasattr(self, '_add_recent_file'):
-            self._add_recent_file(path, type_str, self.rate, self.fc)
+        if hasattr(self, '_add_recent_file') and self.file_path:
+            self._add_recent_file(self.file_path, new_type_str, self.rate, self.fc)
 
         # Force spectrogram auto_range and scaling to reset
         self.is_first_load = True
@@ -1101,10 +1104,8 @@ class ViewControllerMixin:
         if hasattr(self, 'spectrogram_stack'):
             self.spectrogram_stack.setCurrentIndex(0)
 
-        # Close all Time Domain tabs (keep index 0 = Spectrogram)
-
         # Update sidebar file info
-        self.update_sidebar_file_info(path, type_str)
+        self.update_sidebar_file_info(self.data_source or self.file_path, new_type_str)
 
         # Reprocess with the new file
         self.start_processing()

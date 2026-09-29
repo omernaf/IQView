@@ -245,6 +245,8 @@ def main():
     has_byte_slice = (start_byte is not None and start_byte > 0) or (stop_byte is not None)
     sb = start_byte if start_byte is not None else 0
 
+    startup_error = None
+
     # Resolve the data source: file path (str), in-memory bytes from stdin, or None (open empty)
     if args.stdin:
         print("Reading IQ data from stdin...", flush=True)
@@ -289,62 +291,76 @@ def main():
             if user_fc:
                 fc = args.fc
         else:
-            print(f"Error loading audio file: {err_or_type}", file=sys.stderr)
-            sys.exit(1)
+            startup_error = {
+                "title": "Unsupported Audio Format",
+                "message": f"<b>Could not load audio file:</b><br>{os.path.basename(file_path)}<br><br>"
+                           f"<pre style='font-family:Consolas;'>{err_or_type}</pre><br>"
+                           f"Supported formats: WAV, FLAC, OGG, AIFF, AU, W64, CAF, RF64, SD2"
+            }
+            data_source = None
+            file_path = None
     elif file_path and file_path.lower().endswith('.mat'):
         try:
             mat_data = load_mat_file(file_path)
         except MatFileFormatError as exc:
-            print(f"\nError: {exc}", file=sys.stderr)
-            if exc.detail:
-                print(exc.detail, file=sys.stderr)
-            sys.exit(1)
-        if mat_data:
-            data_source, type_str, fs, fc, is_complex = mat_data
-            if has_byte_slice and isinstance(data_source, (bytes, bytearray)):
-                mat_size = len(data_source)
-                if sb >= mat_size:
-                    print(f"Error: Start byte ({sb:,}) exceeds .mat data size ({mat_size:,} bytes).", file=sys.stderr)
-                    sys.exit(1)
-                if stop_byte is not None and stop_byte > mat_size:
-                    print(f"Warning: Requested stop byte ({stop_byte:,}) exceeds .mat data size ({mat_size:,} bytes). Reading to end of data.", file=sys.stderr)
-                data_source = data_source[sb:stop_byte]
-            # CLI flags take priority over values read from the file
-            if user_rate:
-                fs = args.rate
-                print(f"Sample rate overridden by -r: {fs/1e6:g} MHz")
-            if user_fc:
-                fc = args.fc
-                print(f"Center frequency overridden by -c: {fc/1e6:g} MHz")
+            startup_error = {
+                "title": "Unsupported .mat File Format",
+                "message": f"<b>{exc}</b><br><br><pre style='font-family:Consolas;'>{exc.detail}</pre>"
+            }
+            data_source = None
+            file_path = None
         else:
-            sys.exit(1)
+            if mat_data:
+                data_source, type_str, fs, fc, is_complex = mat_data
+                if has_byte_slice and isinstance(data_source, (bytes, bytearray)):
+                    mat_size = len(data_source)
+                    if sb >= mat_size:
+                        print(f"Error: Start byte ({sb:,}) exceeds .mat data size ({mat_size:,} bytes).", file=sys.stderr)
+                        sys.exit(1)
+                    if stop_byte is not None and stop_byte > mat_size:
+                        print(f"Warning: Requested stop byte ({stop_byte:,}) exceeds .mat data size ({mat_size:,} bytes). Reading to end of data.", file=sys.stderr)
+                    data_source = data_source[sb:stop_byte]
+                # CLI flags take priority over values read from the file
+                if user_rate:
+                    fs = args.rate
+                    print(f"Sample rate overridden by -r: {fs/1e6:g} MHz")
+                if user_fc:
+                    fc = args.fc
+                    print(f"Center frequency overridden by -c: {fc/1e6:g} MHz")
+            else:
+                data_source = None
+                file_path = None
     elif file_path and file_path.lower().endswith('.r3f'):
         try:
             r3f_data = load_r3f_file(file_path)
         except R3FFileFormatError as exc:
-            print(f"\nError: {exc}", file=sys.stderr)
-            if exc.detail:
-                print(exc.detail, file=sys.stderr)
-            sys.exit(1)
-        if r3f_data:
-            data_source, type_str, fs, fc, is_complex = r3f_data
-            if has_byte_slice and isinstance(data_source, (bytes, bytearray)):
-                r3f_size = len(data_source)
-                if sb >= r3f_size:
-                    print(f"Error: Start byte ({sb:,}) exceeds .r3f IQ data size ({r3f_size:,} bytes).", file=sys.stderr)
-                    sys.exit(1)
-                if stop_byte is not None and stop_byte > r3f_size:
-                    print(f"Warning: Requested stop byte ({stop_byte:,}) exceeds .r3f IQ data size ({r3f_size:,} bytes). Reading to end of data.", file=sys.stderr)
-                data_source = data_source[sb:stop_byte]
-            # CLI flags take priority over values read from the file
-            if user_rate:
-                fs = args.rate
-                print(f"Sample rate overridden by -r: {fs/1e6:g} MHz")
-            if user_fc:
-                fc = args.fc
-                print(f"Center frequency overridden by -c: {fc/1e6:g} MHz")
+            startup_error = {
+                "title": "Unsupported .r3f File Format",
+                "message": f"<b>{exc}</b><br><br><pre style='font-family:Consolas;'>{exc.detail}</pre>"
+            }
+            data_source = None
+            file_path = None
         else:
-            sys.exit(1)
+            if r3f_data:
+                data_source, type_str, fs, fc, is_complex = r3f_data
+                if has_byte_slice and isinstance(data_source, (bytes, bytearray)):
+                    r3f_size = len(data_source)
+                    if sb >= r3f_size:
+                        print(f"Error: Start byte ({sb:,}) exceeds .r3f IQ data size ({r3f_size:,} bytes).", file=sys.stderr)
+                        sys.exit(1)
+                    if stop_byte is not None and stop_byte > r3f_size:
+                        print(f"Warning: Requested stop byte ({stop_byte:,}) exceeds .r3f IQ data size ({r3f_size:,} bytes). Reading to end of data.", file=sys.stderr)
+                    data_source = data_source[sb:stop_byte]
+                # CLI flags take priority over values read from the file
+                if user_rate:
+                    fs = args.rate
+                    print(f"Sample rate overridden by -r: {fs/1e6:g} MHz")
+                if user_fc:
+                    fc = args.fc
+                    print(f"Center frequency overridden by -c: {fc/1e6:g} MHz")
+            else:
+                data_source = None
+                file_path = None
     elif file_path:
         if has_byte_slice:
             if not os.path.exists(file_path):
@@ -408,10 +424,23 @@ def main():
         if not _px.isNull():
             app.setWindowIcon(QIcon(_px))
     
+    if data_source is None:
+        dtype = np.float32
+        is_complex = True
+
     window = SpectrogramWindow(data_source, dtype, fs, fc, args.fft, args.profile,
-                               is_complex=is_complex, window_name=args.name,
+                               is_complex=is_complex, window_name=window_name,
                                lazy_rendering=lazy_override, file_path=file_path)
     window.show()
+    
+    if startup_error:
+        from PyQt6.QtWidgets import QMessageBox
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(50, lambda: QMessageBox.critical(
+            window,
+            startup_error["title"],
+            startup_error["message"]
+        ))
     
     if args.profile:
         import cProfile

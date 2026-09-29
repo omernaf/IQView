@@ -109,41 +109,122 @@ def view(
     elif isinstance(source, str):
         # File path — mirror the auto-detection logic from main.py
         import os
+        from iqview.utils.helpers import (
+            AUDIO_EXTENSIONS, load_mat_file, load_audio_file, load_r3f_file,
+            MatFileFormatError, R3FFileFormatError
+        )
+
         file_path = source
+        startup_error = None
 
-        # Auto-detect dtype from extension
-        auto_type = detect_type_from_ext(file_path)
-        resolved_type = auto_type or dtype
-
-        # Auto-detect fs / fc from filename only when the caller did not
-        # explicitly supply a value (fs/fc are None when left at default).
-        # Using None as the sentinel avoids the ambiguity of comparing against
-        # a magic value like 1e6 — which is also a legitimate sample rate.
-        params = detect_params_from_filename(file_path)
-        resolved_fs = fs if fs is not None else params.get("fs", 1e6)
-        resolved_fc = fc if fc is not None else params.get("fc", 0.0)
-        fs = resolved_fs
-        fc = resolved_fc
-
-        if resolved_type not in DTYPE_MAP:
-            raise ValueError(
-                f"Unsupported dtype {resolved_type!r}. "
-                f"Valid options: {list(DTYPE_MAP)}"
+        if os.path.splitext(file_path)[1].lower() in AUDIO_EXTENSIONS or dtype in ('aud', 'audio', 'caud', 'caudio'):
+            is_caudio = dtype in ('caud', 'caudio')
+            data_bytes, err_or_type, loaded_fs, loaded_fc, is_complex = load_audio_file(
+                file_path, complex_iq=is_caudio
             )
-
-        raw_dtype  = DTYPE_MAP[resolved_type]
-        is_complex = raw_dtype in (np.complex64, np.complex128, np.int16)
-
-        # De-alias complex types to their float counterparts (same as main.py)
-        if raw_dtype == np.complex64:
-            data_type = np.float32
-        elif raw_dtype == np.complex128:
-            data_type = np.float64
+            if data_bytes is not None:
+                data_source = data_bytes
+                data_type = np.float32
+                fs = fs if fs is not None else loaded_fs
+                fc = fc if fc is not None else loaded_fc
+                window_name = name
+            else:
+                startup_error = {
+                    "title": "Unsupported Audio Format",
+                    "message": f"<b>Could not load audio file:</b><br>{os.path.basename(file_path)}<br><br>"
+                               f"<pre style='font-family:Consolas;'>{err_or_type}</pre><br>"
+                               f"Supported formats: WAV, FLAC, OGG, AIFF, AU, W64, CAF, RF64, SD2"
+                }
+                data_source = None
+                data_type = np.float32
+                is_complex = True
+                file_path = None
+                window_name = name
+        elif file_path.lower().endswith('.mat'):
+            try:
+                mat_data = load_mat_file(file_path)
+            except MatFileFormatError as exc:
+                startup_error = {
+                    "title": "Unsupported .mat File Format",
+                    "message": f"<b>{exc}</b><br><br><pre style='font-family:Consolas;'>{exc.detail}</pre>"
+                }
+                data_source = None
+                data_type = np.float32
+                is_complex = True
+                file_path = None
+                window_name = name
+            else:
+                if mat_data:
+                    data_source, loaded_type_str, loaded_fs, loaded_fc, is_complex = mat_data
+                    fs = fs if fs is not None else loaded_fs
+                    fc = fc if fc is not None else loaded_fc
+                    dtype_resolved = DTYPE_MAP.get(loaded_type_str, np.complex64)
+                    data_type = np.float32 if dtype_resolved == np.complex64 else (np.float64 if dtype_resolved == np.complex128 else dtype_resolved)
+                    window_name = name
+                else:
+                    data_source = None
+                    data_type = np.float32
+                    is_complex = True
+                    file_path = None
+                    window_name = name
+        elif file_path.lower().endswith('.r3f'):
+            try:
+                r3f_data = load_r3f_file(file_path)
+            except R3FFileFormatError as exc:
+                startup_error = {
+                    "title": "Unsupported .r3f File Format",
+                    "message": f"<b>{exc}</b><br><br><pre style='font-family:Consolas;'>{exc.detail}</pre>"
+                }
+                data_source = None
+                data_type = np.float32
+                is_complex = True
+                file_path = None
+                window_name = name
+            else:
+                if r3f_data:
+                    data_source, loaded_type_str, loaded_fs, loaded_fc, is_complex = r3f_data
+                    fs = fs if fs is not None else loaded_fs
+                    fc = fc if fc is not None else loaded_fc
+                    data_type = np.float32
+                    window_name = name
+                else:
+                    data_source = None
+                    data_type = np.float32
+                    is_complex = True
+                    file_path = None
+                    window_name = name
         else:
-            data_type = raw_dtype
+            # Auto-detect dtype from extension
+            auto_type = detect_type_from_ext(file_path)
+            resolved_type = auto_type or dtype
 
-        data_source = file_path
-        window_name = name  # None → SpectrogramWindow uses the file path
+            # Auto-detect fs / fc from filename only when the caller did not
+            # explicitly supply a value (fs/fc are None when left at default).
+            params = detect_params_from_filename(file_path)
+            resolved_fs = fs if fs is not None else params.get("fs", 1e6)
+            resolved_fc = fc if fc is not None else params.get("fc", 0.0)
+            fs = resolved_fs
+            fc = resolved_fc
+
+            if resolved_type not in DTYPE_MAP:
+                raise ValueError(
+                    f"Unsupported dtype {resolved_type!r}. "
+                    f"Valid options: {list(DTYPE_MAP)}"
+                )
+
+            raw_dtype  = DTYPE_MAP[resolved_type]
+            is_complex = raw_dtype in (np.complex64, np.complex128, np.int16)
+
+            # De-alias complex types to their float counterparts (same as main.py)
+            if raw_dtype == np.complex64:
+                data_type = np.float32
+            elif raw_dtype == np.complex128:
+                data_type = np.float64
+            else:
+                data_type = raw_dtype
+
+            data_source = file_path
+            window_name = name  # None → SpectrogramWindow uses the file path
 
     else:
         # NumPy array (or anything array-like)
@@ -156,6 +237,7 @@ def view(
         is_complex  = True
         file_path   = None
         window_name = name or "<array>"
+        startup_error = None
 
     # ------------------------------------------------------------------ #
     # Launch                                                               #
@@ -178,5 +260,15 @@ def view(
         file_path=file_path,
     )
     window.show()
+
+    if startup_error:
+        from PyQt6.QtWidgets import QMessageBox
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(50, lambda: QMessageBox.critical(
+            window,
+            startup_error["title"],
+            startup_error["message"]
+        ))
+
     sys.exit(app.exec())
 
