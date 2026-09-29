@@ -447,6 +447,26 @@ class FrequencyDomainMarkerPanel(QFrame):
         if hasattr(self.controller, 'update_statistics'):
             self.controller.update_statistics()
 
+    def clear_stats_fields(self):
+        """Clear all text fields in the Statistics Definition and Results tabs."""
+        for widget in self.st_widgets:
+            for k in widget:
+                widget[k].blockSignals(True)
+                widget[k].clear()
+                widget[k].blockSignals(False)
+        for w in [
+            self.st_delta_v1, self.st_delta_v2,
+            self.st_center_v1, self.st_center_v2,
+            self.stats_max_val, self.stats_min_val,
+            self.stats_max_idx, self.stats_min_idx,
+            self.stats_max_freq, self.stats_min_freq,
+            self.stats_mean_val, self.stats_median_val, self.stats_total_power,
+            self.stats_90th_val, self.stats_10th_val, self.stats_diff_val,
+        ]:
+            w.blockSignals(True)
+            w.clear()
+            w.blockSignals(False)
+
     def _get_icon(self, name, theme="Light"):
         """Helper to load icons from resources/assets."""
         suffix = "_dark" if theme == "Dark" else ""

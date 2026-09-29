@@ -371,14 +371,19 @@ class TimeDomainView(QWidget):
         if mode == 'STATS':
             if len(self.stats_bounds) == 1:
                 if self.stats_line: self.stats_line.show()
+                self.update_statistics()
             elif len(self.stats_bounds) == 2:
                 self.stats_region.show()
                 self.stats_markers.show()
+                self.update_statistics()
+            else:
                 self.update_statistics()
         else:
             self.stats_region.hide()
             self.stats_markers.hide()
             if self.stats_line: self.stats_line.hide()
+            if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide()
+            if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide()
             
         self.refresh_cursor()
         self.marker_panel.update_mode_ui(mode)
@@ -531,7 +536,22 @@ class TimeDomainView(QWidget):
 
     def update_statistics(self):
         """Calculates Min, Max, Mean, Median for the active region and updates the marker panel UI."""
-        if not self.stats_region.isVisible() or len(self.current_plot_data) == 0:
+        if not self.stats_region.isVisible():
+            self.marker_panel.clear_stats_fields()
+            if len(self.stats_bounds) == 1:
+                prec1 = int(self.settings_mgr.get("ui/label_precision", 9))
+                self.marker_panel.st_row_v1_lbl.setText("Samples")
+                self.marker_panel.st_row_v2_lbl.setText("Region (s)")
+                self.marker_panel.st_row_v3_lbl.setText("1/T (Hz)")
+                val = self.stats_bounds[0]
+                w = self.marker_panel.st_widgets[0]
+                w['v1'].blockSignals(True); w['v1'].setText(f"{val:.{prec1}f}"); w['v1'].blockSignals(False)
+                abs_s = int(round(val * self.rate)) + 1
+                w['v2'].blockSignals(True); w['v2'].setText(f"{abs_s}"); w['v2'].blockSignals(False)
+                inv_val = (1.0 / val) if abs(val) > 1e-12 else float('inf')
+                w['v3'].blockSignals(True); w['v3'].setText(f"{inv_val:.{prec1}f}" if inv_val != float('inf') else "∞"); w['v3'].blockSignals(False)
+            return
+        if len(self.current_plot_data) == 0:
             return
             
         r_min, r_max = self.stats_region.getRegion()
@@ -872,6 +892,7 @@ class TimeDomainView(QWidget):
         if self.stats_markers: self.stats_markers.clear()
         if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide()
         if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide()
+        self.marker_panel.clear_stats_fields()
         
         # 4. Clear grid lines
         self.toggle_grid('TIME', False)
@@ -1483,7 +1504,10 @@ class TimeDomainView(QWidget):
                     self.stats_bounds = [ct - dv/2, ct + dv/2]
                 
                 self.stats_bounds.sort()
-                self.stats_region.setRegion(self.stats_bounds)
+                if len(self.stats_bounds) == 1:
+                    if self.stats_line: self.stats_line.setPos(self.stats_bounds[0])
+                else:
+                    self.stats_region.setRegion(self.stats_bounds)
                 self.update_statistics()
                 return
 
@@ -1555,6 +1579,7 @@ class TimeDomainView(QWidget):
             self.stats_markers.hide()
             if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide()
             if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide()
+            self.marker_panel.clear_stats_fields()
         else: # 'Y'
             for m in self.markers_y_dict[self.y_label_text]:
                 self.plot_item.removeItem(m)

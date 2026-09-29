@@ -419,10 +419,15 @@ class FrequencyDomainView(QWidget):
                 if self.stats_line: self.stats_line.show()
                 self.stats_region.hide()
                 self.stats_markers.hide()
+                self.update_statistics()
+            else:
+                self.update_statistics()
         else:
             self.stats_region.hide()
             self.stats_markers.hide()
             if self.stats_line: self.stats_line.hide()
+            if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide()
+            if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide()
 
         # --- Filter region visibility ---
         if mode == 'FILTER':
@@ -754,7 +759,19 @@ class FrequencyDomainView(QWidget):
         self.update_scrollbars()
 
     def update_statistics(self):
-        if not self.stats_region.isVisible() or len(self.current_plot_data) == 0: return
+        if not self.stats_region.isVisible():
+            self.marker_panel.clear_stats_fields()
+            if len(self.stats_bounds) == 1:
+                prec1 = int(self.settings_mgr.get("ui/label_precision", 9))
+                self.marker_panel.st_row_v1_lbl.setText("Region (Hz)")
+                self.marker_panel.st_row_v2_lbl.setText("Index")
+                val = self.stats_bounds[0]
+                w = self.marker_panel.st_widgets[0]
+                w['v1'].blockSignals(True); w['v1'].setText(f"{val:.{prec1}f}"); w['v1'].blockSignals(False)
+                idx = self.freq_to_index(val)
+                w['v2'].blockSignals(True); w['v2'].setText(f"{idx}"); w['v2'].blockSignals(False)
+            return
+        if len(self.current_plot_data) == 0: return
         r_min, r_max = self.stats_region.getRegion()
         i_min = np.searchsorted(self.freq_axis, r_min)
         i_max = np.searchsorted(self.freq_axis, r_max)
@@ -918,6 +935,7 @@ class FrequencyDomainView(QWidget):
         if getattr(self, 'stats_markers', None): self.stats_markers.clear()
         if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide()
         if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide()
+        self.marker_panel.clear_stats_fields()
 
         # 4. Clear filter bounds and replot unfiltered
         self._clear_filter_state(replot=True)
@@ -1274,7 +1292,10 @@ class FrequencyDomainView(QWidget):
                     self.stats_bounds = [ct - dv/2, ct + dv/2]
                 
                 self.stats_bounds.sort()
-                self.stats_region.setRegion(self.stats_bounds)
+                if len(self.stats_bounds) == 1:
+                    if self.stats_line: self.stats_line.setPos(self.stats_bounds[0])
+                else:
+                    self.stats_region.setRegion(self.stats_bounds)
                 self.update_statistics()
                 return
 
@@ -1759,6 +1780,7 @@ class FrequencyDomainView(QWidget):
             self.stats_markers.hide()
             if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide()
             if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide()
+            self.marker_panel.clear_stats_fields()
         elif mode == 'FILTER':
             self._clear_filter_state(replot=True)
         self.update_marker_info()

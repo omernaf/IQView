@@ -30,6 +30,10 @@ class FormattedLineEdit(QtWidgets.QLineEdit):
         else:
             super().setText(self._raw_text)
 
+    def clear(self):
+        self._raw_text = ""
+        super().clear()
+
     def text(self):
         # Return raw text. If focused, strip spaces from current display.
         if self.hasFocus():
