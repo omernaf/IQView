@@ -4,9 +4,17 @@
 
 ### Added
 - **Maximum Overlap Mode (`MAX`)**: Added full support for maximum overlap processing (i.e. advancing the FFT window by exactly 1 sample per step). Entering `100` or `MAX` in the sidebar or Settings dialog automatically sets the display to `MAX` and configures the DSP step size to 1 sample, maximizing time-domain resolution and signal transient capture.
+- **File Drag & Drop on Application Window**: Added `dragEnterEvent` and `dropEvent` support directly to `SpectrogramWindow`, allowing files to be dragged and dropped into an open IQView window to immediately load and register them in Open Recent.
 
 ### Changed
 - **Default Overlap Changed to `MAX`**: Changed the application default overlap from 99% to `MAX` (100% / 1 sample step) across all DSP reader pipelines, settings managers, and UI panels.
+- **Open Recent Full Path Normalization & Multi-Source Tracking**:
+  - Normalized all stored recent file paths in `SettingsManager` to canonical absolute paths (`os.path.normpath(os.path.abspath(path))`), ensuring recent files can be opened reliably regardless of the current working directory.
+  - Extended recent file tracking to register files opened from all entry points — CLI / terminal arguments, desktop shortcuts, file associations (double-clicking), drag-and-drop onto the window, and Python API calls (`iqview.view(...)`) — rather than only files opened via `File -> Open`.
+  - Added dynamic parameter synchronization so modifying sample rate ($f_s$) or center frequency ($f_c$) in the sidebar updates the stored entry in the Open Recent list, with case-insensitive path deduplication.
+- **Theme-Adaptive Zoom Box Styling**:
+  - Updated the zoom box border color across all views (`SpectrogramView`, `MultiRowSpectrogramView`, `TimeDomainView`, and `FrequencyDomainView`) to dynamically adapt to the active theme: black (`#000000`) in Light Mode and white (`#ffffff`) in Dark Mode.
+  - Configured `pyqtgraph` ViewBox `rbScaleBox` pen styling to match the theme color and migrated legacy white box settings during theme transitions.
 - **Time Domain Default Plots Order**: Updated the default plot mode arrangement in the Time Domain view and settings to: 1. `magnitude [dB]`, 2. `Real`, 3. `Imaginary`, 4. `instant frequency`.
 - **Frequency Domain Magnitude in `dBFS` and PSD in `dB/Hz`**:
   - Standardized frequency-domain magnitude plots (`magnitude [dBFS]`, `real [dBFS]`, `imag [dBFS]`) to full-scale decibels ($\text{dBFS}$).
@@ -46,6 +54,8 @@
   - Configured dynamic signal boundary limits (`update_view_limits`) on [`SpectrogramView`](iqview/ui/spectrogram_view.py) across standard and waterfall orientations so scaling and panning stay within the full time and frequency bounds, while pushing initial drag states to `zoom_history` so Undo Zoom (`Z` / `Ctrl+Z`) works seamlessly after right-click scaling or middle-click panning.
 
 ### Fixed
+- **Graceful Non-Keysight `.mat` File Error Handling**: Fixed an issue where attempting to open a `.mat` file not conforming to Keysight format via CLI, API, or `File -> Open` abruptly exited the application with `sys.exit(1)`. IQView now opens cleanly with an empty canvas ("No File Loaded") and displays an informative `QMessageBox.critical` popup explaining the expected format, remaining open and functional after the dialog is closed.
+- **Level Region Bounds on Sample Rate Change**: Fixed an `AttributeError` when modifying sample rate ($f_s$) in the sidebar where `level_region.bounds` was called as an attribute instead of `level_region.lines[0].bounds()`.
 - **Region Statistics Marker Table Clearing**: Fixed a bug in both Time Domain and Frequency Domain views where double-clicking the Region Statistics button (or pressing the Clear Markers shortcut) hid the visual region and percentile lines on the plot but left stale numerical values in the **Definition** and **Results** tables. Added `clear_stats_fields()` to `TimeDomainMarkerPanel` and `FrequencyDomainMarkerPanel`, overrode `FormattedLineEdit.clear()` to also reset its internal `_raw_text`, and updated `update_statistics()`, `handle_marker_clear()`, and `clear_all_markers()` so all Definition and Results fields clear cleanly (and placing a single bound populates `Marker 1` in the Definition table).
 - **Frequency Domain Endless Marker Editing, Grid Tracking, & Lock Clearing**: Fixed three latent bugs uncovered during the `Base1DPlotView` and `Base1DMarkerPanel` unification:
   1. Editing an Endless Marker (`em_*`) text field in `FrequencyDomainView` previously computed the new position without applying `m.setPos(new_p)` or refreshing `update_marker_info()`.

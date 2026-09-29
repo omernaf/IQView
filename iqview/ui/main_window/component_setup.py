@@ -1,3 +1,4 @@
+import os
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QProgressBar,
                                QLabel, QTabBar, QTabWidget)
 from PyQt6.QtCore import Qt, QTimer, QPoint
@@ -355,18 +356,17 @@ class UIComponentsMixin:
             self.recent_menu.addAction(placeholder)
             return
         for item in recent:
-            import os
             path = item[0]
             t_str = item[1]
             fs = item[2] if len(item) > 2 else None
             fc = item[3] if len(item) > 3 else None
             
-            action = QAction(os.path.basename(path), self)
+            action = QAction(os.path.basename(path) or path, self)
             
             tooltip_parts = []
             if t_str: tooltip_parts.append(t_str)
-            if fs: tooltip_parts.append(f"fs={fs}")
-            if fc: tooltip_parts.append(f"fc={fc}")
+            if fs is not None: tooltip_parts.append(f"fs={fs:g}" if isinstance(fs, float) and fs.is_integer() else f"fs={fs}")
+            if fc is not None: tooltip_parts.append(f"fc={fc:g}" if isinstance(fc, float) and fc.is_integer() else f"fc={fc}")
             
             if tooltip_parts:
                 action.setToolTip(f"{path} ({', '.join(tooltip_parts)})")
@@ -380,6 +380,11 @@ class UIComponentsMixin:
         clear_action.triggered.connect(self._clear_recent_files)
         self.recent_menu.addAction(clear_action)
 
+    def _normalize_recent_path(self, path):
+        if not path or not isinstance(path, str):
+            return ""
+        return os.path.normpath(os.path.abspath(path))
+
     def _get_recent_files(self):
         raw = self.settings_mgr.get("ui/recent_files", "")
         if not raw: return []
@@ -387,17 +392,34 @@ class UIComponentsMixin:
         for p in raw.split(";;"):
             if not p.strip(): continue
             parts = p.split("|")
-            path = parts[0]
+            path = parts[0].strip()
+            if not path:
+                continue
+            abs_path = self._normalize_recent_path(path)
             t_str = parts[1] if len(parts) > 1 and parts[1] else None
-            fs = float(parts[2]) if len(parts) > 2 and parts[2] else None
-            fc = float(parts[3]) if len(parts) > 3 and parts[3] else None
-            items.append((path, t_str, fs, fc))
+            try:
+                fs = float(parts[2]) if len(parts) > 2 and parts[2] else None
+            except ValueError:
+                fs = None
+            try:
+                fc = float(parts[3]) if len(parts) > 3 and parts[3] else None
+            except ValueError:
+                fc = None
+            items.append((abs_path, t_str, fs, fc))
         return items
 
     def _serialize_recent_items(self, items):
         serialized = []
-        for item in items[:10]:
-            path = item[0]
+        seen = set()
+        for item in items:
+            if not item or not item[0]:
+                continue
+            path = self._normalize_recent_path(item[0])
+            norm_key = os.path.normcase(path)
+            if norm_key in seen:
+                continue
+            seen.add(norm_key)
+
             t_str = item[1] or ""
             fs = str(item[2]) if len(item) > 2 and item[2] is not None else ""
             fc = str(item[3]) if len(item) > 3 and item[3] is not None else ""
@@ -407,16 +429,26 @@ class UIComponentsMixin:
             while len(parts) > 1 and not parts[-1]:
                 parts.pop()
             serialized.append("|".join(parts))
+            if len(serialized) >= 10:
+                break
         return ";;".join(serialized)
 
     def _add_recent_file(self, path, type_str=None, fs=None, fc=None):
-        recent = [item for item in self._get_recent_files() if item[0] != path]
-        recent.insert(0, (path, type_str, fs, fc))
+        if not path or not isinstance(path, str):
+            return
+        abs_path = self._normalize_recent_path(path)
+        norm_key = os.path.normcase(abs_path)
+        recent = [item for item in self._get_recent_files() if os.path.normcase(item[0]) != norm_key]
+        recent.insert(0, (abs_path, type_str, fs, fc))
         self.settings_mgr.set("ui/recent_files", self._serialize_recent_items(recent))
         self._rebuild_recent_menu()
 
     def _remove_recent_file(self, path):
-        recent = [item for item in self._get_recent_files() if item[0] != path]
+        if not path or not isinstance(path, str):
+            return
+        abs_path = self._normalize_recent_path(path)
+        norm_key = os.path.normcase(abs_path)
+        recent = [item for item in self._get_recent_files() if os.path.normcase(item[0]) != norm_key]
         self.settings_mgr.set("ui/recent_files", self._serialize_recent_items(recent))
         self._rebuild_recent_menu()
 

@@ -10,7 +10,7 @@ menu = ColorMapMenu(userList=user_list)
 import sys
 import threading
 def save_and_close():
-    pg.QtGui.QApplication.processEvents()
+    QApplication.processEvents()
     for act in menu.actions():
         print(act.data())
     app.quit()

@@ -130,7 +130,8 @@ def main():
     sm = SettingsManager()
     
     # Priority for file path: 1. Positional argument 'path', 2. Flag '-f'/'--file'
-    file_path = args.path or args.file
+    raw_path = args.path or args.file
+    file_path = os.path.normpath(os.path.abspath(raw_path)) if raw_path else None
     
     # Priority: 1. User Input, 2. Auto-detection from filename, 3. App Settings
     type_str = args.type
@@ -430,7 +431,8 @@ def main():
 
     window = SpectrogramWindow(data_source, dtype, fs, fc, args.fft, args.profile,
                                is_complex=is_complex, window_name=window_name,
-                               lazy_rendering=lazy_override, file_path=file_path)
+                               lazy_rendering=lazy_override, file_path=file_path,
+                               type_str=type_str)
     window.show()
     
     if startup_error:

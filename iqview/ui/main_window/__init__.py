@@ -14,7 +14,7 @@ from ...utils.settings_manager import SettingsManager
 from ..themes import get_main_stylesheet
 
 class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, OverlayManagerMixin, ViewControllerMixin, DataHandlerMixin, PluginManagerMixin):
-    def __init__(self, data_source, data_type, sample_rate, center_freq, fft_size, profile_enabled=False, is_complex=True, window_name=None, lazy_rendering=None, file_path=None):
+    def __init__(self, data_source, data_type, sample_rate, center_freq, fft_size, profile_enabled=False, is_complex=True, window_name=None, lazy_rendering=None, file_path=None, type_str=None):
         super().__init__()
         self.settings_mgr = SettingsManager()
         # Per-instance rendering mode override from CLI (None = use QSettings value).
@@ -47,9 +47,13 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
         self.is_spectrogram = True
 
         # data_source is either a str (file path), bytes (piped from stdin), or None (empty launch)
-        self.data_source = data_source
+        raw_fp = file_path or (data_source if isinstance(data_source, str) else None)
+        self.file_path = os.path.normpath(os.path.abspath(raw_fp)) if (raw_fp and isinstance(raw_fp, str)) else None
+        if isinstance(data_source, str):
+            self.data_source = self.file_path
+        else:
+            self.data_source = data_source
         self.custom_window_name = window_name
-        self.file_path = file_path or (data_source if isinstance(data_source, str) else None)
         
         if self.custom_window_name:
             display_name = self.custom_window_name
@@ -63,6 +67,7 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
             display_name = data_source
         self.setWindowTitle(f"IQView - {display_name}")
         self.resize(1280, 800)
+        self.setAcceptDrops(True)
         
         self.fc = center_freq
         self.rate = sample_rate
@@ -80,6 +85,8 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
         self.data_type = data_type
         self.is_complex = is_complex
         self.profile_enabled = profile_enabled
+        from ...utils.helpers import detect_type_from_ext
+        self.current_type_str = type_str or (detect_type_from_ext(self.file_path) if self.file_path else None) or str(self.settings_mgr.get("core/type", "complex64"))
         
         # Keep file_path as an alias for backwards-compat with any mixin that reads it
 
@@ -116,7 +123,9 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
         self._init_plugins()
         self.setup_ui()
         if data_source is not None:
-            self.update_sidebar_file_info(self.file_path or data_source)
+            self.update_sidebar_file_info(self.file_path or data_source, self.current_type_str)
+            if self.file_path and os.path.isfile(self.file_path):
+                self._add_recent_file(self.file_path, self.current_type_str, self.rate, self.fc)
             self.start_processing()
 
     def apply_current_theme(self):
@@ -374,3 +383,22 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
                 self.set_interaction_mode(getattr(self, '_prev_interaction_mode', 'TIME'))
             return
         super().keyReleaseEvent(event)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls and urls[0].isLocalFile():
+                event.acceptProposedAction()
+                return
+        super().dragEnterEvent(event)
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls and urls[0].isLocalFile():
+                file_path = urls[0].toLocalFile()
+                if os.path.isfile(file_path):
+                    self.load_new_file(file_path)
+                    event.acceptProposedAction()
+                    return
+        super().dropEvent(event)

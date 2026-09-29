@@ -31,9 +31,10 @@ class ViewControllerMixin:
             delta_psd = float(-10.0 * np.log10(self.rate / old_rate))
             if hasattr(self, 'spectrogram_view') and hasattr(self.spectrogram_view, 'level_region'):
                 low, high = self.spectrogram_view.level_region.getRegion()
-                b_lo, b_hi = self.spectrogram_view.level_region.bounds
-                if b_lo is not None and b_hi is not None:
-                    self.spectrogram_view.level_region.setBounds([b_lo + delta_psd, b_hi + delta_psd])
+                if hasattr(self.spectrogram_view.level_region, 'lines') and len(self.spectrogram_view.level_region.lines) > 0:
+                    bounds = self.spectrogram_view.level_region.lines[0].bounds()
+                    if bounds and bounds[0] is not None and bounds[1] is not None:
+                        self.spectrogram_view.level_region.setBounds([bounds[0] + delta_psd, bounds[1] + delta_psd])
                 self.spectrogram_view.level_region.setRegion([low + delta_psd, high + delta_psd])
         
         if needs_reprocess:
@@ -936,6 +937,9 @@ class ViewControllerMixin:
 
     def load_new_file(self, path, type_str=None, fs=None, fc=None):
         """Swap the data source to a new file and reprocess everything."""
+        if not path or not isinstance(path, str):
+            return
+        path = os.path.normpath(os.path.abspath(path))
         if not os.path.isfile(path):
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "File Not Found", f"The file could not be found:\n{path}")

@@ -114,8 +114,9 @@ def view(
             MatFileFormatError, R3FFileFormatError
         )
 
-        file_path = source
+        file_path = os.path.normpath(os.path.abspath(source))
         startup_error = None
+        type_str = None
 
         if os.path.splitext(file_path)[1].lower() in AUDIO_EXTENSIONS or dtype in ('aud', 'audio', 'caud', 'caudio'):
             is_caudio = dtype in ('caud', 'caudio')
@@ -125,6 +126,7 @@ def view(
             if data_bytes is not None:
                 data_source = data_bytes
                 data_type = np.float32
+                type_str = err_or_type  # 'float32' on success
                 fs = fs if fs is not None else loaded_fs
                 fc = fc if fc is not None else loaded_fc
                 window_name = name
@@ -156,6 +158,7 @@ def view(
             else:
                 if mat_data:
                     data_source, loaded_type_str, loaded_fs, loaded_fc, is_complex = mat_data
+                    type_str = loaded_type_str
                     fs = fs if fs is not None else loaded_fs
                     fc = fc if fc is not None else loaded_fc
                     dtype_resolved = DTYPE_MAP.get(loaded_type_str, np.complex64)
@@ -183,6 +186,7 @@ def view(
             else:
                 if r3f_data:
                     data_source, loaded_type_str, loaded_fs, loaded_fc, is_complex = r3f_data
+                    type_str = loaded_type_str
                     fs = fs if fs is not None else loaded_fs
                     fc = fc if fc is not None else loaded_fc
                     data_type = np.float32
@@ -197,6 +201,7 @@ def view(
             # Auto-detect dtype from extension
             auto_type = detect_type_from_ext(file_path)
             resolved_type = auto_type or dtype
+            type_str = resolved_type
 
             # Auto-detect fs / fc from filename only when the caller did not
             # explicitly supply a value (fs/fc are None when left at default).
@@ -236,6 +241,7 @@ def view(
         data_type   = np.float32
         is_complex  = True
         file_path   = None
+        type_str    = None
         window_name = name or "<array>"
         startup_error = None
 
@@ -258,6 +264,7 @@ def view(
         window_name=window_name,
         lazy_rendering=lazy,
         file_path=file_path,
+        type_str=type_str,
     )
     window.show()
 
