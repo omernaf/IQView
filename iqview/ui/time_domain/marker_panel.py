@@ -3,8 +3,9 @@ from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QFont, QIcon, QPixmap
 import importlib.resources
 import os
-from ..widgets import FormattedLineEdit, DoubleClickButton, format_tooltip_with_keybind
+from ..widgets import FormattedLineEdit, DoubleClickButton, format_tooltip_with_keybind, get_theme_icon
 from ..themes import get_palette
+from ..base_1d import RegionStatsWidget, EndlessMarkerListWidget
 
 class TimeDomainMarkerPanel(QFrame):
     interactionModeChanged = pyqtSignal(str) # 'TIME', 'MAG', 'ZOOM', 'MOVE'
@@ -226,199 +227,26 @@ class TimeDomainMarkerPanel(QFrame):
         self.btn_marker_time.setChecked(True)
 
         # Page 2: Endless Table
-        self.endless_widget = QWidget()
+        self.endless_widget = EndlessMarkerListWidget(self.controller)
+        self.endless_widget.bind_aliases_to_panel(self)
         self.stacked.addWidget(self.endless_widget)
-        self.endless_layout = QVBoxLayout(self.endless_widget)
-        self.endless_layout.setContentsMargins(0, 0, 0, 0)
-        
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setStyleSheet("background: transparent; border: none;")
-        self.scroll_content = QWidget()
-        self.scroll_layout = QVBoxLayout(self.scroll_content)
-        self.scroll_layout.setContentsMargins(0, 0, 0, 0)
-        self.scroll_layout.setSpacing(2)
-        self.scroll_layout.addStretch()
-        self.scroll.setWidget(self.scroll_content)
-        self.endless_layout.addWidget(self.scroll)
 
         # Page 3: Statistics Layout
-        self.stats_widget = QWidget()
+        self.stats_widget = RegionStatsWidget(
+            self.controller,
+            header_font=self.header_font,
+            has_inv_row=True,
+            has_integrated=False,
+            is_freq=False,
+        )
+        self.stats_widget.bind_aliases_to_panel(self)
         self.stacked.addWidget(self.stats_widget)
-        self.stats_main_layout = QVBoxLayout(self.stats_widget)
-        self.stats_main_layout.setContentsMargins(0, 0, 0, 0)
-        self.stats_main_layout.setSpacing(4)
-
-        # --- Statistics Tab Bar ---
-        self.stats_tab_layout = QHBoxLayout()
-        self.stats_tab_layout.setSpacing(10)
-        self.stats_main_layout.addLayout(self.stats_tab_layout)
-
-        self.btn_stats_def = QPushButton("Definition")
-        self.btn_stats_res = QPushButton("Results")
-        for btn in [self.btn_stats_def, self.btn_stats_res]:
-            btn.setCheckable(True)
-            btn.setObjectName("stats_tab_btn")
-            btn.setFixedHeight(22)
-            self.stats_tab_layout.addWidget(btn)
-        
-        self.stats_tab_group = QButtonGroup(self)
-        self.stats_tab_group.addButton(self.btn_stats_def)
-        self.stats_tab_group.addButton(self.btn_stats_res)
-        self.stats_tab_group.setExclusive(True)
-        self.btn_stats_res.setChecked(True)
-        self.stats_tab_layout.addStretch()
-
-        # --- Sub-Stacked Widget ---
-        self.stats_sub_stack = QStackedWidget()
-        self.stats_main_layout.addWidget(self.stats_sub_stack)
-
-        # Sub-Page 1: Region Definition
-        self.st_def_widget = QWidget()
-        self.stats_sub_stack.addWidget(self.st_def_widget)
-        self.st_layout = QGridLayout(self.st_def_widget)
-        self.st_layout.setContentsMargins(0, 0, 0, 0)
-        self.st_layout.setHorizontalSpacing(10)
-        self.st_layout.setVerticalSpacing(4)
-
-        # Region Definition Column Titles
-        lbl_st_m1 = QLabel("Marker 1"); lbl_st_m1.setFont(self.header_font); lbl_st_m1.setAlignment(Qt.AlignmentFlag.AlignCenter); lbl_st_m1.setObjectName("header_label")
-        lbl_st_m2 = QLabel("Marker 2"); lbl_st_m2.setFont(self.header_font); lbl_st_m2.setAlignment(Qt.AlignmentFlag.AlignCenter); lbl_st_m2.setObjectName("header_label")
-        lbl_st_delta = QLabel("Delta (Δ)"); lbl_st_delta.setFont(self.header_font); lbl_st_delta.setAlignment(Qt.AlignmentFlag.AlignCenter); lbl_st_delta.setObjectName("header_label")
-        lbl_st_center = QLabel("Center"); lbl_st_center.setFont(self.header_font); lbl_st_center.setAlignment(Qt.AlignmentFlag.AlignCenter); lbl_st_center.setObjectName("header_label")
-
-        self.st_layout.addWidget(lbl_st_m1, 0, 1)
-        self.st_layout.addWidget(lbl_st_m2, 0, 2)
-        self.st_layout.addWidget(lbl_st_delta, 0, 3)
-        self.st_layout.addWidget(lbl_st_center, 0, 4) 
-
-        self.st_widgets = []
-        for i in range(2):
-            v2 = FormattedLineEdit(); v2.setFixedWidth(110); v2.setAlignment(Qt.AlignmentFlag.AlignCenter); v2.setObjectName(f"st_m{i}_v2")
-            v1 = FormattedLineEdit(); v1.setFixedWidth(110); v1.setAlignment(Qt.AlignmentFlag.AlignCenter); v1.setObjectName(f"st_m{i}_v1")
-            v3 = FormattedLineEdit(); v3.setFixedWidth(110); v3.setAlignment(Qt.AlignmentFlag.AlignCenter); v3.setObjectName(f"st_m{i}_v3"); v3.setReadOnly(True)
-            for w in [v1, v2]: w.returnPressed.connect(self.controller.marker_edit_finished)
-            self.st_layout.addWidget(v2, 1, i + 1)
-            self.st_layout.addWidget(v1, 2, i + 1)
-            self.st_layout.addWidget(v3, 3, i + 1)
-            self.st_widgets.append({'v1': v1, 'v2': v2, 'v3': v3})
-
-        self.st_delta_v2 = FormattedLineEdit(); self.st_delta_v2.setFixedWidth(110); self.st_delta_v2.setAlignment(Qt.AlignmentFlag.AlignCenter); self.st_delta_v2.setObjectName("st_delta_v2")
-        self.st_delta_v1 = FormattedLineEdit(); self.st_delta_v1.setFixedWidth(110); self.st_delta_v1.setAlignment(Qt.AlignmentFlag.AlignCenter); self.st_delta_v1.setObjectName("st_delta_v1")
-        self.st_delta_v3 = FormattedLineEdit(); self.st_delta_v3.setFixedWidth(110); self.st_delta_v3.setAlignment(Qt.AlignmentFlag.AlignCenter); self.st_delta_v3.setObjectName("st_delta_v3"); self.st_delta_v3.setReadOnly(True)
-        
-        self.st_center_v2 = FormattedLineEdit(); self.st_center_v2.setFixedWidth(110); self.st_center_v2.setAlignment(Qt.AlignmentFlag.AlignCenter); self.st_center_v2.setObjectName("st_center_v2")
-        self.st_center_v1 = FormattedLineEdit(); self.st_center_v1.setFixedWidth(110); self.st_center_v1.setAlignment(Qt.AlignmentFlag.AlignCenter); self.st_center_v1.setObjectName("st_center_v1")
-        self.st_center_v3 = FormattedLineEdit(); self.st_center_v3.setFixedWidth(110); self.st_center_v3.setAlignment(Qt.AlignmentFlag.AlignCenter); self.st_center_v3.setObjectName("st_center_v3"); self.st_center_v3.setReadOnly(True)
-
-        for w in [self.st_delta_v1, self.st_delta_v2, self.st_center_v1, self.st_center_v2]: w.returnPressed.connect(self.controller.marker_edit_finished)
-        self.st_layout.addWidget(self.st_delta_v2, 1, 3); self.st_layout.addWidget(self.st_delta_v1, 2, 3); self.st_layout.addWidget(self.st_delta_v3, 3, 3)
-        self.st_layout.addWidget(self.st_center_v2, 1, 4); self.st_layout.addWidget(self.st_center_v1, 2, 4); self.st_layout.addWidget(self.st_center_v3, 3, 4)
-
-        self.st_row_v1_lbl = QLabel("Samples"); self.st_row_v1_lbl.setObjectName("header_label")
-        self.st_row_v2_lbl = QLabel("Region (s)"); self.st_row_v2_lbl.setObjectName("header_label")
-        self.st_row_v3_lbl = QLabel("1/T (Hz)"); self.st_row_v3_lbl.setObjectName("header_label")
-        self.st_layout.addWidget(self.st_row_v1_lbl, 1, 0, Qt.AlignmentFlag.AlignRight)
-        self.st_layout.addWidget(self.st_row_v2_lbl, 2, 0, Qt.AlignmentFlag.AlignRight)
-        self.st_layout.addWidget(self.st_row_v3_lbl, 3, 0, Qt.AlignmentFlag.AlignRight)
-
-        # Sub-Page 2: Measurement Results
-        self.st_res_widget = QWidget()
-        self.stats_sub_stack.addWidget(self.st_res_widget)
-        self.res_layout = QGridLayout(self.st_res_widget)
-        self.res_layout.setContentsMargins(0, 0, 0, 0)
-        self.res_layout.setHorizontalSpacing(10)
-        self.res_layout.setVerticalSpacing(4)
-
-        lbl_max = QLabel("Maximum"); lbl_max.setFont(self.header_font); lbl_max.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_max.setStyleSheet("color: #888; text-transform: uppercase; font-size: 10px;")
-        lbl_min = QLabel("Minimum"); lbl_min.setFont(self.header_font); lbl_min.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_min.setStyleSheet("color: #888; text-transform: uppercase; font-size: 10px;")
-        self.res_layout.addWidget(lbl_max, 0, 1)
-        self.res_layout.addWidget(lbl_min, 0, 2)
-
-        # Min / Max Table (Cols 0-2)
-        self.st_res_lbl_val = QLabel("Value (dB)"); self.st_res_lbl_val.setObjectName("header_label")
-        self.st_res_lbl_idx = QLabel("Index"); self.st_res_lbl_idx.setObjectName("header_label")
-        self.st_res_lbl_time = QLabel("Time (sec)"); self.st_res_lbl_time.setObjectName("header_label")
-        self.res_layout.addWidget(self.st_res_lbl_val, 1, 0, Qt.AlignmentFlag.AlignRight)
-        self.res_layout.addWidget(self.st_res_lbl_idx, 2, 0, Qt.AlignmentFlag.AlignRight)
-        self.res_layout.addWidget(self.st_res_lbl_time, 3, 0, Qt.AlignmentFlag.AlignRight)
-
-        self.stats_max_val = FormattedLineEdit(); self.stats_max_val.setFixedWidth(110); self.stats_max_val.setReadOnly(True); self.stats_max_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_min_val = FormattedLineEdit(); self.stats_min_val.setFixedWidth(110); self.stats_min_val.setReadOnly(True); self.stats_min_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_max_idx = FormattedLineEdit(); self.stats_max_idx.setFixedWidth(110); self.stats_max_idx.setReadOnly(True); self.stats_max_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_min_idx = FormattedLineEdit(); self.stats_min_idx.setFixedWidth(110); self.stats_min_idx.setReadOnly(True); self.stats_min_idx.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_max_time = FormattedLineEdit(); self.stats_max_time.setFixedWidth(110); self.stats_max_time.setReadOnly(True); self.stats_max_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_min_time = FormattedLineEdit(); self.stats_min_time.setFixedWidth(110); self.stats_min_time.setReadOnly(True); self.stats_min_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.res_layout.addWidget(self.stats_max_val, 1, 1); self.res_layout.addWidget(self.stats_min_val, 1, 2)
-        self.res_layout.addWidget(self.stats_max_idx, 2, 1); self.res_layout.addWidget(self.stats_min_idx, 2, 2)
-        self.res_layout.addWidget(self.stats_max_time, 3, 1); self.res_layout.addWidget(self.stats_min_time, 3, 2)
-
-        # Mean / Median (Cols 3-4)
-        self.st_res_lbl_mean = QLabel("Mean (dB)"); self.st_res_lbl_mean.setObjectName("header_label")
-        self.st_res_lbl_median = QLabel("Median (dB)"); self.st_res_lbl_median.setObjectName("header_label")
-        self.res_layout.addWidget(self.st_res_lbl_mean, 1, 3, Qt.AlignmentFlag.AlignRight)
-        self.res_layout.addWidget(self.st_res_lbl_median, 2, 3, Qt.AlignmentFlag.AlignRight)
-
-        self.stats_mean_val = FormattedLineEdit(); self.stats_mean_val.setFixedWidth(110); self.stats_mean_val.setReadOnly(True); self.stats_mean_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_median_val = FormattedLineEdit(); self.stats_median_val.setFixedWidth(110); self.stats_median_val.setReadOnly(True); self.stats_median_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.res_layout.addWidget(self.stats_mean_val, 1, 4)
-        self.res_layout.addWidget(self.stats_median_val, 2, 4)
-
-        # Percentiles (Cols 5-6)
-        w_90 = QWidget()
-        l_90 = QHBoxLayout(w_90)
-        l_90.setContentsMargins(0, 0, 0, 0)
-        l_90.setSpacing(4)
-        l_90.addStretch()
-        self.cb_p90 = QCheckBox()
-        self.cb_p90.setChecked(True)
-        self.cb_p90.setToolTip("Toggle 90th percentile indicator line (red)")
-        self.st_res_lbl_90th = QLabel("90th % (dB)"); self.st_res_lbl_90th.setObjectName("header_label")
-        l_90.addWidget(self.cb_p90)
-        l_90.addWidget(self.st_res_lbl_90th)
-
-        w_10 = QWidget()
-        l_10 = QHBoxLayout(w_10)
-        l_10.setContentsMargins(0, 0, 0, 0)
-        l_10.setSpacing(4)
-        l_10.addStretch()
-        self.cb_p10 = QCheckBox()
-        self.cb_p10.setChecked(True)
-        self.cb_p10.setToolTip("Toggle 10th percentile indicator line (green)")
-        self.st_res_lbl_10th = QLabel("10th % (dB)"); self.st_res_lbl_10th.setObjectName("header_label")
-        l_10.addWidget(self.cb_p10)
-        l_10.addWidget(self.st_res_lbl_10th)
-
-        self.cb_p90.toggled.connect(self._on_percentile_toggled)
-        self.cb_p10.toggled.connect(self._on_percentile_toggled)
-
-        self.st_res_lbl_diff = QLabel("90-10 Diff (dB)"); self.st_res_lbl_diff.setObjectName("header_label")
-        self.res_layout.addWidget(w_90, 1, 5, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.res_layout.addWidget(w_10, 2, 5, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.res_layout.addWidget(self.st_res_lbl_diff, 3, 5, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-
-        self.stats_90th_val = FormattedLineEdit(); self.stats_90th_val.setFixedWidth(110); self.stats_90th_val.setReadOnly(True); self.stats_90th_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_10th_val = FormattedLineEdit(); self.stats_10th_val.setFixedWidth(110); self.stats_10th_val.setReadOnly(True); self.stats_10th_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stats_diff_val = FormattedLineEdit(); self.stats_diff_val.setFixedWidth(110); self.stats_diff_val.setReadOnly(True); self.stats_diff_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.res_layout.addWidget(self.stats_90th_val, 1, 6)
-        self.res_layout.addWidget(self.stats_10th_val, 2, 6)
-        self.res_layout.addWidget(self.stats_diff_val, 3, 6)
-
-        self.stats_sub_stack.setCurrentIndex(1) # Now it's safe to set index 1
-
-        # Connect internal tab switching
-        self.btn_stats_def.clicked.connect(lambda: self.stats_sub_stack.setCurrentIndex(0))
-        self.btn_stats_res.clicked.connect(lambda: self.stats_sub_stack.setCurrentIndex(1))
 
         for w in [
             self.btn_marker_time, self.btn_marker_time_endless,
             self.btn_marker_mag, self.btn_marker_mag_endless,
             self.btn_zoom, self.btn_move, self.btn_home, self.btn_stats,
             self.btn_lock_m1, self.btn_lock_m2, self.btn_lock_delta, self.btn_lock_center,
-            self.btn_stats_def, self.btn_stats_res, self.cb_p90, self.cb_p10
         ]:
             w.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
@@ -431,42 +259,11 @@ class TimeDomainMarkerPanel(QFrame):
 
     def clear_stats_fields(self):
         """Clear all text fields in the Statistics Definition and Results tabs."""
-        for widget in self.st_widgets:
-            for k in widget:
-                widget[k].blockSignals(True)
-                widget[k].clear()
-                widget[k].blockSignals(False)
-        for w in [
-            self.st_delta_v1, self.st_delta_v2, self.st_delta_v3,
-            self.st_center_v1, self.st_center_v2, self.st_center_v3,
-            self.stats_max_val, self.stats_min_val,
-            self.stats_max_idx, self.stats_min_idx,
-            self.stats_max_time, self.stats_min_time,
-            self.stats_mean_val, self.stats_median_val,
-            self.stats_90th_val, self.stats_10th_val, self.stats_diff_val,
-        ]:
-            w.blockSignals(True)
-            w.clear()
-            w.blockSignals(False)
+        self.stats_widget.clear()
 
     def _get_icon(self, name, theme="Light"):
         """Helper to load icons from resources/assets."""
-        suffix = "_dark" if theme == "Dark" else ""
-        icon_name = f"{name}{suffix}"
-        try:
-            from importlib.resources import files
-            icon_resource = files("iqview.resources.assets").joinpath(f"{icon_name}.png")
-            with icon_resource.open("rb") as f:
-                pixmap = QPixmap()
-                pixmap.loadFromData(f.read())
-                return QIcon(pixmap)
-        except Exception:
-            # Fallback for local dev
-            base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-            local_path = os.path.join(base_path, "iqview", "resources", "assets", f"{icon_name}.png")
-            if not os.path.exists(local_path) and suffix:
-                local_path = os.path.join(base_path, "iqview", "resources", "assets", f"{name}.png")
-            return QIcon(local_path)
+        return get_theme_icon(name, theme)
 
     def set_y_label(self, label):
         # We handle this via update_headers now
@@ -600,118 +397,18 @@ class TimeDomainMarkerPanel(QFrame):
         is_time = 'TIME' in mode
         unit_main = "sec" if is_time else self.controller.y_label_text
         unit_sub = "Sam" if is_time else ""
-        
-        # 1. Initialize or find internal row storage
-        if not hasattr(self, '_endless_rows'):
-            self._endless_rows = []
-        if not hasattr(self, '_header_widget'):
-            self._header_widget = QWidget()
-            h_layout = QHBoxLayout(self._header_widget)
-            h_layout.setContentsMargins(5, 2, 5, 2)
-            h_layout.setSpacing(10)
-            
-            l_id = QLabel("ID"); l_id.setFixedWidth(30); l_id.setObjectName("header_label")
-            l_sub = QLabel(unit_sub); l_sub.setObjectName("header_label")
-            l_sub.setProperty("role", "sub_header")
-            l_main = QLabel(f"Pos ({unit_main})"); l_main.setObjectName("header_label")
-            l_main.setProperty("role", "pos_header")
-            l_del = QLabel(""); l_del.setFixedWidth(24)
-            
-            h_layout.addWidget(l_id)
-            h_layout.addWidget(l_sub, 1)
-            h_layout.addWidget(l_main, 1)
-            h_layout.addWidget(l_del)
-            self.scroll_layout.insertWidget(0, self._header_widget)
-            self.refresh_theme() # Apply theme to new header
-
-        # 2. Update header labels
-        for lbl in self._header_widget.findChildren(QLabel, "header_label"):
-            if lbl.property("role") == "pos_header":
-                lbl.setText(f"Pos ({unit_main})")
-            elif lbl.property("role") == "sub_header":
-                lbl.setText(unit_sub)
-        
-        if not is_time:
-            # Hide sub-header if in MAG mode
-            for lbl in self._header_widget.findChildren(QLabel, "header_label"):
-                if lbl.property("role") == "sub_header": lbl.hide()
-        else:
-            for lbl in self._header_widget.findChildren(QLabel, "header_label"):
-                if lbl.property("role") == "sub_header": lbl.show()
-
-        # 3. Synchronize row count
-        while len(self._endless_rows) > len(markers):
-            row_data = self._endless_rows.pop()
-            row_data['widget'].deleteLater()
-
-        while len(self._endless_rows) < len(markers):
-            i = len(self._endless_rows)
-            row = QWidget()
-            row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(5, 0, 5, 0)
-            row_layout.setSpacing(10)
-            
-            lbl_id = QLabel(f"M{i+1}")
-            lbl_id.setFixedWidth(30)
-            lbl_id.setStyleSheet("color: #ff6400; font-weight: bold;")
-            
-            edit_pos = FormattedLineEdit()
-            edit_pos.setFixedHeight(24)
-            edit_pos.returnPressed.connect(self.controller.marker_edit_finished)
-            
-            edit_sub = FormattedLineEdit()
-            edit_sub.setFixedHeight(24)
-            edit_sub.returnPressed.connect(self.controller.marker_edit_finished)
-            
-            btn_del = QPushButton("×")
-            btn_del.setFixedWidth(24); btn_del.setFixedHeight(24)
-            btn_del.setToolTip("Remove marker")
-            btn_del.setStyleSheet("""
-                QPushButton { background: none; color: #ff4444; font-weight: bold; font-size: 16px; border-radius: 12px; }
-                QPushButton:hover { background: rgba(255, 68, 68, 0.2); }
-            """)
-            
-            row_layout.addWidget(lbl_id)
-            row_layout.addWidget(edit_sub, 1)
-            row_layout.addWidget(edit_pos, 1)
-            row_layout.addWidget(btn_del)
-            
-            self.scroll_layout.insertWidget(self.scroll_layout.count()-1, row)
-            
-            self._endless_rows.append({
-                'widget': row,
-                'lbl_id': lbl_id,
-                'edit_pos': edit_pos,
-                'edit_sub': edit_sub,
-                'btn_del': btn_del
-            })
-
-        # 4. Update data for all rows
-        for i, m in enumerate(markers):
-            row_data = self._endless_rows[i]
-            val = m.value()
-            prec = 9 if is_time else 6
-            
-            row_data['lbl_id'].setText(f"M{i+1}")
-            
-            row_data['edit_pos'].blockSignals(True)
-            row_data['edit_pos'].setObjectName(f"em_{i}_sec")
-            row_data['edit_pos'].setText(f"{val:.{prec}f}")
-            row_data['edit_pos'].blockSignals(False)
-            
-            if is_time:
-                sub_val = int(round(val * self.controller.rate)) + 1
-                row_data['edit_sub'].show()
-                row_data['edit_sub'].blockSignals(True)
-                row_data['edit_sub'].setObjectName(f"em_{i}_sam")
-                row_data['edit_sub'].setText(f"{sub_val}")
-                row_data['edit_sub'].blockSignals(False)
-            else:
-                row_data['edit_sub'].hide()
-            
-            try: row_data['btn_del'].clicked.disconnect()
-            except: pass
-            row_data['btn_del'].clicked.connect(lambda _, m=m: self.controller.remove_marker_item(m, mode))
+        self.endless_widget.update_markers(
+            markers=markers,
+            mode=mode,
+            is_primary_axis=is_time,
+            unit_main=unit_main,
+            unit_sub=unit_sub,
+            pos_suffix="sec",
+            sub_suffix="sam",
+            prec=(9 if is_time else 6),
+            sub_val_fn=lambda val: int(round(val * self.controller.rate)) + 1,
+            on_header_created=self.refresh_theme,
+        )
 
     def _clear_marker_locks(self, mode, keep=None):
         """Uncheck all marker-position locks except the one named in `keep`."""

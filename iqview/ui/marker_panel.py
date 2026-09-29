@@ -3,7 +3,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap
 import importlib.resources
 import os
-from .widgets import FormattedLineEdit, DoubleClickButton, format_tooltip_with_keybind
+from .widgets import FormattedLineEdit, DoubleClickButton, format_tooltip_with_keybind, get_theme_icon
 from .themes import get_palette
 
 class MarkerPanel(QFrame):
@@ -483,22 +483,7 @@ class MarkerPanel(QFrame):
     def _get_icon(self, name):
         """Load icon using the current app theme (Light or Dark)."""
         theme = self.parent_window.settings_mgr.get("ui/theme", "Light") if hasattr(self, 'parent_window') else "Light"
-        suffix = "_dark" if theme == "Dark" else ""
-        icon_name = f"{name}{suffix}"
-        try:
-            from importlib.resources import files
-            icon_resource = files("iqview.resources.assets").joinpath(f"{icon_name}.png")
-            with icon_resource.open("rb") as f:
-                pixmap = QPixmap()
-                pixmap.loadFromData(f.read())
-                return QIcon(pixmap)
-        except Exception:
-            base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            local_path = os.path.join(base_path, "iqview", "resources", "assets", f"{icon_name}.png")
-            if not os.path.exists(local_path) and suffix:
-                # Fallback to light version if dark doesn't exist
-                local_path = os.path.join(base_path, "iqview", "resources", "assets", f"{name}.png")
-            return QIcon(local_path)
+        return get_theme_icon(name, theme)
 
     def _clear_marker_locks(self, mode=None, keep=None):
         """Uncheck all marker-position locks except the one named in `keep`."""

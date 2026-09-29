@@ -125,6 +125,26 @@ def format_tooltip_with_keybind(base_text: str, key_str: str, is_hold: bool = Fa
     return f"{base_text} {suffix}"
 
 
+def get_theme_icon(name: str, theme: str = "Light") -> QtGui.QIcon:
+    """Load a theme-aware icon from iqview/resources/assets."""
+    import os
+    suffix = "_dark" if theme == "Dark" else ""
+    icon_name = f"{name}{suffix}"
+    try:
+        from importlib.resources import files
+        icon_resource = files("iqview.resources.assets").joinpath(f"{icon_name}.png")
+        with icon_resource.open("rb") as f:
+            pixmap = QtGui.QPixmap()
+            pixmap.loadFromData(f.read())
+            return QtGui.QIcon(pixmap)
+    except Exception:
+        base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        local_path = os.path.join(base_path, "iqview", "resources", "assets", f"{icon_name}.png")
+        if not os.path.exists(local_path) and suffix:
+            local_path = os.path.join(base_path, "iqview", "resources", "assets", f"{name}.png")
+        return QtGui.QIcon(local_path)
+
+
 class KeyBindEdit(QtWidgets.QLineEdit):
     """
     A QLineEdit that captures a single key press (including standalone modifiers) 
