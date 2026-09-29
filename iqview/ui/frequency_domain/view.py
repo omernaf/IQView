@@ -3,9 +3,9 @@ import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                              QButtonGroup, QLabel, QFrame, QScrollBar, QGridLayout,
                              QComboBox)
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer
-from PyQt6.QtGui import QKeySequence
-from ..widgets import CustomViewBox, key_event_to_name, format_tooltip_with_keybind
+from PyQt6.QtCore import Qt
+from ..widgets import CustomViewBox
+from ..base_1d import Base1DPlotView
 from .marker_panel import FrequencyDomainMarkerPanel
 from ..themes import get_palette, get_scrollbar_stylesheet
 from ...dsp.dsp import compute_psd
@@ -17,10 +17,17 @@ from ...dsp.domain_transforms import (
     compute_region_statistics,
 )
 
-class FrequencyDomainView(QWidget):
+class FrequencyDomainView(Base1DPlotView):
     """
     A detailed view of a signal segment in the frequency domain with interactive markers.
     """
+    primary_mode = "FREQ"
+    primary_endless_mode = "FREQ_ENDLESS"
+    primary_kb_key = "keybinds/freq_markers"
+    primary_kb_default = "F"
+    primary_endless_kb_key = "keybinds/freq_endless_markers"
+    primary_endless_kb_default = "G"
+
     def __init__(self, samples, center_freq, sample_rate, parent=None, parent_window=None):
         super().__init__(parent)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -229,6 +236,8 @@ class FrequencyDomainView(QWidget):
         self.set_interaction_mode('FREQ')
 
         self.view_box.sigRangeChanged.connect(self.update_scrollbars)
+        self.view_box.sigRangeChanged.connect(lambda: self.update_grid('FREQ'))
+        self.view_box.sigRangeChanged.connect(lambda: self.update_grid('MAG'))
         self.x_scroll.valueChanged.connect(self.scroll_view)
         self.y_scroll.valueChanged.connect(self.scroll_view)
 
@@ -326,20 +335,6 @@ class FrequencyDomainView(QWidget):
             checked_btn = next(b for b in self.plot_buttons if b.isChecked())
             self.available_modes.get(checked_btn.text(), self.plot_magnitude)()
 
-    def update_button_tooltips(self):
-        if hasattr(self, 'marker_panel'):
-            self.marker_panel.update_button_tooltips()
-        s = self.settings_mgr
-        for i, btn in enumerate(self.plot_buttons):
-            if i < 10:
-                kb = s.get(f"keybinds/plot_mode_{i+1}", f"F{i+1}") if s else f"F{i+1}"
-            else:
-                kb = ""
-            btn.setToolTip(format_tooltip_with_keybind(f"Plot {btn.text()}", kb))
-
-    def _get_kb(self, key, default):
-        return str(self.settings_mgr.get(key, default)) if self.settings_mgr else default
-
     def set_interaction_mode(self, mode):
         if mode == 'Y': mode = 'MAG'
         self.interaction_mode = mode
@@ -401,60 +396,6 @@ class FrequencyDomainView(QWidget):
         elif 'ENDLESS' in mode: cursor = Qt.CursorShape.PointingHandCursor
         elif mode in ['FREQ', 'MAG', 'Y', 'FILTER', 'STATS']: cursor = Qt.CursorShape.CrossCursor
         self.plot_widget.setCursor(cursor)
-
-    def undo_zoom(self):
-        if self.zoom_history:
-            prev_rect = self.zoom_history.pop()
-            self.plot_item.setRange(rect=prev_rect, padding=0)
-
-    def reset_zoom(self):
-        self.zoom_history.append(self.plot_item.viewRect())
-        self.plot_item.autoRange()
-
-    def reset_zoom_x(self):
-        self.zoom_history.append(self.plot_item.viewRect())
-        self.plot_item.enableAutoRange(axis='x')
-
-    def reset_zoom_y(self):
-        self.zoom_history.append(self.plot_item.viewRect())
-        self.plot_item.enableAutoRange(axis='y')
-
-    def handle_zoom_rectangle(self, rect, zoom_type='BOTH', source_vb=None, **kwargs):
-        self.zoom_history.append(self.plot_item.viewRect())
-        if rect.width() <= 0 and zoom_type != 'Y_ONLY': return
-        if rect.height() <= 0 and zoom_type != 'X_ONLY': return
-        if zoom_type == 'Y_ONLY': self.plot_item.setYRange(rect.top(), rect.bottom(), padding=0)
-        elif zoom_type == 'X_ONLY': self.plot_item.setXRange(rect.left(), rect.right(), padding=0)
-        else: self.plot_item.setRange(rect, padding=0)
-
-    def handle_move_drag(self, pos, is_start=False, is_finish=False, source_vb=None, **kwargs):
-        if is_start: self.last_move_scene_pos = pos; return
-        if self.last_move_scene_pos is None: return
-        vb = source_vb if source_vb is not None else self.view_box
-        p1 = vb.mapSceneToView(self.last_move_scene_pos)
-        p2 = vb.mapSceneToView(pos)
-        dx = p2.x() - p1.x()
-        dy = p2.y() - p1.y()
-        vb.translateBy(x=-dx, y=-dy)
-        self.last_move_scene_pos = pos
-        if is_finish: self.last_move_scene_pos = None
-
-    def fit_to_markers(self):
-        is_freq = (self.interaction_mode in ['FREQ', 'FREQ_ENDLESS'])
-        is_endless = 'ENDLESS' in self.interaction_mode
-        if is_endless:
-            active_markers = self.markers_freq_endless if is_freq else self.markers_y_endless_dict.get(self.y_label_text, [])
-        else:
-            active_markers = self.markers_freq if is_freq else self.markers_y_dict.get(self.y_label_text, [])
-            
-        if len(active_markers) >= 2:
-            self.zoom_history.append(self.plot_item.viewRect())
-            sorted_m = sorted(active_markers, key=lambda m: m.value())
-            v1, v2 = sorted_m[0].value(), sorted_m[-1].value()
-            if is_freq:
-                self.plot_item.setXRange(v1, v2, padding=0)
-            else:
-                self.plot_item.setYRange(v1, v2, padding=0)
 
     def _plot_mode(self, mode_name: str):
         data, label = compute_frequency_domain_trace(self.fft_data, mode_name)
@@ -785,734 +726,66 @@ class FrequencyDomainView(QWidget):
     def freq_to_index(self, freq):
         return np.searchsorted(self.freq_axis, freq)
 
-    def clear_all_markers(self):
-        # 1. Clear regular and endless frequency markers
-        for m in (self.markers_freq + self.markers_freq_endless):
-            self.plot_item.removeItem(m)
-        self.markers_freq.clear()
-        self.markers_freq_endless.clear()
-        
-        # 2. Clear magnitude (Y) markers for all modes
-        for y_label in self.markers_y_dict:
-            for m in self.markers_y_dict[y_label]:
-                self.plot_item.removeItem(m)
-            self.markers_y_dict[y_label].clear()
-            
-        for y_label in self.markers_y_endless_dict:
-            for m in self.markers_y_endless_dict[y_label]:
-                self.plot_item.removeItem(m)
-            self.markers_y_endless_dict[y_label].clear()
+    def _handle_extra_drag(self, scene_pos, v_pos) -> bool:
+        """Handle FILTER bound dragging in FrequencyDomainView."""
+        if getattr(self, 'active_drag_filter_bound_idx', -1) == -1:
+            return False
 
-        # 3. Clear stats region and markers
-        self.stats_bounds.clear()
-        self.stats_marker_order.clear()
-        if getattr(self, 'stats_region', None): self.stats_region.hide()
-        if getattr(self, 'stats_line', None): self.stats_line.hide()
-        if getattr(self, 'stats_markers', None): self.stats_markers.clear()
-        if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide()
-        if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide()
-        self.marker_panel.clear_stats_fields()
+        idx = self.active_drag_filter_bound_idx
+        f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
+        val = max(f_min, min(f_max, v_pos.x()))
 
-        # 4. Clear filter bounds and replot unfiltered
-        self._clear_filter_state(replot=True)
-
-        # 5. Clear grid lines
-        self.toggle_grid('FREQ', False)
-        self.toggle_grid('MAG', False)
-
-        # 6. Reset UI
-        self.update_marker_info()
-
-    def place_marker(self, scene_pos, drag_mode=False, source_vb=None):
-        vb = source_vb if source_vb is not None else self.view_box
-        v_pos = vb.mapSceneToView(scene_pos)
-
-        # --- FILTER mode: place/drag filter bounds ---
-        if self.interaction_mode == 'FILTER':
-            self._place_filter_bound(scene_pos, v_pos, drag_mode)
-            return
-
-        is_freq = (self.interaction_mode in ['FREQ', 'FREQ_ENDLESS', 'STATS'])
-        is_endless = 'ENDLESS' in self.interaction_mode
-        
-        # Clamp to bounds
-        if is_freq:
-            f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
-            val = max(f_min, min(f_max, v_pos.x()))
-        else:
-            y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
-            val = max(y_min, min(y_max, v_pos.y()))
-            
-        if is_endless:
-            active_markers = self.markers_freq_endless if is_freq else self.markers_y_endless_dict[self.y_label_text]
-        else:
-            active_markers = self.markers_freq if is_freq else self.markers_y_dict[self.y_label_text]
-
-        # --- STATS Region Logic ---
-        if self.interaction_mode == 'STATS':
-            if self.stats_bounds:
-                best_idx = -1
-                min_dist = 20 # pixels
-                for i, b_val in enumerate(self.stats_bounds):
-                    pi = self.view_box.mapViewToScene(pg.Point(b_val, 0))
-                    dist = abs(scene_pos.x() - pi.x())
-                    if dist < min_dist:
-                        min_dist = dist; best_idx = i
-                
-                if best_idx != -1:
-                    self.stats_bounds[best_idx] = val
-                        
-                    self.stats_bounds.sort()
-                    self.stats_marker_order = list(self.stats_bounds)
-                    self.active_drag_stats_bound_idx = self.stats_bounds.index(val) if val in self.stats_bounds else 0
-                    
-                    if len(self.stats_bounds) == 1:
-                        if self.stats_line: self.stats_line.setPos(val)
-                    else:
-                        self.stats_region.setRegion(self.stats_bounds)
-                    self.update_statistics()
-                    return
-
-            # No hit - Place new bound or replace oldest
-            if len(self.stats_marker_order) >= 2:
-                oldest_v = self.stats_marker_order.pop(0)
-                if oldest_v in self.stats_bounds: self.stats_bounds.remove(oldest_v)
-            
-            self.stats_marker_order.append(val)
-            self.stats_bounds.append(val)
-            self.stats_bounds.sort()
-            
-            if drag_mode:
-                self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
-            
-            if len(self.stats_bounds) == 1:
-                if self.stats_line is None:
-                    p = get_palette(self.settings_mgr.get("ui/theme", "Dark"))
-                    self.stats_line = pg.InfiniteLine(angle=90, pen=pg.mkPen(p.marker_freq if hasattr(p, 'marker_freq') else p.marker_time, width=2, style=Qt.PenStyle.DashLine), movable=False)
-                    self.stats_line.setZValue(100)
-                
-                if self.stats_line not in self.plot_item.items:
-                    self.plot_item.addItem(self.stats_line)
-                self.stats_line.setPos(val)
-                self.stats_line.show()
-                self.stats_region.hide()
-                self.stats_markers.hide()
-                if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide()
-                if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide()
-            else:
-                if self.stats_line: self.stats_line.hide()
-                self.stats_region.setRegion(self.stats_bounds)
-                self.stats_region.show()
-                self.stats_markers.show()
-                show_p10 = self.marker_panel.cb_p10.isChecked() if hasattr(self.marker_panel, 'cb_p10') else True
-                show_p90 = self.marker_panel.cb_p90.isChecked() if hasattr(self.marker_panel, 'cb_p90') else True
-                if getattr(self, 'stats_p10_line', None): self.stats_p10_line.setVisible(show_p10)
-                if getattr(self, 'stats_p90_line', None): self.stats_p90_line.setVisible(show_p90)
-                
-            self.update_statistics()
-            return
-
-        if self.interaction_mode in ['ZOOM', 'MOVE']:
-            return
-
-        # 1. Hit test EXISTING MARKERS
-        found_marker = None
-        min_dist = float('inf')
-        for i, m in enumerate(active_markers):
-            pi = self.view_box.mapViewToScene(pg.Point(m.value(), 0) if is_freq else pg.Point(0, m.value()))
-            dist = abs(scene_pos.x() - pi.x()) if is_freq else abs(scene_pos.y() - pi.y())
-            if dist < 20 and dist < min_dist:
-                min_dist = dist
-                found_marker = m
-        
-        if found_marker:
-            if len(active_markers) == 2 and (self.marker_panel.btn_lock_delta.isChecked() or self.marker_panel.btn_lock_center.isChecked()):
-                old_v = found_marker.value()
-                shift = val - old_v
-                other = active_markers[0] if active_markers[1] == found_marker else active_markers[1]
-                
-                if self.marker_panel.btn_lock_delta.isChecked():
-                    new_o = other.value() + shift
-                    if is_freq:
-                        f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
-                        if f_min <= val <= f_max and f_min <= new_o <= f_max:
-                            found_marker.setValue(val); other.setValue(new_o)
-                    else:
-                        y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
-                        if y_min <= val <= y_max and y_min <= new_o <= y_max:
-                            found_marker.setValue(val); other.setValue(new_o)
-                elif self.marker_panel.btn_lock_center.isChecked():
-                    ct = (old_v + other.value()) / 2
-                    new_o = 2 * ct - val
-                    if is_freq:
-                        f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
-                        if f_min <= val <= f_max and f_min <= new_o <= f_max:
-                            found_marker.setValue(val); other.setValue(new_o)
-                    else:
-                        y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
-                        if y_min <= val <= y_max and y_min <= new_o <= y_max:
-                            found_marker.setValue(val); other.setValue(new_o)
-            else:
-                found_marker.setValue(val)
-                
-            if drag_mode: self.active_drag_marker = found_marker
-            self.update_marker_info()
-            return
-
-        # 1.5 Check for Grid Lines (Shadow Markers)
-        if self.interaction_mode in ['FREQ', 'MAG', 'Y']:
-            grid_lines = self.grid_lines_freq if is_freq else self.grid_lines_mag
-            best_gl = None
-            min_gl_dist = 20 # pixels
-            
-            for gl in grid_lines:
-                gl_pos = gl.value()
-                pi = self.view_box.mapViewToScene(pg.Point(gl_pos, 0) if is_freq else pg.Point(0, gl_pos))
-                dist = abs(scene_pos.x() - pi.x()) if is_freq else abs(scene_pos.y() - pi.y())
-                if dist < min_gl_dist:
-                    min_gl_dist = dist; best_gl = gl
-            
-            if best_gl and len(active_markers) == 2:
-                sorted_m = sorted(active_markers, key=lambda m: m.value())
-                p1, p2 = sorted_m[0].value(), sorted_m[1].value()
-                delta = p2 - p1
-                g_pos = best_gl.value()
-                k = (g_pos - p1) / delta if delta != 0.0 else 1.0
-                
-                lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
-                lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
-                lock_delta = self.marker_panel.btn_lock_delta.isChecked()
-                lock_center = self.marker_panel.btn_lock_center.isChecked()
-                
-                move_p1 = (k < 0.5)
-                if lock_m1 and not lock_m2: move_p1 = False
-                elif lock_m2 and not lock_m1: move_p1 = True
-                
-                if drag_mode:
-                    self.active_drag_grid_info = {
-                        'k': k,
-                        'moving_marker': sorted_m[0] if move_p1 else sorted_m[1],
-                        'fixed_marker': sorted_m[1] if move_p1 else sorted_m[0],
-                        'is_p1': move_p1,
-                        'is_freq': is_freq,
-                        'lock_delta': lock_delta,
-                        'lock_center': lock_center
-                    }
-                    self.active_drag_marker = None
-                return
-
-        # 2. Teleport existing markers if clicked outside
-        if not is_endless and len(active_markers) == 2:
-            m1_pos, m2_pos = active_markers[0].value(), active_markers[1].value()
-            lock_m1 = self.marker_panel.btn_lock_m1.isChecked()
-            lock_m2 = self.marker_panel.btn_lock_m2.isChecked()
-            lock_delta = self.marker_panel.btn_lock_delta.isChecked()
-            lock_center = self.marker_panel.btn_lock_center.isChecked()
-
-            # Decide which marker to move
-            if lock_m1 and not lock_m2:
-                target, other = active_markers[1], active_markers[0]
-                target_idx = 1
-            elif lock_m2 and not lock_m1:
-                target, other = active_markers[0], active_markers[1]
-                target_idx = 0
-            else:
-                # Move oldest
-                target = min(active_markers, key=lambda m: self._marker_age.get(m, 0))
-                other = active_markers[1] if target == active_markers[0] else active_markers[0]
-                target_idx = 0 if target is active_markers[0] else 1
-            
-            if (target_idx == 0 and lock_m1) or (target_idx == 1 and lock_m2):
-                if not (lock_delta or lock_center): return
-
-            shift = val - target.value()
-            if lock_delta:
-                new_t, new_o = val, other.value() + shift
-                if is_freq:
-                    f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
-                    if f_min <= new_t <= f_max and f_min <= new_o <= f_max:
-                        target.setValue(new_t); other.setValue(new_o)
+        if len(self.filter_bounds) == 2:
+            b0, b1 = self.filter_bounds[0], self.filter_bounds[1]
+            if self.marker_panel.btn_lock_delta.isChecked():
+                delta = b1 - b0
+                if idx == 0:
+                    new_b0 = val
+                    new_b1 = new_b0 + delta
+                    if new_b1 > f_max:
+                        new_b1 = f_max
+                        new_b0 = f_max - delta
+                    if new_b0 < f_min:
+                        new_b0 = f_min
+                        new_b1 = f_min + delta
+                    self.active_drag_filter_bound_idx = 0
                 else:
-                    y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
-                    if y_min <= new_t <= y_max and y_min <= new_o <= y_max:
-                        target.setValue(new_t); other.setValue(new_o)
-            elif lock_center:
-                ct = (m1_pos + m2_pos) / 2
-                new_o = 2 * ct - val
-                if is_freq:
-                    f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
-                    if f_min <= val <= f_max and f_min <= new_o <= f_max:
-                        target.setValue(val); other.setValue(new_o)
-                else:
-                    y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
-                    if y_min <= val <= y_max and y_min <= new_o <= y_max:
-                        target.setValue(val); other.setValue(new_o)
+                    new_b1 = val
+                    new_b0 = new_b1 - delta
+                    if new_b0 < f_min:
+                        new_b0 = f_min
+                        new_b1 = f_min + delta
+                    if new_b1 > f_max:
+                        new_b1 = f_max
+                        new_b0 = f_max - delta
+                    self.active_drag_filter_bound_idx = 1
+                self.filter_bounds = [new_b0, new_b1]
+            elif self.marker_panel.btn_lock_center.isChecked():
+                center = (b0 + b1) / 2
+                half_delta = abs(val - center)
+                max_half_delta = min(center - f_min, f_max - center)
+                half_delta = min(half_delta, max_half_delta)
+                new_b0 = center - half_delta
+                new_b1 = center + half_delta
+                self.filter_bounds = [new_b0, new_b1]
+                self.active_drag_filter_bound_idx = 0 if val < center else 1
             else:
-                target.setValue(val)
-                # Swap logic
-                if (val > other.value() and target_idx == 0) or (val < other.value() and target_idx == 1):
-                    active_markers[0], active_markers[1] = active_markers[1], active_markers[0]
-                    self.marker_panel.flip_m_lock(self.interaction_mode)
-
-            # Age update
-            if not drag_mode:
-                self._marker_age[target] = self._marker_age_counter
-                self._marker_age_counter += 1
-            else:
-                self.active_drag_marker = target
-
-            self.update_marker_info()
-            return
-
-        # 3. Add brand new
-        if len(active_markers) < (100 if is_endless else 2):
-            theme = self.settings_mgr.get("ui/theme", "Dark")
-            p = get_palette(theme)
-            color = p.marker_freq if (is_freq and hasattr(p, 'marker_freq')) else \
-                    p.marker_mag if not is_freq else p.marker_time
-            orient = 90 if is_freq else 0
-            
-            new_m = pg.InfiniteLine(pos=val, angle=orient, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.DashLine), movable=False)
-            new_m.setHoverPen(pg.mkPen(255, 0, 0, width=2))
-            new_m.setAcceptHoverEvents(True)
-            new_m.setZValue(100)
-            self._marker_age[new_m] = self._marker_age_counter
-            self._marker_age_counter += 1
-            
-            if is_endless:
-                from PyQt6.QtWidgets import QGraphicsTextItem
-                label_text = f"M{len(active_markers)+1}"
-                new_m.label = pg.InfLineLabel(new_m, text=label_text, position=0.9, color=color)
-            
-            self.plot_item.addItem(new_m, ignoreBounds=True)
-            active_markers.append(new_m)
-            if drag_mode: self.active_drag_marker = new_m
-            self.update_marker_info()
-
-
-    def handle_lock_change(self, lock_type, checked):
-        # View just needs to react if necessary (e.g. for grid sync)
-        self.update_marker_info()
-
-    def remove_marker_item(self, marker, mode):
-        if marker in self.plot_item.items:
-            self.plot_item.removeItem(marker)
-        
-        is_freq = 'FREQ' in mode
-        active_list = self.markers_freq_endless if is_freq else self.markers_y_endless_dict[self.y_label_text]
-        
-        if marker in active_list:
-            active_list.remove(marker)
-            # Re-label remaining
-            for i, m in enumerate(active_list):
-                if hasattr(m, 'label'): m.label.setFormat(f"M{i+1}")
-        
-        self.update_marker_info()
-
-    def marker_edit_finished(self):
-        sender = self.sender()
-        name = sender.objectName()
-        # Resolve effective mode: fall back to last_marker_mode when panning/zooming
-        eff_mode = self.interaction_mode
-        if eff_mode in ['ZOOM', 'MOVE']:
-            eff_mode = getattr(self.marker_panel, 'last_marker_mode', 'FREQ')
-        is_freq = (eff_mode in ['FREQ', 'FREQ_ENDLESS'])
-        is_endless = 'ENDLESS' in eff_mode
-        
-        try:
-            val = float(sender.text())
-            if is_freq:
-                curr_min, curr_max = self.freq_axis[0], self.freq_axis[-1]
-            else:
-                curr_min, curr_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
-
-            if name.startswith('em_'):
-                # Endless edit
-                parts = name.split('_')
-                idx = int(parts[1])
-                unit = parts[2]
-                active_list = self.markers_freq_endless if is_freq else self.markers_y_endless_dict[self.y_label_text]
-                if idx < len(active_list):
-                    m = active_list[idx]
-                    if is_freq:
-                        if unit == 'bin':
-                            new_p = np.clip(self.freq_axis[max(0, min(len(self.freq_axis)-1, int(val)))], curr_min, curr_max)
-                        else:
-                            new_p = np.clip(val, curr_min, curr_max)
-            if name.startswith('st_'):
-                # Stats bound/region edit
-                if not self.stats_bounds: return
-                
-                if 'm' in name:
-                    idx = int(name[4]) 
-                    if idx >= len(self.stats_bounds): return
-                    new_p = val
-                    if 'v2' in name: # Index
-                        idx_val = max(0, min(len(self.freq_axis)-1, int(val)))
-                        new_p = self.freq_axis[idx_val]
-                    new_p = np.clip(new_p, curr_min, curr_max)
-                    
-                    if idx < len(self.stats_bounds):
-                        self.stats_bounds[idx] = new_p
-                elif 'delta' in name:
-                    if len(self.stats_bounds) != 2: return
-                    dv = val
-                    if 'v2' in name: dv = val * (self.freq_axis[1] - self.freq_axis[0]) # Approx Hz from Bins
-                    ct = sum(self.stats_bounds) / 2
-                    self.stats_bounds = [ct - dv/2, ct + dv/2]
-                elif 'center' in name:
-                    if len(self.stats_bounds) != 2: return
-                    ct = val
-                    if 'v2' in name: ct = self.freq_axis[max(0, min(len(self.freq_axis)-1, int(val)))]
-                    dv = abs(self.stats_bounds[1] - self.stats_bounds[0])
-                    self.stats_bounds = [ct - dv/2, ct + dv/2]
-                
-                self.stats_bounds.sort()
-                if len(self.stats_bounds) == 1:
-                    if self.stats_line: self.stats_line.setPos(self.stats_bounds[0])
-                else:
-                    self.stats_region.setRegion(self.stats_bounds)
-                self.update_statistics()
-                return
-
-            active_markers = self.markers_freq if is_freq else self.markers_y_dict[self.y_label_text]
-            sorted_markers = sorted(active_markers, key=lambda m: m.value())
-
-            if name.startswith('m'):
-                idx = int(name[1])
-                if idx >= len(sorted_markers): return
-                
-                new_p = val
-                if 'v2' in name and is_freq:
-                    new_p = self.freq_axis[max(0, min(len(self.freq_axis)-1, int(val)))]
-                
-                new_p = np.clip(new_p, curr_min, curr_max)
-
-                if len(sorted_markers) == 2:
-                    other_idx = 1 - idx
-                    shift = new_p - sorted_markers[idx].value()
-                    if self.marker_panel.btn_lock_delta.isChecked():
-                        new_o = sorted_markers[other_idx].value() + shift
-                        if curr_min <= new_o <= curr_max:
-                            sorted_markers[idx].setValue(new_p); sorted_markers[other_idx].setValue(new_o)
-                    elif self.marker_panel.btn_lock_center.isChecked():
-                        ct = (sorted_markers[0].value() + sorted_markers[1].value()) / 2
-                        new_o = 2 * ct - new_p
-                        if curr_min <= new_o <= curr_max:
-                            sorted_markers[idx].setValue(new_p); sorted_markers[other_idx].setValue(new_o)
-                    else: sorted_markers[idx].setValue(new_p)
-                else: sorted_markers[idx].setValue(new_p)
-                
-            elif len(sorted_markers) == 2:
-                p1, p2 = sorted_markers[0].value(), sorted_markers[1].value()
-                if 'delta' in name:
-                    dv = val
-                    sorted_markers[0].setValue((p1+p2)/2 - dv/2); sorted_markers[1].setValue((p1+p2)/2 + dv/2)
-                elif 'center' in name:
-                    ct = val
-                    dv = abs(p2-p1)
-                    sorted_markers[0].setValue(ct - dv/2); sorted_markers[1].setValue(ct + dv/2)
-                        
-            self.update_marker_info()
-        except Exception: pass
-
-    def toggle_grid(self, axis, enabled):
-        if axis == 'FREQ': self.grid_freq_enabled = enabled
-        else: self.grid_mag_enabled = enabled
-        self.update_grid(axis)
-
-    def toggle_tracking(self, axis, enabled):
-        if axis == 'FREQ': self.grid_freq_tracking = enabled
-        else: self.grid_mag_enabled = enabled
-        self.update_grid(axis)
-
-    def update_grid(self, axis, force=False):
-        if not hasattr(self, '_grid_timer'):
-            self._grid_timer = QTimer()
-            self._grid_timer.setSingleShot(True)
-            self._grid_timer.timeout.connect(self._do_update_grid)
-            self._grid_pending_axes = set()
-
-        if force:
-            self._do_update_grid(axis, force=True)
-        else:
-            self._grid_pending_axes.add(axis)
-            if not self._grid_timer.isActive():
-                self._grid_timer.start(50) # 50ms throttle
-
-    def _do_update_grid(self, axis=None, force=False):
-        if axis is None:
-            axes_to_update = list(self._grid_pending_axes)
-            self._grid_pending_axes.clear()
-            for a in axes_to_update:
-                self._do_update_grid(a, force=force)
-            return
-        
-        is_freq = (axis == 'FREQ')
-        enabled = self.grid_freq_enabled if is_freq else self.grid_mag_enabled
-        tracking = self.grid_freq_tracking if is_freq else self.grid_mag_tracking
-        active_markers = self.markers_freq if is_freq else self.markers_y_dict.get(self.y_label_text, [])
-        grid_lines = self.grid_lines_freq if is_freq else self.grid_lines_mag
-        
-        if not enabled:
-            for line in grid_lines: self.plot_item.removeItem(line)
-            grid_lines.clear()
-            return
-        if not tracking and not force: return
-        for line in grid_lines: self.plot_item.removeItem(line)
-        grid_lines.clear()
-        if len(active_markers) != 2: return
-        
-        sorted_m = sorted(active_markers, key=lambda m: m.value())
-        p1, p2 = sorted_m[0].value(), sorted_m[1].value()
-        delta = abs(p2 - p1)
-        if delta <= 0: return
-
-        # Optimization: Only plot visible lines
-        vr = self.plot_item.viewRange()
-        v_min_visible, v_max_visible = vr[0] if is_freq else vr[1]
-        
-        # Guard against too many markers
-        if (v_max_visible - v_min_visible) / delta > 500:
-            return
-        
-        angle = 90 if is_freq else 0
-        theme = self.settings_mgr.get("ui/theme", "Dark")
-        color = self.settings_mgr.get(f"ui/{theme}/marker_grid_color", "#c8c8ff")
-        style_name = self.settings_mgr.get(f"ui/{theme}/marker_grid_style", "SolidLine")
-        alpha = int(self.settings_mgr.get("ui/marker_grid_alpha", 50))
-        width = int(self.settings_mgr.get("ui/marker_grid_width", 1))
-        
-        style_map = {
-            "SolidLine": Qt.PenStyle.SolidLine,
-            "DashLine": Qt.PenStyle.DashLine,
-            "DotLine": Qt.PenStyle.DotLine,
-            "DashDotLine": Qt.PenStyle.DashDotLine
-        }
-        style = style_map.get(str(style_name), Qt.PenStyle.SolidLine)
-        
-        from PyQt6.QtGui import QColor
-        qcolor = QColor(color)
-        qcolor.setAlphaF(alpha / 100.0)
-        
-        pen = pg.mkPen(qcolor, width=width, style=style)
-        
-        # Start from first visible multiple of delta relative to p1
-        start_count = np.ceil((v_min_visible - p1) / delta)
-        curr = p1 + start_count * delta
-        
-        count = 0
-        while curr <= v_max_visible + 1e-9 and count < 500:
-            line = pg.InfiniteLine(pos=curr, angle=angle, pen=pen, movable=False)
-            line.setHoverPen(pg.mkPen(255, 0, 0, width=2))
-            line.setAcceptHoverEvents(True)
-            line.setZValue(5)
-            self.plot_item.addItem(line, ignoreBounds=True)
-            grid_lines.append(line)
-            curr += delta
-            count += 1
-
-
-    def update_drag(self, scene_pos, source_vb=None):
-        vb = source_vb if source_vb is not None else self.view_box
-        v_pos = vb.mapSceneToView(scene_pos)
-
-        # 0. Handle FILTER bound dragging
-        if getattr(self, 'active_drag_filter_bound_idx', -1) != -1:
-            idx = self.active_drag_filter_bound_idx
-            f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
-            val = max(f_min, min(f_max, v_pos.x()))
-            
-            if len(self.filter_bounds) == 2:
-                b0, b1 = self.filter_bounds[0], self.filter_bounds[1]
-                if self.marker_panel.btn_lock_delta.isChecked():
-                    delta = b1 - b0
-                    if idx == 0:
-                        new_b0 = val
-                        new_b1 = new_b0 + delta
-                        if new_b1 > f_max:
-                            new_b1 = f_max
-                            new_b0 = f_max - delta
-                        if new_b0 < f_min:
-                            new_b0 = f_min
-                            new_b1 = f_min + delta
-                        self.active_drag_filter_bound_idx = 0
-                    else:
-                        new_b1 = val
-                        new_b0 = new_b1 - delta
-                        if new_b0 < f_min:
-                            new_b0 = f_min
-                            new_b1 = f_min + delta
-                        if new_b1 > f_max:
-                            new_b1 = f_max
-                            new_b0 = f_max - delta
-                        self.active_drag_filter_bound_idx = 1
-                    self.filter_bounds = [new_b0, new_b1]
-                elif self.marker_panel.btn_lock_center.isChecked():
-                    center = (b0 + b1) / 2
-                    half_delta = abs(val - center)
-                    max_half_delta = min(center - f_min, f_max - center)
-                    half_delta = min(half_delta, max_half_delta)
-                    new_b0 = center - half_delta
-                    new_b1 = center + half_delta
-                    self.filter_bounds = [new_b0, new_b1]
-                    self.active_drag_filter_bound_idx = 0 if val < center else 1
-                else:
-                    self.filter_bounds[idx] = val
-                    self.filter_bounds.sort()
-                    try:
-                        self.active_drag_filter_bound_idx = self.filter_bounds.index(val)
-                    except ValueError:
-                        pass
-                
-                self.filter_marker_order = list(self.filter_bounds)
-                if self.filter_region: self.filter_region.setRegion(self.filter_bounds)
-            elif len(self.filter_bounds) == 1:
-                self.filter_bounds[0] = val
-                if self.filter_line: self.filter_line.setPos(val)
-            self.update_marker_info()
-            return
-
-        # 1. Handle STATS Region dragging (Boundaries)
-        if getattr(self, 'active_drag_stats_bound_idx', -1) != -1:
-            idx = self.active_drag_stats_bound_idx
-            f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
-            val = max(f_min, min(f_max, v_pos.x()))
-
-            if len(self.stats_bounds) == 2:
-                self.stats_bounds[idx] = val
-
-                self.stats_bounds.sort()
-                if val in self.stats_bounds:
-                    self.active_drag_stats_bound_idx = self.stats_bounds.index(val)
-                self.stats_region.setRegion(self.stats_bounds)
-            else:
-                self.stats_bounds[0] = val
-                if self.stats_line: self.stats_line.setPos(val)
-                
-            self.update_statistics()
-            return
-
-        # 1.5 Handle Shadow Marker (Grid Line) dragging
-        if getattr(self, 'active_drag_grid_info', None):
-            info = self.active_drag_grid_info
-            is_freq = info['is_freq']
-            k = info['k']
-            m_move = info['moving_marker']
-            m_fixed = info['fixed_marker']
-            is_p1 = info['is_p1']
-            p_fixed = m_fixed.value()
-            lock_delta = info.get('lock_delta', False)
-            lock_center = info.get('lock_center', False)
-            
-            if is_freq:
-                f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
-                g_prime = max(f_min, min(f_max, v_pos.x()))
-            else:
-                y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
-                g_prime = max(y_min, min(y_max, v_pos.y()))
-            
-            active_markers = self.markers_freq if is_freq else self.markers_y_dict[self.y_label_text]
-            if len(active_markers) == 2:
+                self.filter_bounds[idx] = val
+                self.filter_bounds.sort()
                 try:
-                    curr_min = f_min if is_freq else y_min
-                    curr_max = f_max if is_freq else y_max
-                    if lock_delta:
-                        sorted_m = sorted(active_markers, key=lambda m: m.value())
-                        p1_orig, p2_orig = sorted_m[0].value(), sorted_m[1].value()
-                        delta_orig = p2_orig - p1_orig
-                        shift = g_prime - (p1_orig + k * delta_orig)
-                        
-                        shift_min = max(curr_min - p1_orig, curr_min - p2_orig)
-                        shift_max = min(curr_max - p1_orig, curr_max - p2_orig)
-                        shift_clamped = np.clip(shift, shift_min, shift_max)
-                        sorted_m[0].setValue(p1_orig + shift_clamped); sorted_m[1].setValue(p2_orig + shift_clamped)
-                    elif lock_center:
-                        sorted_m = sorted(active_markers, key=lambda m: m.value())
-                        p1_orig, p2_orig = sorted_m[0].value(), sorted_m[1].value()
-                        center = (p1_orig + p2_orig) / 2
-                        if abs(k - 0.5) > 1e-9:
-                            new_delta = (g_prime - center) / (k - 0.5)
-                            max_half_delta = min(center - curr_min, curr_max - center)
-                            half_delta_clamped = np.clip(abs(new_delta / 2), 0.0, max_half_delta)
-                            sorted_m[0].setValue(center - half_delta_clamped); sorted_m[1].setValue(center + half_delta_clamped)
-                    else:
-                        if is_p1:
-                            if abs(1 - k) > 1e-9:
-                                new_v = (g_prime - k * p_fixed) / (1 - k)
-                                if is_freq:
-                                    f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
-                                    if f_min <= new_v <= f_max: m_move.setValue(new_v)
-                                else:
-                                    y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
-                                    if y_min <= new_v <= y_max: m_move.setValue(new_v)
-                        else:
-                            if abs(k) > 1e-9:
-                                new_v = p_fixed + (g_prime - p_fixed) / k
-                                if is_freq:
-                                    f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
-                                    if f_min <= new_v <= f_max: m_move.setValue(new_v)
-                                else:
-                                    y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
-                                    if y_min <= new_v <= y_max: m_move.setValue(new_v)
-                    
-                    # Crossing detection
-                    if (active_markers[0].value() > active_markers[1].value()):
-                        active_markers[0], active_markers[1] = active_markers[1], active_markers[0]
-                        self.marker_panel.flip_m_lock(self.interaction_mode)
-                except ZeroDivisionError: pass
-            
-            self.update_marker_info()
-            return
-            
-        if not getattr(self, 'active_drag_marker', None): return
-        
-        is_freq = (self.active_drag_marker in self.markers_freq or self.active_drag_marker in self.markers_freq_endless)
-        is_endless = 'ENDLESS' in self.interaction_mode
-        
-        if is_freq:
-            f_min, f_max = self.freq_axis[0], self.freq_axis[-1]
-            val = max(f_min, min(f_max, v_pos.x()))
-        else:
-            y_min, y_max = np.min(self.current_plot_data), np.max(self.current_plot_data)
-            val = max(y_min, min(y_max, v_pos.y()))
-        
-        active_markers = self.markers_freq if is_freq else self.markers_y_dict[self.y_label_text]
-        if is_endless: active_markers = self.markers_freq_endless if is_freq else self.markers_y_endless_dict[self.y_label_text]
-        
-        if not is_endless and len(active_markers) == 2:
-            other = active_markers[0] if active_markers[1] == self.active_drag_marker else active_markers[1]
-            target_idx = 0 if self.active_drag_marker == active_markers[0] else 1
-            
-            lock_target = self.marker_panel.btn_lock_m1.isChecked() if target_idx == 0 else self.marker_panel.btn_lock_m2.isChecked()
-            lock_delta = self.marker_panel.btn_lock_delta.isChecked()
-            lock_center = self.marker_panel.btn_lock_center.isChecked()
+                    self.active_drag_filter_bound_idx = self.filter_bounds.index(val)
+                except ValueError:
+                    pass
 
-            if lock_target: return
-
-            shift = val - self.active_drag_marker.value()
-            curr_min = f_min if is_freq else y_min
-            curr_max = f_max if is_freq else y_max
-            if lock_delta:
-                potential_other = other.value() + shift
-                potential_other_clamped = np.clip(potential_other, curr_min, curr_max)
-                actual_shift = potential_other_clamped - other.value()
-                self.active_drag_marker.setValue(self.active_drag_marker.value() + actual_shift)
-                other.setValue(potential_other_clamped)
-            elif lock_center:
-                ct = (self.active_drag_marker.value() + other.value()) / 2
-                potential_other = 2 * ct - val
-                potential_other_clamped = np.clip(potential_other, curr_min, curr_max)
-                self.active_drag_marker.setValue(2 * ct - potential_other_clamped)
-                other.setValue(potential_other_clamped)
-            else: 
-                self.active_drag_marker.setValue(val)
-                # Crossing
-                if (val > other.value() and target_idx == 0) or (val < other.value() and target_idx == 1):
-                    active_markers[0], active_markers[1] = active_markers[1], active_markers[0]
-                    self.marker_panel.flip_m_lock(self.interaction_mode)
-        else: self.active_drag_marker.setValue(val)
+            self.filter_marker_order = list(self.filter_bounds)
+            if self.filter_region:
+                self.filter_region.setRegion(self.filter_bounds)
+        elif len(self.filter_bounds) == 1:
+            self.filter_bounds[0] = val
+            if self.filter_line:
+                self.filter_line.setPos(val)
         self.update_marker_info()
+        return True
 
     def update_marker_info(self):
         if self.interaction_mode == 'FILTER':
@@ -1621,6 +894,7 @@ class FrequencyDomainView(QWidget):
         self.update_grid('MAG')
 
     def reset_zoom(self):
+        self.zoom_history.append(self.plot_item.viewRect())
         f_start, f_end = float(self.freq_axis[0]), float(self.freq_axis[-1])
         self.plot_item.setXRange(f_start, f_end, padding=0)
         valid_data = self.current_plot_data[np.isfinite(self.current_plot_data)]
@@ -1630,43 +904,13 @@ class FrequencyDomainView(QWidget):
             y_min, y_max = 0.0, 1.0
         yr = y_max - y_min if y_max != y_min else 1.0
         self.plot_item.setYRange(float(y_min - yr * 0.05), float(y_max + yr * 0.05), padding=0)
+        self.update_scrollbars()
 
-    def handle_marker_clear(self, mode):
-        if mode == 'FREQ':
-            for m in self.markers_freq: self.plot_item.removeItem(m)
-            self.markers_freq.clear()
-        elif mode == 'FREQ_ENDLESS':
-            for m in self.markers_freq_endless: self.plot_item.removeItem(m)
-            self.markers_freq_endless.clear()
-        elif mode == 'Y':
-            active_list = self.markers_y_dict.get(self.y_label_text, [])
-            for m in active_list: self.plot_item.removeItem(m)
-            active_list.clear()
-        elif mode == 'MAG_ENDLESS':
-            active_list = self.markers_y_endless_dict.get(self.y_label_text, [])
-            for m in active_list: self.plot_item.removeItem(m)
-            active_list.clear()
-        elif mode == 'STATS':
-            self.stats_bounds.clear()
-            self.stats_marker_order.clear()
-            if self.stats_line:
-                self.plot_item.removeItem(self.stats_line)
-                self.stats_line = None
-            self.stats_region.hide()
-            self.stats_markers.hide()
-            if getattr(self, 'stats_p10_line', None): self.stats_p10_line.hide()
-            if getattr(self, 'stats_p90_line', None): self.stats_p90_line.hide()
-            self.marker_panel.clear_stats_fields()
-        elif mode == 'FILTER':
-            self._clear_filter_state(replot=True)
-        self.update_marker_info()
-
-    def update_scrollbars(self): pass # Simplified for now
-    def scroll_view(self): pass
     def update_toolbar_style(self):
         theme = self.settings_mgr.get("ui/theme", "Dark")
         p = get_palette(theme)
         self.toolbar.setStyleSheet(f"background: {p.bg_sidebar}; border-bottom: 1px solid {p.border};")
+
     def refresh_plot_style(self):
         theme = self.settings_mgr.get("ui/theme", "Dark")
         p = get_palette(theme)
@@ -1676,14 +920,17 @@ class FrequencyDomainView(QWidget):
         self.plot_item.getAxis('bottom').setTextPen(p.text_dim)
         self.plot_item.getAxis('left').setTextPen(p.text_dim)
 
-
-
     def refresh_theme(self):
+        theme = self.settings_mgr.get("ui/theme", "Dark")
+        p = get_palette(theme)
         self.update_toolbar_style()
         self.refresh_plot_style()
         if hasattr(self, 'marker_panel'):
             self.marker_panel.refresh_theme()
         self.update_button_tooltips()
+        sb_style = get_scrollbar_stylesheet(p)
+        self.x_scroll.setStyleSheet(sb_style)
+        self.y_scroll.setStyleSheet(sb_style)
         # Re-plot to refresh curve and marker colors
         if hasattr(self, 'y_label_text') and self.y_label_text in self.available_modes:
             self.available_modes[self.y_label_text]()
@@ -1903,137 +1150,18 @@ class FrequencyDomainView(QWidget):
 
     # -----------------------------------------------------------------------
 
-    def keyPressEvent(self, event):
-        event._from_subview = True
-        if event.isAutoRepeat(): return
-        from PyQt6.QtWidgets import QApplication, QLineEdit, QDoubleSpinBox, QSpinBox
-        if isinstance(QApplication.focusWidget(), (QLineEdit, QDoubleSpinBox, QSpinBox)):
-            super().keyPressEvent(event)
-            return
-        key_name = key_event_to_name(event)
-        if not key_name:
-            super().keyPressEvent(event)
-            return
-
-        if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Z:
-            self.undo_zoom()
-            return
-
-        if key_name == self._get_kb("keybinds/zoom_mode", "Ctrl"):
-            if self.interaction_mode not in ('ZOOM', 'MOVE'):
-                self._prev_interaction_mode = self.interaction_mode
-            self._zoom_key_held = True
-            self.set_interaction_mode('ZOOM')
-            return
-        elif key_name == self._get_kb("keybinds/move_mode", "Space"):
-            if self.interaction_mode not in ('ZOOM', 'MOVE'):
-                self._prev_interaction_mode = self.interaction_mode
-            self._move_key_held = True
-            self.set_interaction_mode('MOVE')
-            return
-        elif key_name == self._get_kb("keybinds/reset_zoom", "R"):
-            self.reset_zoom()
-            return
-        elif key_name == self._get_kb("keybinds/undo_zoom", "Z"):
-            self.undo_zoom()
-            return
-        elif key_name == self._get_kb("keybinds/clear_markers", "Backspace"):
-            clear_mode = 'Y' if self.interaction_mode == 'MAG' else self.interaction_mode
-            if clear_mode in ('ZOOM', 'MOVE'):
-                last_m = getattr(self.marker_panel, 'last_marker_mode', 'FREQ')
-                clear_mode = 'Y' if last_m == 'MAG' else last_m
-            self.handle_marker_clear(clear_mode)
-            return
-        elif key_name == self._get_kb("keybinds/open_settings", "I"):
-            if self.parent_window and hasattr(self.parent_window, 'sidebar'):
-                self.parent_window.sidebar.open_settings()
-            return
-        elif key_name == self._get_kb("keybinds/freq_markers", "F"):
-            self._prev_interaction_mode = 'FREQ'
-            self.set_interaction_mode('FREQ')
-            return
-        elif key_name == self._get_kb("keybinds/freq_endless_markers", "G"):
-            self._prev_interaction_mode = 'FREQ_ENDLESS'
-            self.set_interaction_mode('FREQ_ENDLESS')
-            return
-        elif key_name == self._get_kb("keybinds/mag_markers", "M"):
-            self._prev_interaction_mode = 'MAG'
-            self.set_interaction_mode('MAG')
-            return
-        elif key_name == self._get_kb("keybinds/mag_endless_markers", "N"):
-            self._prev_interaction_mode = 'MAG_ENDLESS'
-            self.set_interaction_mode('MAG_ENDLESS')
-            return
-        elif key_name == self._get_kb("keybinds/filter_mode", "B"):
+    def _handle_domain_keypress(self, key_name: str) -> bool:
+        if key_name == self._get_kb("keybinds/filter_mode", "B"):
             if self.operator_combo.currentText() == "Normal":
                 self._prev_interaction_mode = 'FILTER'
                 self.set_interaction_mode('FILTER')
-            return
-        elif key_name == self._get_kb("keybinds/stats_mode", "S"):
-            self._prev_interaction_mode = 'STATS'
-            self.set_interaction_mode('STATS')
-            return
-        elif key_name == self._get_kb("keybinds/lock_m1", "1"):
-            if self.marker_panel.btn_lock_m1.isEnabled():
-                self.marker_panel.btn_lock_m1.click()
-            return
-        elif key_name == self._get_kb("keybinds/lock_m2", "2"):
-            if self.marker_panel.btn_lock_m2.isEnabled():
-                self.marker_panel.btn_lock_m2.click()
-            return
-        elif key_name == self._get_kb("keybinds/lock_delta", "D"):
-            if self.marker_panel.btn_lock_delta.isEnabled():
-                self.marker_panel.btn_lock_delta.click()
-            return
-        elif key_name == self._get_kb("keybinds/lock_center", "C"):
-            if self.marker_panel.btn_lock_center.isEnabled():
-                self.marker_panel.btn_lock_center.click()
-            return
-        elif key_name == self._get_kb("keybinds/stats_def", "Q"):
-            if self.interaction_mode == 'STATS':
-                self.marker_panel.btn_stats_def.click()
-            return
-        elif key_name == self._get_kb("keybinds/stats_res", "W"):
-            if self.interaction_mode == 'STATS':
-                self.marker_panel.btn_stats_res.click()
-            return
-        elif key_name == self._get_kb("keybinds/toggle_bpf", "["):
+            return True
+        if key_name == self._get_kb("keybinds/toggle_bpf", "["):
             if self.interaction_mode == 'FILTER' and self.marker_panel.cb_bpf.isEnabled():
                 self.marker_panel.cb_bpf.click()
-            return
-        elif key_name == self._get_kb("keybinds/toggle_bsf", "]"):
+            return True
+        if key_name == self._get_kb("keybinds/toggle_bsf", "]"):
             if self.interaction_mode == 'FILTER' and self.marker_panel.cb_bsf.isEnabled():
                 self.marker_panel.cb_bsf.click()
-            return
-
-        for i, btn in enumerate(self.plot_buttons[:10]):
-            if key_name == self._get_kb(f"keybinds/plot_mode_{i+1}", f"F{i+1}"):
-                btn.click()
-                return
-
-        super().keyPressEvent(event)
-
-    def keyReleaseEvent(self, event):
-        event._from_subview = True
-        if event.isAutoRepeat(): return
-        from PyQt6.QtWidgets import QApplication, QLineEdit, QDoubleSpinBox, QSpinBox
-        if isinstance(QApplication.focusWidget(), (QLineEdit, QDoubleSpinBox, QSpinBox)):
-            super().keyReleaseEvent(event)
-            return
-        key_name = key_event_to_name(event)
-
-        if key_name == self._get_kb("keybinds/zoom_mode", "Ctrl") and getattr(self, '_zoom_key_held', False):
-            self._zoom_key_held = False
-            if getattr(self, '_move_key_held', False):
-                self.set_interaction_mode('MOVE')
-            else:
-                self.set_interaction_mode(getattr(self, '_prev_interaction_mode', 'FREQ'))
-            return
-        elif key_name == self._get_kb("keybinds/move_mode", "Space") and getattr(self, '_move_key_held', False):
-            self._move_key_held = False
-            if getattr(self, '_zoom_key_held', False):
-                self.set_interaction_mode('ZOOM')
-            else:
-                self.set_interaction_mode(getattr(self, '_prev_interaction_mode', 'FREQ'))
-            return
-        super().keyReleaseEvent(event)
+            return True
+        return False
