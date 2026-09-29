@@ -95,6 +95,32 @@ class FormattedLineEdit(QtWidgets.QLineEdit):
         super().setText(self._format_text(self._raw_text))
         super().focusOutEvent(event)
 
+def key_event_to_name(event) -> str:
+    """Convert a QKeyEvent into a normalized keybind string (e.g. 'Ctrl', 'Space', 'T', 'F1')."""
+    key = event.key()
+    if key in (QtCore.Qt.Key.Key_Control,):
+        return "Ctrl"
+    if key in (QtCore.Qt.Key.Key_Shift,):
+        return "Shift"
+    if key in (QtCore.Qt.Key.Key_Alt,):
+        return "Alt"
+    if key in (QtCore.Qt.Key.Key_Space,):
+        return "Space"
+    name = QtGui.QKeySequence(key).toString()
+    if name == "Control":
+        name = "Ctrl"
+    return name
+
+
+def format_tooltip_with_keybind(base_text: str, key_str: str, is_hold: bool = False) -> str:
+    """Format a button tooltip with its keybind in brackets at the end, e.g. 'Reset Zoom (Home) [R]' or 'Zoom Mode [Hold Ctrl]'."""
+    key_clean = str(key_str or "").strip()
+    if not key_clean:
+        return base_text
+    suffix = f"[Hold {key_clean}]" if is_hold else f"[{key_clean}]"
+    return f"{base_text} {suffix}"
+
+
 class KeyBindEdit(QtWidgets.QLineEdit):
     """
     A QLineEdit that captures a single key press (including standalone modifiers) 
@@ -112,17 +138,11 @@ class KeyBindEdit(QtWidgets.QLineEdit):
         if key == QtCore.Qt.Key.Key_Escape:
             self.clear()
             self.key_name = ""
+            self.clearFocus()
+            event.accept()
             return
 
-        # Use QKeySequence to get a friendly name for the key
-        # We use just the key (no modifiers) unless it's a combination.
-        # But here we want the user to be able to set just 'Ctrl', 'Alt', etc.
-        name = QtGui.QKeySequence(key).toString()
-        
-        # QKeySequence(Qt.Key_Control).toString() -> "Control"
-        # We might want to shorten it to "Ctrl" for UI consistency
-        if name == "Control": name = "Ctrl"
-        
+        name = key_event_to_name(event)
         if name:
             self.setText(name)
             self.key_name = name
@@ -138,6 +158,7 @@ class CustomViewBox(pg.ViewBox):
         self.zoom_rect = None
         self._overlay_preview = None
         self._overlay_drag_start = None
+        self._active_drag_mode = None
         self.setMenuEnabled(False) # Disable default pg menu
         self.setAcceptHoverEvents(True)
 
@@ -282,10 +303,24 @@ class CustomViewBox(pg.ViewBox):
             
         if ev.button() == Qt.MouseButton.LeftButton:
             s = self.ui_controller.settings_mgr
-            zoom_key = s.get('keybinds/zoom_mode', 'Control')
-            is_zoom_mod = (zoom_key == "Control" and (ev.modifiers() & Qt.KeyboardModifier.ControlModifier))
+            zoom_key = s.get('keybinds/zoom_mode', 'Ctrl')
+            is_zoom_mod = (zoom_key in ("Ctrl", "Control") and bool(ev.modifiers() & Qt.KeyboardModifier.ControlModifier))
             
-            if self.ui_controller.interaction_mode == 'ZOOM' or is_zoom_mod:
+            if ev.isStart():
+                if self.ui_controller.interaction_mode == 'ZOOM' or is_zoom_mod:
+                    self._active_drag_mode = 'ZOOM'
+                elif self.ui_controller.interaction_mode == 'MOVE':
+                    self._active_drag_mode = 'MOVE'
+                elif self.ui_controller.interaction_mode == 'OVERLAY':
+                    self._active_drag_mode = 'OVERLAY'
+                else:
+                    self._active_drag_mode = self.ui_controller.interaction_mode
+
+            drag_mode = getattr(self, '_active_drag_mode', None) or self.ui_controller.interaction_mode
+            if ev.isFinish():
+                self._active_drag_mode = None
+
+            if drag_mode == 'ZOOM':
                 # --- Rubberband Zoom Logic ---
                 if ev.isStart():
                     if self.zoom_rect: self.removeItem(self.zoom_rect)
@@ -381,7 +416,7 @@ class CustomViewBox(pg.ViewBox):
                         self.zoom_rect.setPath(path)
                         self.zoom_rect.setPen(pen)
                 ev.accept()
-            elif self.ui_controller.interaction_mode == 'MOVE':
+            elif drag_mode == 'MOVE':
                 if ev.isStart():
                     self.ui_controller.handle_move_drag(ev.buttonDownScenePos(), is_start=True, source_vb=self)
                 elif ev.isFinish():
@@ -389,7 +424,7 @@ class CustomViewBox(pg.ViewBox):
                 else:
                     self.ui_controller.handle_move_drag(ev.scenePos(), source_vb=self)
                 ev.accept()
-            elif self.ui_controller.interaction_mode == 'OVERLAY':
+            elif drag_mode == 'OVERLAY':
                 # Rubber-band drag to place an overlay
                 if ev.isStart():
                     self._overlay_drag_start = self.mapSceneToView(ev.buttonDownScenePos())

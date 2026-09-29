@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QFont
 
 from .themes import get_palette
+from .widgets import key_event_to_name, format_tooltip_with_keybind
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -162,6 +163,7 @@ class EyeDiagramView(QWidget):
     def __init__(self, samples: np.ndarray, sample_rate: float,
                  parent_window=None, parent=None):
         super().__init__(parent)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.parent_window = parent_window
         self.settings_mgr = parent_window.settings_mgr if parent_window else None
 
@@ -237,6 +239,7 @@ class EyeDiagramView(QWidget):
         for i, mode in enumerate(_MODES):
             btn = QPushButton(_MODE_LABELS[mode])
             btn.setCheckable(True)
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             self._mode_group.addButton(btn, i)
             tl.addWidget(btn)
@@ -378,6 +381,7 @@ class EyeDiagramView(QWidget):
         self._btn_cycle_mode = QPushButton("⇄ Baud Rate")
         self._btn_cycle_mode.setCheckable(True)
         self._btn_cycle_mode.setChecked(False)
+        self._btn_cycle_mode.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._btn_cycle_mode.setToolTip(
             "Switch between cycling by Samples-Per-Symbol (SPS) "
             "or by Baud Rate (Hz)"
@@ -719,9 +723,64 @@ class EyeDiagramView(QWidget):
 
     # ── Theme ─────────────────────────────────────────────────────────────────
 
+    def update_button_tooltips(self):
+        s = self.settings_mgr
+        for i, btn in enumerate(self._mode_buttons):
+            kb = s.get(f"keybinds/plot_mode_{i+1}", f"F{i+1}") if s else f"F{i+1}"
+            btn.setToolTip(format_tooltip_with_keybind(f"Plot {btn.text()}", kb))
+        if hasattr(self, '_btn_cycle_mode'):
+            kb_act = s.get("keybinds/panel_action", "A") if s else "A"
+            self._btn_cycle_mode.setToolTip(format_tooltip_with_keybind(
+                "Switch between cycling by Samples-Per-Symbol (SPS) or by Baud Rate (Hz)", kb_act
+            ))
+
+    def _get_kb(self, key, default):
+        return str(self.settings_mgr.get(key, default)) if self.settings_mgr else default
+
+    def reset_zoom(self):
+        self._eye_plot_item.enableAutoRange(axis='y')
+        self._eye_plot_item.setXRange(-0.5, 0.5, padding=0)
+
+    def keyPressEvent(self, event):
+        event._from_subview = True
+        if event.isAutoRepeat(): return
+        from PyQt6.QtWidgets import QApplication, QLineEdit, QDoubleSpinBox, QSpinBox
+        if isinstance(QApplication.focusWidget(), (QLineEdit, QDoubleSpinBox, QSpinBox)):
+            super().keyPressEvent(event)
+            return
+
+        key_name = key_event_to_name(event)
+        if not key_name:
+            super().keyPressEvent(event)
+            return
+
+        if key_name == self._get_kb("keybinds/reset_zoom", "R"):
+            self.reset_zoom()
+            return
+        elif key_name == self._get_kb("keybinds/open_settings", "I"):
+            if self.parent_window and hasattr(self.parent_window, 'sidebar'):
+                self.parent_window.sidebar.open_settings()
+            return
+        elif key_name == self._get_kb("keybinds/panel_action", "A"):
+            if hasattr(self, '_btn_cycle_mode'):
+                self._btn_cycle_mode.click()
+            return
+
+        for i, btn in enumerate(self._mode_buttons):
+            if key_name == self._get_kb(f"keybinds/plot_mode_{i+1}", f"F{i+1}"):
+                btn.click()
+                return
+
+        super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        event._from_subview = True
+        super().keyReleaseEvent(event)
+
     def refresh_theme(self):
         theme = self.settings_mgr.get("ui/theme", "Dark") if self.settings_mgr else "Dark"
         p = get_palette(theme)
+        self.update_button_tooltips()
 
         # Background
         self._eye_plot_widget.setBackground(p.plot_bg)

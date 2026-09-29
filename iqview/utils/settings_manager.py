@@ -104,9 +104,50 @@ class SettingsManager:
         "ui/light/marker_grid_color": "#0000cc",
         "ui/light/marker_grid_style": "SolidLine",
 
+        # Keybinds — Navigation & View (Hold / Action)
+        "keybinds/zoom_mode": "Ctrl",
+        "keybinds/move_mode": "Space",
+        "keybinds/reset_zoom": "R",
+        "keybinds/undo_zoom": "Z",
+        "keybinds/clear_markers": "Backspace",
+        "keybinds/open_settings": "I",
+
+        # Keybinds — Marker Modes
         "keybinds/time_markers": "T",
-        "keybinds/mag_markers": "F",
-        "keybinds/zoom_mode": "Ctrl"
+        "keybinds/time_endless_markers": "E",
+        "keybinds/freq_markers": "F",
+        "keybinds/freq_endless_markers": "G",
+        "keybinds/mag_markers": "M",
+        "keybinds/mag_endless_markers": "N",
+
+        # Keybinds — Analysis & Tool Modes
+        "keybinds/filter_mode": "B",
+        "keybinds/stats_mode": "S",
+        "keybinds/overlay_mode": "O",
+        "keybinds/plugins_mode": "P",
+
+        # Keybinds — Marker Locks & Sub-Controls
+        "keybinds/lock_m1": "1",
+        "keybinds/lock_m2": "2",
+        "keybinds/lock_delta": "D",
+        "keybinds/lock_center": "C",
+        "keybinds/stats_def": "Q",
+        "keybinds/stats_res": "W",
+        "keybinds/toggle_bpf": "[",
+        "keybinds/toggle_bsf": "]",
+        "keybinds/panel_action": "A",
+
+        # Keybinds — Plot Mode Toolbar Buttons
+        "keybinds/plot_mode_1": "F1",
+        "keybinds/plot_mode_2": "F2",
+        "keybinds/plot_mode_3": "F3",
+        "keybinds/plot_mode_4": "F4",
+        "keybinds/plot_mode_5": "F5",
+        "keybinds/plot_mode_6": "F6",
+        "keybinds/plot_mode_7": "F7",
+        "keybinds/plot_mode_8": "F8",
+        "keybinds/plot_mode_9": "F9",
+        "keybinds/plot_mode_10": "F10"
     }
 
     def __init__(self):
@@ -115,6 +156,11 @@ class SettingsManager:
         self._set_defaults()
 
     def _set_defaults(self):
+        # Migrate legacy mag_markers="F" if freq_markers is being introduced for the first time
+        if not self.settings.contains("keybinds/freq_markers"):
+            if self.settings.value("keybinds/mag_markers") == "F":
+                self.settings.setValue("keybinds/mag_markers", "M")
+
         # Only set if they don't exist
         for key, value in self.DEFAULT_SETTINGS.items():
             if not self.settings.contains(key):

@@ -277,8 +277,17 @@ class SidePanel(QFrame):
 
         # ---- Settings button (outside tabs, always visible) ----
         self.settings_btn = QPushButton("⚙️ Settings")
+        self.settings_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.settings_btn.clicked.connect(self.open_settings)
         self.layout.addWidget(self.settings_btn)
+        self.update_button_tooltips()
+
+    def update_button_tooltips(self):
+        from .widgets import format_tooltip_with_keybind
+        s = getattr(self.parent_window, 'settings_mgr', None) if self.parent_window else None
+        kb = s.get("keybinds/open_settings", "I") if s else "I"
+        if hasattr(self, 'settings_btn'):
+            self.settings_btn.setToolTip(format_tooltip_with_keybind("Open Settings", kb))
 
     def _add_section_header(self, parent_layout, text):
         """Helper: add a styled section header label to *parent_layout*."""

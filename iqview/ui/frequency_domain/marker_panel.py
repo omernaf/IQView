@@ -3,7 +3,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QFont, QIcon, QPixmap
 import importlib.resources
 import os
-from ..widgets import FormattedLineEdit, DoubleClickButton
+from ..widgets import FormattedLineEdit, DoubleClickButton, format_tooltip_with_keybind
 from ..themes import get_palette
 
 class FrequencyDomainMarkerPanel(QFrame):
@@ -431,6 +431,15 @@ class FrequencyDomainMarkerPanel(QFrame):
         self.btn_stats_def.clicked.connect(lambda: self.stats_sub_stack.setCurrentIndex(0))
         self.btn_stats_res.clicked.connect(lambda: self.stats_sub_stack.setCurrentIndex(1))
 
+        for w in [
+            self.btn_marker_freq, self.btn_marker_freq_endless,
+            self.btn_marker_mag, self.btn_marker_mag_endless,
+            self.btn_zoom, self.btn_move, self.btn_home, self.btn_bpf, self.btn_stats,
+            self.btn_lock_m1, self.btn_lock_m2, self.btn_lock_delta, self.btn_lock_center,
+            self.btn_stats_def, self.btn_stats_res, self.cb_bpf, self.cb_bsf, self.cb_p90, self.cb_p10
+        ]:
+            w.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
         # Apply theme (must be done AFTER buttons are initialized)
         self.refresh_theme()
 
@@ -785,9 +794,64 @@ class FrequencyDomainMarkerPanel(QFrame):
             self.cb_bpf.setChecked(False)
             self.cb_bsf.setChecked(False)
 
+    def update_button_tooltips(self):
+        s = self.controller.parent_window.settings_mgr
+        self.btn_marker_freq.setToolTip(format_tooltip_with_keybind(
+            "Frequency Markers (Double-click to clear)", s.get("keybinds/freq_markers", "F")
+        ))
+        self.btn_marker_freq_endless.setToolTip(format_tooltip_with_keybind(
+            "Endless Frequency Markers (Double-click to clear)", s.get("keybinds/freq_endless_markers", "G")
+        ))
+        self.btn_marker_mag.setToolTip(format_tooltip_with_keybind(
+            "Magnitude Markers (Double-click to clear)", s.get("keybinds/mag_markers", "M")
+        ))
+        self.btn_marker_mag_endless.setToolTip(format_tooltip_with_keybind(
+            "Endless Magnitude Markers (Double-click to clear)", s.get("keybinds/mag_endless_markers", "N")
+        ))
+        self.btn_zoom.setToolTip(format_tooltip_with_keybind(
+            "Zoom Mode (Rubberband)", s.get("keybinds/zoom_mode", "Ctrl"), is_hold=True
+        ))
+        self.btn_move.setToolTip(format_tooltip_with_keybind(
+            "Free Move Mode (Pan)", s.get("keybinds/move_mode", "Space"), is_hold=True
+        ))
+        self.btn_home.setToolTip(format_tooltip_with_keybind(
+            "Reset Zoom (Home)", s.get("keybinds/reset_zoom", "R")
+        ))
+        self.btn_bpf.setToolTip(format_tooltip_with_keybind(
+            "BPF / BSF Filter Mode (Double-click to clear)", s.get("keybinds/filter_mode", "B")
+        ))
+        self.btn_stats.setToolTip(format_tooltip_with_keybind(
+            "Region Statistics (Double-click to clear)", s.get("keybinds/stats_mode", "S")
+        ))
+        self.btn_lock_m1.setToolTip(format_tooltip_with_keybind(
+            "Lock Marker 1", s.get("keybinds/lock_m1", "1")
+        ))
+        self.btn_lock_m2.setToolTip(format_tooltip_with_keybind(
+            "Lock Marker 2", s.get("keybinds/lock_m2", "2")
+        ))
+        self.btn_lock_delta.setToolTip(format_tooltip_with_keybind(
+            "Lock Delta (Δ)", s.get("keybinds/lock_delta", "D")
+        ))
+        self.btn_lock_center.setToolTip(format_tooltip_with_keybind(
+            "Lock Center", s.get("keybinds/lock_center", "C")
+        ))
+        self.btn_stats_def.setToolTip(format_tooltip_with_keybind(
+            "Stats Region Definition", s.get("keybinds/stats_def", "Q")
+        ))
+        self.btn_stats_res.setToolTip(format_tooltip_with_keybind(
+            "Stats Measurement Results", s.get("keybinds/stats_res", "W")
+        ))
+        self.cb_bpf.setToolTip(format_tooltip_with_keybind(
+            "Enable Band-Pass Filter", s.get("keybinds/toggle_bpf", "[")
+        ))
+        self.cb_bsf.setToolTip(format_tooltip_with_keybind(
+            "Enable Band-Stop Filter", s.get("keybinds/toggle_bsf", "]")
+        ))
+
     def refresh_theme(self):
         theme = self.controller.parent_window.settings_mgr.get("ui/theme", "Dark")
         p = get_palette(theme)
+        self.update_button_tooltips()
         
         # Update Icons based on theme
         self.btn_marker_freq.setIcon(self._get_icon("vertical_markers", theme))

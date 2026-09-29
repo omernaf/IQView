@@ -123,6 +123,8 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
         theme = self.settings_mgr.get("ui/theme", "Light")
         self.setStyleSheet(get_main_stylesheet(theme))
         
+        if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'update_button_tooltips'):
+            self.sidebar.update_button_tooltips()
         if hasattr(self, 'marker_panel'):
             self.marker_panel.refresh_theme()
         if hasattr(self, 'spectrogram_view'):
@@ -235,44 +237,140 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
             self.worker.stop()
         event.accept()
 
+    def _get_kb(self, key, default):
+        return str(self.settings_mgr.get(key, default)) if self.settings_mgr else default
+
     def keyPressEvent(self, event):
         if event.isAutoRepeat(): return
-        from PyQt6.QtWidgets import QApplication, QLineEdit
-        if isinstance(QApplication.focusWidget(), QLineEdit):
+        if getattr(event, '_from_subview', False):
             super().keyPressEvent(event)
             return
-        s = self.settings_mgr
-        key_name = QKeySequence(event.key()).toString()
-        if key_name == "Control": key_name = "Ctrl"
-        
-        time_seq = s.get('keybinds/time_markers', 'T')
-        freq_seq = s.get('keybinds/mag_markers', 'F')
-        zoom_seq = s.get('keybinds/zoom_mode', 'Ctrl')
+
+        from PyQt6.QtWidgets import QApplication, QLineEdit, QDoubleSpinBox, QSpinBox
+        if isinstance(QApplication.focusWidget(), (QLineEdit, QDoubleSpinBox, QSpinBox)):
+            super().keyPressEvent(event)
+            return
+
+        active_tab = self.tabs.currentWidget() if hasattr(self, 'tabs') else None
+        if active_tab is not None and active_tab != getattr(self, 'spec_tab_page', None):
+            event._from_subview = True
+            active_tab.keyPressEvent(event)
+            return
+
+        from ..widgets import key_event_to_name
+        key_name = key_event_to_name(event)
+        if not key_name:
+            super().keyPressEvent(event)
+            return
 
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Z:
             self.undo_zoom()
-        elif key_name == time_seq:
-            self.set_interaction_mode('TIME')
-        elif key_name == freq_seq:
-            self.set_interaction_mode('FREQ')
-        elif key_name == zoom_seq:
-            self._prev_interaction_mode = getattr(self, 'interaction_mode', 'TIME')
+            return
+
+        if key_name == self._get_kb('keybinds/zoom_mode', 'Ctrl'):
+            if self.interaction_mode not in ('ZOOM', 'MOVE'):
+                self._prev_interaction_mode = getattr(self, 'interaction_mode', 'TIME')
+            self._zoom_key_held = True
             self.set_interaction_mode('ZOOM')
+        elif key_name == self._get_kb('keybinds/move_mode', 'Space'):
+            if self.interaction_mode not in ('ZOOM', 'MOVE'):
+                self._prev_interaction_mode = getattr(self, 'interaction_mode', 'TIME')
+            self._move_key_held = True
+            self.set_interaction_mode('MOVE')
+        elif key_name == self._get_kb('keybinds/reset_zoom', 'R'):
+            self.reset_zoom()
+        elif key_name == self._get_kb('keybinds/undo_zoom', 'Z'):
+            self.undo_zoom()
+        elif key_name == self._get_kb('keybinds/clear_markers', 'Backspace'):
+            mode = self.interaction_mode
+            if mode in ('ZOOM', 'MOVE'):
+                mode = getattr(self.marker_panel, 'last_marker_mode', 'TIME')
+            if mode in ('OVERLAY', 'PLUGINS'):
+                self.marker_panel.clearOverlaysRequested.emit()
+            else:
+                self.handle_marker_clear(mode)
+        elif key_name == self._get_kb('keybinds/open_settings', 'I'):
+            if hasattr(self, 'sidebar'):
+                self.sidebar.open_settings()
+        elif key_name == self._get_kb('keybinds/time_markers', 'T'):
+            self._prev_interaction_mode = 'TIME'
+            self.set_interaction_mode('TIME')
+        elif key_name == self._get_kb('keybinds/time_endless_markers', 'E'):
+            self._prev_interaction_mode = 'TIME_ENDLESS'
+            self.set_interaction_mode('TIME_ENDLESS')
+        elif key_name == self._get_kb('keybinds/freq_markers', 'F'):
+            self._prev_interaction_mode = 'FREQ'
+            self.set_interaction_mode('FREQ')
+        elif key_name == self._get_kb('keybinds/freq_endless_markers', 'G'):
+            self._prev_interaction_mode = 'FREQ_ENDLESS'
+            self.set_interaction_mode('FREQ_ENDLESS')
+        elif key_name == self._get_kb('keybinds/filter_mode', 'B'):
+            self._prev_interaction_mode = 'FILTER'
+            self.set_interaction_mode('FILTER')
+        elif key_name == self._get_kb('keybinds/overlay_mode', 'O'):
+            self._prev_interaction_mode = 'OVERLAY'
+            self.set_interaction_mode('OVERLAY')
+        elif key_name == self._get_kb('keybinds/plugins_mode', 'P'):
+            self._prev_interaction_mode = 'PLUGINS'
+            self.set_interaction_mode('PLUGINS')
+        elif key_name == self._get_kb('keybinds/lock_m1', '1'):
+            if hasattr(self, 'marker_panel') and self.marker_panel.btn_lock_m1.isEnabled():
+                self.marker_panel.btn_lock_m1.click()
+        elif key_name == self._get_kb('keybinds/lock_m2', '2'):
+            if hasattr(self, 'marker_panel') and self.marker_panel.btn_lock_m2.isEnabled():
+                self.marker_panel.btn_lock_m2.click()
+        elif key_name == self._get_kb('keybinds/lock_delta', 'D'):
+            if hasattr(self, 'marker_panel') and self.marker_panel.btn_lock_delta.isEnabled():
+                self.marker_panel.btn_lock_delta.click()
+        elif key_name == self._get_kb('keybinds/lock_center', 'C'):
+            if hasattr(self, 'marker_panel') and self.marker_panel.btn_lock_center.isEnabled():
+                self.marker_panel.btn_lock_center.click()
+        elif key_name == self._get_kb('keybinds/toggle_bpf', '['):
+            if self.interaction_mode == 'FILTER' and hasattr(self, 'marker_panel') and self.marker_panel.cb_bpf.isEnabled():
+                self.marker_panel.cb_bpf.click()
+        elif key_name == self._get_kb('keybinds/toggle_bsf', ']'):
+            if self.interaction_mode == 'FILTER' and hasattr(self, 'marker_panel') and self.marker_panel.cb_bsf.isEnabled():
+                self.marker_panel.cb_bsf.click()
+        elif key_name == self._get_kb('keybinds/panel_action', 'A'):
+            if self.interaction_mode == 'OVERLAY' and hasattr(self, 'marker_panel'):
+                self.marker_panel.btn_manual_overlay.click()
+            elif self.interaction_mode == 'PLUGINS' and hasattr(self, 'marker_panel'):
+                self.marker_panel.btn_load_plugin.click()
         else:
             super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
         if event.isAutoRepeat(): return
-        from PyQt6.QtWidgets import QApplication, QLineEdit
-        if isinstance(QApplication.focusWidget(), QLineEdit):
+        if getattr(event, '_from_subview', False):
             super().keyReleaseEvent(event)
             return
-        s = self.settings_mgr
-        key_name = QKeySequence(event.key()).toString()
-        if key_name == "Control": key_name = "Ctrl"
-        zoom_seq = s.get('keybinds/zoom_mode', 'Ctrl')
 
-        if key_name == zoom_seq:
-            prev = getattr(self, '_prev_interaction_mode', 'TIME')
-            self.set_interaction_mode(prev)
+        from PyQt6.QtWidgets import QApplication, QLineEdit, QDoubleSpinBox, QSpinBox
+        if isinstance(QApplication.focusWidget(), (QLineEdit, QDoubleSpinBox, QSpinBox)):
+            super().keyReleaseEvent(event)
+            return
+
+        active_tab = self.tabs.currentWidget() if hasattr(self, 'tabs') else None
+        if active_tab is not None and active_tab != getattr(self, 'spec_tab_page', None):
+            event._from_subview = True
+            active_tab.keyReleaseEvent(event)
+            return
+
+        from ..widgets import key_event_to_name
+        key_name = key_event_to_name(event)
+
+        if key_name == self._get_kb('keybinds/zoom_mode', 'Ctrl') and getattr(self, '_zoom_key_held', False):
+            self._zoom_key_held = False
+            if getattr(self, '_move_key_held', False):
+                self.set_interaction_mode('MOVE')
+            else:
+                self.set_interaction_mode(getattr(self, '_prev_interaction_mode', 'TIME'))
+            return
+        elif key_name == self._get_kb('keybinds/move_mode', 'Space') and getattr(self, '_move_key_held', False):
+            self._move_key_held = False
+            if getattr(self, '_zoom_key_held', False):
+                self.set_interaction_mode('ZOOM')
+            else:
+                self.set_interaction_mode(getattr(self, '_prev_interaction_mode', 'TIME'))
+            return
         super().keyReleaseEvent(event)

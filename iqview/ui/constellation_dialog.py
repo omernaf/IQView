@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .themes import get_palette
+from .widgets import key_event_to_name, format_tooltip_with_keybind
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -80,6 +81,7 @@ class ConstellationView(QWidget):
     def __init__(self, samples: np.ndarray, sample_rate: float,
                  parent_window=None, parent=None):
         super().__init__(parent)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.parent_window = parent_window
         self.settings_mgr = parent_window.settings_mgr if parent_window else None
 
@@ -192,12 +194,14 @@ class ConstellationView(QWidget):
         # Trajectory
         self._chk_trajectory = QCheckBox("Trajectory Lines")
         self._chk_trajectory.setChecked(self._show_trajectory)
+        self._chk_trajectory.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._chk_trajectory.toggled.connect(self._on_trajectory_toggled)
         tl.addWidget(self._chk_trajectory)
 
         # Crosshairs & Circle
         self._chk_crosshairs = QCheckBox("Grid & Crosshairs")
         self._chk_crosshairs.setChecked(self._show_crosshairs)
+        self._chk_crosshairs.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._chk_crosshairs.toggled.connect(self._on_crosshairs_toggled)
         tl.addWidget(self._chk_crosshairs)
 
@@ -375,10 +379,11 @@ class ConstellationView(QWidget):
         row_pf.addWidget(self._spin_p_fine)
         fl_phase.addRow("Fine:", row_pf)
 
-        btn_reset_phase = QPushButton("Reset 0°")
-        btn_reset_phase.setFixedWidth(85)
-        btn_reset_phase.clicked.connect(self._on_reset_phase)
-        fl_phase.addRow("", btn_reset_phase)
+        self._btn_reset_phase = QPushButton("Reset 0°")
+        self._btn_reset_phase.setFixedWidth(85)
+        self._btn_reset_phase.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._btn_reset_phase.clicked.connect(self._on_reset_phase)
+        fl_phase.addRow("", self._btn_reset_phase)
 
         self._sld_p_coarse.valueChanged.connect(self._on_phase_coarse_slider)
         self._spin_p_coarse.valueChanged.connect(self._on_phase_coarse_spin)
@@ -442,10 +447,11 @@ class ConstellationView(QWidget):
         row_ff.addWidget(self._spin_f_fine)
         fl_freq.addRow("Fine:", row_ff)
 
-        btn_reset_freq = QPushButton("Reset 0 Hz")
-        btn_reset_freq.setFixedWidth(105)
-        btn_reset_freq.clicked.connect(self._on_reset_freq)
-        fl_freq.addRow("", btn_reset_freq)
+        self._btn_reset_freq = QPushButton("Reset 0 Hz")
+        self._btn_reset_freq.setFixedWidth(105)
+        self._btn_reset_freq.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._btn_reset_freq.clicked.connect(self._on_reset_freq)
+        fl_freq.addRow("", self._btn_reset_freq)
 
         self._sld_f_coarse.valueChanged.connect(self._on_freq_coarse_slider)
         self._spin_f_coarse.valueChanged.connect(self._on_freq_coarse_spin)
@@ -759,9 +765,74 @@ class ConstellationView(QWidget):
 
     # ── Theme ────────────────────────────────────────────────────────────────
 
+    def update_button_tooltips(self):
+        s = self.settings_mgr
+        kb1 = s.get("keybinds/plot_mode_1", "F1") if s else "F1"
+        kb2 = s.get("keybinds/plot_mode_2", "F2") if s else "F2"
+        kb_act = s.get("keybinds/panel_action", "A") if s else "A"
+        kb_clr = s.get("keybinds/clear_markers", "Backspace") if s else "Backspace"
+        if hasattr(self, '_chk_trajectory'):
+            self._chk_trajectory.setToolTip(format_tooltip_with_keybind("Toggle Trajectory Lines", kb1))
+        if hasattr(self, '_chk_crosshairs'):
+            self._chk_crosshairs.setToolTip(format_tooltip_with_keybind("Toggle Grid & Crosshairs", kb2))
+        if hasattr(self, '_btn_reset_phase'):
+            self._btn_reset_phase.setToolTip(format_tooltip_with_keybind("Reset Carrier Phase to 0°", kb_act))
+        if hasattr(self, '_btn_reset_freq'):
+            self._btn_reset_freq.setToolTip(format_tooltip_with_keybind("Reset Frequency Offset to 0 Hz", kb_clr))
+
+    def _get_kb(self, key, default):
+        return str(self.settings_mgr.get(key, default)) if self.settings_mgr else default
+
+    def reset_zoom(self):
+        self._plot_item.autoRange()
+
+    def keyPressEvent(self, event):
+        event._from_subview = True
+        if event.isAutoRepeat(): return
+        from PyQt6.QtWidgets import QApplication, QLineEdit, QDoubleSpinBox, QSpinBox
+        if isinstance(QApplication.focusWidget(), (QLineEdit, QDoubleSpinBox, QSpinBox)):
+            super().keyPressEvent(event)
+            return
+
+        key_name = key_event_to_name(event)
+        if not key_name:
+            super().keyPressEvent(event)
+            return
+
+        if key_name == self._get_kb("keybinds/reset_zoom", "R"):
+            self.reset_zoom()
+            return
+        elif key_name == self._get_kb("keybinds/open_settings", "I"):
+            if self.parent_window and hasattr(self.parent_window, 'sidebar'):
+                self.parent_window.sidebar.open_settings()
+            return
+        elif key_name == self._get_kb("keybinds/plot_mode_1", "F1"):
+            if hasattr(self, '_chk_trajectory'):
+                self._chk_trajectory.click()
+            return
+        elif key_name == self._get_kb("keybinds/plot_mode_2", "F2"):
+            if hasattr(self, '_chk_crosshairs'):
+                self._chk_crosshairs.click()
+            return
+        elif key_name == self._get_kb("keybinds/panel_action", "A"):
+            if hasattr(self, '_btn_reset_phase'):
+                self._btn_reset_phase.click()
+            return
+        elif key_name == self._get_kb("keybinds/clear_markers", "Backspace"):
+            if hasattr(self, '_btn_reset_freq'):
+                self._btn_reset_freq.click()
+            return
+
+        super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        event._from_subview = True
+        super().keyReleaseEvent(event)
+
     def refresh_theme(self):
         theme = self.settings_mgr.get("ui/theme", "Dark") if self.settings_mgr else "Dark"
         p = get_palette(theme)
+        self.update_button_tooltips()
 
         # Background
         self._plot_widget.setBackground(p.plot_bg)

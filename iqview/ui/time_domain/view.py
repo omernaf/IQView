@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                              QButtonGroup, QLabel, QFrame, QScrollBar, QGridLayout)
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence
-from ..widgets import CustomViewBox
+from ..widgets import CustomViewBox, key_event_to_name, format_tooltip_with_keybind
 from .marker_panel import TimeDomainMarkerPanel
 from ..themes import get_palette, get_scrollbar_stylesheet
 
@@ -210,57 +210,162 @@ class TimeDomainView(QWidget):
             if name in self.available_modes:
                 btn = QPushButton(name)
                 btn.setCheckable(True)
+                btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
                 self.mode_group.addButton(btn, i)
                 self.plot_buttons_layout.addWidget(btn)
                 btn.clicked.connect(self.available_modes[name])
                 self.plot_buttons.append(btn)
                 if i == 0: btn.setChecked(True)
                 
+        self.update_button_tooltips()
+
         # Immediately re-trigger the first selected mode to update the plot view
         if len(self.plot_buttons) > 0:
             first_plot_name = self.plot_buttons[0].text()
             self.available_modes[first_plot_name]()
 
+    def update_button_tooltips(self):
+        if hasattr(self, 'marker_panel'):
+            self.marker_panel.update_button_tooltips()
+        s = self.settings_mgr
+        for i, btn in enumerate(self.plot_buttons):
+            if i < 10:
+                kb = s.get(f"keybinds/plot_mode_{i+1}", f"F{i+1}") if s else f"F{i+1}"
+            else:
+                kb = ""
+            btn.setToolTip(format_tooltip_with_keybind(f"Plot {btn.text()}", kb))
+
+    def _get_kb(self, key, default):
+        return str(self.settings_mgr.get(key, default)) if self.settings_mgr else default
+
     def keyPressEvent(self, event):
+        event._from_subview = True
         if event.isAutoRepeat(): return
-        from PyQt6.QtWidgets import QApplication, QLineEdit
-        if isinstance(QApplication.focusWidget(), QLineEdit):
+        from PyQt6.QtWidgets import QApplication, QLineEdit, QDoubleSpinBox, QSpinBox
+        if isinstance(QApplication.focusWidget(), (QLineEdit, QDoubleSpinBox, QSpinBox)):
             super().keyPressEvent(event)
             return
-        key_name = QKeySequence(event.key()).toString()
-        if key_name == "Control": key_name = "Ctrl"
-        
+        key_name = key_event_to_name(event)
+        if not key_name:
+            super().keyPressEvent(event)
+            return
+
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Z:
             self.undo_zoom()
-        elif key_name == "T": self.set_interaction_mode('TIME') # Vertical
-        elif key_name == "F": self.set_interaction_mode('MAG')  # Horizontal
-        elif key_name == "Ctrl": 
-            self._prev_interaction_mode = getattr(self, 'interaction_mode', 'TIME')
+            return
+
+        if key_name == self._get_kb("keybinds/zoom_mode", "Ctrl"):
+            if self.interaction_mode not in ('ZOOM', 'MOVE'):
+                self._prev_interaction_mode = self.interaction_mode
+            self._zoom_key_held = True
             self.set_interaction_mode('ZOOM')
+            return
+        elif key_name == self._get_kb("keybinds/move_mode", "Space"):
+            if self.interaction_mode not in ('ZOOM', 'MOVE'):
+                self._prev_interaction_mode = self.interaction_mode
+            self._move_key_held = True
+            self.set_interaction_mode('MOVE')
+            return
+        elif key_name == self._get_kb("keybinds/reset_zoom", "R"):
+            self.reset_zoom()
+            return
+        elif key_name == self._get_kb("keybinds/undo_zoom", "Z"):
+            self.undo_zoom()
+            return
+        elif key_name == self._get_kb("keybinds/clear_markers", "Backspace"):
+            clear_mode = 'Y' if self.interaction_mode == 'MAG' else self.interaction_mode
+            if clear_mode in ('ZOOM', 'MOVE'):
+                last_m = getattr(self.marker_panel, 'last_marker_mode', 'TIME')
+                clear_mode = 'Y' if last_m == 'MAG' else last_m
+            self.handle_marker_clear(clear_mode)
+            return
+        elif key_name == self._get_kb("keybinds/open_settings", "I"):
+            if self.parent_window and hasattr(self.parent_window, 'sidebar'):
+                self.parent_window.sidebar.open_settings()
+            return
+        elif key_name == self._get_kb("keybinds/time_markers", "T"):
+            self._prev_interaction_mode = 'TIME'
+            self.set_interaction_mode('TIME')
+            return
+        elif key_name == self._get_kb("keybinds/time_endless_markers", "E"):
+            self._prev_interaction_mode = 'TIME_ENDLESS'
+            self.set_interaction_mode('TIME_ENDLESS')
+            return
+        elif key_name == self._get_kb("keybinds/mag_markers", "M"):
+            self._prev_interaction_mode = 'MAG'
+            self.set_interaction_mode('MAG')
+            return
+        elif key_name == self._get_kb("keybinds/mag_endless_markers", "N"):
+            self._prev_interaction_mode = 'MAG_ENDLESS'
+            self.set_interaction_mode('MAG_ENDLESS')
+            return
+        elif key_name == self._get_kb("keybinds/stats_mode", "S"):
+            self._prev_interaction_mode = 'STATS'
+            self.set_interaction_mode('STATS')
+            return
+        elif key_name == self._get_kb("keybinds/lock_m1", "1"):
+            if self.marker_panel.btn_lock_m1.isEnabled():
+                self.marker_panel.btn_lock_m1.click()
+            return
+        elif key_name == self._get_kb("keybinds/lock_m2", "2"):
+            if self.marker_panel.btn_lock_m2.isEnabled():
+                self.marker_panel.btn_lock_m2.click()
+            return
+        elif key_name == self._get_kb("keybinds/lock_delta", "D"):
+            if self.marker_panel.btn_lock_delta.isEnabled():
+                self.marker_panel.btn_lock_delta.click()
+            return
+        elif key_name == self._get_kb("keybinds/lock_center", "C"):
+            if self.marker_panel.btn_lock_center.isEnabled():
+                self.marker_panel.btn_lock_center.click()
+            return
+        elif key_name == self._get_kb("keybinds/stats_def", "Q"):
+            if self.interaction_mode == 'STATS':
+                self.marker_panel.btn_stats_def.click()
+            return
+        elif key_name == self._get_kb("keybinds/stats_res", "W"):
+            if self.interaction_mode == 'STATS':
+                self.marker_panel.btn_stats_res.click()
+            return
+
+        for i, btn in enumerate(self.plot_buttons[:10]):
+            if key_name == self._get_kb(f"keybinds/plot_mode_{i+1}", f"F{i+1}"):
+                btn.click()
+                return
+
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
+        event._from_subview = True
         if event.isAutoRepeat(): return
-        from PyQt6.QtWidgets import QApplication, QLineEdit
-        if isinstance(QApplication.focusWidget(), QLineEdit):
+        from PyQt6.QtWidgets import QApplication, QLineEdit, QDoubleSpinBox, QSpinBox
+        if isinstance(QApplication.focusWidget(), (QLineEdit, QDoubleSpinBox, QSpinBox)):
             super().keyReleaseEvent(event)
             return
-        key_name = QKeySequence(event.key()).toString()
-        if key_name == "Control": key_name = "Ctrl"
+        key_name = key_event_to_name(event)
 
-        if key_name == "Ctrl":
-            prev = getattr(self, '_prev_interaction_mode', 'TIME')
-            self.set_interaction_mode(prev)
-        elif key_name == "Shift+T":
-            self.set_interaction_mode('TIME_ENDLESS')
-        elif key_name == "Shift+F":
-            self.set_interaction_mode('MAG_ENDLESS')
+        if key_name == self._get_kb("keybinds/zoom_mode", "Ctrl") and getattr(self, '_zoom_key_held', False):
+            self._zoom_key_held = False
+            if getattr(self, '_move_key_held', False):
+                self.set_interaction_mode('MOVE')
+            else:
+                self.set_interaction_mode(getattr(self, '_prev_interaction_mode', 'TIME'))
+            return
+        elif key_name == self._get_kb("keybinds/move_mode", "Space") and getattr(self, '_move_key_held', False):
+            self._move_key_held = False
+            if getattr(self, '_zoom_key_held', False):
+                self.set_interaction_mode('ZOOM')
+            else:
+                self.set_interaction_mode(getattr(self, '_prev_interaction_mode', 'TIME'))
+            return
         super().keyReleaseEvent(event)
 
     def set_interaction_mode(self, mode):
         if mode == 'Y': mode = 'MAG'
         self.interaction_mode = mode
         self.zoom_mode = (mode == 'ZOOM')
+        if mode not in ('ZOOM', 'MOVE'):
+            self._prev_interaction_mode = mode
         
         # Toggle Region visibility
         if mode == 'STATS':
@@ -275,6 +380,7 @@ class TimeDomainView(QWidget):
             self.stats_markers.hide()
             if self.stats_line: self.stats_line.hide()
             
+        self.refresh_cursor()
         self.marker_panel.update_mode_ui(mode)
         self.marker_panel.update_headers(mode, self.y_label_text)
         self.update_marker_info()
@@ -1580,6 +1686,7 @@ class TimeDomainView(QWidget):
         self.update_toolbar_style()
         self.refresh_plot_style()
         self.marker_panel.refresh_theme()
+        self.update_button_tooltips()
         
         # Update scrollbars
         sb_style = get_scrollbar_stylesheet(p)

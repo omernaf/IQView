@@ -110,12 +110,8 @@ class ViewControllerMixin:
     def set_interaction_mode(self, mode):
         self.interaction_mode = mode
         self.zoom_mode = (mode == 'ZOOM')
-        
-        # Delegate to active tab if it's not the spectrogram
-        active_tab = self.tabs.currentWidget()
-        if active_tab and active_tab != self.spectrogram_view:
-            if hasattr(active_tab, 'set_interaction_mode'):
-                active_tab.set_interaction_mode(mode)
+        if mode not in ('ZOOM', 'MOVE'):
+            self._prev_interaction_mode = mode
         
         self.refresh_cursor()
         self.marker_panel.update_headers(mode)

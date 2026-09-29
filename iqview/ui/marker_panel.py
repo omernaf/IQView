@@ -3,7 +3,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap
 import importlib.resources
 import os
-from .widgets import FormattedLineEdit, DoubleClickButton
+from .widgets import FormattedLineEdit, DoubleClickButton, format_tooltip_with_keybind
 from .themes import get_palette
 
 class MarkerPanel(QFrame):
@@ -387,6 +387,18 @@ class MarkerPanel(QFrame):
         self.btn_marker_time.setChecked(True)
         self.interactionModeChanged.emit('TIME')
 
+        for btn in [
+            self.btn_marker_time, self.btn_marker_time_endless,
+            self.btn_marker_freq, self.btn_marker_freq_endless,
+            self.btn_zoom, self.btn_move, self.btn_home,
+            self.btn_bpf, self.btn_overlay, self.btn_plugins,
+            self.btn_lock_m1, self.btn_lock_m2, self.btn_lock_delta, self.btn_lock_center,
+            self.cb_bpf, self.cb_bsf,
+            self.btn_manual_overlay, self.btn_clear_overlays_overlay,
+            self.btn_load_plugin, self.btn_clear_overlays_plugins,
+        ]:
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
         # Apply icons for initial (standard) mode
         self._apply_marker_button_icons(waterfall=False)
 
@@ -394,37 +406,71 @@ class MarkerPanel(QFrame):
         self.refresh_theme()
 
     def _apply_marker_button_icons(self, waterfall):
-        """Set button icons, tooltips according to orientation mode.
-
-        Standard (waterfall=False):
-          TIME button → vertical lines icon,   tooltip = 'Time Markers'
-          FREQ button → horizontal lines icon,  tooltip = 'Frequency Markers'
-
-        Waterfall (waterfall=True):
-          TIME button → horizontal lines icon,  tooltip = 'Time Markers (horizontal)'
-          FREQ button → vertical lines icon,    tooltip = 'Frequency Markers (vertical)'
-        """
+        """Set button icons, tooltips according to orientation mode."""
         if waterfall:
             self.btn_marker_time.setIcon(self._get_icon("horizontal_markers"))
-            self.btn_marker_time.setToolTip("Time Markers — horizontal lines (Double-click to clear)")
             self.btn_marker_time_endless.setIcon(self._get_icon("endless_horizontal_markers"))
-            self.btn_marker_time_endless.setToolTip("Endless Time Markers — horizontal lines")
             self.btn_marker_freq.setIcon(self._get_icon("vertical_markers"))
-            self.btn_marker_freq.setToolTip("Frequency Markers — vertical lines (Double-click to clear)")
             self.btn_marker_freq_endless.setIcon(self._get_icon("endless_vertical_markers"))
-            self.btn_marker_freq_endless.setToolTip("Endless Frequency Markers — vertical lines")
         else:
             self.btn_marker_time.setIcon(self._get_icon("vertical_markers"))
-            self.btn_marker_time.setToolTip("Time Markers — vertical lines (Double-click to clear)")
             self.btn_marker_time_endless.setIcon(self._get_icon("endless_vertical_markers"))
-            self.btn_marker_time_endless.setToolTip("Endless Time Markers — vertical lines")
             self.btn_marker_freq.setIcon(self._get_icon("horizontal_markers"))
-            self.btn_marker_freq.setToolTip("Frequency Markers — horizontal lines (Double-click to clear)")
             self.btn_marker_freq_endless.setIcon(self._get_icon("endless_horizontal_markers"))
-            self.btn_marker_freq_endless.setToolTip("Endless Frequency Markers — horizontal lines")
         for btn in (self.btn_marker_time, self.btn_marker_time_endless,
                     self.btn_marker_freq, self.btn_marker_freq_endless):
             btn.setIconSize(QSize(32, 32))
+        self.update_button_tooltips(waterfall=waterfall)
+
+    def update_button_tooltips(self, waterfall=None):
+        """Refresh all button hover tooltips with current keybinds in brackets."""
+        if waterfall is None:
+            waterfall = self.parent_window.spectrogram_view.is_waterfall if (hasattr(self, 'parent_window') and hasattr(self.parent_window, 'spectrogram_view')) else False
+        s = getattr(self.parent_window, 'settings_mgr', None)
+        def _kb(key, default):
+            return s.get(key, default) if s else default
+
+        time_ori = "horizontal lines" if waterfall else "vertical lines"
+        freq_ori = "vertical lines" if waterfall else "horizontal lines"
+
+        self.btn_marker_time.setToolTip(format_tooltip_with_keybind(
+            f"Time Markers — {time_ori} (Double-click to clear)", _kb("keybinds/time_markers", "T")))
+        self.btn_marker_time_endless.setToolTip(format_tooltip_with_keybind(
+            f"Endless Time Markers — {time_ori} (Double-click to clear)", _kb("keybinds/time_endless_markers", "E")))
+        self.btn_marker_freq.setToolTip(format_tooltip_with_keybind(
+            f"Frequency Markers — {freq_ori} (Double-click to clear)", _kb("keybinds/freq_markers", "F")))
+        self.btn_marker_freq_endless.setToolTip(format_tooltip_with_keybind(
+            f"Endless Frequency Markers — {freq_ori} (Double-click to clear)", _kb("keybinds/freq_endless_markers", "G")))
+        self.btn_zoom.setToolTip(format_tooltip_with_keybind(
+            "Zoom Mode (Rubberband)", _kb("keybinds/zoom_mode", "Ctrl"), is_hold=True))
+        self.btn_move.setToolTip(format_tooltip_with_keybind(
+            "Free Move Mode (Pan)", _kb("keybinds/move_mode", "Space"), is_hold=True))
+        self.btn_home.setToolTip(format_tooltip_with_keybind(
+            "Reset Zoom (Home)", _kb("keybinds/reset_zoom", "R")))
+        self.btn_bpf.setToolTip(format_tooltip_with_keybind(
+            "BPF / BSF Selection Mode (Double-click to clear)", _kb("keybinds/filter_mode", "B")))
+        self.btn_overlay.setToolTip(format_tooltip_with_keybind(
+            "Overlay Mode — click or drag to place a shape", _kb("keybinds/overlay_mode", "O")))
+        self.btn_plugins.setToolTip(format_tooltip_with_keybind(
+            "Plugins Panel — manage and run plugins", _kb("keybinds/plugins_mode", "P")))
+
+        if hasattr(self, 'btn_lock_m1'):
+            self.btn_lock_m1.setToolTip(format_tooltip_with_keybind("Lock Marker 1", _kb("keybinds/lock_m1", "1")))
+            self.btn_lock_m2.setToolTip(format_tooltip_with_keybind("Lock Marker 2", _kb("keybinds/lock_m2", "2")))
+            self.btn_lock_delta.setToolTip(format_tooltip_with_keybind("Lock Delta (Δ)", _kb("keybinds/lock_delta", "D")))
+            self.btn_lock_center.setToolTip(format_tooltip_with_keybind("Lock Center", _kb("keybinds/lock_center", "C")))
+
+        if hasattr(self, 'cb_bpf'):
+            self.cb_bpf.setToolTip(format_tooltip_with_keybind("Enable Band-Pass Filter", _kb("keybinds/toggle_bpf", "[")))
+            self.cb_bsf.setToolTip(format_tooltip_with_keybind("Enable Band-Stop Filter", _kb("keybinds/toggle_bsf", "]")))
+
+        if hasattr(self, 'btn_manual_overlay'):
+            self.btn_manual_overlay.setToolTip(format_tooltip_with_keybind("Manually add an overlay", _kb("keybinds/panel_action", "A")))
+            self.btn_clear_overlays_overlay.setToolTip(format_tooltip_with_keybind("Clear all placed overlays", _kb("keybinds/clear_markers", "Backspace")))
+
+        if hasattr(self, 'btn_load_plugin'):
+            self.btn_load_plugin.setToolTip(format_tooltip_with_keybind("Load a plugin from file", _kb("keybinds/panel_action", "A")))
+            self.btn_clear_overlays_plugins.setToolTip(format_tooltip_with_keybind("Clear all placed overlays", _kb("keybinds/clear_markers", "Backspace")))
 
     def refresh_waterfall_ui(self):
         """Called from apply_waterfall_mode() when the user toggles the Waterfall setting.
@@ -581,7 +627,7 @@ class MarkerPanel(QFrame):
         self._apply_marker_button_icons(waterfall)
         
         # Track the last valid marker mode to display in the table
-        if mode in ['TIME', 'FREQ', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'OVERLAY', 'PLUGINS']:
+        if mode in ['TIME', 'FREQ', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'FILTER', 'OVERLAY', 'PLUGINS']:
             self.last_marker_mode = mode
             
         display_mode = self.last_marker_mode if mode in ['ZOOM', 'MOVE'] else mode

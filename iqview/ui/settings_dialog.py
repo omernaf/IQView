@@ -456,18 +456,70 @@ class SettingsDialog(QDialog):
         self.add_side_tab(self.appearance_tab, "Appearance")
 
         # --- Keyboard Tab ---
-        self.time_key = KeyBindEdit()
-        self.time_key.setText(str(self.mgr.get("keybinds/time_markers")))
-        
-        self.mag_key = KeyBindEdit()
-        self.mag_key.setText(str(self.mgr.get("keybinds/mag_markers")))
-        
-        self.zoom_key = KeyBindEdit()
-        self.zoom_key.setText(str(self.mgr.get("keybinds/zoom_mode")))
-        
-        self._add_reset_row(self.keyboard_form, "Time Markers Key:", self.time_key, "keybinds/time_markers")
-        self._add_reset_row(self.keyboard_form, "Magnitude/Freq Markers Key:", self.mag_key, "keybinds/mag_markers")
-        self._add_reset_row(self.keyboard_form, "Zoom Pulse Key (Hold):", self.zoom_key, "keybinds/zoom_mode")
+        self.keybind_edits = {}
+        keybind_sections = [
+            ("Navigation & View Controls", [
+                ("Zoom Mode (Hold):", "keybinds/zoom_mode"),
+                ("Free Move / Pan Mode (Hold):", "keybinds/move_mode"),
+                ("Reset Zoom (Home):", "keybinds/reset_zoom"),
+                ("Undo Zoom:", "keybinds/undo_zoom"),
+                ("Clear Active Markers / Overlays:", "keybinds/clear_markers"),
+                ("Open Settings:", "keybinds/open_settings"),
+            ]),
+            ("Marker Modes", [
+                ("Time Markers:", "keybinds/time_markers"),
+                ("Endless Time Markers:", "keybinds/time_endless_markers"),
+                ("Frequency Markers:", "keybinds/freq_markers"),
+                ("Endless Frequency Markers:", "keybinds/freq_endless_markers"),
+                ("Magnitude Markers:", "keybinds/mag_markers"),
+                ("Endless Magnitude Markers:", "keybinds/mag_endless_markers"),
+            ]),
+            ("Analysis & Tool Modes", [
+                ("BPF / BSF Filter Mode:", "keybinds/filter_mode"),
+                ("Region Statistics Mode:", "keybinds/stats_mode"),
+                ("Overlay Mode:", "keybinds/overlay_mode"),
+                ("Plugins Panel Mode:", "keybinds/plugins_mode"),
+            ]),
+            ("Marker Locks & Sub-Controls", [
+                ("Lock Marker 1:", "keybinds/lock_m1"),
+                ("Lock Marker 2:", "keybinds/lock_m2"),
+                ("Lock Delta (Δ):", "keybinds/lock_delta"),
+                ("Lock Center:", "keybinds/lock_center"),
+                ("Stats Definition Tab:", "keybinds/stats_def"),
+                ("Stats Results Tab:", "keybinds/stats_res"),
+                ("Toggle BPF Filter:", "keybinds/toggle_bpf"),
+                ("Toggle BSF Filter:", "keybinds/toggle_bsf"),
+                ("Add Overlay / Load Plugin:", "keybinds/panel_action"),
+            ]),
+            ("Plot Mode Toolbar Buttons", [
+                (f"Plot Mode {i}:", f"keybinds/plot_mode_{i}") for i in range(1, 11)
+            ]),
+        ]
+
+        for sec_idx, (sec_title, rows) in enumerate(keybind_sections):
+            if sec_idx > 0:
+                self.keyboard_form.addRow(QLabel(" "))
+            self.keyboard_form.addRow(QLabel(f"<b>{sec_title}</b>"))
+            for label_text, setting_key in rows:
+                kb_edit = KeyBindEdit()
+                kb_edit.setText(str(self.mgr.get(setting_key, self.mgr.get_default(setting_key) or "")))
+                self.keybind_edits[setting_key] = kb_edit
+                self._add_reset_row(self.keyboard_form, label_text, kb_edit, setting_key)
+
+        # Keep legacy attribute aliases for backwards compatibility
+        self.time_key = self.keybind_edits["keybinds/time_markers"]
+        self.freq_key = self.keybind_edits["keybinds/freq_markers"]
+        self.mag_key = self.keybind_edits["keybinds/mag_markers"]
+        self.zoom_key = self.keybind_edits["keybinds/zoom_mode"]
+
+        self.keyboard_form.addRow(QLabel(" "))
+        reset_all_kb_btn = QPushButton("Reset All Keybinds to Default")
+        def _reset_all_keybinds():
+            for skey, edit_w in self.keybind_edits.items():
+                def_val = self.mgr.get_default(skey)
+                edit_w.setText(str(def_val) if def_val is not None else "")
+        reset_all_kb_btn.clicked.connect(_reset_all_keybinds)
+        self.keyboard_form.addRow(reset_all_kb_btn)
         
         self.add_side_tab(self.keyboard_tab, "Keyboard")
 
@@ -723,9 +775,8 @@ class SettingsDialog(QDialog):
             self.mgr.set("ui/label_precision", self.precision_spin.value())
             self.mgr.set("ui/show_inv_time", (self.show_inv_combo.currentText() == "On"))
 
-            self.mgr.set("keybinds/time_markers", self.time_key.text())
-            self.mgr.set("keybinds/mag_markers", self.mag_key.text())
-            self.mgr.set("keybinds/zoom_mode", self.zoom_key.text())
+            for skey, edit_w in self.keybind_edits.items():
+                self.mgr.set(skey, edit_w.text().strip())
 
             # Filter Settings
             self.mgr.set("core/filter_type", self.filter_type_combo.currentText())

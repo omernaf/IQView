@@ -136,3 +136,17 @@ class DetachedViewWindow(QMainWindow):
         """Request the main window to dock this view back."""
         if hasattr(self.parent_window, 'dock_view'):
             self.parent_window.dock_view(self.view)
+
+    def keyPressEvent(self, event):
+        if not getattr(event, '_from_subview', False) and self.view and hasattr(self.view, 'keyPressEvent'):
+            event._from_subview = True
+            self.view.keyPressEvent(event)
+            return
+        super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        if not getattr(event, '_from_subview', False) and self.view and hasattr(self.view, 'keyReleaseEvent'):
+            event._from_subview = True
+            self.view.keyReleaseEvent(event)
+            return
+        super().keyReleaseEvent(event)
