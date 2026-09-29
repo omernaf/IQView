@@ -9,6 +9,7 @@ iqview.egg-info/entry_points.txt
 iqview.egg-info/requires.txt
 iqview.egg-info/top_level.txt
 iqview/dsp/__init__.py
+iqview/dsp/domain_transforms.py
 iqview/dsp/dsp.py
 iqview/dsp/utils.py
 iqview/overlays/__init__.py
@@ -53,6 +54,11 @@ iqview/ui/side_panel.py
 iqview/ui/spectrogram_view.py
 iqview/ui/themes.py
 iqview/ui/widgets.py
+iqview/ui/base_1d/__init__.py
+iqview/ui/base_1d/endless_marker_list.py
+iqview/ui/base_1d/marker_panel.py
+iqview/ui/base_1d/region_stats_widget.py
+iqview/ui/base_1d/view.py
 iqview/ui/frequency_domain/marker_panel.py
 iqview/ui/frequency_domain/view.py
 iqview/ui/main_window/__init__.py
