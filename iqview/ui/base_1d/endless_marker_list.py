@@ -36,6 +36,7 @@ class EndlessMarkerListWidget(QWidget):
         panel.scroll = self.scroll
         panel.scroll_content = self.scroll_content
         panel.scroll_layout = self.scroll_layout
+        panel._endless_rows = self._endless_rows
 
     def update_markers(
         self,
