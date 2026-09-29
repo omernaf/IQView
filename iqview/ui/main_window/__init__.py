@@ -288,7 +288,7 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
             self.set_interaction_mode('MOVE')
         elif key_name == self._get_kb('keybinds/reset_zoom', 'R'):
             self.reset_zoom()
-        elif key_name == self._get_kb('keybinds/undo_zoom', 'Z'):
+        elif key_name == self._get_kb('keybinds/undo_zoom', 'Ctrl+Z'):
             self.undo_zoom()
         elif key_name == self._get_kb('keybinds/clear_markers', 'Backspace'):
             mode = self.interaction_mode

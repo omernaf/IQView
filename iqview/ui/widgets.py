@@ -100,7 +100,7 @@ class FormattedLineEdit(QtWidgets.QLineEdit):
         super().focusOutEvent(event)
 
 def key_event_to_name(event) -> str:
-    """Convert a QKeyEvent into a normalized keybind string (e.g. 'Ctrl', 'Space', 'T', 'F1')."""
+    """Convert a QKeyEvent into a normalized keybind string (e.g. 'Ctrl', 'Space', 'T', 'F1', 'Ctrl+Z')."""
     key = event.key()
     if key in (QtCore.Qt.Key.Key_Control,):
         return "Ctrl"
@@ -110,10 +110,20 @@ def key_event_to_name(event) -> str:
         return "Alt"
     if key in (QtCore.Qt.Key.Key_Space,):
         return "Space"
+    
+    mod = event.modifiers()
+    parts = []
+    if mod & QtCore.Qt.KeyboardModifier.ControlModifier:
+        parts.append("Ctrl")
+    if mod & QtCore.Qt.KeyboardModifier.AltModifier:
+        parts.append("Alt")
+
     name = QtGui.QKeySequence(key).toString()
     if name == "Control":
         name = "Ctrl"
-    return name
+    if name:
+        parts.append(name)
+    return "+".join(parts) if parts else ""
 
 
 def format_tooltip_with_keybind(base_text: str, key_str: str, is_hold: bool = False) -> str:

@@ -108,7 +108,7 @@ class SettingsManager:
         "keybinds/zoom_mode": "Ctrl",
         "keybinds/move_mode": "Space",
         "keybinds/reset_zoom": "R",
-        "keybinds/undo_zoom": "Z",
+        "keybinds/undo_zoom": "Ctrl+Z",
         "keybinds/clear_markers": "Backspace",
         "keybinds/open_settings": "I",
 
@@ -164,6 +164,10 @@ class SettingsManager:
         # Migrate legacy light zoom_box_color="#ffffff" to "#000000"
         if self.settings.value("ui/light/zoom_box_color") in ("#ffffff", "#fff", "white", "#FFFFFF"):
             self.settings.setValue("ui/light/zoom_box_color", "#000000")
+
+        # Migrate legacy undo_zoom="Z" to "Ctrl+Z"
+        if self.settings.value("keybinds/undo_zoom") == "Z":
+            self.settings.setValue("keybinds/undo_zoom", "Ctrl+Z")
 
         # Only set if they don't exist
         for key, value in self.DEFAULT_SETTINGS.items():
