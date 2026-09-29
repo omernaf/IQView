@@ -1,6 +1,7 @@
 # Samples and Data
 *.32fc
 samples/
+iqview_testdata/
 *.asv
 
 # Python / Packaging
