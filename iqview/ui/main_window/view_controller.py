@@ -69,6 +69,7 @@ class ViewControllerMixin:
                 rel_f_max = (vr[1][1] - old_bottom) / old_rate
 
             new_bottom = self.fc - self.rate / 2
+            self.spectrogram_view.view_box.setLimits(xMin=None, xMax=None, yMin=None, yMax=None)
             if waterfall:
                 self.spectrogram_view.plot_item.setXRange(
                     new_bottom + rel_f_min * self.rate,
@@ -82,6 +83,7 @@ class ViewControllerMixin:
                 self.spectrogram_view.plot_item.setYRange(
                     new_bottom + rel_f_min * self.rate,
                     new_bottom + rel_f_max * self.rate, padding=0)
+            self.spectrogram_view.update_view_limits()
 
             for marker in self.markers_time:
                 marker.setPos((marker.value() / old_duration) * self.time_duration)

@@ -322,7 +322,7 @@ class CustomViewBox(pg.ViewBox):
 
     def mouseDragEvent(self, ev, axis=None):
         if not hasattr(ev, 'isStart'):
-            super().mouseDragEvent(ev)
+            super().mouseDragEvent(ev, axis=axis)
             return
             
         if ev.button() == Qt.MouseButton.LeftButton:
@@ -575,7 +575,37 @@ class CustomViewBox(pg.ViewBox):
                         self.ui_controller.update_drag(ev.scenePos(), source_vb=self)
                 ev.accept()
         else:
-            super().mouseDragEvent(ev)
+            is_multirow = (
+                hasattr(self.ui_controller, 'spectrogram_stack')
+                and self.ui_controller.spectrogram_stack.currentIndex() == 1
+            )
+            if ev.button() == Qt.MouseButton.MiddleButton and is_multirow and axis is None:
+                if ev.isStart():
+                    if hasattr(self.ui_controller, 'push_multirow_zoom_state'):
+                        self.ui_controller.push_multirow_zoom_state()
+                    self.ui_controller.handle_move_drag(ev.buttonDownScenePos(), is_start=True, source_vb=self)
+                elif ev.isFinish():
+                    self.ui_controller.handle_move_drag(ev.scenePos(), is_finish=True, source_vb=self)
+                else:
+                    self.ui_controller.handle_move_drag(ev.scenePos(), source_vb=self)
+                ev.accept()
+                return
+
+            if ev.button() in (Qt.MouseButton.RightButton, Qt.MouseButton.MiddleButton):
+                if ev.isStart():
+                    if is_multirow:
+                        if hasattr(self.ui_controller, 'push_multirow_zoom_state'):
+                            self.ui_controller.push_multirow_zoom_state()
+                        self.ui_controller._multirow_right_dragging = True
+                    elif hasattr(self.ui_controller, 'zoom_history'):
+                        self.ui_controller.zoom_history.append(self.viewRect())
+
+            super().mouseDragEvent(ev, axis=axis)
+
+            if ev.button() == Qt.MouseButton.RightButton and ev.isFinish() and is_multirow:
+                self.ui_controller._multirow_right_dragging = False
+                if hasattr(self.ui_controller, '_schedule_multirow_rerender'):
+                    self.ui_controller._schedule_multirow_rerender()
 
     def mouseClickEvent(self, ev):
         if ev.button() == Qt.MouseButton.LeftButton:

@@ -155,7 +155,7 @@ class SpectrogramView(QWidget):
         self.plot_item.setLabel('bottom', "Time", units='s')
         self.plot_item.setLabel('left', "Frequency", units='Hz')
         
-        self.plot_item.setMouseEnabled(x=False, y=False)
+        self.plot_item.setMouseEnabled(x=True, y=True)
         self.plot_item.hideButtons()
         
         self.img = pg.ImageItem()
@@ -228,6 +228,16 @@ class SpectrogramView(QWidget):
         self.plot_item.setLabel('bottom', bl, units=bu)
         self.plot_item.setLabel('left', ll, units=lu)
 
+    def update_view_limits(self):
+        """Constrain ViewBox panning and scaling to the full signal extent."""
+        t0, t1 = self.full_t_range
+        f0, f1 = self.full_f_range
+        if t1 > t0 and f1 > f0:
+            if self.is_waterfall:
+                self.view_box.setLimits(xMin=f0, xMax=f1, yMin=t0, yMax=t1)
+            else:
+                self.view_box.setLimits(xMin=t0, xMax=t1, yMin=f0, yMax=f1)
+
     def apply_waterfall_mode(self, force=False):
         """Re-render the current cached image in the new orientation and update all
         axis labels, scrollbars, and the spectrum envelope sync.
@@ -250,6 +260,7 @@ class SpectrogramView(QWidget):
 
         self._applied_waterfall = current_waterfall
 
+        self.view_box.setLimits(xMin=None, xMax=None, yMin=None, yMax=None)
         self._apply_axis_labels()
 
         # In waterfall mode time is on the Y axis; invert it so t=0 is at the top
@@ -280,6 +291,7 @@ class SpectrogramView(QWidget):
                 )
 
         # Restore the exact zoomed range in the new orientation
+        self.view_box.setLimits(xMin=None, xMax=None, yMin=None, yMax=None)
         if (t_max > t_min) and (f_max > f_min):
             if self.is_waterfall:
                 self.plot_item.setXRange(f_min, f_max, padding=0)
@@ -287,6 +299,7 @@ class SpectrogramView(QWidget):
             else:
                 self.plot_item.setXRange(t_min, t_max, padding=0)
                 self.plot_item.setYRange(f_min, f_max, padding=0)
+        self.update_view_limits()
 
         self.update_scrollbars()
         # Update angles of any already-placed markers
@@ -559,6 +572,7 @@ class SpectrogramView(QWidget):
         self._last_t_start = t_start
         self._last_t_end = t_end
 
+        self.view_box.setLimits(xMin=None, xMax=None, yMin=None, yMax=None)
         self._set_image_and_rect(spectrogram, fc, rate, t_start, t_end, levels)
 
         if auto_range:
@@ -574,6 +588,7 @@ class SpectrogramView(QWidget):
                     self.plot_item.setYRange(f0, f1, padding=0)
             else:
                 self.plot_item.autoRange()
+        self.update_view_limits()
 
         self._update_spectrum_envelope(spectrogram, fc, rate, min_v, max_v, auto_range)
 
@@ -600,13 +615,25 @@ class SpectrogramView(QWidget):
         self._last_t_start = t_start
         self._last_t_end = t_end
 
+        self.view_box.setLimits(xMin=None, xMax=None, yMin=None, yMax=None)
         self._set_image_and_rect(full_spectrogram, fc, rate, t_start, t_end, levels)
         
         self.full_t_range = (0.0, t_end)
         self.full_f_range = (fc - rate/2, fc + rate/2)
         
         if auto_range:
-            self.plot_item.autoRange()
+            t0, t1 = self.full_t_range
+            f0, f1 = self.full_f_range
+            if t1 > t0 and f1 > f0:
+                if self.is_waterfall:
+                    self.plot_item.setXRange(f0, f1, padding=0)
+                    self.plot_item.setYRange(t0, t1, padding=0)
+                else:
+                    self.plot_item.setXRange(t0, t1, padding=0)
+                    self.plot_item.setYRange(f0, f1, padding=0)
+            else:
+                self.plot_item.autoRange()
+        self.update_view_limits()
 
         self._update_spectrum_envelope(full_spectrogram, fc, rate, min_v, max_v, auto_range)
 
@@ -633,16 +660,12 @@ class SpectrogramView(QWidget):
             visible_ratio_t = (t_visible_range[1] - t_visible_range[0]) / t_total
             if visible_ratio_t < 0.999:
                 self.x_scroll.show() if not waterfall else self.y_scroll.show()
-                page_step = int(visible_ratio_t * 1000)
+                page_step = max(1, min(1000, int(visible_ratio_t * 1000)))
                 scroll = self.x_scroll if not waterfall else self.y_scroll
-                scroll.setRange(0, 1000 - page_step)
+                scroll.setRange(0, max(0, 1000 - page_step))
                 scroll.setPageStep(page_step)
                 pos = (t_visible_range[0] - self.full_t_range[0]) / t_total * 1000
-                if waterfall:
-                    # Y axis is inverted in waterfall: scrollbar 0 = top = t_min
-                    scroll.setValue(int(pos))
-                else:
-                    scroll.setValue(int(pos))
+                scroll.setValue(int(np.clip(pos, 0, max(0, 1000 - page_step))))
             else:
                 if waterfall:
                     self.y_scroll.hide()
@@ -655,19 +678,19 @@ class SpectrogramView(QWidget):
             if visible_ratio_f < 0.999:
                 scroll = self.y_scroll if not waterfall else self.x_scroll
                 scroll.show()
-                page_step = int(visible_ratio_f * 1000)
-                scroll.setRange(0, 1000 - page_step)
+                page_step = max(1, min(1000, int(visible_ratio_f * 1000)))
+                scroll.setRange(0, max(0, 1000 - page_step))
                 scroll.setPageStep(page_step)
 
                 if not waterfall:
                     # Standard: Y scroll, 0 = top = f_max (inverted)
                     pos_from_bottom = (f_visible_range[0] - self.full_f_range[0]) / f_total * 1000
                     inv_pos = 1000 - page_step - int(pos_from_bottom)
-                    scroll.setValue(inv_pos)
+                    scroll.setValue(int(np.clip(inv_pos, 0, max(0, 1000 - page_step))))
                 else:
                     # Waterfall: X scroll tracks freq which is on X
                     pos = (f_visible_range[0] - self.full_f_range[0]) / f_total * 1000
-                    scroll.setValue(int(pos))
+                    scroll.setValue(int(np.clip(pos, 0, max(0, 1000 - page_step))))
             else:
                 if waterfall:
                     self.x_scroll.hide()

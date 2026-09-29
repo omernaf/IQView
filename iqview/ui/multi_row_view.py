@@ -100,8 +100,8 @@ class MultiRowSpectrogramView(QWidget):
             pw.setBackground(p.plot_bg)   # explicit theme — CSS doesn't reach pyqtgraph
             pw.setMenuEnabled(False)       # CustomViewBox provides its own right-click menu
             pw.hideButtons()
-            # Disable default pan/zoom; CustomViewBox handles all mouse interaction
-            pw.setMouseEnabled(x=False, y=False)
+            # Enable right-click drag scaling and middle-click drag panning; CustomViewBox intercepts LeftButton
+            pw.setMouseEnabled(x=True, y=True)
             pi = pw.getPlotItem()
             pi.setContentsMargins(0, 0, 0, 0)
             pi.getViewBox().setDefaultPadding(0)
@@ -802,6 +802,11 @@ class MultiRowSpectrogramView(QWidget):
         time_range = yr if is_waterfall else xr
 
         sr = max(getattr(self.parent_window, 'rate', 1.0), 1.0)
+        fc = getattr(self.parent_window, 'fc', 0.0)
+        f_min_def, f_max_def = fc - sr / 2.0, fc + sr / 2.0
+        f_lo = float(np.clip(freq_range[0], f_min_def, f_max_def - 1.0))
+        f_hi = float(np.clip(freq_range[1], f_lo + 1.0, f_max_def))
+
         start_s = getattr(self.parent_window, '_multirow_start_sample', 0)
         spr     = getattr(self.parent_window, '_multirow_samples_per_row', 0)
         period  = getattr(self.parent_window, '_multirow_period', spr)
@@ -811,23 +816,29 @@ class MultiRowSpectrogramView(QWidget):
         row_t0    = (start_s + source_idx * period) / sr
         row_t_dur = max(1e-9, spr / sr)
 
-        rel_t0 = float(np.clip((time_range[0] - row_t0) / row_t_dur, 0.0, 1.0))
-        rel_t1 = float(np.clip((time_range[1] - row_t0) / row_t_dur, rel_t0 + 1e-6, 1.0))
+        total_samples = self.parent_window.get_total_samples() if hasattr(self.parent_window, 'get_total_samples') else 0
+        min_rel = -start_s / max(spr, 1)
+        max_rel = ((total_samples - start_s) / max(spr, 1)) if total_samples > start_s else 1.0
 
-        # Push state to zoom history before updating
-        if hasattr(self.parent_window, 'push_multirow_zoom_state'):
+        rel_t0 = float(np.clip((time_range[0] - row_t0) / row_t_dur, min_rel, max_rel - 1e-6))
+        rel_t1 = float(np.clip((time_range[1] - row_t0) / row_t_dur, rel_t0 + 1e-6, max_rel))
+
+        right_dragging = getattr(self.parent_window, '_multirow_right_dragging', False)
+
+        # Push state to zoom history before updating (unless right-click drag already pushed at drag start)
+        if not right_dragging and hasattr(self.parent_window, 'push_multirow_zoom_state'):
             self.parent_window.push_multirow_zoom_state()
 
         self._current_rel_time   = (rel_t0, rel_t1)
-        self._current_freq_range = (float(freq_range[0]), float(freq_range[1]))
+        self._current_freq_range = (f_lo, f_hi)
 
         # Central update of ALL row axes
         self.update_all_row_axes()
 
         # Update sidebar text inputs
-        active_start_s = start_s + int(round(rel_t0 * spr))
+        active_start_s = max(0, start_s + int(round(rel_t0 * spr)))
         active_spr     = max(1, int(round((rel_t1 - rel_t0) * spr)))
-        self._update_sidebar_inputs(freq_range[0], freq_range[1], active_start_s, active_spr)
+        self._update_sidebar_inputs(f_lo, f_hi, active_start_s, active_spr)
 
         # Sync markers & overlays across rows
         if hasattr(self.parent_window, 'sync_multi_row_markers'):
@@ -835,8 +846,8 @@ class MultiRowSpectrogramView(QWidget):
         if hasattr(self.parent_window, 'sync_multi_row_overlays'):
             self.parent_window.sync_multi_row_overlays()
 
-        # Trigger resolution re-render for the zoomed time window
-        if hasattr(self.parent_window, '_schedule_multirow_rerender'):
+        # Trigger resolution re-render for the zoomed time window (defer until mouse release if right-dragging)
+        if not right_dragging and hasattr(self.parent_window, '_schedule_multirow_rerender'):
             self.parent_window._schedule_multirow_rerender()
 
     def _update_sidebar_inputs(self, f_lo, f_hi, base_start_sample=None, base_spr=None):

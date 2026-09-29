@@ -424,6 +424,7 @@ class DataHandlerMixin:
             self.spectrogram_view.full_t_range = (0.0, total_duration)
             self.spectrogram_view.full_f_range = (
                 self.fc - self.rate / 2, self.fc + self.rate / 2)
+            self.spectrogram_view.update_view_limits()
             self._do_lazy_render()
         else:
             self.spectrogram_view.update_spectrogram(
