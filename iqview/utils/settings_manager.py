@@ -161,6 +161,10 @@ class SettingsManager:
             if self.settings.value("keybinds/mag_markers") == "F":
                 self.settings.setValue("keybinds/mag_markers", "M")
 
+        # Migrate legacy light zoom_box_color="#ffffff" to "#000000"
+        if self.settings.value("ui/light/zoom_box_color") in ("#ffffff", "#fff", "white", "#FFFFFF"):
+            self.settings.setValue("ui/light/zoom_box_color", "#000000")
+
         # Only set if they don't exist
         for key, value in self.DEFAULT_SETTINGS.items():
             if not self.settings.contains(key):

@@ -185,6 +185,22 @@ class CustomViewBox(pg.ViewBox):
         self._active_drag_mode = None
         self.setMenuEnabled(False) # Disable default pg menu
         self.setAcceptHoverEvents(True)
+        self.refresh_theme()
+
+    def refresh_theme(self):
+        s = getattr(self.ui_controller, 'settings_mgr', None) or (getattr(self.ui_controller, 'parent_window', None) and getattr(self.ui_controller.parent_window, 'settings_mgr', None))
+        theme = str(s.get("ui/theme", "Dark")).lower() if s else "dark"
+        if hasattr(self, 'rbScaleBox') and self.rbScaleBox is not None:
+            if theme == "light":
+                self.rbScaleBox.setPen(pg.mkPen((0, 0, 0, 255), width=1.5))
+                self.rbScaleBox.setBrush(pg.mkBrush((0, 0, 0, 60)))
+            else:
+                self.rbScaleBox.setPen(pg.mkPen((255, 255, 255, 255), width=1.5))
+                self.rbScaleBox.setBrush(pg.mkBrush((255, 255, 255, 100)))
+
+    def updateScaleBox(self, p1, p2):
+        self.refresh_theme()
+        super().updateScaleBox(p1, p2)
 
     def hoverEvent(self, ev):
         if ev.isExit():
@@ -392,10 +408,10 @@ class CustomViewBox(pg.ViewBox):
                         ndx, ndy = dx / (xr[1]-xr[0]), dy / (yr[1]-yr[0])
                         
                         path = pg.QtGui.QPainterPath()
-                        theme = s.get("ui/theme", "Dark").lower()
-                        
-                        box_color = s.get(f"ui/{theme}/zoom_box_color")
-                        box_style_name = s.get(f"ui/{theme}/zoom_box_style")
+                        theme = str(s.get("ui/theme", "Dark")).lower()
+                        default_box_color = "#000000" if theme == "light" else "#ffffff"
+                        box_color = s.get(f"ui/{theme}/zoom_box_color", default_box_color) or default_box_color
+                        box_style_name = s.get(f"ui/{theme}/zoom_box_style", "DashLine") or "DashLine"
                         
                         style_map = {
                             "SolidLine": Qt.PenStyle.SolidLine,

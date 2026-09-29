@@ -764,6 +764,7 @@ class SpectrogramView(QWidget):
         self._apply_axis_labels()
         # Ensure Y-axis inversion matches the current mode (important on startup)
         self.view_box.invertY(self.is_waterfall)
+        self.view_box.refresh_theme()
         
         # Update spectrum plot lines
         if hasattr(self, 'min_env_curve'):

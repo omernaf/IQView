@@ -949,6 +949,9 @@ class MultiRowSpectrogramView(QWidget):
                 f"color: {p.text_dim}; font-size: 10px; "
                 f"background-color: {p.bg_main}; padding: 2px 4px;"
             )
+            vb = row['plot'].getViewBox()
+            if hasattr(vb, 'refresh_theme'):
+                vb.refresh_theme()
             for ax_name in ('left', 'bottom'):
                 ax = row['plot'].getAxis(ax_name)
                 ax.setPen(p.text_dim)

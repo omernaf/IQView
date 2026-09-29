@@ -919,6 +919,8 @@ class FrequencyDomainView(Base1DPlotView):
         self.plot_item.getAxis('left').setPen(p.text_dim)
         self.plot_item.getAxis('bottom').setTextPen(p.text_dim)
         self.plot_item.getAxis('left').setTextPen(p.text_dim)
+        if hasattr(self, 'view_box') and hasattr(self.view_box, 'refresh_theme'):
+            self.view_box.refresh_theme()
 
     def refresh_theme(self):
         theme = self.settings_mgr.get("ui/theme", "Dark")
