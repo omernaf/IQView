@@ -84,59 +84,48 @@ class PluginResult:
         self._adds.append(overlay)
         return self
 
-    def update(self, overlay_id: str, **fields) -> "PluginResult":
+    def update(self, overlay_id: Any, **fields) -> "PluginResult":
         """
-        Queue a partial update of an existing overlay identified by *overlay_id*.
+        Queue a partial update of an existing overlay identified by *overlay_id*
+        (or pass an ``Overlay`` instance directly).
 
         Any keyword argument that matches an ``Overlay`` field name will be
-        applied via ``setattr``.  Unknown keys are silently ignored.
-
-        ``source`` *can* be changed here — do so intentionally, since changing
-        ``source`` away from ``"user"`` will exclude the overlay from sidecar
-        saves.
-
-        Parameters
-        ----------
-        overlay_id : str
-            The ``id`` attribute of the overlay to update (from ``info["overlays"]``).
-        **fields
-            Overlay field names and their new values, e.g.
-            ``color="#ff0000"``, ``points=[...]``, ``display_str="label"``.
+        applied via ``setattr``.  If an ``Overlay`` object is passed as the
+        first argument with no keyword arguments, its mutable fields are
+        automatically extracted as the update payload.
         """
-        self._updates.append((overlay_id, fields))
+        if not isinstance(overlay_id, str) and hasattr(overlay_id, "id"):
+            ov = overlay_id
+            overlay_id = str(ov.id)
+            if not fields:
+                for attr in (
+                    "shape", "points", "center", "radii", "color", "alpha",
+                    "border_width", "border_color", "border_style",
+                    "display_str", "hover_str", "tag_pos", "visible",
+                    "locked", "z_order", "metadata", "iq", "fs",
+                ):
+                    if hasattr(ov, attr):
+                        fields[attr] = getattr(ov, attr)
+        self._updates.append((str(overlay_id), fields))
         return self
 
-    def remove(self, overlay_id: str) -> "PluginResult":
+    def remove(self, overlay_id: Any) -> "PluginResult":
         """
-        Queue removal of an overlay by *overlay_id*.
-
-        The runner enforces source-ownership: only overlays whose ``source``
-        equals ``"plugin:<plugin_name>"`` can be removed.  Attempts to remove
-        user-drawn or other-plugin-owned overlays are silently skipped with a
-        console warning.
-
-        Parameters
-        ----------
-        overlay_id : str
-            The ``id`` attribute of the overlay to remove.
+        Queue removal of an overlay by *overlay_id* (or ``Overlay`` instance).
         """
-        self._removes.append(overlay_id)
+        if not isinstance(overlay_id, str) and hasattr(overlay_id, "id"):
+            overlay_id = str(overlay_id.id)
+        self._removes.append(str(overlay_id))
         return self
 
-    def replace(self, overlay_id: str, new_overlay) -> "PluginResult":
+    def replace(self, overlay_id: Any, new_overlay) -> "PluginResult":
         """
-        Queue an atomic swap: remove *overlay_id* and add *new_overlay* in its
-        place.  The replacement inherits the original overlay's ``source`` so
-        provenance is preserved.
-
-        Parameters
-        ----------
-        overlay_id : str
-            The ``id`` attribute of the overlay to replace.
-        new_overlay : Overlay
-            The new overlay object to insert.
+        Queue an atomic swap: remove *overlay_id* (or ``Overlay`` instance)
+        and add *new_overlay* in its place.
         """
-        self._replaces.append((overlay_id, new_overlay))
+        if not isinstance(overlay_id, str) and hasattr(overlay_id, "id"):
+            overlay_id = str(overlay_id.id)
+        self._replaces.append((str(overlay_id), new_overlay))
         return self
 
     # ------------------------------------------------------------------

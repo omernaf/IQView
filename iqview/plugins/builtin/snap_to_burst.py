@@ -123,6 +123,7 @@ def _find_tight_burst_time(
     smooth_window_us: float,
     min_gap_ms: float,
     margin: int,
+    fallback_noise_floor: float | None = None,
 ):
     """
     Locate the strongest burst inside `seg` and return
@@ -142,10 +143,12 @@ def _find_tight_burst_time(
     else:
         env = pwr
 
-    # Estimate local noise floor from the quietest 20% of the box
-    p25 = float(np.percentile(env, 25.0))
-    low_samples = env[env <= p25]
-    noise_floor = float(np.median(low_samples)) if len(low_samples) > 0 else max(p25, 1e-20)
+    # Estimate local noise floor from the quietest 10% of the time envelope
+    p10 = float(np.percentile(env, 10.0))
+    low_samples = env[env <= p10]
+    noise_floor = float(np.median(low_samples)) if len(low_samples) > 0 else max(p10, 1e-20)
+    if fallback_noise_floor is not None and fallback_noise_floor > 0:
+        noise_floor = min(noise_floor, float(fallback_noise_floor))
     noise_floor = max(noise_floor, 1e-20)
 
     p90 = float(np.percentile(env, 90.0))
@@ -222,23 +225,62 @@ def _fit_tight_burst_freq(
     orig_f0: float,
     orig_f1: float,
     obw_fraction: float,
+    threshold_db: float = 6.0,
 ):
     """
-    Estimate tight `[new_f0, new_f1]`, `obw_hz`, and `cfo_hz` from the burst's spectrum.
+    Estimate tight `[new_f0, new_f1]`, `obw_hz`, `cfo_hz`, and `est_time_noise_floor`
+    from the burst's spectrum, rejecting both out-of-band noise and distant spectral sidelobes.
     """
     n = len(burst_iq)
     if n < 8 or fs <= 0:
-        return orig_f0, orig_f1, orig_f1 - orig_f0, 0.0
+        return orig_f0, orig_f1, orig_f1 - orig_f0, 0.0, None
 
     nfft = min(4096, max(64, 1 << int(np.ceil(np.log2(min(n, 2048))))))
-    win = np.hanning(min(n, nfft)).astype(np.float32)
-    seg_win = burst_iq[: len(win)] * win
-    spec = (np.abs(sp_fft.fftshift(sp_fft.fft(seg_win, n=nfft))) ** 2).astype(np.float64)
+    # Use Welch-style overlapping segments if burst_iq is longer than nfft, else single windowed FFT
+    if n >= nfft:
+        step = max(1, nfft // 2)
+        win = np.hanning(nfft).astype(np.float32)
+        win_norm = float(np.sum(win ** 2))
+        acc = np.zeros(nfft, dtype=np.float64)
+        n_frames = 0
+        for start in range(0, n - nfft + 1, step):
+            frame = burst_iq[start : start + nfft] * win
+            acc += np.abs(sp_fft.fftshift(sp_fft.fft(frame, n=nfft))) ** 2 / max(win_norm, 1e-12)
+            n_frames += 1
+        spec = acc / max(1, n_frames)
+    else:
+        win = np.hanning(n).astype(np.float32)
+        win_norm = float(np.sum(win ** 2))
+        seg_win = burst_iq * win
+        spec = (np.abs(sp_fft.fftshift(sp_fft.fft(seg_win, n=nfft))) ** 2).astype(np.float64) / max(win_norm, 1e-12)
+
     rel_freqs = sp_fft.fftshift(sp_fft.fftfreq(nfft, d=1.0 / fs))
 
-    # Subtract spectral noise floor so out-of-band noise bins don't widen the fit
-    spec_noise = float(np.percentile(spec, 30.0))
-    sig_spec = np.maximum(0.0, spec - spec_noise * 2.0)
+    # Smooth spectrum slightly across bins so multi-tone / FSK dips stay connected
+    smooth_bins = max(3, nfft // 128)
+    if smooth_bins > 1 and len(spec) > smooth_bins:
+        k_smooth = np.ones(smooth_bins, dtype=np.float64) / float(smooth_bins)
+        spec_smooth = np.convolve(spec, k_smooth, mode="same")
+    else:
+        spec_smooth = spec
+
+    # Estimate spectral noise floor per bin (so time-domain noise power is ~ spec_noise * nfft / n)
+    spec_noise = max(float(np.percentile(spec_smooth, 20.0)), 1e-25)
+    est_time_noise_floor = spec_noise
+
+    peak_spec = float(np.max(spec_smooth))
+    thresh_mult = 10.0 ** (max(threshold_db, 6.0) / 10.0)
+
+    # Reject out-of-band noise AND distant spectral sidelobes below (1 - obw_fraction) of peak
+    rel_floor = max(0.005, min(0.10, 1.0 - obw_fraction))
+    gate_thresh = max(spec_noise * thresh_mult, peak_spec * rel_floor)
+
+    active_bins = spec_smooth >= gate_thresh
+    if np.any(active_bins):
+        sig_spec = np.where(active_bins, np.maximum(0.0, spec - spec_noise), 0.0)
+    else:
+        sig_spec = np.maximum(0.0, spec - spec_noise * 2.0)
+
     total_spec_pwr = float(np.sum(sig_spec))
     if total_spec_pwr <= 1e-20:
         sig_spec = spec
@@ -259,9 +301,9 @@ def _fit_tight_burst_freq(
     new_f0 = max(orig_f0, f_center_est - 0.5 * bw_fit)
     new_f1 = min(orig_f1, f_center_est + 0.5 * bw_fit)
     if new_f1 <= new_f0:
-        return orig_f0, orig_f1, obw_hz, cfo_hz
+        return orig_f0, orig_f1, obw_hz, cfo_hz, est_time_noise_floor
 
-    return new_f0, new_f1, obw_hz, cfo_hz
+    return new_f0, new_f1, obw_hz, cfo_hz, est_time_noise_floor
 
 
 def _subband_ddc(
@@ -305,6 +347,8 @@ def _subband_ddc(
 
 
 def run(samples: np.ndarray, info) -> PluginResult:
+    import copy
+
     result = PluginResult()
     if not info.overlays:
         return result
@@ -319,14 +363,25 @@ def run(samples: np.ndarray, info) -> PluginResult:
 
     obw_fraction = obw_percent / 100.0
 
+    t_start_scope = float(info.t_start)
+    t_end_scope   = float(info.t_end)
+    f_start_scope = float(info.f_start)
+    f_end_scope   = float(info.f_end)
+
     candidates = [
         o for o in info.overlays
-        if o._shape_name() == "RECT" and o.duration > 0 and o.bandwidth > 0
+        if o._shape_name() == "RECT"
+        and o.duration > 0
+        and o.bandwidth > 0
+        and o.t_end >= t_start_scope and o.t_start <= t_end_scope
+        and o.f_end >= f_start_scope and o.f_start <= f_end_scope
     ]
     total = len(candidates)
     if total == 0:
+        result.log("No Rect overlays found in active scope.")
         return result
 
+    n_snapped = 0
     for idx, o in enumerate(candidates):
         if info.is_cancelled():
             break
@@ -344,6 +399,17 @@ def run(samples: np.ndarray, info) -> PluginResult:
         if seg is None or len(seg) < 8 or seg_fs <= 0:
             continue
 
+        # Pass 1: Initial time detection on full-box IQ (or fallback to spectral noise floor
+        # if the burst already fills >90% of the time box)
+        _, _, _, _, spec_nf = _fit_tight_burst_freq(
+            seg,
+            fs=float(seg_fs),
+            orig_fc=orig_fc,
+            orig_f0=orig_f0,
+            orig_f1=orig_f1,
+            obw_fraction=obw_fraction,
+            threshold_db=threshold_db,
+        )
         time_fit = _find_tight_burst_time(
             seg,
             fs=float(seg_fs),
@@ -351,39 +417,76 @@ def run(samples: np.ndarray, info) -> PluginResult:
             smooth_window_us=smooth_window_us,
             min_gap_ms=min_gap_ms,
             margin=margin,
+            fallback_noise_floor=spec_nf,
         )
         if time_fit is None:
             continue
 
         s0, s1, raw_s0, raw_s1, noise_floor, mean_pwr, peak_pwr = time_fit
-        new_t0 = orig_t0 + (s0 / float(seg_fs))
-        new_t1 = min(orig_t1, orig_t0 + (s1 / float(seg_fs)))
-        if new_t1 <= new_t0:
-            continue
-
         burst_time_iq = seg[s0:s1].copy()
         core_iq = seg[raw_s0:raw_s1] if raw_s1 > raw_s0 else burst_time_iq
 
-        new_f0, new_f1, obw_hz, rel_cfo_hz = _fit_tight_burst_freq(
+        # Pass 2: Tight frequency fit on the time-cropped burst
+        new_f0, new_f1, obw_hz, rel_cfo_hz, _ = _fit_tight_burst_freq(
             core_iq,
             fs=float(seg_fs),
             orig_fc=orig_fc,
             orig_f0=orig_f0,
             orig_f1=orig_f1,
             obw_fraction=obw_fraction,
+            threshold_db=threshold_db,
         )
+
+        # Pass 3: Refine time edges on the subband-filtered IQ if frequency narrowed significantly
+        if (new_f1 - new_f0) < 0.85 * (orig_f1 - orig_f0):
+            sub_full_iq, sub_full_fs = _subband_ddc(
+                seg,
+                in_fs=float(seg_fs),
+                in_fc=orig_fc,
+                target_f0=new_f0,
+                target_f1=new_f1,
+            )
+            sub_time_fit = _find_tight_burst_time(
+                sub_full_iq,
+                fs=float(sub_full_fs),
+                threshold_db=threshold_db,
+                smooth_window_us=smooth_window_us,
+                min_gap_ms=min_gap_ms,
+                margin=margin,
+            )
+            if sub_time_fit is not None:
+                sub_s0, sub_s1, sub_raw_s0, sub_raw_s1, noise_floor, mean_pwr, peak_pwr = sub_time_fit
+                new_t0 = orig_t0 + (sub_s0 / float(sub_full_fs))
+                new_t1 = min(orig_t1, orig_t0 + (sub_s1 / float(sub_full_fs)))
+                tight_iq = sub_full_iq[sub_s0:sub_s1].copy()
+                tight_fs = float(sub_full_fs)
+            else:
+                new_t0 = orig_t0 + (s0 / float(seg_fs))
+                new_t1 = min(orig_t1, orig_t0 + (s1 / float(seg_fs)))
+                tight_iq, tight_fs = _subband_ddc(
+                    burst_time_iq,
+                    in_fs=float(seg_fs),
+                    in_fc=orig_fc,
+                    target_f0=new_f0,
+                    target_f1=new_f1,
+                )
+        else:
+            new_t0 = orig_t0 + (s0 / float(seg_fs))
+            new_t1 = min(orig_t1, orig_t0 + (s1 / float(seg_fs)))
+            tight_iq, tight_fs = _subband_ddc(
+                burst_time_iq,
+                in_fs=float(seg_fs),
+                in_fc=orig_fc,
+                target_f0=new_f0,
+                target_f1=new_f1,
+            )
+
+        if new_t1 <= new_t0:
+            continue
 
         new_fc = 0.5 * (new_f0 + new_f1)
         new_bw = max(1.0, new_f1 - new_f0)
         new_dur_ms = (new_t1 - new_t0) * 1e3
-
-        tight_iq, tight_fs = _subband_ddc(
-            burst_time_iq,
-            in_fs=float(seg_fs),
-            in_fc=orig_fc,
-            target_f0=new_f0,
-            target_f1=new_f1,
-        )
 
         snr_db = float(10.0 * np.log10(max(mean_pwr / max(noise_floor, 1e-20), 1e-12)))
         peak_snr_db = float(10.0 * np.log10(max(peak_pwr / max(noise_floor, 1e-20), 1e-12)))
@@ -392,11 +495,13 @@ def run(samples: np.ndarray, info) -> PluginResult:
         cfo_from_orig_hz = float((orig_fc + rel_cfo_hz) - orig_fc)
 
         # Reshape Rect tightly around the detected burst
-        o.points = [(new_t0, new_f0), (new_t1, new_f1)]
+        new_points = [(new_t0, new_f0), (new_t1, new_f1)]
+        o.points = new_points
         o.iq = tight_iq
         o.fs = float(tight_fs)
 
-        o.metadata.update({
+        new_meta = copy.deepcopy(getattr(o, "metadata", {}) or {})
+        new_meta.update({
             "snapped": True,
             "fc_hz": round(float(new_fc), 2),
             "bw_hz": round(float(new_bw), 2),
@@ -414,6 +519,7 @@ def run(samples: np.ndarray, info) -> PluginResult:
             "num_samples": int(len(tight_iq)),
             "sample_rate_hz": round(float(tight_fs), 2),
         })
+        o.metadata = new_meta
 
         if update_tag:
             o.display_str = f"{new_fc / 1e3:.1f} kHz | {snr_db:.1f} dB"
@@ -424,7 +530,20 @@ def run(samples: np.ndarray, info) -> PluginResult:
             f"SNR: {snr_db:.1f} dB (Peak: {peak_snr_db:.1f} dB) | PAPR: {papr_db:.1f} dB | RMS: {rms_dbfs:.1f} dBFS"
         )
         o.hover_str = summary_line
-        result.update(o)
 
+        update_kwargs = {
+            "points": new_points,
+            "iq": tight_iq,
+            "fs": float(tight_fs),
+            "metadata": new_meta,
+            "hover_str": summary_line,
+        }
+        if update_tag:
+            update_kwargs["display_str"] = o.display_str
+
+        result.update(o.id, **update_kwargs)
+        n_snapped += 1
+
+    result.log(f"Snapped {n_snapped}/{total} Rect overlay(s) to burst")
     info.progress(100, "Done")
     return result
