@@ -70,12 +70,25 @@ class OverlayDialog(QDialog):
         self._editing = overlay is not None
         self._overlay = overlay if overlay is not None else Overlay()
 
+        self.setWindowFlags(
+            Qt.WindowType.Dialog
+            | Qt.WindowType.CustomizeWindowHint
+            | Qt.WindowType.WindowTitleHint
+            | Qt.WindowType.WindowCloseButtonHint
+        )
+
         self.setWindowTitle("Edit Overlay" if self._editing else "Add Overlay")
         self.setMinimumWidth(420)
         self.setModal(True)
 
         self._build_ui()
         self._populate_from_overlay(self._overlay)
+
+    def changeEvent(self, event) -> None:
+        from PyQt6.QtCore import QEvent
+        if event.type() == QEvent.Type.WindowStateChange and self.isMinimized():
+            self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
+        super().changeEvent(event)
 
     # ------------------------------------------------------------------
     # UI construction

@@ -67,7 +67,7 @@ adaptive IIR + <i>M</i>-out-of-<i>N</i> hysteresis energy detector on each chann
 PLUGIN_PARAMS = {
     "channel_spacing": {
         "type": "float",
-        "default": 25000.0,
+        "default": 500000.0,
         "label": "Channel Spacing / BW (Hz)",
         "tooltip": (
             "Bandwidth of each channel in Hz. When overlap is 0, adjacent "

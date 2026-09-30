@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QCheckBox, QPushButton, QHBoxLayout, QStackedWidget, QWidget, QScrollArea, QVBoxLayout, QButtonGroup, QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox, QSpinBox, QLineEdit
-from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtCore import Qt, pyqtSignal, QSize, QEvent
 from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap
 import importlib.resources
 import os
@@ -365,14 +365,10 @@ class MarkerPanel(QFrame):
         self.btn_quick_run.clicked.connect(self._on_quick_run_clicked)
 
         self.btn_quick_config = QPushButton("⚙")
-        self.btn_quick_config.setFixedSize(28, 28)
+        self.btn_quick_config.setFixedSize(30, 28)
+        self.btn_quick_config.setStyleSheet("QPushButton { padding: 0px; font-size: 15px; font-weight: bold; }")
         self.btn_quick_config.setToolTip("Configure selected plugin parameters")
         self.btn_quick_config.clicked.connect(self._on_quick_config_clicked)
-
-        self.btn_quick_docs = QPushButton("📖")
-        self.btn_quick_docs.setFixedSize(28, 28)
-        self.btn_quick_docs.setToolTip("View documentation for selected plugin")
-        self.btn_quick_docs.clicked.connect(self._on_quick_docs_clicked)
         
         self.cb_plugin_scope = QComboBox()
         self.cb_plugin_scope.setFixedHeight(28)
@@ -408,7 +404,6 @@ class MarkerPanel(QFrame):
         self.plugins_control_layout.addWidget(self.cb_quick_plugin)
         self.plugins_control_layout.addWidget(self.btn_quick_run)
         self.plugins_control_layout.addWidget(self.btn_quick_config)
-        self.plugins_control_layout.addWidget(self.btn_quick_docs)
         self.plugins_control_layout.addStretch()
         self.plugins_control_layout.addWidget(self.cb_plugin_scope)
         self.plugins_control_layout.addWidget(self.btn_plugin_studio)
@@ -452,7 +447,7 @@ class MarkerPanel(QFrame):
             self.btn_lock_m1, self.btn_lock_m2, self.btn_lock_delta, self.btn_lock_center,
             self.cb_bpf, self.cb_bsf,
             self.btn_manual_overlay, self.btn_clear_overlays_overlay,
-            self.btn_quick_run, self.btn_quick_config, self.btn_quick_docs,
+            self.btn_quick_run, self.btn_quick_config,
             self.btn_plugin_studio,
             self.btn_load_plugin, self.btn_clear_overlays_plugins,
         ]:
@@ -1561,8 +1556,24 @@ class PluginDocDialog(QDialog):
         self.plugin_name = plugin_name
         self.plugin_info = plugin_info or {}
         self.setWindowTitle(f"Plugin Documentation — {plugin_name}")
+        self.setWindowFlags(
+            Qt.WindowType.Dialog
+            | Qt.WindowType.CustomizeWindowHint
+            | Qt.WindowType.WindowTitleHint
+            | Qt.WindowType.WindowCloseButtonHint
+        )
         self.resize(720, 600)
         self._build_ui()
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.Type.WindowStateChange and self.isMinimized():
+            self.setWindowState(
+                (self.windowState() & ~Qt.WindowState.WindowMinimized)
+                | Qt.WindowState.WindowActive
+            )
+            event.ignore()
+            return
+        super().changeEvent(event)
 
     def _build_ui(self):
         from PyQt6.QtWidgets import QTextBrowser
@@ -1575,6 +1586,10 @@ class PluginDocDialog(QDialog):
             theme = self.parent().parent_window.settings_mgr.get("ui/theme", "Dark")
         from .themes import get_palette
         p = get_palette(theme)
+
+        self.setStyleSheet(
+            f"QDialog, QWidget {{ background-color: {p.bg_main}; color: {p.text_main}; }}"
+        )
 
         browser = QTextBrowser(self)
         browser.setOpenExternalLinks(True)
@@ -1663,21 +1678,48 @@ class PluginConfigDialog(QDialog):
         self.plugin_info = plugin_info or {}
         self.requested_step_run = None
         self.setWindowTitle(f"Configure {plugin_name}")
+        self.setWindowFlags(
+            Qt.WindowType.Dialog
+            | Qt.WindowType.CustomizeWindowHint
+            | Qt.WindowType.WindowTitleHint
+            | Qt.WindowType.WindowCloseButtonHint
+        )
         self.setMinimumWidth(420)
         self.setup_ui(params_spec, current_params)
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.Type.WindowStateChange and self.isMinimized():
+            self.setWindowState(
+                (self.windowState() & ~Qt.WindowState.WindowMinimized)
+                | Qt.WindowState.WindowActive
+            )
+            event.ignore()
+            return
+        super().changeEvent(event)
         
     def setup_ui(self, params_spec, current_params):
         layout = QVBoxLayout(self)
         form_container = QWidget()
         form_layout = QFormLayout(form_container)
         
-        theme = "Light"
+        theme = "Dark"
         if self.parent() and hasattr(self.parent(), 'parent_window'):
-            theme = self.parent().parent_window.settings_mgr.get("ui/theme", "Light")
+            theme = self.parent().parent_window.settings_mgr.get("ui/theme", "Dark")
         from .themes import get_palette
         p = get_palette(theme)
         
         self.setStyleSheet(f"""
+            QDialog, QWidget {{
+                background-color: {p.bg_main};
+                color: {p.text_main};
+            }}
+            QScrollArea {{
+                background-color: {p.bg_main};
+                border: none;
+            }}
+            QLabel, QCheckBox {{
+                color: {p.text_main};
+            }}
             QDoubleSpinBox, QSpinBox, QLineEdit {{
                 background-color: {p.bg_input};
                 color: {p.text_main};
@@ -1687,6 +1729,17 @@ class PluginConfigDialog(QDialog):
             }}
             QDoubleSpinBox:focus, QSpinBox:focus, QLineEdit:focus {{
                 border-color: {p.accent};
+            }}
+            QPushButton {{
+                background-color: {p.bg_widget};
+                color: {p.text_main};
+                border: 1px solid {p.border};
+                border-radius: 4px;
+                padding: 4px 10px;
+            }}
+            QPushButton:hover {{
+                border-color: {p.accent};
+                background-color: {p.border_light};
             }}
         """)
         
@@ -1762,7 +1815,7 @@ class PluginConfigDialog(QDialog):
             layout.addWidget(form_container)
 
         bottom_row = QHBoxLayout()
-        btn_docs = QPushButton("📖 Docs")
+        btn_docs = QPushButton("Docs")
         btn_docs.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_docs.setToolTip("Open detailed plugin documentation and parameter reference")
         btn_docs.clicked.connect(self._on_docs_clicked)
@@ -1770,7 +1823,7 @@ class PluginConfigDialog(QDialog):
 
         py_path = self.plugin_info.get("path")
         if py_path and os.path.isfile(py_path):
-            btn_save_py = QPushButton("💾 Save as Default in .py")
+            btn_save_py = QPushButton("Save Defaults to .py")
             btn_save_py.setCursor(Qt.CursorShape.PointingHandCursor)
             btn_save_py.setToolTip(f"Write current parameter values as defaults into:\n{py_path}")
             btn_save_py.clicked.connect(self._on_save_defaults_clicked)

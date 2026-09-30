@@ -20,9 +20,10 @@ from __future__ import annotations
 import copy
 import html as _html
 import os
+import re
 from typing import Any, Dict, List, Optional
 
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, QEvent
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -56,7 +57,7 @@ from PyQt6.QtWidgets import (
 
 from iqview.plugins.chain import PluginChain
 from .marker_panel import PluginDocDialog, ScientificNumberEdit
-from .themes import get_palette
+from .themes import get_palette, get_scrollbar_stylesheet
 
 
 class PluginStudioDialog(QDialog):
@@ -72,7 +73,13 @@ class PluginStudioDialog(QDialog):
         super().__init__(parent or parent_window)
         self.parent_window = parent_window
         self.setWindowTitle("IQView — Plugin Studio")
-        self.resize(1040, 700)
+        self.setWindowFlags(
+            Qt.WindowType.Dialog
+            | Qt.WindowType.CustomizeWindowHint
+            | Qt.WindowType.WindowTitleHint
+            | Qt.WindowType.WindowCloseButtonHint
+        )
+        self.resize(1120, 720)
 
         theme = "Dark"
         if hasattr(self.parent_window, "settings_mgr"):
@@ -86,11 +93,23 @@ class PluginStudioDialog(QDialog):
         self._chain_steps: List[Dict[str, Any]] = []
         self._active_chain_step_idx: int = -1
         self._chain_step_widgets: Dict[str, QWidget] = {}
+        self._editing_chain_orig_name: Optional[str] = None
+        self._editing_chain_path: Optional[str] = None
 
         self._build_ui()
         self.refresh_all(select_plugin=select_plugin)
         if 0 <= int(initial_tab) < self.tabs.count():
             self.tabs.setCurrentIndex(int(initial_tab))
+
+    def changeEvent(self, event) -> None:
+        if event.type() == QEvent.Type.WindowStateChange and self.isMinimized():
+            self.setWindowState(
+                (self.windowState() & ~Qt.WindowState.WindowMinimized)
+                | Qt.WindowState.WindowActive
+            )
+            event.ignore()
+            return
+        super().changeEvent(event)
 
     # ------------------------------------------------------------------
     # Top-Level UI Construction
@@ -99,13 +118,20 @@ class PluginStudioDialog(QDialog):
     def _build_ui(self) -> None:
         p = self.palette_obj
         self.setStyleSheet(
-            f"QDialog {{ background-color: {p.bg_main}; color: {p.text_main}; }}"
-            f"QGroupBox {{ border: 1px solid {p.border}; border-radius: 6px; margin-top: 8px; padding-top: 8px; font-weight: bold; color: {p.text_header}; }}"
-            f"QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px; }}"
-            f"QLineEdit, QComboBox, QPlainTextEdit, QListWidget, QTableWidget {{ background-color: {p.bg_input}; color: {p.text_main}; border: 1px solid {p.border}; border-radius: 4px; padding: 4px; }}"
+            f"QDialog, QWidget {{ background-color: {p.bg_main}; color: {p.text_main}; }}"
+            f"QScrollArea {{ background-color: {p.bg_main}; border: none; }}"
+            f"QLabel, QCheckBox {{ background-color: transparent; color: {p.text_main}; }}"
+            f"QTabWidget::pane {{ border: 1px solid {p.border}; background-color: {p.bg_main}; border-radius: 4px; }}"
+            f"QTabBar::tab {{ background-color: {p.bg_widget}; color: {p.text_dim}; border: 1px solid {p.border}; padding: 6px 14px; border-top-left-radius: 4px; border-top-right-radius: 4px; margin-right: 2px; }}"
+            f"QTabBar::tab:selected {{ background-color: {p.bg_main}; color: {p.accent}; font-weight: bold; border-bottom-color: {p.bg_main}; }}"
+            f"QGroupBox {{ background-color: {p.bg_main}; border: 1px solid {p.border}; border-radius: 6px; margin-top: 8px; padding-top: 10px; font-weight: bold; color: {p.text_header}; }}"
+            f"QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px; background-color: {p.bg_main}; color: {p.text_header}; }}"
+            f"QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QPlainTextEdit, QListWidget, QTableWidget {{ background-color: {p.bg_input}; color: {p.text_main}; border: 1px solid {p.border}; border-radius: 4px; padding: 4px; }}"
+            f"QHeaderView::section {{ background-color: {p.bg_widget}; color: {p.text_header}; border: 1px solid {p.border}; padding: 4px; }}"
             f"QPushButton {{ background-color: {p.bg_widget}; color: {p.text_main}; border: 1px solid {p.border}; border-radius: 4px; padding: 5px 10px; }}"
-            f"QPushButton:hover {{ border-color: {p.accent}; }}"
+            f"QPushButton:hover {{ border-color: {p.accent}; background-color: {p.border_light}; }}"
             f"QPushButton:disabled {{ color: {p.text_dim}; }}"
+            + get_scrollbar_stylesheet(p)
         )
 
         root_layout = QVBoxLayout(self)
@@ -327,29 +353,56 @@ class PluginStudioDialog(QDialog):
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(8)
 
-        # Top Metadata Bar
-        meta_group = QGroupBox("Chain Metadata")
-        meta_layout = QHBoxLayout(meta_group)
+        # Top Metadata & Pipeline Editing Bar
+        meta_group = QGroupBox("Chain Pipeline Metadata & Editing")
+        meta_vbox = QVBoxLayout(meta_group)
+        meta_vbox.setContentsMargins(8, 8, 8, 8)
+        meta_vbox.setSpacing(6)
 
-        meta_layout.addWidget(QLabel("Name:"))
+        # Status & Load controls row
+        status_row = QHBoxLayout()
+        self.lbl_editing_chain_status = QLabel("Mode: <b>New Chain</b>")
+        self.lbl_editing_chain_status.setStyleSheet(
+            f"background-color: {p.bg_widget}; color: {p.text_main}; border: 1px solid {p.border}; "
+            f"border-radius: 4px; padding: 4px 8px; font-size: 11px;"
+        )
+        status_row.addWidget(self.lbl_editing_chain_status)
+
+        btn_new_blank = QPushButton("New Blank Chain")
+        btn_new_blank.setToolTip("Reset the pipeline builder to create a fresh new chain")
+        btn_new_blank.clicked.connect(self._on_new_blank_chain_clicked)
+        status_row.addWidget(btn_new_blank)
+
+        btn_open_chain_file = QPushButton("Open Chain .py…")
+        btn_open_chain_file.setToolTip("Browse and load an existing chain .py file into the builder")
+        btn_open_chain_file.clicked.connect(self._on_open_chain_py_file)
+        status_row.addWidget(btn_open_chain_file)
+
+        status_row.addStretch(1)
+
+        status_row.addWidget(QLabel("Load Preexisting Chain:"))
+        self.cb_load_existing_chain = QComboBox()
+        self.cb_load_existing_chain.setMinimumWidth(180)
+        self.cb_load_existing_chain.currentIndexChanged.connect(self._on_select_existing_chain_to_edit)
+        status_row.addWidget(self.cb_load_existing_chain)
+        meta_vbox.addLayout(status_row)
+
+        # Name, Category, Description row
+        fields_row = QHBoxLayout()
+        fields_row.addWidget(QLabel("Name:"))
         self.ed_chain_name = QLineEdit("Custom Detection & Demod Chain")
         self.ed_chain_name.setMinimumWidth(200)
-        meta_layout.addWidget(self.ed_chain_name, 2)
+        fields_row.addWidget(self.ed_chain_name, 2)
 
-        meta_layout.addWidget(QLabel("Category:"))
+        fields_row.addWidget(QLabel("Category:"))
         self.ed_chain_category = QLineEdit("Chains")
         self.ed_chain_category.setFixedWidth(110)
-        meta_layout.addWidget(self.ed_chain_category)
+        fields_row.addWidget(self.ed_chain_category)
 
-        meta_layout.addWidget(QLabel("Description:"))
+        fields_row.addWidget(QLabel("Description:"))
         self.ed_chain_desc = QLineEdit("Multi-step RF detection and analysis pipeline.")
-        meta_layout.addWidget(self.ed_chain_desc, 3)
-
-        meta_layout.addWidget(QLabel("Load Existing:"))
-        self.cb_load_existing_chain = QComboBox()
-        self.cb_load_existing_chain.setMinimumWidth(160)
-        self.cb_load_existing_chain.currentIndexChanged.connect(self._on_select_existing_chain_to_edit)
-        meta_layout.addWidget(self.cb_load_existing_chain)
+        fields_row.addWidget(self.ed_chain_desc, 3)
+        meta_vbox.addLayout(fields_row)
 
         layout.addWidget(meta_group)
 
@@ -430,26 +483,35 @@ class PluginStudioDialog(QDialog):
         bottom_bar.addWidget(self.chk_chain_standalone)
         bottom_bar.addStretch(1)
 
+        self.btn_save_or_update_chain = QPushButton("Save / Update Chain")
+        self.btn_save_or_update_chain.setStyleSheet(
+            f"QPushButton {{ background-color: {p.accent_dim}; color: {p.text_header}; font-weight: bold; padding: 6px 14px; }}"
+            f"QPushButton:hover {{ border-color: {p.accent}; }}"
+        )
+        self.btn_save_or_update_chain.setToolTip(
+            "Update this chain in-place in IQView and overwrite its .py file if backed by one on disk"
+        )
+        self.btn_save_or_update_chain.clicked.connect(self._on_save_or_update_existing_chain)
+        bottom_bar.addWidget(self.btn_save_or_update_chain)
+
         btn_reg_session = QPushButton("Register Chain in Session")
-        btn_reg_session.setToolTip("Register this chain immediately in IQView without needing to save a .py file")
+        btn_reg_session.setToolTip("Register or update this chain immediately in IQView without requiring a .py file")
         btn_reg_session.clicked.connect(self._on_register_chain_in_session)
         bottom_bar.addWidget(btn_reg_session)
 
         btn_run_chain_now = QPushButton("Register && Run Chain Now")
-        btn_run_chain_now.setStyleSheet(
-            f"QPushButton {{ background-color: {p.accent_dim}; color: {p.text_header}; font-weight: bold; padding: 6px 14px; }}"
-        )
         btn_run_chain_now.clicked.connect(self._on_register_and_run_chain)
         bottom_bar.addWidget(btn_run_chain_now)
 
         btn_save_chain_py = QPushButton("Save Chain as .py…")
+        btn_save_chain_py.setToolTip("Export this chain into a new or chosen .py file")
         btn_save_chain_py.clicked.connect(self._on_save_chain_as_py)
         bottom_bar.addWidget(btn_save_chain_py)
 
         layout.addLayout(bottom_bar)
 
     # ==================================================================
-    # TAB 3: + Create Plugin (Template Generator)
+    # TAB 3: + Create Plugin (Template Generator & Live Doc Preview)
     # ==================================================================
 
     def _build_create_tab(self) -> None:
@@ -489,10 +551,11 @@ class PluginStudioDialog(QDialog):
 
         layout.addWidget(top_group)
 
+        # 3-Pane Splitter: Parameters Table | Python Code Preview (Editable) | Live Doc Preview
         mid_splitter = QSplitter(Qt.Orientation.Horizontal, self.tab_create)
 
         # Left: Visual Parameter Table
-        param_group = QGroupBox("Parameters (PLUGIN_PARAMS)")
+        param_group = QGroupBox("1. Parameters (PLUGIN_PARAMS)")
         param_layout = QVBoxLayout(param_group)
 
         self.tbl_tpl_params = QTableWidget(0, 5)
@@ -513,13 +576,14 @@ class PluginStudioDialog(QDialog):
 
         mid_splitter.addWidget(param_group)
 
-        # Right: Live Python Code Preview
-        code_group = QGroupBox("Generated Python Code Preview (Editable)")
+        # Middle: Live Python Code Preview (Editable)
+        code_group = QGroupBox("2. Python Code Preview (Editable)")
         code_layout = QVBoxLayout(code_group)
         self.ed_tpl_code = QPlainTextEdit()
         mono = QFont("Consolas", 10)
         mono.setStyleHint(QFont.StyleHint.Monospace)
         self.ed_tpl_code.setFont(mono)
+        self.ed_tpl_code.textChanged.connect(self._update_template_doc_live_preview)
         code_layout.addWidget(self.ed_tpl_code, 1)
 
         code_btn_row = QHBoxLayout()
@@ -528,6 +592,7 @@ class PluginStudioDialog(QDialog):
         btn_save_load = QPushButton("Save && Load .py Plugin…")
         btn_save_load.setStyleSheet(
             f"QPushButton {{ background-color: {p.accent_dim}; color: {p.text_header}; font-weight: bold; padding: 6px 14px; }}"
+            f"QPushButton:hover {{ border-color: {p.accent}; }}"
         )
         btn_save_load.clicked.connect(self._on_save_and_load_template)
         code_btn_row.addWidget(btn_regen)
@@ -536,8 +601,26 @@ class PluginStudioDialog(QDialog):
         code_layout.addLayout(code_btn_row)
 
         mid_splitter.addWidget(code_group)
+
+        # Right: Live Documentation Preview
+        doc_group = QGroupBox("3. Live Documentation Preview")
+        doc_layout = QVBoxLayout(doc_group)
+        self.tpl_doc_preview = QTextBrowser()
+        self.tpl_doc_preview.setOpenExternalLinks(True)
+        self.tpl_doc_preview.setStyleSheet(
+            f"QTextBrowser {{ background-color: {p.bg_input}; color: {p.text_main}; border: 1px solid {p.border}; border-radius: 4px; padding: 10px; font-size: 13px; }}"
+        )
+        doc_layout.addWidget(self.tpl_doc_preview, 1)
+
+        doc_hint = QLabel("Live preview updates in real time as you edit parameters, scaffold settings, or Python code.")
+        doc_hint.setStyleSheet(f"color: {p.text_dim}; font-size: 11px;")
+        doc_hint.setWordWrap(True)
+        doc_layout.addWidget(doc_hint)
+
+        mid_splitter.addWidget(doc_group)
         mid_splitter.setStretchFactor(0, 2)
         mid_splitter.setStretchFactor(1, 3)
+        mid_splitter.setStretchFactor(2, 3)
         layout.addWidget(mid_splitter, 1)
 
         # Initialize default template preset
@@ -651,7 +734,14 @@ class PluginStudioDialog(QDialog):
         self.lbl_manage_meta.setText(f"Category: {cat}  |  Type: {t_label}  |  IQ Mode: {iq_label}\n{desc}")
 
         self.btn_edit_in_chain_builder.setVisible(is_chain)
-        self.btn_save_defaults_py.setEnabled(bool(info.get("path")) and not is_builtin)
+        has_params = bool(info.get("params_spec"))
+        self.btn_save_defaults_py.setEnabled(has_params)
+        if is_chain and not info.get("path"):
+            self.btn_save_defaults_py.setToolTip("Save tuned parameters as in-session defaults (prompts to export .py)")
+        elif info.get("path"):
+            self.btn_save_defaults_py.setToolTip(f"Write current parameter values as defaults directly into:\n{info.get('path')}")
+        else:
+            self.btn_save_defaults_py.setToolTip("Save current parameter values as defaults")
 
         self._rebuild_manage_params_form(name, info)
         self._rebuild_manage_doc_html(name, info)
@@ -732,6 +822,25 @@ class PluginStudioDialog(QDialog):
         self.params_form_layout.setContentsMargins(4, 4, 4, 4)
         self.params_form_layout.setSpacing(8)
         self._manage_param_widgets.clear()
+
+        # Banner for chains leading to Chain Builder
+        if info.get("chain") is not None:
+            p = self.palette_obj
+            chain_banner = QFrame()
+            chain_banner.setStyleSheet(
+                f"QFrame {{ background-color: {p.bg_widget}; border: 1px solid {p.accent}; "
+                f"border-radius: 6px; padding: 4px; margin-bottom: 4px; }}"
+            )
+            banner_lay = QHBoxLayout(chain_banner)
+            banner_lay.setContentsMargins(8, 4, 8, 4)
+            lbl_banner = QLabel("<b>Pipeline Chain:</b> You can tune step parameters below, or modify pipeline steps & order in Chain Builder.")
+            lbl_banner.setStyleSheet(f"color: {p.text_main}; border: none;")
+            btn_banner = QPushButton("Edit Pipeline in Chain Builder…")
+            btn_banner.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn_banner.clicked.connect(self._on_edit_selected_chain)
+            banner_lay.addWidget(lbl_banner, 1)
+            banner_lay.addWidget(btn_banner)
+            self.params_form_layout.addWidget(chain_banner)
 
         params_spec = info.get("params_spec", {}) or {}
         current_params = info.get("params", {}) or {}
@@ -883,16 +992,37 @@ class PluginStudioDialog(QDialog):
         if not self._selected_manage_plugin:
             return
         self._on_apply_manage_params()
-        ok = self.parent_window.save_plugin_defaults_to_py(self._selected_manage_plugin)
-        if ok:
-            QMessageBox.information(
-                self, "Defaults Saved",
-                f"Saved current parameter values as defaults to the .py file for '{self._selected_manage_plugin}'."
+        info = self.parent_window._loaded_plugins.get(self._selected_manage_plugin, {})
+        py_path = info.get("path")
+        if py_path and os.path.isfile(py_path):
+            ok = self.parent_window.save_plugin_defaults_to_py(self._selected_manage_plugin)
+            if ok:
+                QMessageBox.information(
+                    self, "Defaults Saved",
+                    f"Saved current parameter values as defaults directly into:\n{py_path}"
+                )
+            else:
+                QMessageBox.warning(
+                    self, "Cannot Save Defaults",
+                    f"Could not write defaults to:\n{py_path}"
+                )
+        elif info.get("chain") is not None:
+            # Sync in-memory chain step defaults
+            self.parent_window.save_plugin_defaults_to_py(self._selected_manage_plugin)
+            reply = QMessageBox.question(
+                self,
+                "Save Chain Defaults",
+                f"Parameter defaults for '{self._selected_manage_plugin}' have been updated for this session.\n\n"
+                "Would you like to export and save this chain as a .py file so these defaults persist across restarts?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
+            if reply == QMessageBox.StandardButton.Yes:
+                self._on_edit_selected_chain()
+                self._on_save_chain_as_py()
         else:
-            QMessageBox.warning(
-                self, "Cannot Save Defaults",
-                "Could not write defaults to the .py file (built-in plugins are read-only)."
+            QMessageBox.information(
+                self, "Defaults Applied",
+                f"Parameters for '{self._selected_manage_plugin}' are updated for this session."
             )
 
     def _sync_scope_to_panel(self) -> None:
@@ -961,9 +1091,7 @@ class PluginStudioDialog(QDialog):
     def _on_edit_selected_chain(self) -> None:
         if not self._selected_manage_plugin:
             return
-        idx = self.cb_load_existing_chain.findData(self._selected_manage_plugin)
-        if idx >= 0:
-            self.cb_load_existing_chain.setCurrentIndex(idx)
+        self._load_chain_into_builder(self._selected_manage_plugin)
         self.tabs.setCurrentIndex(1)
 
     # ==================================================================
@@ -977,9 +1105,14 @@ class PluginStudioDialog(QDialog):
         self.cb_load_existing_chain.addItem("— New Blank Chain —", userData="")
 
         loaded = getattr(self.parent_window, "_loaded_plugins", {})
+        selected_idx = 0
+        c_idx = 1
         for name, info in loaded.items():
             if info.get("chain") is not None:
                 self.cb_load_existing_chain.addItem(f"{name} [Chain]", userData=name)
+                if self._editing_chain_orig_name and name == self._editing_chain_orig_name:
+                    selected_idx = c_idx
+                c_idx += 1
                 continue
             cat = info.get("category", "General")
             item = QListWidgetItem(f"{name}  [{cat}]")
@@ -988,15 +1121,39 @@ class PluginStudioDialog(QDialog):
                 item.setToolTip(str(info["description"]))
             self.list_available_for_chain.addItem(item)
 
+        self.cb_load_existing_chain.setCurrentIndex(selected_idx)
         self.cb_load_existing_chain.blockSignals(False)
 
-    def _on_select_existing_chain_to_edit(self) -> None:
-        chain_name = self.cb_load_existing_chain.currentData()
-        if not chain_name:
-            return
+    def _update_editing_chain_status(self) -> None:
+        p = self.palette_obj
+        if self._editing_chain_orig_name:
+            path_str = (
+                f" ({os.path.basename(self._editing_chain_path)})"
+                if self._editing_chain_path
+                else " [In-Session]"
+            )
+            self.lbl_editing_chain_status.setText(
+                f"Editing: <b>{_html.escape(self._editing_chain_orig_name)}</b>{path_str}"
+            )
+            self.lbl_editing_chain_status.setStyleSheet(
+                f"background-color: {p.accent_dim}; color: {p.text_header}; border: 1px solid {p.accent}; "
+                f"border-radius: 4px; padding: 4px 8px; font-size: 11px;"
+            )
+            self.btn_save_or_update_chain.setText("Update Chain")
+        else:
+            self.lbl_editing_chain_status.setText("Mode: <b>New Chain</b>")
+            self.lbl_editing_chain_status.setStyleSheet(
+                f"background-color: {p.bg_widget}; color: {p.text_main}; border: 1px solid {p.border}; "
+                f"border-radius: 4px; padding: 4px 8px; font-size: 11px;"
+            )
+            self.btn_save_or_update_chain.setText("Save / Update Chain")
+
+    def _load_chain_into_builder(self, chain_name: str) -> None:
         info = self.parent_window._loaded_plugins.get(chain_name)
         if not info or info.get("chain") is None:
             return
+        self._editing_chain_orig_name = chain_name
+        self._editing_chain_path = info.get("path")
         chain_obj: PluginChain = info["chain"]
         self.ed_chain_name.setText(chain_obj.name or chain_name)
         self.ed_chain_category.setText(chain_obj.category or "Chains")
@@ -1011,6 +1168,64 @@ class PluginStudioDialog(QDialog):
                 "params": copy.deepcopy(s.get("params", {})),
             })
         self._refresh_chain_steps_list(select_row=0 if self._chain_steps else -1)
+        self._update_editing_chain_status()
+
+        idx = self.cb_load_existing_chain.findData(chain_name)
+        if idx >= 0:
+            self.cb_load_existing_chain.blockSignals(True)
+            self.cb_load_existing_chain.setCurrentIndex(idx)
+            self.cb_load_existing_chain.blockSignals(False)
+
+    def _on_new_blank_chain_clicked(self) -> None:
+        self._editing_chain_orig_name = None
+        self._editing_chain_path = None
+        self.ed_chain_name.setText("Custom Detection & Demod Chain")
+        self.ed_chain_category.setText("Chains")
+        self.ed_chain_desc.setText("Multi-step RF detection and analysis pipeline.")
+        self._active_chain_step_idx = -1
+        self._chain_steps.clear()
+        self._refresh_chain_steps_list(select_row=-1)
+        self._update_editing_chain_status()
+        self.cb_load_existing_chain.blockSignals(True)
+        self.cb_load_existing_chain.setCurrentIndex(0)
+        self.cb_load_existing_chain.blockSignals(False)
+
+    def _on_open_chain_py_file(self) -> None:
+        default_dir = os.path.join(os.getcwd(), "examples", "plugins")
+        if not os.path.isdir(default_dir):
+            default_dir = os.getcwd()
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Chain Plugin (.py)", default_dir, "Python Files (*.py)"
+        )
+        if not path:
+            return
+        loaded_name = self.parent_window._load_plugin_from_path(path)
+        if not loaded_name:
+            QMessageBox.warning(self, "Load Failed", f"Could not load plugin from:\n{path}")
+            return
+        info = self.parent_window._loaded_plugins.get(loaded_name)
+        if not info or info.get("chain") is None:
+            QMessageBox.information(
+                self,
+                "Loaded Standalone Plugin",
+                f"Loaded '{loaded_name}', which is a standalone plugin rather than a PluginChain.\n"
+                f"Opening '{loaded_name}' in Manage & Run tab.",
+            )
+            self.refresh_all(select_plugin=loaded_name)
+            self.tabs.setCurrentIndex(0)
+            return
+
+        self._editing_chain_path = path
+        self.refresh_all(select_plugin=loaded_name)
+        self._load_chain_into_builder(loaded_name)
+        self.tabs.setCurrentIndex(1)
+
+    def _on_select_existing_chain_to_edit(self) -> None:
+        chain_name = self.cb_load_existing_chain.currentData()
+        if not chain_name:
+            self._on_new_blank_chain_clicked()
+            return
+        self._load_chain_into_builder(chain_name)
 
     def _save_active_chain_step_edits(self) -> None:
         if 0 <= self._active_chain_step_idx < len(self._chain_steps) and self._chain_step_widgets:
@@ -1168,12 +1383,57 @@ class PluginStudioDialog(QDialog):
             chain.add(s["target"], **copy.deepcopy(s.get("params", {})))
         return chain
 
+    def _on_save_or_update_existing_chain(self) -> None:
+        chain = self.build_chain_object()
+        if chain is None:
+            return
+        orig_name = self._editing_chain_orig_name
+        py_path = self._editing_chain_path
+
+        reg_name = self.parent_window.register_chain_plugin(
+            chain,
+            path=py_path,
+            replace_name=orig_name,
+        )
+        self._editing_chain_orig_name = reg_name
+
+        file_saved = False
+        if py_path and os.path.isfile(py_path):
+            try:
+                chain.set_resolver(self.parent_window._resolve_plugin_target)
+                code = chain.to_python_code(standalone=self.chk_chain_standalone.isChecked())
+                with open(py_path, "w", encoding="utf-8") as f:
+                    f.write(code)
+                file_saved = True
+            except Exception as exc:
+                QMessageBox.warning(
+                    self,
+                    "File Save Warning",
+                    f"Updated chain in IQView, but could not write to .py file:\n{exc}",
+                )
+
+        self.refresh_all(select_plugin=reg_name)
+        self._update_editing_chain_status()
+
+        save_msg = f"\nand saved updated code directly to:\n{py_path}" if file_saved else ""
+        QMessageBox.information(
+            self,
+            "Chain Updated",
+            f"Chain '{reg_name}' updated successfully in IQView{save_msg}.",
+        )
+
     def _on_register_chain_in_session(self) -> Optional[str]:
         chain = self.build_chain_object()
         if chain is None:
             return None
-        reg_name = self.parent_window.register_chain_plugin(chain)
+        reg_name = self.parent_window.register_chain_plugin(
+            chain,
+            path=self._editing_chain_path,
+            replace_name=self._editing_chain_orig_name,
+        )
+        self._editing_chain_orig_name = reg_name
         self.refresh_all(select_plugin=reg_name)
+        self._update_editing_chain_status()
         return reg_name
 
     def _on_register_and_run_chain(self) -> None:
@@ -1192,11 +1452,14 @@ class PluginStudioDialog(QDialog):
         standalone = self.chk_chain_standalone.isChecked()
         code = chain.to_python_code(standalone=standalone)
 
-        safe_slug = "".join(c if c.isalnum() else "_" for c in chain.name.lower()).strip("_") or "custom_chain"
-        default_dir = os.path.join(os.getcwd(), "examples", "plugins")
-        if not os.path.isdir(default_dir):
-            default_dir = os.getcwd()
-        default_path = os.path.join(default_dir, f"{safe_slug}.py")
+        if self._editing_chain_path and os.path.isfile(self._editing_chain_path):
+            default_path = self._editing_chain_path
+        else:
+            safe_slug = "".join(c if c.isalnum() else "_" for c in chain.name.lower()).strip("_") or "custom_chain"
+            default_dir = os.path.join(os.getcwd(), "examples", "plugins")
+            if not os.path.isdir(default_dir):
+                default_dir = os.getcwd()
+            default_path = os.path.join(default_dir, f"{safe_slug}.py")
 
         path, _ = QFileDialog.getSaveFileName(
             self, "Save Chain as Python Plugin (.py)", default_path, "Python Files (*.py)"
@@ -1208,7 +1471,10 @@ class PluginStudioDialog(QDialog):
 
         loaded_name = self.parent_window._load_plugin_from_path(path)
         if loaded_name:
+            self._editing_chain_orig_name = loaded_name
+            self._editing_chain_path = path
             self.refresh_all(select_plugin=loaded_name)
+            self._update_editing_chain_status()
             QMessageBox.information(
                 self, "Chain Saved & Loaded",
                 f"Saved chain to:\n{path}\n\nand loaded '{loaded_name}' into IQView."
@@ -1525,6 +1791,60 @@ PLUGIN_DOC = """
 
 {body}'''
         self.ed_tpl_code.setPlainText(code)
+        self._update_template_doc_live_preview()
+
+    def _extract_plugin_doc_from_code(self, code_text: str) -> str:
+        m = re.search(
+            r'PLUGIN_DOC\s*=\s*(?:"""(.*?)"""|\'\'\'(.*?)\'\'\')',
+            code_text,
+            re.DOTALL,
+        )
+        if m:
+            content = m.group(1) if m.group(1) is not None else m.group(2)
+            return content.strip()
+        return ""
+
+    def _update_template_doc_live_preview(self) -> None:
+        if not hasattr(self, "tpl_doc_preview"):
+            return
+        p = self.palette_obj
+        code_text = self.ed_tpl_code.toPlainText()
+        doc_body = self._extract_plugin_doc_from_code(code_text)
+
+        m_name = re.search(r'PLUGIN_NAME\s*=\s*["\']([^"\']+)["\']', code_text)
+        m_cat = re.search(r'PLUGIN_CATEGORY\s*=\s*["\']([^"\']+)["\']', code_text)
+        m_wb = re.search(r'PLUGIN_NEEDS_WIDEBAND_IQ\s*=\s*(True|False)', code_text)
+
+        name = m_name.group(1) if m_name else (self.ed_tpl_name.text().strip() or "Custom Plugin")
+        cat = m_cat.group(1) if m_cat else (self.ed_tpl_category.text().strip() or "Custom")
+        iq_mode = (
+            "Wideband IQ"
+            if (not m_wb or m_wb.group(1) == "True")
+            else "Overlay Baseband IQ (o.iq)"
+        )
+
+        if not doc_body:
+            m_desc = re.search(r'PLUGIN_DESCRIPTION\s*=\s*["\']([^"\']+)["\']', code_text)
+            desc = m_desc.group(1) if m_desc else self.ed_tpl_desc.text().strip()
+            doc_body = (
+                f"<h3>{_html.escape(name)}</h3>"
+                f"<p>{_html.escape(desc)}</p>"
+                f"<p style='color:{p.text_dim}; font-style:italic;'>"
+                f"Define <code>PLUGIN_DOC = \"\"\"...\"\"\"</code> in the code editor to customize this live documentation preview."
+                f"</p>"
+            )
+
+        full_html = f"""
+        <div style="font-family: 'Segoe UI', sans-serif; line-height: 1.45; color: {p.text_main};">
+            <div style="margin-bottom: 10px; color: {p.text_dim}; font-size: 11px;">
+                <b>Category:</b> {_html.escape(cat)} &nbsp;|&nbsp;
+                <b>Type:</b> Custom Plugin (.py) &nbsp;|&nbsp;
+                <b>IQ Mode:</b> {_html.escape(iq_mode)}
+            </div>
+            {doc_body}
+        </div>
+        """
+        self.tpl_doc_preview.setHtml(full_html)
 
     def _on_save_and_load_template(self) -> None:
         code = self.ed_tpl_code.toPlainText()

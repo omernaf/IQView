@@ -339,10 +339,31 @@ class PluginManagerMixin:
         self,
         chain: PluginChain,
         path: Optional[str] = None,
+        replace_name: Optional[str] = None,
     ) -> str:
-        """Register a `PluginChain` directly in memory and refresh the UI."""
+        """Register or update a `PluginChain` in memory and refresh the UI."""
         chain.set_resolver(self._resolve_plugin_target)
         name = chain.name or "Custom Chain"
+
+        prev_info = None
+        if replace_name and replace_name in self._loaded_plugins:
+            prev_info = self._loaded_plugins.get(replace_name)
+        elif name in self._loaded_plugins:
+            prev_info = self._loaded_plugins.get(name)
+
+        if path is None and prev_info is not None:
+            path = prev_info.get("path")
+
+        if replace_name and replace_name != name and replace_name in self._loaded_plugins:
+            del self._loaded_plugins[replace_name]
+            pinned = self.get_pinned_plugins()
+            if replace_name in pinned:
+                pinned = [name if p == replace_name else p for p in pinned]
+                if hasattr(self, "settings_mgr"):
+                    self.settings_mgr.set("plugins/pinned", ";;".join(pinned))
+                else:
+                    self._pinned_plugins_mem = pinned
+
         params_spec = chain.get_combined_params_spec()
         active_params = {
             k: (spec.get("default") if isinstance(spec, dict) else spec)
@@ -352,23 +373,25 @@ class PluginManagerMixin:
             "name":                  name,
             "path":                  path,
             "mtime":                 os.path.getmtime(path) if (path and os.path.isfile(path)) else 0.0,
-            "module":                None,
+            "module":                prev_info.get("module") if prev_info else None,
             "func":                  lambda s, ctx, _c=chain: _c.run(s, ctx),
             "chain":                 chain,
-            "builtin":               False,
+            "builtin":               bool(prev_info.get("builtin", False)) if prev_info else False,
             "description":           chain.description or "",
             "doc":                   chain.get_doc(),
             "category":              chain.category or "Chains",
-            "run_on_main":           False,
+            "run_on_main":           bool(prev_info.get("run_on_main", False)) if prev_info else False,
             "needs_wideband_iq":     chain.needs_wideband_iq(),
             "batch_seconds":         None,
             "batch_overlap_seconds": 0.0,
             "params_spec":           params_spec,
             "params":                active_params,
         }
+        if path and os.path.isfile(path):
+            self._save_plugin_paths()
         self._rebuild_plugins_menu()
         if hasattr(self, "statusBar"):
-            self.statusBar().showMessage(f"Registered chain: {name}", 3000)
+            self.statusBar().showMessage(f"Updated chain: {name}", 3000)
         return name
 
     def _restore_builtin_plugins(self) -> None:
@@ -548,10 +571,21 @@ class PluginManagerMixin:
         info = self._loaded_plugins.get(name)
         if info is None:
             return False
+        values = params if params is not None else info.get("params", {})
+
+        # Sync in-memory chain step defaults if this is a PluginChain
+        chain_obj = info.get("chain")
+        if chain_obj is not None and hasattr(chain_obj, "steps"):
+            for step_idx, s_dict in enumerate(chain_obj.steps):
+                prefix = f"step{step_idx}."
+                for k, v in values.items():
+                    if str(k).startswith(prefix):
+                        raw_k = str(k)[len(prefix):]
+                        s_dict.setdefault("params", {})[raw_k] = v
+
         path = info.get("path")
         if not path or not os.path.isfile(path):
             return False
-        values = params if params is not None else info.get("params", {})
         ok = save_defaults_to_py(path, values)
         if ok:
             info["params"] = copy.deepcopy(values)

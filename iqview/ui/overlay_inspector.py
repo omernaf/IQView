@@ -79,12 +79,25 @@ class OverlayInspectorDialog(QDialog):
         self.overlay = overlay
         self.parent_window = parent_window
 
+        self.setWindowFlags(
+            Qt.WindowType.Dialog
+            | Qt.WindowType.CustomizeWindowHint
+            | Qt.WindowType.WindowTitleHint
+            | Qt.WindowType.WindowCloseButtonHint
+        )
+
         title_tag = f" — {overlay.display_str}" if overlay.display_str else ""
         self.setWindowTitle(f"Overlay Inspector ({overlay.shape.value}){title_tag}")
         self.setMinimumSize(660, 540)
         self.resize(720, 620)
 
         self._setup_ui()
+
+    def changeEvent(self, event) -> None:
+        from PyQt6.QtCore import QEvent
+        if event.type() == QEvent.Type.WindowStateChange and self.isMinimized():
+            self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
+        super().changeEvent(event)
 
     def _get_theme_palette(self):
         theme = "Dark"
