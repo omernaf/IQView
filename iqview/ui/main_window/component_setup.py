@@ -278,6 +278,7 @@ class UIComponentsMixin:
         self.marker_panel.interactionModeChanged.connect(self.set_interaction_mode)
         self.marker_panel.resetZoomRequested.connect(self.reset_zoom)
         self.marker_panel.markerClearRequested.connect(self.handle_marker_clear)
+        self.marker_panel.clearOverlaysRequested.connect(self.clear_overlays)
         if hasattr(self, '_loaded_plugins') and hasattr(self.marker_panel, 'update_plugins_list'):
             self.marker_panel.update_plugins_list(self._loaded_plugins)
         self.spec_v_layout.addWidget(self.marker_panel)
@@ -339,6 +340,12 @@ class UIComponentsMixin:
         export_action.setStatusTip("Export all currently placed overlays to a JSON file")
         export_action.triggered.connect(self.export_overlays)
         overlays_menu.addAction(export_action)
+
+        overlays_menu.addSeparator()
+        promote_action = QAction("&Promote Plugin Overlays to User Overlays", self)
+        promote_action.setStatusTip("Convert all plugin-generated overlays into permanent user overlays")
+        promote_action.triggered.connect(self.promote_plugin_overlays)
+        overlays_menu.addAction(promote_action)
 
         # --- Plugins Menu ---
         self._plugins_menu = mb.addMenu("&Plugins")

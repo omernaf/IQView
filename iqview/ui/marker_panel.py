@@ -10,6 +10,7 @@ class MarkerPanel(QFrame):
     interactionModeChanged = pyqtSignal(str) # 'TIME', 'FREQ', 'ZOOM', 'OVERLAY', …
     resetZoomRequested = pyqtSignal()
     markerClearRequested = pyqtSignal(str)
+    clearOverlaysRequested = pyqtSignal()
 
     def __init__(self, parent_window):
         super().__init__()
@@ -349,6 +350,18 @@ class MarkerPanel(QFrame):
         self.plugins_control_layout.setContentsMargins(5, 2, 5, 2)
         self.plugins_control_layout.setSpacing(10)
         
+        self.cb_plugin_scope = QComboBox()
+        self.cb_plugin_scope.setFixedHeight(28)
+        self.cb_plugin_scope.addItem("Scope: Current View", userData="view")
+        self.cb_plugin_scope.addItem("Scope: Between Markers", userData="markers")
+        self.cb_plugin_scope.addItem("Scope: Full File", userData="full_file")
+        self.cb_plugin_scope.setToolTip(
+            "Choose time/frequency range passed to plugins:\n"
+            "• Current View: visible spectrogram viewport\n"
+            "• Between Markers: M1..M2 time/frequency markers (falls back to view)\n"
+            "• Full File: entire recording from 0s to end"
+        )
+
         self.btn_load_plugin = QPushButton("Load Plugin...")
         self.btn_load_plugin.setFixedHeight(28)
         self.btn_load_plugin.setMinimumWidth(110)
@@ -363,6 +376,7 @@ class MarkerPanel(QFrame):
         
         self.plugins_control_layout.addWidget(QLabel("Plugins Manager"))
         self.plugins_control_layout.addStretch()
+        self.plugins_control_layout.addWidget(self.cb_plugin_scope)
         self.plugins_control_layout.addWidget(self.btn_load_plugin)
         self.plugins_control_layout.addWidget(self.btn_clear_overlays_plugins)
         
@@ -742,6 +756,10 @@ class MarkerPanel(QFrame):
             edit_tag.setFixedHeight(24)
             edit_tag.setPlaceholderText("...")
 
+            btn_inspect = QPushButton("Inspect")
+            btn_inspect.setFixedHeight(28)
+            btn_inspect.setToolTip("Inspect overlay metadata, full text/bits, and narrowband IQ")
+
             btn_vis = QPushButton("Hide")
             btn_vis.setFixedHeight(28)
             btn_vis.setToolTip("Toggle Visibility")
@@ -766,6 +784,7 @@ class MarkerPanel(QFrame):
             rl.addWidget(lbl_id)
             rl.addWidget(lbl_shape)
             rl.addWidget(edit_tag, 1)
+            rl.addWidget(btn_inspect)
             rl.addWidget(btn_vis)
             rl.addWidget(btn_lock)
             rl.addWidget(btn_edit)
@@ -775,6 +794,7 @@ class MarkerPanel(QFrame):
             self._overlay_rows.append({
                 'widget': row, 'lbl_id': lbl_id,
                 'lbl_shape': lbl_shape, 'edit_tag': edit_tag,
+                'btn_inspect': btn_inspect,
                 'btn_vis': btn_vis, 'btn_lock': btn_lock,
                 'btn_edit': btn_edit, 'btn_del': btn_del,
             })
@@ -787,11 +807,25 @@ class MarkerPanel(QFrame):
             rd['lbl_id'].setStyleSheet(
                 f"color: {overlay.border_color or overlay.color or '#008800'}; font-weight: bold;"
             )
-            rd['lbl_shape'].setText(overlay.shape.value)
+            shape_str = overlay.shape.value if hasattr(overlay.shape, 'value') else str(overlay.shape)
+            rd['lbl_shape'].setText(shape_str)
             rd['edit_tag'].blockSignals(True)
             rd['edit_tag'].setText(overlay.display_str or "")
-            rd['edit_tag'].setToolTip(overlay.hover_str or "")
+            hover_tip = (
+                overlay.get_truncated_hover()
+                if hasattr(overlay, 'get_truncated_hover')
+                else (overlay.hover_str or "")
+            )
+            rd['edit_tag'].setToolTip(hover_tip)
+            rd['lbl_shape'].setToolTip(f"Source: {getattr(overlay, 'source', 'user')}")
             rd['edit_tag'].blockSignals(False)
+
+            has_meta_or_iq = bool(getattr(overlay, 'metadata', None)) or (getattr(overlay, 'iq', None) is not None)
+            rd['btn_inspect'].setStyleSheet(
+                "QPushButton { border: 1px solid #00aaff; color: #00aaff; border-radius: 4px; padding: 2px 6px; }"
+                "QPushButton:hover { background: rgba(0,170,255,0.15); }"
+                if has_meta_or_iq else ""
+            )
 
             rd['btn_vis'].setText("Hide" if overlay.visible else "Show")
 
@@ -807,6 +841,8 @@ class MarkerPanel(QFrame):
             oid = overlay.id
             try: rd['edit_tag'].editingFinished.disconnect()
             except: pass
+            try: rd['btn_inspect'].clicked.disconnect()
+            except: pass
             try: rd['btn_vis'].clicked.disconnect()
             except: pass
             try: rd['btn_lock'].clicked.disconnect()
@@ -817,6 +853,7 @@ class MarkerPanel(QFrame):
             except: pass
             
             rd['edit_tag'].editingFinished.connect(lambda r=rd, o=oid: self.parent_window.update_overlay(o, display_str=r['edit_tag'].text()))
+            rd['btn_inspect'].clicked.connect(lambda _, o=oid: self.parent_window.inspect_overlay(o))
             rd['btn_vis'].clicked.connect(lambda _, o=oid: self.parent_window.update_overlay(
                 o, visible=not self.parent_window._get_overlay_by_id(o).visible))
             rd['btn_lock'].clicked.connect(lambda _, o=oid: self.parent_window.update_overlay(

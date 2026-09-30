@@ -6,43 +6,78 @@ Plugin contract
 ---------------
 A plugin is a plain .py file that exposes a top-level function:
 
-    def run(samples: np.ndarray, info: dict) -> PluginResult:
+    def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
         ...
 
-`samples`  — complex64 numpy array of IQ samples for the current view window.
-`info`     — dict with keys:
-               sample_rate  (Hz)
-               center_freq  (Hz)
-               t_start      (seconds, start of current view)
-               t_end        (seconds, end of current view)
-               f_start      (Hz, bottom of current view)
-               f_end        (Hz, top of current view)
-               overlays     (list[Overlay] — deep copies of all overlays currently
-                             on screen; read-only snapshot; safe to inspect from a
-                             background thread)
-Return     — a PluginResult instance (from `from iqview import PluginResult`).
-             Use .add(), .update(), .remove(), .replace() to express operations.
-             Returning anything other than a PluginResult raises an error dialog.
+`samples`  — complex64 numpy array of IQ samples for the execution window
+             (or empty array if PLUGIN_NEEDS_WIDEBAND_IQ = False or when
+             streaming large files via PLUGIN_BATCH_SECONDS).
+`info`     — PluginContext object supporting BOTH attribute access
+             (`info.sample_rate`, `info.fs`, `info.params.threshold_db`,
+             `info.overlays`, `info.progress(50, "Demodulating...")`,
+             `info.is_cancelled()`, `info.extract_iq(t0, t1)`,
+             `info.iter_batches(duration_s=1.0)`) AND legacy dictionary
+             access (`info["sample_rate"]`, `info.get("params")`).
+Return     — a PluginResult instance (`from iqview import PluginResult`).
 
 Optional module-level metadata constants:
-    PLUGIN_NAME               = "Human readable name"
-    PLUGIN_DESCRIPTION        = "One-liner description shown in the menu tooltip"
-    PLUGIN_RUN_ON_MAIN_THREAD = False  # Set to True to run synchronously (useful for matplotlib/GUI debugging)
+    PLUGIN_NAME                  = "Human readable name"
+    PLUGIN_DESCRIPTION           = "One-liner description shown in the menu tooltip"
+    PLUGIN_CATEGORY              = "Detection"  # Optional category
+    PLUGIN_PARAMS                = {...}        # Parameter schema
+    PLUGIN_RUN_ON_MAIN_THREAD    = False
+    PLUGIN_NEEDS_WIDEBAND_IQ     = True         # Set False if plugin only reads info.overlays / o.iq or streams via iter_batches()
+    PLUGIN_BATCH_SECONDS         = None         # Optional float (e.g. 2.0) to auto-chunk large scopes
+    PLUGIN_BATCH_OVERLAP_SECONDS = 0.0          # Optional overlap (seconds) when PLUGIN_BATCH_SECONDS is used
 """
 
 from __future__ import annotations
 
 import copy
 import importlib.util
-import sys
+import os
 import traceback
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
+
+from iqview.plugins.context import PluginContext, PluginParams
+from iqview.plugins.plugin_result import PluginResult
+
+
+def _snapshot_overlay_for_thread(o) -> Any:
+    """Create a thread-safe copy of an Overlay while sharing read-only `o.iq` memory."""
+    saved_iq = getattr(o, "iq", None)
+    saved_fs = getattr(o, "fs", None)
+    try:
+        o.iq = None
+        clone = copy.deepcopy(o)
+    finally:
+        o.iq = saved_iq
+
+    if saved_iq is not None:
+        view = np.asarray(saved_iq).view()
+        try:
+            view.flags.writeable = False
+        except Exception:
+            pass
+        clone.iq = view
+    clone.fs = saved_fs
+    return clone
+
+
+def _merge_plugin_results(target: PluginResult, part: PluginResult) -> None:
+    """Merge partial `PluginResult` from a batch into `target`."""
+    if not isinstance(part, PluginResult):
+        return
+    target._adds.extend(part._adds)
+    target._updates.extend(part._updates)
+    target._removes.extend(part._removes)
+    target._replaces.extend(part._replaces)
 
 
 # ---------------------------------------------------------------------------
@@ -50,18 +85,95 @@ from PyQt6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
 # ---------------------------------------------------------------------------
 
 class _PluginWorker(QObject):
-    finished = pyqtSignal(object)  # PluginResult — passed straight through
-    error    = pyqtSignal(str)     # error message string
+    finished  = pyqtSignal(object)     # PluginResult — passed straight through
+    cancelled = pyqtSignal()           # emitted if cancelled mid-flight
+    error     = pyqtSignal(str)        # error message string
+    progress  = pyqtSignal(int, str)   # (percent 0..100, status message)
 
-    def __init__(self, func, samples: np.ndarray, info: dict) -> None:
+    def __init__(
+        self,
+        func: Callable,
+        samples: Optional[np.ndarray],
+        info: PluginContext,
+        batch_seconds: Optional[float] = None,
+        batch_overlap_seconds: float = 0.0,
+        needs_wideband_iq: bool = True,
+    ) -> None:
         super().__init__()
-        self._func    = func
+        self._func = func
         self._samples = samples
-        self._info    = info
+        self._info = info
+        self._batch_seconds = batch_seconds
+        self._batch_overlap_seconds = batch_overlap_seconds
+        self._needs_wideband_iq = needs_wideband_iq
+        self._cancelled = False
+
+        # Wire live progress and cancellation callbacks into PluginContext
+        self._info._progress_cb = self._emit_progress
+        self._info._cancel_cb = self._check_cancelled
+
+    def request_cancel(self) -> None:
+        self._cancelled = True
+
+    def _check_cancelled(self) -> bool:
+        if self._cancelled:
+            return True
+        thread = QThread.currentThread()
+        if thread is not None and thread.isInterruptionRequested():
+            return True
+        return False
+
+    def _emit_progress(self, pct: int, msg: str = "") -> None:
+        self.progress.emit(max(0, min(100, int(pct))), str(msg or ""))
 
     def run(self) -> None:
         try:
-            result = self._func(self._samples, self._info)
+            total_dur = max(0.0, self._info.t_end - self._info.t_start)
+            use_auto_batch = (
+                self._batch_seconds is not None
+                and self._batch_seconds > 0
+                and total_dur > self._batch_seconds * 1.05
+            )
+
+            if use_auto_batch:
+                merged = PluginResult()
+                for batch_samples, b_t0, b_t1 in self._info.iter_batches(
+                    duration_s=float(self._batch_seconds),
+                    overlap_s=float(self._batch_overlap_seconds or 0.0),
+                ):
+                    if self._check_cancelled():
+                        self.cancelled.emit()
+                        return
+                    batch_info = self._info.copy_with(
+                        t_start=b_t0, t_end=b_t1, samples_ref=batch_samples
+                    )
+                    part = self._func(batch_samples, batch_info)
+                    if not isinstance(part, PluginResult):
+                        raise TypeError(
+                            f"Plugin returned {type(part).__name__} instead of PluginResult."
+                        )
+                    _merge_plugin_results(merged, part)
+                if self._check_cancelled():
+                    self.cancelled.emit()
+                    return
+                self.finished.emit(merged)
+                return
+
+            # Single-invocation path
+            samples = self._samples
+            if samples is None:
+                if self._needs_wideband_iq:
+                    samples = self._info.extract_iq(self._info.t_start, self._info.t_end)
+                    if samples is None:
+                        samples = np.empty(0, dtype=np.complex64)
+                    self._info._samples_ref = samples
+                else:
+                    samples = np.empty(0, dtype=np.complex64)
+
+            result = self._func(samples, self._info)
+            if self._check_cancelled():
+                self.cancelled.emit()
+                return
             self.finished.emit(result)
         except Exception:
             self.error.emit(traceback.format_exc())
@@ -77,7 +189,7 @@ class PluginManagerMixin:
 
     Attributes added to the host class
     -----------------------------------
-    _loaded_plugins  : dict[str, dict]   name → {path, module, func, description}
+    _loaded_plugins  : dict[str, dict]   name → metadata & callable dict
     _plugins_menu    : QMenu | None
     """
 
@@ -106,8 +218,8 @@ class PluginManagerMixin:
         menu.clear()
 
         # Static actions
-        load_action = QAction("&Load Plugin…", self)
-        load_action.setStatusTip("Load a Python plugin file (.py)")
+        load_action = QAction("&Load Plugin(s)…", self)
+        load_action.setStatusTip("Load one or more Python plugin files (.py)")
         load_action.triggered.connect(self.load_plugin)
         menu.addAction(load_action)
 
@@ -130,7 +242,6 @@ class PluginManagerMixin:
                     tip += f" — {desc}"
                 action.setStatusTip(tip)
                 action.setToolTip(tip)
-                # Capture name in closure
                 action.triggered.connect(
                     lambda _checked, n=name: self.run_plugin(n)
                 )
@@ -140,22 +251,40 @@ class PluginManagerMixin:
             self.marker_panel.update_plugins_list(self._loaded_plugins)
 
     # ------------------------------------------------------------------
-    # Load
+    # Load (Single or Multiple .py files)
     # ------------------------------------------------------------------
 
     def load_plugin(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Load Plugin", "", "Python Files (*.py)"
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Load Plugin(s)", "", "Python Files (*.py)"
         )
-        if not path:
+        if not paths:
             return
-        self._load_plugin_from_path(path)
+        loaded_names = []
+        for path in paths:
+            name = self._load_plugin_from_path(path, _persist=False, _silent=True)
+            if name:
+                loaded_names.append(name)
+        if loaded_names:
+            self._save_plugin_paths()
+            self._rebuild_plugins_menu()
+            if len(loaded_names) == 1:
+                self.statusBar().showMessage(f"Plugin loaded: {loaded_names[0]}", 3000)
+            else:
+                self.statusBar().showMessage(
+                    f"Loaded {len(loaded_names)} plugins: {', '.join(loaded_names)}", 4000
+                )
 
-    def _load_plugin_from_path(self, path: str, _persist: bool = True, _silent: bool = False) -> None:
-        """Dynamically import a plugin file and register it."""
-        import os
-        base  = os.path.splitext(os.path.basename(path))[0]
-        # Use a unique module name to avoid namespace collisions with re-loads
+    def _load_plugin_from_path(
+        self,
+        path: str,
+        _persist: bool = True,
+        _silent: bool = False,
+        _preserve_params: Optional[Dict[str, Any]] = None,
+    ) -> Optional[str]:
+        """Dynamically import a plugin file and register it. Returns plugin name on success."""
+        path = os.path.normpath(os.path.abspath(path))
+        base = os.path.splitext(os.path.basename(path))[0]
         mod_name = f"_iqview_plugin_{base}_{uuid.uuid4().hex[:8]}"
 
         try:
@@ -167,37 +296,56 @@ class PluginManagerMixin:
                 self, "Plugin Load Error",
                 f"Could not load plugin from:\n{path}\n\n{exc}"
             )
-            return
+            return None
 
         if not hasattr(module, "run") or not callable(module.run):
             QMessageBox.critical(
                 self, "Plugin Load Error",
                 f"The file does not contain a callable `run(samples, info)` function:\n{path}"
             )
-            return
+            return None
 
-        name        = getattr(module, "PLUGIN_NAME",        base)
-        description = getattr(module, "PLUGIN_DESCRIPTION", "")
-        run_on_main = getattr(module, "PLUGIN_RUN_ON_MAIN_THREAD", False)
+        name           = getattr(module, "PLUGIN_NAME",        base)
+        description    = getattr(module, "PLUGIN_DESCRIPTION", "")
+        category       = getattr(module, "PLUGIN_CATEGORY",    "Custom")
+        run_on_main    = bool(getattr(module, "PLUGIN_RUN_ON_MAIN_THREAD", False))
+        needs_wideband = bool(getattr(module, "PLUGIN_NEEDS_WIDEBAND_IQ", True))
+        batch_seconds  = getattr(module, "PLUGIN_BATCH_SECONDS", None)
+        batch_overlap  = float(getattr(module, "PLUGIN_BATCH_OVERLAP_SECONDS", 0.0) or 0.0)
 
-        # If a plugin with the same display name is already loaded, replace it
         params_spec = getattr(module, "PLUGIN_PARAMS", {})
-        active_params = {}
+        active_params: Dict[str, Any] = {}
         if isinstance(params_spec, dict):
-            for k, spec in params_spec.items():
-                if isinstance(spec, dict):
-                    active_params[k] = spec.get("default")
+            for k, p_spec in params_spec.items():
+                if isinstance(p_spec, dict):
+                    active_params[k] = p_spec.get("default")
                 else:
-                    active_params[k] = spec
+                    active_params[k] = p_spec
+
+        # Preserve user-customized parameter values across hot-reloads if keys still exist
+        if _preserve_params and isinstance(_preserve_params, dict):
+            for k, val in _preserve_params.items():
+                if k in active_params:
+                    active_params[k] = val
+
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            mtime = 0.0
 
         self._loaded_plugins[name] = {
-            "path":        path,
-            "module":      module,
-            "func":        module.run,
-            "description": description,
-            "run_on_main": run_on_main,
-            "params_spec": params_spec,
-            "params":      active_params
+            "path":                  path,
+            "mtime":                 mtime,
+            "module":                module,
+            "func":                  module.run,
+            "description":           description,
+            "category":              category,
+            "run_on_main":           run_on_main,
+            "needs_wideband_iq":     needs_wideband,
+            "batch_seconds":         batch_seconds,
+            "batch_overlap_seconds": batch_overlap,
+            "params_spec":           params_spec,
+            "params":                active_params,
         }
 
         if _persist:
@@ -205,6 +353,31 @@ class PluginManagerMixin:
         self._rebuild_plugins_menu()
         if not _silent:
             self.statusBar().showMessage(f"Plugin loaded: {name}", 3000)
+        return name
+
+    def _hot_reload_if_modified(self, name: str) -> Optional[dict]:
+        """Check if a loaded plugin's .py file has changed on disk and hot-reload it."""
+        info = self._loaded_plugins.get(name)
+        if info is None:
+            return None
+        path = info.get("path")
+        if not path or not os.path.isfile(path):
+            return info
+        try:
+            current_mtime = os.path.getmtime(path)
+        except OSError:
+            return info
+
+        if current_mtime > info.get("mtime", 0.0):
+            new_name = self._load_plugin_from_path(
+                path,
+                _persist=False,
+                _silent=True,
+                _preserve_params=info.get("params"),
+            )
+            if new_name:
+                return self._loaded_plugins.get(new_name)
+        return self._loaded_plugins.get(name)
 
     # ------------------------------------------------------------------
     # Unload
@@ -232,7 +405,7 @@ class PluginManagerMixin:
         if not hasattr(self, 'settings_mgr'):
             return
         paths = ";;".join(
-            info["path"] for info in self._loaded_plugins.values()
+            info["path"] for info in self._loaded_plugins.values() if info.get("path")
         )
         self.settings_mgr.set("plugins/loaded_paths", paths)
 
@@ -243,19 +416,158 @@ class PluginManagerMixin:
         raw = self.settings_mgr.get("plugins/loaded_paths", "")
         if not raw:
             return
-        import os
         for path in raw.split(";;"):
             path = path.strip()
             if path and os.path.isfile(path):
-                # _persist=False and _silent=True: don't re-save, don't call statusBar yet
                 self._load_plugin_from_path(path, _persist=False, _silent=True)
+
+    # ------------------------------------------------------------------
+    # Execution Scope & Context Builder
+    # ------------------------------------------------------------------
+
+    def _get_active_scope(self, scope: Optional[str] = None) -> str:
+        if scope in ("view", "markers", "full_file"):
+            return scope
+        if hasattr(self, 'marker_panel') and hasattr(self.marker_panel, 'cb_plugin_scope'):
+            data = self.marker_panel.cb_plugin_scope.currentData()
+            if data in ("view", "markers", "full_file"):
+                return data
+        return "view"
+
+    def _get_execution_bounds(self, scope: str = "view") -> Tuple[float, float, float, float]:
+        """
+        Compute `(t_start, t_end, f_start, f_end)` accurately across Standard,
+        Waterfall, and Multi-Row modes, respecting the requested `scope`.
+        """
+        fs = float(getattr(self, 'rate', 1.0) or 1.0)
+        fc = float(getattr(self, 'fc', 0.0) or 0.0)
+        total_samples = self.get_total_samples() if hasattr(self, 'get_total_samples') else 0
+        file_dur = (total_samples / fs) if total_samples > 0 else float(getattr(self, 'time_duration', 1.0) or 1.0)
+        f_min_bound = fc - fs / 2.0
+        f_max_bound = fc + fs / 2.0
+
+        # 1. Determine current viewport bounds (Waterfall & Multi-Row aware)
+        t_view_start, t_view_end = 0.0, file_dur
+        f_view_start, f_view_end = f_min_bound, f_max_bound
+
+        try:
+            is_multirow = (
+                hasattr(self, 'spectrogram_stack')
+                and self.spectrogram_stack.currentIndex() == 1
+                and hasattr(self, 'multi_row_view')
+                and len(self.multi_row_view.rows) > 0
+            )
+            if is_multirow:
+                rows = self.multi_row_view.rows
+                t_view_start = min(float(r.get('t_vis_start', r['t_start'])) for r in rows)
+                t_view_end   = max(float(r.get('t_vis_end',   r['t_end']))   for r in rows)
+                f_range = getattr(self.multi_row_view, '_current_freq_range', (f_min_bound, f_max_bound))
+                f_view_start, f_view_end = float(min(f_range)), float(max(f_range))
+            elif hasattr(self, 'spectrogram_view'):
+                xr, yr = self.spectrogram_view.plot_item.viewRange()
+                is_waterfall = bool(getattr(self.spectrogram_view, 'is_waterfall', False))
+                if is_waterfall:
+                    f_view_start, f_view_end = float(min(xr)), float(max(xr))
+                    t_view_start, t_view_end = float(min(yr)), float(max(yr))
+                else:
+                    t_view_start, t_view_end = float(min(xr)), float(max(xr))
+                    f_view_start, f_view_end = float(min(yr)), float(max(yr))
+        except Exception:
+            pass
+
+        # Clamp viewport bounds to recording limits
+        t_view_start = max(0.0, min(t_view_start, file_dur))
+        t_view_end   = max(t_view_start, min(t_view_end, file_dur))
+        f_view_start = max(f_min_bound, min(f_view_start, f_max_bound))
+        f_view_end   = max(f_view_start, min(f_view_end, f_max_bound))
+
+        # 2. Apply Scope
+        if scope == "full_file":
+            return 0.0, file_dur, f_min_bound, f_max_bound
+
+        if scope == "markers":
+            t_m = [float(m.value()) for m in getattr(self, 'markers_time', [])]
+            f_m = [float(m.value()) for m in getattr(self, 'markers_freq', [])]
+            if len(t_m) >= 2:
+                t_s, t_e = max(0.0, min(t_m)), min(file_dur, max(t_m))
+            else:
+                t_s, t_e = t_view_start, t_view_end
+            if len(f_m) >= 2:
+                f_s, f_e = max(f_min_bound, min(f_m)), min(f_max_bound, max(f_m))
+            else:
+                f_s, f_e = f_view_start, f_view_end
+            return t_s, t_e, f_s, f_e
+
+        return t_view_start, t_view_end, f_view_start, f_view_end
+
+    def _build_plugin_context(
+        self,
+        plugin_info: dict,
+        scope: str,
+        t_start: float,
+        t_end: float,
+        f_start: float,
+        f_end: float,
+        samples_ref: Optional[np.ndarray] = None,
+    ) -> PluginContext:
+        """Construct a rich `PluginContext` (`info`) object for plugin execution."""
+        fs = float(getattr(self, 'rate', 1.0) or 1.0)
+        fc = float(getattr(self, 'fc', 0.0) or 0.0)
+        total_samples = self.get_total_samples() if hasattr(self, 'get_total_samples') else 0
+        file_dur = (total_samples / fs) if total_samples > 0 else float(getattr(self, 'time_duration', 1.0) or 1.0)
+
+        t_markers = sorted(
+            [float(m.value()) for m in getattr(self, 'markers_time', [])]
+            + [float(m.value()) for m in getattr(self, 'markers_time_endless', [])]
+        )
+        f_markers = sorted(
+            [float(m.value()) for m in getattr(self, 'markers_freq', [])]
+            + [float(m.value()) for m in getattr(self, 'markers_freq_endless', [])]
+        )
+
+        f_lo, f_hi = self.get_active_filter_bounds() if hasattr(self, 'get_active_filter_bounds') else (None, None)
+        filter_bounds = (float(f_lo), float(f_hi)) if (f_lo is not None and f_hi is not None) else None
+
+        spec_img = None
+        try:
+            if hasattr(self, 'spectrogram_view') and hasattr(self.spectrogram_view, 'img'):
+                img_data = self.spectrogram_view.img.image
+                if img_data is not None:
+                    spec_img = np.asarray(img_data)
+        except Exception:
+            spec_img = None
+
+        overlay_snapshots = [
+            _snapshot_overlay_for_thread(o) for o in getattr(self, 'overlays', [])
+        ]
+
+        return PluginContext(
+            sample_rate=fs,
+            center_freq=fc,
+            t_start=t_start,
+            t_end=t_end,
+            f_start=f_start,
+            f_end=f_end,
+            overlays=overlay_snapshots,
+            params=PluginParams(copy.deepcopy(plugin_info.get("params", {}))),
+            time_markers=t_markers,
+            freq_markers=f_markers,
+            filter_bounds=filter_bounds,
+            spectrogram=spec_img,
+            scope=scope,
+            file_duration=file_dur,
+            file_path=getattr(self, 'file_path', None),
+            fft_size=int(getattr(self, 'fft_size', 1024) or 1024),
+            extract_iq_cb=lambda t0, t1: self.extract_iq_segment(t0, t1, _prompt_large=False),
+            samples_ref=samples_ref,
+        )
 
     # ------------------------------------------------------------------
     # Run
     # ------------------------------------------------------------------
 
-    def run_plugin(self, name: str) -> None:
-        info = self._loaded_plugins.get(name)
+    def run_plugin(self, name: str, scope: Optional[str] = None) -> None:
+        info = self._hot_reload_if_modified(name)
         if info is None:
             return
 
@@ -266,64 +578,93 @@ class PluginManagerMixin:
             )
             return
 
-        # Gather current view range
-        try:
-            xr, yr = self.spectrogram_view.plot_item.viewRange()
-            t_start, t_end = xr[0], xr[1]
-            f_start, f_end = yr[0], yr[1]
-        except Exception:
-            t_start, t_end = 0.0, self.time_duration
-            f_start = self.fc - self.rate / 2
-            f_end   = self.fc + self.rate / 2
-
-        # Extract IQ samples for the visible time window
-        samples = self.extract_iq_segment(t_start, t_end)
-        if samples is None or len(samples) == 0:
+        active_scope = self._get_active_scope(scope)
+        t_start, t_end, f_start, f_end = self._get_execution_bounds(active_scope)
+        if t_end <= t_start:
             QMessageBox.warning(
                 self, "Plugin Error",
-                "Could not extract IQ samples for the current view.\n"
-                "Make sure a file is loaded and the view contains data."
+                "Selected execution time range is empty."
             )
             return
 
-        context = {
-            "sample_rate": self.rate,
-            "center_freq": self.fc,
-            "t_start":     t_start,
-            "t_end":       t_end,
-            "f_start":     f_start,
-            "f_end":       f_end,
-            # Deep copies — the background thread gets a safe, immutable snapshot.
-            # Plugins can read .id, .shape, .points etc. directly on these objects.
-            "overlays":    [copy.deepcopy(o) for o in self.overlays],
-            "params":      copy.deepcopy(info.get("params", {})),
-        }
+        needs_wideband = bool(info.get("needs_wideband_iq", True))
+        batch_seconds  = info.get("batch_seconds", None)
+        batch_overlap  = float(info.get("batch_overlap_seconds", 0.0) or 0.0)
+        total_dur      = t_end - t_start
+        will_batch     = (
+            batch_seconds is not None
+            and float(batch_seconds) > 0
+            and total_dur > float(batch_seconds) * 1.05
+        )
+
+        # Pre-extract wideband IQ only if needed and not running in chunked batch mode
+        samples: Optional[np.ndarray] = None
+        if needs_wideband and not will_batch:
+            samples = self.extract_iq_segment(t_start, t_end)
+            if samples is None or len(samples) == 0:
+                QMessageBox.warning(
+                    self, "Plugin Error",
+                    "Could not extract IQ samples for the selected range.\n"
+                    "Make sure a file is loaded and the range contains data."
+                )
+                return
+        elif not needs_wideband:
+            samples = np.empty(0, dtype=np.complex64)
+
+        context = self._build_plugin_context(
+            plugin_info=info,
+            scope=active_scope,
+            t_start=t_start,
+            t_end=t_end,
+            f_start=f_start,
+            f_end=f_end,
+            samples_ref=samples,
+        )
 
         # Run synchronously on main thread if requested (for GUI/matplotlib debugging)
         if info.get("run_on_main", False):
             try:
-                result = info["func"](samples, context)
+                if will_batch:
+                    merged = PluginResult()
+                    for b_samples, b_t0, b_t1 in context.iter_batches(float(batch_seconds), batch_overlap):
+                        b_info = context.copy_with(t_start=b_t0, t_end=b_t1, samples_ref=b_samples)
+                        part = info["func"](b_samples, b_info)
+                        _merge_plugin_results(merged, part)
+                    result = merged
+                else:
+                    result = info["func"](samples, context)
                 self._on_plugin_finished(name, result)
             except Exception:
                 self._on_plugin_error(name, traceback.format_exc())
             return
 
         # Otherwise, run on background thread
-        self._run_plugin_async(name, info["func"], samples, context)
+        self._run_plugin_async(
+            name=name,
+            func=info["func"],
+            samples=samples,
+            context=context,
+            batch_seconds=float(batch_seconds) if batch_seconds is not None else None,
+            batch_overlap_seconds=batch_overlap,
+            needs_wideband_iq=needs_wideband,
+        )
 
     def _run_plugin_async(
         self,
-        name:    str,
-        func,
-        samples: np.ndarray,
-        info:    dict,
+        name: str,
+        func: Callable,
+        samples: Optional[np.ndarray],
+        context: PluginContext,
+        batch_seconds: Optional[float] = None,
+        batch_overlap_seconds: float = 0.0,
+        needs_wideband_iq: bool = True,
     ) -> None:
         # Guard: don't start a second plugin while one is running
         if self._plugin_thread is not None:
             try:
                 running = self._plugin_thread.isRunning()
             except RuntimeError:
-                running = False      # C++ object already deleted
+                running = False
                 self._plugin_thread = None
             if running:
                 QMessageBox.information(
@@ -332,26 +673,46 @@ class PluginManagerMixin:
                 )
                 return
 
-        # Progress dialog (indeterminate)
         self._plugin_progress = QProgressDialog(
             f"Running plugin: {name}…", "Cancel", 0, 0, self
         )
-        self._plugin_progress.setWindowTitle("Plugin")
-        self._plugin_progress.setMinimumDuration(300)
+        self._plugin_progress.setWindowTitle(f"Plugin — {name}")
+        self._plugin_progress.setMinimumDuration(250)
         self._plugin_progress.setModal(True)
 
-        worker = _PluginWorker(func, samples, info)
+        worker = _PluginWorker(
+            func=func,
+            samples=samples,
+            info=context,
+            batch_seconds=batch_seconds,
+            batch_overlap_seconds=batch_overlap_seconds,
+            needs_wideband_iq=needs_wideband_iq,
+        )
         thread = QThread(self)
         worker.moveToThread(thread)
 
+        def _on_progress(pct: int, msg: str) -> None:
+            if self._plugin_progress is None:
+                return
+            if self._plugin_progress.maximum() == 0:
+                self._plugin_progress.setRange(0, 100)
+            self._plugin_progress.setValue(pct)
+            if msg:
+                self._plugin_progress.setLabelText(f"Running {name}: {msg}")
+
+        def _on_cancel_clicked() -> None:
+            worker.request_cancel()
+            thread.requestInterruption()
+
         thread.started.connect(worker.run)
+        worker.progress.connect(_on_progress)
         worker.finished.connect(lambda result, n=name: self._on_plugin_finished(n, result))
+        worker.cancelled.connect(lambda n=name: self.statusBar().showMessage(f"Plugin '{n}' cancelled.", 3000))
         worker.error.connect(lambda msg, n=name: self._on_plugin_error(n, msg))
         worker.finished.connect(thread.quit)
+        worker.cancelled.connect(thread.quit)
         worker.error.connect(thread.quit)
 
-        # Clear our reference BEFORE deleteLater fires, so a subsequent
-        # isRunning() check never touches a deleted C++ object.
         def _clear_thread():
             self._plugin_thread = None
             self._plugin_worker = None
@@ -361,7 +722,7 @@ class PluginManagerMixin:
         thread.finished.connect(thread.deleteLater)
         thread.finished.connect(self._plugin_progress.close)
 
-        self._plugin_progress.canceled.connect(thread.requestInterruption)
+        self._plugin_progress.canceled.connect(_on_cancel_clicked)
 
         self._plugin_thread = thread
         self._plugin_worker = worker
@@ -369,8 +730,6 @@ class PluginManagerMixin:
 
     def _on_plugin_finished(self, name: str, result: object) -> None:
         """Called on the main thread when a plugin completes successfully."""
-        from iqview.plugins.plugin_result import PluginResult
-
         if not isinstance(result, PluginResult):
             QMessageBox.critical(
                 self, f"Plugin Error — {name}",
@@ -400,27 +759,30 @@ class PluginManagerMixin:
                     f"{existing.source!r}, not {plugin_source!r} — skipping."
                 )
                 continue
-            self.remove_overlay(oid)
+            self.remove_overlay(oid, _refresh_ui=False)
             n_removed += 1
 
-        # 2. Replaces — remove old, add new (inheriting original source)
+        # 2. Replaces — remove old, add new (inheriting original source & cached IQ if not overwritten)
         for old_id, new_overlay in result._replaces:
             original = self._get_overlay_by_id(old_id)
             original_source = original.source if original is not None else plugin_source
             if original is not None:
-                self.remove_overlay(old_id)
+                if getattr(new_overlay, "iq", None) is None and getattr(original, "iq", None) is not None:
+                    new_overlay.iq = original.iq
+                    new_overlay.fs = getattr(original, "fs", None)
+                self.remove_overlay(old_id, _refresh_ui=False)
             new_overlay.id     = str(uuid.uuid4())
-            new_overlay.source = original_source   # preserve provenance
-            self.add_overlay(new_overlay)
+            new_overlay.source = original_source
+            self.add_overlay(new_overlay, _refresh_ui=False)
             n_replaced += 1
 
-        # 3. Updates — patch fields on existing overlays
+        # 3. Updates — patch fields on existing overlays (preserving cached IQ unless updated)
         for oid, fields in result._updates:
             existing = self._get_overlay_by_id(oid)
             if existing is None:
                 print(f"[IQView Plugin] update: overlay {oid!r} not found, skipping.")
                 continue
-            self.update_overlay(oid, **fields)
+            self.update_overlay(oid, _refresh_ui=False, **fields)
             n_updated += 1
 
         # 4. Adds — always allowed; fresh UUID + plugin source
@@ -428,10 +790,14 @@ class PluginManagerMixin:
             try:
                 overlay.id     = str(uuid.uuid4())
                 overlay.source = plugin_source
-                self.add_overlay(overlay)
+                self.add_overlay(overlay, _refresh_ui=False)
                 n_added += 1
             except Exception as exc:
                 print(f"[IQView Plugin] add: skipping malformed overlay: {exc}")
+
+        # Single O(1) UI sync after all overlay mutations
+        if hasattr(self, "refresh_overlays_ui"):
+            self.refresh_overlays_ui()
 
         self.statusBar().showMessage(
             f"Plugin '{name}' — "

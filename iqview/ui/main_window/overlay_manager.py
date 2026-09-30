@@ -46,23 +46,31 @@ class OverlayManagerMixin:
     # Public API
     # ------------------------------------------------------------------
 
-    def add_overlay(self, overlay: Overlay) -> str:
+    def add_overlay(self, overlay: Overlay, _refresh_ui: bool = True) -> str:
         """
         Add an overlay to the spectrogram.  Returns the overlay's id.
         Safe to call before the plot is initialised (items are created lazily).
         """
         # Prevent duplicate ids
         if any(o.id == overlay.id for o in self.overlays):
-            self._sync_overlay_item(overlay)
+            self._sync_overlay_item(overlay, _sync_multi_row=_refresh_ui)
             return overlay.id
 
         self.overlays.append(overlay)
-        self._sync_overlay_item(overlay)
+        self._sync_overlay_item(overlay, _sync_multi_row=_refresh_ui)
 
-        if hasattr(self, 'marker_panel') and self.interaction_mode == 'OVERLAY':
+        if _refresh_ui:
+            self.refresh_overlays_ui()
+        return overlay.id
+
+    def refresh_overlays_ui(self) -> None:
+        """Refresh overlay list panel, marker info, and multi-row view in one pass."""
+        if hasattr(self, 'marker_panel') and getattr(self, 'interaction_mode', '') == 'OVERLAY':
             if hasattr(self.marker_panel, 'update_overlay_list'):
                 self.marker_panel.update_overlay_list(self.overlays)
-        return overlay.id
+        if hasattr(self, 'update_marker_info'):
+            self.update_marker_info()
+        self.sync_multi_row_overlays()
 
     # ------------------------------------------------------------------
     # Placement via click / drag (called from CustomViewBox)
@@ -134,8 +142,6 @@ class OverlayManagerMixin:
             source='user',
         )
         self.add_overlay(overlay)
-        if hasattr(self, 'update_marker_info'):
-            self.update_marker_info()
 
     def place_overlay_by_drag(self, start_view, end_view) -> None:
         """
@@ -204,12 +210,8 @@ class OverlayManagerMixin:
             source='user',
         )
         self.add_overlay(overlay)
-        if hasattr(self, 'update_marker_info'):
-            self.update_marker_info()
 
-
-
-    def remove_overlay(self, overlay_id: str) -> None:
+    def remove_overlay(self, overlay_id: str, _refresh_ui: bool = True) -> None:
         """Remove an overlay by id, cleaning up its graphics item."""
         overlay = self._get_overlay_by_id(overlay_id)
         if overlay is None:
@@ -219,14 +221,10 @@ class OverlayManagerMixin:
 
         self.overlays = [o for o in self.overlays if o.id != overlay_id]
 
-        if hasattr(self, 'marker_panel') and self.interaction_mode == 'OVERLAY':
-            if hasattr(self.marker_panel, 'update_overlay_list'):
-                self.marker_panel.update_overlay_list(self.overlays)
-        if hasattr(self, 'update_marker_info'):
-            self.update_marker_info()
-        self.sync_multi_row_overlays()
+        if _refresh_ui:
+            self.refresh_overlays_ui()
 
-    def update_overlay(self, overlay_id: str, **kwargs) -> None:
+    def update_overlay(self, overlay_id: str, _refresh_ui: bool = True, **kwargs) -> None:
         """
         Partial update of an overlay's properties.
         Example: update_overlay(oid, color='#ff0000', display_str='New tag')
@@ -240,13 +238,10 @@ class OverlayManagerMixin:
                 setattr(overlay, key, value)
 
         # Re-sync the graphics item (may re-create if shape changed)
-        self._sync_overlay_item(overlay)
+        self._sync_overlay_item(overlay, _sync_multi_row=_refresh_ui)
 
-        if hasattr(self, 'marker_panel') and self.interaction_mode == 'OVERLAY':
-            if hasattr(self.marker_panel, 'update_overlay_list'):
-                self.marker_panel.update_overlay_list(self.overlays)
-        if hasattr(self, 'update_marker_info'):
-            self.update_marker_info()
+        if _refresh_ui:
+            self.refresh_overlays_ui()
 
     def clear_overlays(self, source: Optional[str] = None) -> None:
         """
@@ -262,13 +257,7 @@ class OverlayManagerMixin:
         self.overlays = [o for o in self.overlays
                          if source is not None and o.source != source]
 
-        if hasattr(self, 'marker_panel') and self.interaction_mode == 'OVERLAY':
-            if hasattr(self.marker_panel, 'update_overlay_list'):
-                self.marker_panel.update_overlay_list(self.overlays)
-
-        if hasattr(self, 'update_marker_info'):
-            self.update_marker_info()
-        self.sync_multi_row_overlays()
+        self.refresh_overlays_ui()
 
     def get_overlays(self, source: Optional[str] = None) -> List[Overlay]:
         """Return overlays filtered by source, or all if source is None."""
@@ -286,7 +275,7 @@ class OverlayManagerMixin:
     # Graphics synchronisation
     # ------------------------------------------------------------------
 
-    def _sync_overlay_item(self, overlay: Overlay) -> None:
+    def _sync_overlay_item(self, overlay: Overlay, _sync_multi_row: bool = True) -> None:
         """
         Create or recreate the graphics item for *overlay*.
         Removes any existing item first so changes to shape/geometry are reflected.
@@ -325,7 +314,8 @@ class OverlayManagerMixin:
             item.attach_to_plot(plot_item)
             self._overlay_items[overlay.id] = item
 
-        self.sync_multi_row_overlays()
+        if _sync_multi_row:
+            self.sync_multi_row_overlays()
 
     def _create_line_item(self, overlay: Overlay) -> Optional[pg.InfiniteLine]:
         """Build a pg.InfiniteLine for a LINE or HLINE overlay.
@@ -370,8 +360,9 @@ class OverlayManagerMixin:
             label=overlay.display_str or None,
             labelOpts=label_opts if overlay.display_str else {},
         )
-        if overlay.hover_str:
-            line.setToolTip(overlay.hover_str)
+        tip = overlay.get_truncated_hover()
+        if tip:
+            line.setToolTip(tip)
 
         return line
 
@@ -421,8 +412,9 @@ class OverlayManagerMixin:
             pen=pen,
             movable=movable,
         )
-        if overlay.hover_str:
-            region.setToolTip(overlay.hover_str)
+        tip = overlay.get_truncated_hover()
+        if tip:
+            region.setToolTip(tip)
 
         if movable:
             oid = overlay.id
@@ -567,9 +559,9 @@ class OverlayManagerMixin:
         from PyQt6.QtWidgets import QFileDialog, QMessageBox
         import datetime
 
-        user_overlays = [o for o in self.overlays if o.source == 'user']
-        if not user_overlays:
-            QMessageBox.information(self, "Export Overlays", "No user overlays to export.")
+        exportable = list(self.overlays)
+        if not exportable:
+            QMessageBox.information(self, "Export Overlays", "No overlays to export.")
             return
 
         path, _ = QFileDialog.getSaveFileName(
@@ -579,8 +571,6 @@ class OverlayManagerMixin:
             return
 
         # ── Build optional metadata block ────────────────────────────────────
-        # Collect whatever fields are available on the host window.
-        # All of these are best-effort; missing attributes are omitted cleanly.
         meta: dict = {
             "exported_at": datetime.datetime.now().isoformat(timespec="seconds"),
         }
@@ -612,16 +602,35 @@ class OverlayManagerMixin:
 
         data = {
             "version": 1,
-            # metadata is informational only — ignored on import
             "metadata": meta,
-            "overlays": [o.to_dict() for o in user_overlays],
+            "overlays": [o.to_dict() for o in exportable],
         }
         try:
             with open(path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
-            QMessageBox.information(self, "Export Successful", f"Saved {len(user_overlays)} overlays to {path}.")
+            QMessageBox.information(self, "Export Successful", f"Saved {len(exportable)} overlays to {path}.")
         except Exception as exc:
             QMessageBox.critical(self, "Export Failed", f"Failed to export overlays:\n{exc}")
+
+    def promote_plugin_overlays(self, source: Optional[str] = None) -> int:
+        """
+        Convert plugin-created overlays into permanent 'user' overlays so they
+        are saved in the JSON sidecar alongside manual overlays.
+        """
+        promoted = 0
+        for o in self.overlays:
+            if o.source != 'user' and (source is None or o.source == source):
+                o.metadata.setdefault("original_source", o.source)
+                o.source = 'user'
+                promoted += 1
+        if promoted > 0:
+            self.save_overlay_sidecar()
+            self.refresh_overlays_ui()
+            if hasattr(self, 'statusBar'):
+                self.statusBar().showMessage(
+                    f"Promoted {promoted} plugin overlay(s) to permanent user overlays.", 3500
+                )
+        return promoted
 
     def import_overlays(self) -> None:
         from PyQt6.QtWidgets import QFileDialog, QMessageBox
@@ -644,22 +653,189 @@ class OverlayManagerMixin:
             try:
                 import uuid
                 o = Overlay.from_dict(d)
-                o.source = 'user'
-                # Ensure a new random ID so we append instead of overwriting visually overlapping items
-                # if the user imports the same file twice, although the API technically just uses the ID inside the dict.
-                # The user request: "add them to the current ones rather then replacing"
+                o.source = d.get("source", "user") or "user"
                 o.id = str(uuid.uuid4())
-                self.add_overlay(o)
+                self.add_overlay(o, _refresh_ui=False)
                 imported_count += 1
             except Exception as exc:
                 print(f"[IQView] Skipping malformed overlay entry during import: {exc}")
 
+        self.refresh_overlays_ui()
         QMessageBox.information(self, "Import Successful", f"Imported {imported_count} overlays.")
-        if hasattr(self, 'update_marker_info'):
-            self.update_marker_info()
-        self.sync_multi_row_overlays()
+
+    # ------------------------------------------------------------------
+    # Hit-Testing, Overlay Inspector & Native Tab Analysis
+    # ------------------------------------------------------------------
+
+    def find_overlays_at_view_pos(self, view_pos, view_box=None) -> List[Overlay]:
+        """
+        Return all visible overlays containing *view_pos* (in ViewBox coordinates),
+        sorted from most specific (highest z_order / smallest area) to least.
+        """
+        from PyQt6.QtCore import QPointF
+        from PyQt6.QtGui import QPainterPath
+
+        waterfall = getattr(getattr(self, 'spectrogram_view', None), 'is_waterfall', False)
+        if waterfall:
+            t = float(view_pos.y())
+            f = float(view_pos.x())
+        else:
+            t = float(view_pos.x())
+            f = float(view_pos.y())
+
+        # Compute line hit tolerances (~1.2% of visible span)
+        t_tol, f_tol = 1e-3, 1e3
+        vb = view_box or getattr(getattr(self, 'spectrogram_view', None), 'view_box', None)
+        if vb is not None:
+            try:
+                xr, yr = vb.viewRange()
+                if waterfall:
+                    f_tol = abs(xr[1] - xr[0]) * 0.012
+                    t_tol = abs(yr[1] - yr[0]) * 0.012
+                else:
+                    t_tol = abs(xr[1] - xr[0]) * 0.012
+                    f_tol = abs(yr[1] - yr[0]) * 0.012
+            except Exception:
+                pass
+
+        hits: List[ tuple[int, float, Overlay] ] = []
+        logical_pt = QPointF(t, f)
+
+        for o in self.overlays:
+            if not getattr(o, 'visible', True):
+                continue
+            matched = False
+            area = float('inf')
+
+            if o.shape == OverlayShape.RECT:
+                if o.t_start <= t <= o.t_end and o.f_start <= f <= o.f_end:
+                    matched = True
+                    area = max(1e-18, o.duration * o.bandwidth)
+            elif o.shape == OverlayShape.ELLIPSE and o.center and o.radii:
+                cx, cy = o.center
+                rx, ry = o.radii
+                if rx > 0 and ry > 0 and (((t - cx) / rx) ** 2 + ((f - cy) / ry) ** 2 <= 1.0):
+                    matched = True
+                    area = 3.14159 * rx * ry
+            elif o.shape == OverlayShape.POLYGON and len(o.points) >= 3:
+                path = QPainterPath()
+                path.moveTo(*o.points[0])
+                for pt in o.points[1:]:
+                    path.lineTo(*pt)
+                path.closeSubpath()
+                if path.contains(logical_pt):
+                    matched = True
+                    area = max(1e-18, o.duration * o.bandwidth)
+            elif o.shape == OverlayShape.X_REGION:
+                if o.t_start <= t <= o.t_end:
+                    matched = True
+                    area = o.duration * float(getattr(self, 'rate', 1e6))
+            elif o.shape == OverlayShape.Y_REGION:
+                if o.f_start <= f <= o.f_end:
+                    matched = True
+                    area = float(getattr(self, 'time_duration', 1.0)) * o.bandwidth
+            elif o.shape == OverlayShape.LINE:
+                if abs(t - o.t_start) <= t_tol:
+                    matched = True
+                    area = 0.0
+            elif o.shape == OverlayShape.HLINE:
+                if abs(f - o.f_start) <= f_tol:
+                    matched = True
+                    area = 0.0
+
+            if matched:
+                hits.append((-int(getattr(o, 'z_order', 8)), area, o))
+
+        hits.sort(key=lambda item: (item[0], item[1]))
+        return [item[2] for item in hits]
+
+    def inspect_overlay(self, overlay_or_id) -> None:
+        """Open the visual OverlayInspectorDialog for the given Overlay or overlay id."""
+        overlay = (
+            overlay_or_id
+            if isinstance(overlay_or_id, Overlay)
+            else self._get_overlay_by_id(str(overlay_or_id))
+        )
+        if overlay is None:
+            return
+        from ..overlay_inspector import OverlayInspectorDialog
+        dlg = OverlayInspectorDialog(overlay, parent_window=self, parent=self)
+        dlg.exec()
+
+    def analyze_overlay_in_tab(self, overlay_or_id, tab_type: str = "time") -> None:
+        """
+        Extract the narrowband DDC'd IQ for *overlay_or_id* via `o.extract_iq()`
+        and open it directly in Time Domain, Freq Domain, Eye Diagram, or Scatter Plot.
+        """
+        from PyQt6.QtWidgets import QMessageBox
+
+        overlay = (
+            overlay_or_id
+            if isinstance(overlay_or_id, Overlay)
+            else self._get_overlay_by_id(str(overlay_or_id))
+        )
+        if overlay is None:
+            return
+
+        if overlay.duration <= 0:
+            QMessageBox.information(
+                self, "Analyze Overlay",
+                "This overlay does not span a non-zero time duration."
+            )
+            return
+
+        ctx = None
+        if hasattr(self, '_build_plugin_context'):
+            ctx = self._build_plugin_context(scope="view", samples=None)
+        else:
+            from iqview.plugins.context import PluginContext
+            ctx = PluginContext(
+                sample_rate=getattr(self, 'rate', 1.0),
+                center_freq=getattr(self, 'fc', 0.0),
+                t_start=overlay.t_start,
+                t_end=overlay.t_end,
+                f_start=overlay.f_start,
+                f_end=overlay.f_end,
+                extract_iq_cb=getattr(self, 'extract_iq_segment', None),
+            )
+
+        seg, seg_fs = overlay.extract_iq(samples=None, info=ctx, baseband=True, filter_bw=True)
+        if seg is None or len(seg) == 0:
+            QMessageBox.warning(
+                self, "Analyze Overlay",
+                "Could not extract IQ samples for this overlay's time bounds."
+            )
+            return
+
+        mode = tab_type.lower()
+        if mode == "time":
+            from ..time_domain.view import TimeDomainView
+            view = TimeDomainView(seg, overlay.t_start, seg_fs, parent_window=self)
+            self.tabs.addTab(view, "Time Domain")
+            self.tabs.setCurrentWidget(view)
+            self.update_tab_names()
+        elif mode == "freq":
+            from ..frequency_domain.view import FrequencyDomainView
+            fc_tab = overlay.f_center if overlay.bandwidth > 0 else getattr(self, 'fc', 0.0)
+            view = FrequencyDomainView(seg, fc_tab, seg_fs, parent_window=self)
+            self.tabs.addTab(view, "Freq Domain")
+            self.tabs.setCurrentWidget(view)
+            self.update_tab_names()
+        elif mode == "eye":
+            from ..eye_diagram_dialog import EyeDiagramView
+            view = EyeDiagramView(seg, seg_fs, parent_window=self)
+            self.tabs.addTab(view, "Eye Diagram")
+            self.tabs.setCurrentWidget(view)
+            self.update_tab_names()
+        elif mode in ("constellation", "scatter"):
+            from ..constellation_dialog import ConstellationView
+            view = ConstellationView(seg, seg_fs, parent_window=self)
+            self.tabs.addTab(view, "Scatter Plot")
+            self.tabs.setCurrentWidget(view)
+            self.update_tab_names()
 
     def sync_multi_row_overlays(self) -> None:
         if hasattr(self, 'multi_row_view') and hasattr(self, 'spectrogram_stack') and self.spectrogram_stack.currentIndex() == 1:
             self.multi_row_view.sync_overlays(self.overlays, self.spectrogram_view.is_waterfall)
+
 

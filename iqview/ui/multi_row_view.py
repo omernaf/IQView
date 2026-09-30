@@ -527,11 +527,15 @@ class MultiRowSpectrogramView(QWidget):
                 shape = getattr(o, 'shape', None)
                 z_ord = getattr(o, 'z_order', 8)
 
+                hover_tip = o.get_truncated_hover() if hasattr(o, 'get_truncated_hover') else (getattr(o, 'hover_str', '') or '')
+
                 if shape in [OverlayShape.LINE, "LINE"]:
                     t_val = o.points[0][0] if o.points else (o.center[0] if o.center else 0.0)
                     if t_s <= t_val <= t_e:
                         line = pg.InfiniteLine(pos=t_val, angle=(0 if is_waterfall else 90), movable=False, pen=pg.mkPen(o.color, width=o.border_width))
                         line.setZValue(z_ord)
+                        if hover_tip:
+                            line.setToolTip(hover_tip)
                         row['plot'].addItem(line, ignoreBounds=True)
                         items.append(line)
 
@@ -539,6 +543,8 @@ class MultiRowSpectrogramView(QWidget):
                     f_val = o.points[0][1] if o.points else (o.center[1] if o.center else 0.0)
                     line = pg.InfiniteLine(pos=f_val, angle=(90 if is_waterfall else 0), movable=False, pen=pg.mkPen(o.color, width=o.border_width))
                     line.setZValue(z_ord)
+                    if hover_tip:
+                        line.setToolTip(hover_tip)
                     row['plot'].addItem(line, ignoreBounds=True)
                     items.append(line)
 
@@ -550,6 +556,8 @@ class MultiRowSpectrogramView(QWidget):
                         c.setAlphaF(getattr(o, 'alpha', 0.25))
                         reg = pg.LinearRegionItem(values=[t_min_o, t_max_o], orientation=(0 if is_waterfall else 1), brush=pg.mkBrush(c), pen=pg.mkPen(o.color, width=o.border_width), movable=False)
                         reg.setZValue(z_ord)
+                        if hover_tip:
+                            reg.setToolTip(hover_tip)
                         row['plot'].addItem(reg)
                         items.append(reg)
 
@@ -560,6 +568,8 @@ class MultiRowSpectrogramView(QWidget):
                     c.setAlphaF(getattr(o, 'alpha', 0.25))
                     reg = pg.LinearRegionItem(values=[f_min_o, f_max_o], orientation=(1 if is_waterfall else 0), brush=pg.mkBrush(c), pen=pg.mkPen(o.color, width=o.border_width), movable=False)
                     reg.setZValue(z_ord)
+                    if hover_tip:
+                        reg.setToolTip(hover_tip)
                     row['plot'].addItem(reg)
                     items.append(reg)
 

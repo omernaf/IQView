@@ -105,8 +105,273 @@ class Overlay:
     source:   str  = "user"            # 'user' or mod name (for namespacing)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    # --- Transient per-burst IQ cache (in-memory only, excluded from JSON sidecar) ---
+    iq: Optional[Any]   = field(default=None, repr=False, compare=False)
+    fs: Optional[float] = field(default=None, repr=False, compare=False)
+
     # Identity (auto-generated; do not set manually)
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+    # ------------------------------------------------------------------
+    # Smart Geometry Properties (seconds & Hz)
+    # ------------------------------------------------------------------
+
+    @property
+    def t_start(self) -> float:
+        """Start time in seconds."""
+        if self.shape in (OverlayShape.RECT, OverlayShape.POLYGON, OverlayShape.X_REGION) and self.points:
+            return float(min(p[0] for p in self.points))
+        if self.shape == OverlayShape.ELLIPSE and self.center and self.radii:
+            return float(self.center[0] - abs(self.radii[0]))
+        if self.shape == OverlayShape.LINE and self.points:
+            return float(self.points[0][0])
+        return 0.0
+
+    @t_start.setter
+    def t_start(self, val: float) -> None:
+        if self.shape == OverlayShape.RECT and len(self.points) >= 2:
+            self.points = [(float(val), self.f_start), (self.t_end, self.f_end)]
+        elif self.shape == OverlayShape.X_REGION and len(self.points) >= 2:
+            self.points = [(float(val), 0.0), (self.t_end, 0.0)]
+        elif self.shape == OverlayShape.LINE:
+            self.points = [(float(val), 0.0)]
+
+    @property
+    def t_end(self) -> float:
+        """End time in seconds."""
+        if self.shape in (OverlayShape.RECT, OverlayShape.POLYGON, OverlayShape.X_REGION) and self.points:
+            return float(max(p[0] for p in self.points))
+        if self.shape == OverlayShape.ELLIPSE and self.center and self.radii:
+            return float(self.center[0] + abs(self.radii[0]))
+        if self.shape == OverlayShape.LINE and self.points:
+            return float(self.points[0][0])
+        return 0.0
+
+    @t_end.setter
+    def t_end(self, val: float) -> None:
+        if self.shape == OverlayShape.RECT and len(self.points) >= 2:
+            self.points = [(self.t_start, self.f_start), (float(val), self.f_end)]
+        elif self.shape == OverlayShape.X_REGION and len(self.points) >= 2:
+            self.points = [(self.t_start, 0.0), (float(val), 0.0)]
+
+    @property
+    def t_center(self) -> float:
+        """Center time in seconds."""
+        if self.shape == OverlayShape.ELLIPSE and self.center:
+            return float(self.center[0])
+        return 0.5 * (self.t_start + self.t_end)
+
+    @property
+    def duration(self) -> float:
+        """Time duration in seconds (`t_end - t_start`)."""
+        return max(0.0, self.t_end - self.t_start)
+
+    @property
+    def f_start(self) -> float:
+        """Lower frequency bound in Hz."""
+        if self.shape in (OverlayShape.RECT, OverlayShape.POLYGON, OverlayShape.Y_REGION) and self.points:
+            return float(min(p[1] for p in self.points))
+        if self.shape == OverlayShape.ELLIPSE and self.center and self.radii:
+            return float(self.center[1] - abs(self.radii[1]))
+        if self.shape == OverlayShape.HLINE and self.points:
+            return float(self.points[0][1])
+        return 0.0
+
+    @f_start.setter
+    def f_start(self, val: float) -> None:
+        if self.shape == OverlayShape.RECT and len(self.points) >= 2:
+            self.points = [(self.t_start, float(val)), (self.t_end, self.f_end)]
+        elif self.shape == OverlayShape.Y_REGION and len(self.points) >= 2:
+            self.points = [(0.0, float(val)), (0.0, self.f_end)]
+        elif self.shape == OverlayShape.HLINE:
+            self.points = [(0.0, float(val))]
+
+    @property
+    def f_end(self) -> float:
+        """Upper frequency bound in Hz."""
+        if self.shape in (OverlayShape.RECT, OverlayShape.POLYGON, OverlayShape.Y_REGION) and self.points:
+            return float(max(p[1] for p in self.points))
+        if self.shape == OverlayShape.ELLIPSE and self.center and self.radii:
+            return float(self.center[1] + abs(self.radii[1]))
+        if self.shape == OverlayShape.HLINE and self.points:
+            return float(self.points[0][1])
+        return 0.0
+
+    @f_end.setter
+    def f_end(self, val: float) -> None:
+        if self.shape == OverlayShape.RECT and len(self.points) >= 2:
+            self.points = [(self.t_start, self.f_start), (self.t_end, float(val))]
+        elif self.shape == OverlayShape.Y_REGION and len(self.points) >= 2:
+            self.points = [(0.0, self.f_start), (0.0, float(val))]
+
+    @property
+    def f_center(self) -> float:
+        """Center frequency in Hz."""
+        if self.shape == OverlayShape.ELLIPSE and self.center:
+            return float(self.center[1])
+        return 0.5 * (self.f_start + self.f_end)
+
+    @property
+    def bandwidth(self) -> float:
+        """Frequency span in Hz (`f_end - f_start`)."""
+        return max(0.0, self.f_end - self.f_start)
+
+    # ------------------------------------------------------------------
+    # Per-Burst IQ Extraction & DDC
+    # ------------------------------------------------------------------
+
+    def extract_iq(
+        self,
+        samples: Optional[Any] = None,
+        info: Optional[Any] = None,
+        baseband: bool = True,
+        filter_bw: bool = True,
+        decimate: bool = False,
+    ) -> Tuple[Any, float]:
+        """
+        Return ``(burst_iq, sample_rate_hz)`` for this overlay.
+
+        1. **Cached Fast Path**: If ``self.iq`` is already attached in memory
+           (e.g., from a channelizer/burst-detector plugin), returns
+           ``(self.iq, self.fs)`` immediately without touching the wideband file.
+        2. **On-Demand DDC Path**: Otherwise slices ``[self.t_start, self.t_end]``
+           from *samples* or ``info.extract_iq()``, mixes ``self.f_center`` to
+           baseband (0 Hz), low-pass filters to ``self.bandwidth``, optionally
+           decimates, caches ``self.iq`` / ``self.fs``, and returns ``(iq, fs)``.
+        """
+        import numpy as np
+
+        # 1. Fast path: per-burst IQ already cached on this overlay
+        if self.iq is not None and len(self.iq) > 0:
+            cached_iq = np.asarray(self.iq, dtype=np.complex64)
+            cached_fs = float(
+                self.fs
+                if self.fs is not None and self.fs > 0
+                else (info["sample_rate"] if info is not None and "sample_rate" in info else 1.0)
+            )
+            if decimate and self.bandwidth > 0 and cached_fs > self.bandwidth * 2.5:
+                target_fs = max(self.bandwidth * 1.25, 1.0)
+                decim = max(1, int(cached_fs // target_fs))
+                if decim > 1 and len(cached_iq) > decim:
+                    return cached_iq[::decim].copy(), cached_fs / decim
+            return cached_iq, cached_fs
+
+        # 2. On-demand slice & DDC from wideband samples or info.extract_iq
+        fs = float(info["sample_rate"]) if (info is not None and "sample_rate" in info) else 1.0
+        fc = float(info["center_freq"]) if (info is not None and "center_freq" in info) else 0.0
+
+        t0, t1 = self.t_start, self.t_end
+        if t1 <= t0:
+            return np.empty(0, dtype=np.complex64), fs
+
+        seg = None
+        if samples is not None and len(samples) > 0 and info is not None and "t_start" in info:
+            info_t0 = float(info["t_start"])
+            s0 = max(0, int(round((t0 - info_t0) * fs)))
+            s1 = min(len(samples), int(round((t1 - info_t0) * fs)))
+            if s1 > s0:
+                seg = np.asarray(samples[s0:s1], dtype=np.complex64).copy()
+
+        if (seg is None or len(seg) == 0) and info is not None and hasattr(info, "extract_iq"):
+            extracted = info.extract_iq(t0, t1)
+            if extracted is not None and len(extracted) > 0:
+                seg = np.asarray(extracted, dtype=np.complex64).copy()
+
+        if seg is None or len(seg) == 0:
+            return np.empty(0, dtype=np.complex64), fs
+
+        # Mix f_center to baseband (0 Hz)
+        has_freq_bounds = self.shape in (
+            OverlayShape.RECT,
+            OverlayShape.ELLIPSE,
+            OverlayShape.POLYGON,
+            OverlayShape.Y_REGION,
+        )
+        if baseband and has_freq_bounds:
+            f_offset = self.f_center - fc
+            if abs(f_offset) > 1e-6:
+                t_vec = np.arange(len(seg), dtype=np.float64) / fs
+                seg = (seg * np.exp(-2j * np.pi * f_offset * t_vec)).astype(np.complex64)
+
+        # Low-pass filter to overlay bandwidth
+        bw = self.bandwidth
+        if filter_bw and has_freq_bounds and bw > 0 and bw < fs * 0.96 and len(seg) >= 18:
+            try:
+                from scipy.signal import butter, sosfiltfilt
+                cutoff = min(bw * 0.5, fs * 0.48)
+                if cutoff > 0:
+                    sos = butter(5, cutoff / (0.5 * fs), btype="low", output="sos")
+                    seg = sosfiltfilt(sos, seg).astype(np.complex64)
+            except Exception:
+                pass
+
+        out_fs = fs
+        if decimate and has_freq_bounds and bw > 0:
+            target_fs = max(bw * 1.25, 1.0)
+            decim = max(1, int(fs // target_fs))
+            if decim > 1 and len(seg) > decim:
+                seg = seg[::decim].copy()
+                out_fs = fs / decim
+
+        # Cache on overlay so subsequent uses are instant
+        self.iq = seg
+        self.fs = out_fs
+        return seg, out_fs
+
+    # ------------------------------------------------------------------
+    # Hover Tooltip Formatting (Truncated Preview)
+    # ------------------------------------------------------------------
+
+    def get_truncated_hover(
+        self,
+        max_line_len: int = 72,
+        max_lines: int = 6,
+        max_total_chars: int = 260,
+    ) -> str:
+        """
+        Return a compact tooltip string for mouse hover, truncating long lines
+        or bitstreams with ``...`` and adding a hint to right-click for the
+        visual Overlay Inspector popup.
+        """
+        raw = (self.hover_str or "").strip()
+        if not raw and not self.metadata:
+            return ""
+
+        was_truncated = False
+        lines: List[str] = []
+
+        if raw:
+            raw_lines = raw.splitlines()
+            if len(raw_lines) > max_lines:
+                raw_lines = raw_lines[:max_lines]
+                was_truncated = True
+            for ln in raw_lines:
+                if len(ln) > max_line_len:
+                    lines.append(ln[:max_line_len] + "...")
+                    was_truncated = True
+                else:
+                    lines.append(ln)
+        elif self.metadata:
+            # Build a compact preview from metadata when hover_str is empty
+            items = list(self.metadata.items())
+            if len(items) > 4:
+                items = items[:4]
+                was_truncated = True
+            for k, v in items:
+                val_str = str(v)
+                if len(val_str) > max_line_len - len(str(k)) - 4:
+                    val_str = val_str[: max(12, max_line_len - len(str(k)) - 4)] + "..."
+                    was_truncated = True
+                lines.append(f"{k}: {val_str}")
+
+        preview = "\n".join(lines)
+        if len(preview) > max_total_chars:
+            preview = preview[:max_total_chars].rstrip() + "..."
+            was_truncated = True
+
+        if was_truncated or bool(self.metadata):
+            preview += "\n(Right-click → Inspect Overlay)"
+        return preview
 
     # ------------------------------------------------------------------
     # Serialisation helpers
@@ -243,8 +508,9 @@ class OverlayItem(pg.GraphicsObject):
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
         self._update_interaction_flags()
 
-        if overlay.hover_str:
-            self.setToolTip(overlay.hover_str)
+        tip = overlay.get_truncated_hover()
+        if tip:
+            self.setToolTip(tip)
 
         self._label: Optional[pg.TextItem] = None
         self._plot_item: Optional[pg.PlotItem] = None
@@ -648,7 +914,7 @@ class OverlayItem(pg.GraphicsObject):
 
     def refresh(self) -> None:
         """Re-sync visuals after overlay data is mutated in-place."""
-        self.setToolTip(self.overlay.hover_str)
+        self.setToolTip(self.overlay.get_truncated_hover())
         self._update_interaction_flags()
 
         if self._label is not None:
