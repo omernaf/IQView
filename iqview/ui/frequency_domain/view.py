@@ -131,6 +131,7 @@ class FrequencyDomainView(Base1DPlotView):
         self.plot_buttons = []
         
         self.toolbar_layout.addStretch()
+        self.setup_oversample_controls(self.toolbar_layout)
         
         self.range_label = QLabel(f"Samples: {len(samples)}")
         self.range_label.setStyleSheet("color: #888; font-family: Consolas; font-size: 11px;")
@@ -925,19 +926,6 @@ class FrequencyDomainView(Base1DPlotView):
         yr = y_max - y_min if y_max != y_min else 1.0
         self.plot_item.setYRange(float(y_min - yr * 0.05), float(y_max + yr * 0.05), padding=0)
         self.update_scrollbars()
-
-    def update_toolbar_style(self):
-        theme = self.settings_mgr.get("ui/theme", "Dark")
-        p = get_palette(theme)
-        self.toolbar.setStyleSheet(f"""
-            QFrame#fd_toolbar {{ background-color: {p.bg_sidebar}; border-radius: 6px; border: 1px solid {p.border}; }}
-            QLabel {{ color: {p.text_dim}; background: transparent; border: none; }}
-            QDoubleSpinBox, QSpinBox {{ background-color: {p.bg_input}; color: {p.text_main}; border: 1px solid {p.border}; border-radius: 4px; padding: 3px 6px; }}
-            QDoubleSpinBox:focus, QSpinBox:focus {{ border-color: {p.accent}; }}
-            QPushButton {{ background-color: {p.bg_widget}; padding: 5px 15px; border-radius: 3px; color: {p.text_main}; }}
-            QPushButton:hover {{ background-color: {p.border_light}; }}
-            QPushButton:checked {{ background-color: {p.accent_dim}; color: {p.accent}; border: 1px solid {p.accent}; }}
-        """)
 
     def refresh_plot_style(self):
         theme = self.settings_mgr.get("ui/theme", "Dark")

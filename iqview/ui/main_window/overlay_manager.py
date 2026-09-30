@@ -781,59 +781,6 @@ class OverlayManagerMixin:
         sh = overlay._shape_name().title() if hasattr(overlay, "_shape_name") else "Overlay"
         return f"{sh} ({overlay.id[:6]})"
 
-    def _attach_overlay_oversample_toolbar_widget(self, view, overlay: Overlay, initial_oversample: float) -> None:
-        """Insert a live 'Oversample:' spinbox into a TimeDomainView or FrequencyDomainView toolbar."""
-        if not hasattr(view, "toolbar_layout") or not hasattr(view, "set_samples"):
-            return
-        from PyQt6.QtWidgets import QLabel, QDoubleSpinBox
-        from iqview.plugins.context import PluginContext
-
-        lbl = QLabel("Oversample:")
-        spin = QDoubleSpinBox()
-        spin.setRange(0.1, 1000.0)
-        spin.setDecimals(2)
-        spin.setSingleStep(0.5)
-        spin.setSuffix(" ×")
-        spin.setValue(float(initial_oversample))
-        spin.setKeyboardTracking(False)
-        spin.setFixedWidth(92)
-        spin.setToolTip(
-            f"Oversampling factor relative to overlay bandwidth ({overlay.bandwidth:g} Hz).\n"
-            f"For example, 5.20 × resamples the burst to {overlay.bandwidth * 5.2:g} Hz."
-        )
-
-        # Insert before the trailing range_label if present
-        count = view.toolbar_layout.count()
-        insert_idx = max(0, count - 1)
-        view.toolbar_layout.insertWidget(insert_idx, lbl)
-        view.toolbar_layout.insertWidget(insert_idx + 1, spin)
-        view.toolbar_layout.insertSpacing(insert_idx + 2, 12)
-        view.oversample_spin = spin
-
-        def _on_oversample_changed(val: float) -> None:
-            self._overlay_oversample = float(val)
-            ctx = PluginContext(
-                sample_rate=float(getattr(self, 'rate', 1.0) or 1.0),
-                center_freq=float(getattr(self, 'fc', 0.0) or 0.0),
-                t_start=overlay.t_start,
-                t_end=overlay.t_end,
-                f_start=overlay.f_start,
-                f_end=overlay.f_end,
-                extract_iq_cb=lambda t0, t1: self.extract_iq_segment(t0, t1),
-            )
-            new_seg, new_fs = overlay.get_samples(
-                samples=None,
-                info=ctx,
-                baseband=True,
-                filter_bw=True,
-                resample=True,
-                oversample=float(val),
-            )
-            if new_seg is not None and len(new_seg) > 0:
-                view.set_samples(new_seg, new_fs)
-
-        spin.valueChanged.connect(_on_oversample_changed)
-
     def analyze_overlay_in_tab(
         self,
         overlay_or_id,
@@ -905,18 +852,39 @@ class OverlayManagerMixin:
         view = None
         type_label = "Time Domain"
 
+        def _extract_for_oversample(factor: float):
+            c = PluginContext(
+                sample_rate=float(getattr(self, 'rate', 1.0) or 1.0),
+                center_freq=float(getattr(self, 'fc', 0.0) or 0.0),
+                t_start=overlay.t_start,
+                t_end=overlay.t_end,
+                f_start=overlay.f_start,
+                f_end=overlay.f_end,
+                extract_iq_cb=lambda t0, t1: self.extract_iq_segment(t0, t1),
+            )
+            return overlay.get_samples(
+                samples=None,
+                info=c,
+                baseband=True,
+                filter_bw=True,
+                resample=True,
+                oversample=float(factor),
+            )
+
+        base_bw = overlay.bandwidth if overlay.bandwidth > 0 else float(getattr(self, 'rate', 1.0) or 1.0)
+
         if mode == "time":
             from ..time_domain.view import TimeDomainView
             type_label = "Time Domain"
             view = TimeDomainView(seg, overlay.t_start, seg_fs, parent_window=self)
-            self._attach_overlay_oversample_toolbar_widget(view, overlay, oversample)
+            view.set_oversample_extractor(_extract_for_oversample, base_rate=base_bw, initial_oversample=oversample)
         elif mode == "freq":
             from ..frequency_domain.view import FrequencyDomainView
             type_label = "Freq Domain"
             # Signal has been DDC'd so the center of the overlay is now 0 Hz (baseband)
             fc_tab = 0.0 if overlay.bandwidth > 0 else getattr(self, 'fc', 0.0)
             view = FrequencyDomainView(seg, fc_tab, seg_fs, parent_window=self)
-            self._attach_overlay_oversample_toolbar_widget(view, overlay, oversample)
+            view.set_oversample_extractor(_extract_for_oversample, base_rate=base_bw, initial_oversample=oversample)
         elif mode == "eye":
             from ..eye_diagram_dialog import EyeDiagramView
             type_label = "Eye Diagram"

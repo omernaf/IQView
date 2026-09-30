@@ -118,6 +118,7 @@ class TimeDomainView(Base1DPlotView):
         self.plot_buttons = []
         
         self.toolbar_layout.addStretch()
+        self.setup_oversample_controls(self.toolbar_layout)
         
         end_time = start_time + len(samples) / sample_rate
         self.range_label = QLabel(f"Range: {start_time:,.6f} to {end_time:,.6f} s")
@@ -654,19 +655,6 @@ class TimeDomainView(Base1DPlotView):
         
         # Re-plot to refresh curve and marker colors
         self._update_plot(self.current_plot_data, self.y_label_text)
-
-    def update_toolbar_style(self):
-        theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
-        p = get_palette(theme)
-        self.toolbar.setStyleSheet(f"""
-            QFrame#td_toolbar {{ background-color: {p.bg_sidebar}; border-radius: 6px; border: 1px solid {p.border}; }}
-            QLabel {{ color: {p.text_dim}; background: transparent; border: none; }}
-            QDoubleSpinBox, QSpinBox {{ background-color: {p.bg_input}; color: {p.text_main}; border: 1px solid {p.border}; border-radius: 4px; padding: 3px 6px; }}
-            QDoubleSpinBox:focus, QSpinBox:focus {{ border-color: {p.accent}; }}
-            QPushButton {{ background-color: {p.bg_widget}; padding: 5px 15px; border-radius: 3px; color: {p.text_main}; }}
-            QPushButton:hover {{ background-color: {p.border_light}; }}
-            QPushButton:checked {{ background-color: {p.accent_dim}; color: {p.accent}; border: 1px solid {p.accent}; }}
-        """)
 
     def refresh_plot_style(self):
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
