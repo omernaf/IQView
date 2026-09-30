@@ -771,11 +771,80 @@ class OverlayManagerMixin:
         dlg = OverlayInspectorDialog(overlay, parent_window=self, parent=self)
         dlg.exec()
 
-    def analyze_overlay_in_tab(self, overlay_or_id, tab_type: str = "time") -> None:
+    def _get_overlay_display_name(self, overlay: Overlay) -> str:
+        """Return the overlay's display_str if non-empty, or a fallback like 'Overlay #1'."""
+        if overlay.display_str and overlay.display_str.strip():
+            return overlay.display_str.strip()
+        for i, o in enumerate(getattr(self, "overlays", [])):
+            if o.id == overlay.id:
+                return f"Overlay #{i + 1}"
+        sh = overlay._shape_name().title() if hasattr(overlay, "_shape_name") else "Overlay"
+        return f"{sh} ({overlay.id[:6]})"
+
+    def _attach_overlay_oversample_toolbar_widget(self, view, overlay: Overlay, initial_oversample: float) -> None:
+        """Insert a live 'Oversample:' spinbox into a TimeDomainView or FrequencyDomainView toolbar."""
+        if not hasattr(view, "toolbar_layout") or not hasattr(view, "set_samples"):
+            return
+        from PyQt6.QtWidgets import QLabel, QDoubleSpinBox
+        from iqview.plugins.context import PluginContext
+
+        lbl = QLabel("Oversample:")
+        spin = QDoubleSpinBox()
+        spin.setRange(0.1, 1000.0)
+        spin.setDecimals(2)
+        spin.setSingleStep(0.5)
+        spin.setSuffix(" ×")
+        spin.setValue(float(initial_oversample))
+        spin.setKeyboardTracking(False)
+        spin.setFixedWidth(92)
+        spin.setToolTip(
+            f"Oversampling factor relative to overlay bandwidth ({overlay.bandwidth:g} Hz).\n"
+            f"For example, 5.20 × resamples the burst to {overlay.bandwidth * 5.2:g} Hz."
+        )
+
+        # Insert before the trailing range_label if present
+        count = view.toolbar_layout.count()
+        insert_idx = max(0, count - 1)
+        view.toolbar_layout.insertWidget(insert_idx, lbl)
+        view.toolbar_layout.insertWidget(insert_idx + 1, spin)
+        view.toolbar_layout.insertSpacing(insert_idx + 2, 12)
+        view.oversample_spin = spin
+
+        def _on_oversample_changed(val: float) -> None:
+            self._overlay_oversample = float(val)
+            ctx = PluginContext(
+                sample_rate=float(getattr(self, 'rate', 1.0) or 1.0),
+                center_freq=float(getattr(self, 'fc', 0.0) or 0.0),
+                t_start=overlay.t_start,
+                t_end=overlay.t_end,
+                f_start=overlay.f_start,
+                f_end=overlay.f_end,
+                extract_iq_cb=lambda t0, t1: self.extract_iq_segment(t0, t1),
+            )
+            new_seg, new_fs = overlay.get_samples(
+                samples=None,
+                info=ctx,
+                baseband=True,
+                filter_bw=True,
+                resample=True,
+                oversample=float(val),
+            )
+            if new_seg is not None and len(new_seg) > 0:
+                view.set_samples(new_seg, new_fs)
+
+        spin.valueChanged.connect(_on_oversample_changed)
+
+    def analyze_overlay_in_tab(
+        self,
+        overlay_or_id,
+        tab_type: str = "time",
+        oversample: Optional[float] = None,
+    ) -> None:
         """
         Extract the narrowband DDC'd IQ for *overlay_or_id* via `o.get_samples()`
-        (using cached `o.iq` if present, or extracting on-demand from the file)
-        and open it directly in Time Domain, Freq Domain, Eye Diagram, or Scatter Plot.
+        (down-converting `f_center` to `0 Hz` baseband, filtering to `bandwidth`,
+        and resampling to `bandwidth * oversample`) and open it in a named tab
+        `'<Overlay Name> - <Popup Type>'`.
         """
         from PyQt6.QtWidgets import QMessageBox
         from iqview.plugins.context import PluginContext
@@ -800,6 +869,12 @@ class OverlayManagerMixin:
             if not self._confirm_large_segment(overlay.t_start, overlay.t_end, tab_type.title()):
                 return
 
+        if oversample is None:
+            oversample = float(getattr(self, "_overlay_oversample", 1.0) or 1.0)
+        else:
+            oversample = max(0.01, float(oversample))
+            self._overlay_oversample = oversample
+
         ctx = PluginContext(
             sample_rate=float(getattr(self, 'rate', 1.0) or 1.0),
             center_freq=float(getattr(self, 'fc', 0.0) or 0.0),
@@ -811,7 +886,12 @@ class OverlayManagerMixin:
         )
 
         seg, seg_fs = overlay.get_samples(
-            samples=None, info=ctx, baseband=True, filter_bw=True, resample=True
+            samples=None,
+            info=ctx,
+            baseband=True,
+            filter_bw=True,
+            resample=True,
+            oversample=oversample,
         )
         if seg is None or len(seg) == 0:
             QMessageBox.warning(
@@ -820,31 +900,36 @@ class OverlayManagerMixin:
             )
             return
 
+        overlay_name = self._get_overlay_display_name(overlay)
         mode = tab_type.lower()
+        view = None
+        type_label = "Time Domain"
+
         if mode == "time":
             from ..time_domain.view import TimeDomainView
+            type_label = "Time Domain"
             view = TimeDomainView(seg, overlay.t_start, seg_fs, parent_window=self)
-            self.tabs.addTab(view, "Time Domain")
-            self.tabs.setCurrentWidget(view)
-            self.update_tab_names()
+            self._attach_overlay_oversample_toolbar_widget(view, overlay, oversample)
         elif mode == "freq":
             from ..frequency_domain.view import FrequencyDomainView
+            type_label = "Freq Domain"
             # Signal has been DDC'd so the center of the overlay is now 0 Hz (baseband)
             fc_tab = 0.0 if overlay.bandwidth > 0 else getattr(self, 'fc', 0.0)
             view = FrequencyDomainView(seg, fc_tab, seg_fs, parent_window=self)
-            self.tabs.addTab(view, "Freq Domain")
-            self.tabs.setCurrentWidget(view)
-            self.update_tab_names()
+            self._attach_overlay_oversample_toolbar_widget(view, overlay, oversample)
         elif mode == "eye":
             from ..eye_diagram_dialog import EyeDiagramView
+            type_label = "Eye Diagram"
             view = EyeDiagramView(seg, seg_fs, parent_window=self)
-            self.tabs.addTab(view, "Eye Diagram")
-            self.tabs.setCurrentWidget(view)
-            self.update_tab_names()
         elif mode in ("constellation", "scatter"):
             from ..constellation_dialog import ConstellationView
+            type_label = "Scatter Plot"
             view = ConstellationView(seg, seg_fs, parent_window=self)
-            self.tabs.addTab(view, "Scatter Plot")
+
+        if view is not None:
+            tab_title = f"{overlay_name} - {type_label}"
+            view._custom_tab_title = tab_title
+            self.tabs.addTab(view, tab_title)
             self.tabs.setCurrentWidget(view)
             self.update_tab_names()
 

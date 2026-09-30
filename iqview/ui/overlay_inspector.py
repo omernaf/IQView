@@ -394,6 +394,26 @@ class OverlayInspectorDialog(QDialog):
             and o.duration > 0
         )
         if can_analyze:
+            from PyQt6.QtWidgets import QDoubleSpinBox
+            lbl_os = QLabel("Oversample:")
+            lbl_os.setObjectName("field_label")
+            footer.addWidget(lbl_os)
+
+            self.spin_oversample = QDoubleSpinBox()
+            self.spin_oversample.setRange(0.1, 1000.0)
+            self.spin_oversample.setDecimals(2)
+            self.spin_oversample.setSingleStep(0.5)
+            self.spin_oversample.setSuffix(" ×")
+            init_os = float(getattr(self.parent_window, "_overlay_oversample", 1.0) or 1.0)
+            self.spin_oversample.setValue(init_os)
+            self.spin_oversample.setFixedHeight(28)
+            self.spin_oversample.setFixedWidth(86)
+            self.spin_oversample.setToolTip(
+                f"Oversampling multiplier relative to overlay bandwidth ({o.bandwidth:g} Hz).\n"
+                f"Example: 5.20 × → Fs = {o.bandwidth * 5.2:g} Hz."
+            )
+            footer.addWidget(self.spin_oversample)
+
             lbl_an = QLabel("Analyze Burst in:")
             lbl_an.setObjectName("field_label")
             footer.addWidget(lbl_an)
@@ -450,7 +470,8 @@ class OverlayInspectorDialog(QDialog):
 
     def _on_analyze_clicked(self, tab_type: str) -> None:
         if self.parent_window and hasattr(self.parent_window, "analyze_overlay_in_tab"):
-            self.parent_window.analyze_overlay_in_tab(self.overlay, tab_type)
+            os_val = self.spin_oversample.value() if hasattr(self, "spin_oversample") else 1.0
+            self.parent_window.analyze_overlay_in_tab(self.overlay, tab_type, oversample=os_val)
 
     def _on_edit_overlay(self) -> None:
         if self.parent_window and hasattr(self.parent_window, "marker_panel"):

@@ -113,11 +113,14 @@ class DetachedViewWindow(QMainWindow):
         """
 
     def update_title(self):
-        # We can dynamically determine a good title based on the view type
+        # We can dynamically determine a good title based on the view type or custom overlay title
         from .time_domain.view import TimeDomainView
         from .frequency_domain.view import FrequencyDomainView
 
-        if isinstance(self.view, TimeDomainView):
+        custom_title = getattr(self.view, '_custom_tab_title', None)
+        if custom_title:
+            base = custom_title
+        elif isinstance(self.view, TimeDomainView):
             base = "Time Domain"
         elif isinstance(self.view, FrequencyDomainView):
             base = "Freq Domain"

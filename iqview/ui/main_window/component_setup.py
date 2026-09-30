@@ -471,7 +471,7 @@ class UIComponentsMixin:
             self.update_tab_names()
 
     def update_tab_names(self):
-        """Update tab names dynamically: 'Time Domain', 'Freq Domain', 'Eye Diagram', or 'Constellation'."""
+        """Update tab names dynamically: 'Time Domain', 'Freq Domain', 'Eye Diagram', 'Scatter Plot', or custom overlay tab names."""
         from ..time_domain.view import TimeDomainView
         from ..frequency_domain.view import FrequencyDomainView
         from ..eye_diagram_dialog import EyeDiagramView
@@ -481,10 +481,14 @@ class UIComponentsMixin:
         fd_indices = []
         ed_indices = []
         cd_indices = []
+        custom_groups = {}
 
         for i in range(1, self.tabs.count()):
             widget = self.tabs.widget(i)
-            if isinstance(widget, TimeDomainView):
+            custom_title = getattr(widget, '_custom_tab_title', None)
+            if custom_title:
+                custom_groups.setdefault(custom_title, []).append(i)
+            elif isinstance(widget, TimeDomainView):
                 td_indices.append(i)
             elif isinstance(widget, FrequencyDomainView):
                 fd_indices.append(i)
@@ -492,6 +496,14 @@ class UIComponentsMixin:
                 ed_indices.append(i)
             elif isinstance(widget, ConstellationView):
                 cd_indices.append(i)
+
+        # Update custom-named tabs (e.g. '<Overlay Name> - Time Domain')
+        for title, indices in custom_groups.items():
+            if len(indices) == 1:
+                self.tabs.setTabText(indices[0], title)
+            else:
+                for k, idx in enumerate(indices):
+                    self.tabs.setTabText(idx, f"{title} ({k+1})")
 
         # Update Time Domain tabs
         if len(td_indices) == 1:
