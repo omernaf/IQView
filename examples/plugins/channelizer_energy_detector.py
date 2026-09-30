@@ -285,6 +285,7 @@ def _run_ed_state_machine(
                     i = c_start + offset
                     burst_start = max(start_search_idx, i - m + 1)
                     burst_peak_ratio = x / (y + 1e-30)
+                    y = x  # Reset IIR to current FIR value on state switch
                     ring_list = [0] * n
                     ring_sum = 0
                     ring_idx = 0
@@ -310,6 +311,7 @@ def _run_ed_state_machine(
                     starts.append(burst_start)
                     ends.append(burst_end)
                     peaks.append(burst_peak_ratio)
+                    y = x  # Reset IIR to current FIR value on state switch
                     ring_list = [0] * n
                     ring_sum = 0
                     ring_idx = 0
