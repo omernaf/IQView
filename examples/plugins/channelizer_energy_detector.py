@@ -126,6 +126,15 @@ PLUGIN_PARAMS = {
         "label": "Init Chunks",
         "tooltip": "Number of initial chunks used to converge the IIR noise floor before entering IDLE.",
     },
+    "debug": {
+        "type": "bool",
+        "default": False,
+        "label": "Debug Plots (FIR / IIR / State)",
+        "tooltip": (
+            "When enabled, opens a plot tab showing the FIR (Moving Average), "
+            "IIR filter, and State Machine state for a subset of channels."
+        ),
+    },
 }
 
 
@@ -142,6 +151,7 @@ def _run_ed_state_machine(
     n: int,
     chunk_size: int,
     init_chunks: int,
+    record_debug: bool = False,
 ):
     """
     Chunk-wise IIR + M-out-of-N hysteresis energy detector on moving-average envelope `ma`.
@@ -152,7 +162,10 @@ def _run_ed_state_machine(
     """
     total_len = len(ma)
     if total_len == 0:
-        return [], [], []
+        return [], [], [], None, None
+
+    iir_trace = np.empty(total_len, dtype=np.float64) if record_debug else None
+    state_trace = np.zeros(total_len, dtype=np.float64) if record_debug else None
 
     one_minus_low = 1.0 - alpha_low
     one_minus_high = 1.0 - alpha_high
@@ -167,10 +180,14 @@ def _run_ed_state_machine(
     # 1. INIT Phase (fast C lfilter)
     if init_samples >= total_len:
         y_init, _ = sp_signal.lfilter(b_low, a_low, ma, zi=[y * one_minus_low])
+        if record_debug:
+            iir_trace[:] = y_init
         y = float(y_init[-1])
         start_search_idx = 0
     elif init_samples > 0:
         y_init, _ = sp_signal.lfilter(b_low, a_low, ma[:init_samples], zi=[y * one_minus_low])
+        if record_debug:
+            iir_trace[:init_samples] = y_init
         y = float(y_init[-1])
         start_search_idx = init_samples
     else:
@@ -209,6 +226,9 @@ def _run_ed_state_machine(
 
             if ring_sum + total_hits < m:
                 # Impossible to reach m hits in this chunk -> fast-forward!
+                if record_debug:
+                    iir_trace[c_start:c_end] = y_seq
+                    state_trace[c_start:c_end] = 0.0
                 y = float(y_seq[-1])
                 if c_len >= n:
                     ring[:] = hits[-n:]
@@ -231,6 +251,9 @@ def _run_ed_state_machine(
 
             if ring_sum + total_hits < m:
                 # Stays ACTIVE throughout the entire chunk -> fast-forward!
+                if record_debug:
+                    iir_trace[c_start:c_end] = y_seq
+                    state_trace[c_start:c_end] = 1.0
                 max_r = float(np.max(chunk / (y_prev + 1e-30)))
                 if max_r > burst_peak_ratio:
                     burst_peak_ratio = max_r
@@ -294,6 +317,11 @@ def _run_ed_state_machine(
                     ring_sum = 0
                     ring_idx = 0
 
+            if record_debug:
+                idx_abs = c_start + offset
+                iir_trace[idx_abs] = y
+                state_trace[idx_abs] = float(state)
+
         ring[:] = ring_list
 
     if state == 1:
@@ -301,7 +329,7 @@ def _run_ed_state_machine(
         ends.append(total_len - 1)
         peaks.append(burst_peak_ratio)
 
-    return starts, ends, peaks
+    return starts, ends, peaks, iir_trace, state_trace
 
 
 def _compute_channel_centers(
@@ -372,6 +400,7 @@ def run(samples: np.ndarray, info) -> PluginResult:
     n               = max(m, int(params.get("n", 115)))
     chunk_size      = max(64, int(params.get("chunk_size", 10000)))
     init_chunks     = max(0, int(params.get("init_chunks", 3)))
+    debug           = bool(params.get("debug", False))
 
     if channel_spacing <= 0 or fs <= 0:
         return result
@@ -429,6 +458,10 @@ def run(samples: np.ndarray, info) -> PluginResult:
 
     ma_kernel = np.ones(L, dtype=np.float64) / float(L)
 
+    MAX_DEBUG_CHANNELS = 10
+    debug_active_channels = []
+    debug_idle_channels = []
+
     # 3. Extract each channel via O(M log M) frequency slice + IFFT and run Energy Detector
     for ch_idx, f_ch in enumerate(channel_fcs):
         if info.is_cancelled():
@@ -457,8 +490,10 @@ def run(samples: np.ndarray, info) -> PluginResult:
         else:
             ma = mag
 
+        want_debug = debug and (len(debug_active_channels) < MAX_DEBUG_CHANNELS)
+
         # Chunk-vectorized IIR + M-out-of-N Energy Detector
-        starts, ends, peak_ratios = _run_ed_state_machine(
+        starts, ends, peak_ratios, iir_trace, state_trace = _run_ed_state_machine(
             ma,
             alpha_low=alpha_low,
             alpha_high=alpha_high,
@@ -467,7 +502,15 @@ def run(samples: np.ndarray, info) -> PluginResult:
             n=n,
             chunk_size=chunk_size,
             init_chunks=init_chunks,
+            record_debug=want_debug,
         )
+
+        if want_debug and iir_trace is not None and state_trace is not None:
+            entry = (ch_idx, f_ch, len(starts), ma, iir_trace, state_trace)
+            if starts:
+                debug_active_channels.append(entry)
+            elif len(debug_idle_channels) < MAX_DEBUG_CHANNELS:
+                debug_idle_channels.append(entry)
 
         if not starts:
             continue
@@ -518,6 +561,32 @@ def run(samples: np.ndarray, info) -> PluginResult:
             ov_rect.iq = burst_iq
             ov_rect.fs = ch_fs
             result.add(ov_rect)
+
+    if debug:
+        selected_debug = list(debug_active_channels[:MAX_DEBUG_CHANNELS])
+        if len(selected_debug) < MAX_DEBUG_CHANNELS and debug_idle_channels:
+            rem = MAX_DEBUG_CHANNELS - len(selected_debug)
+            step_idx = max(1, len(debug_idle_channels) // rem)
+            selected_debug.extend(debug_idle_channels[::step_idx][:rem])
+        selected_debug.sort(key=lambda item: item[0])
+
+        if selected_debug:
+            result.set_plot_tab_title("ED Debug (FIR / IIR / State)")
+            t_axis = t_start + np.arange(num_ch_samples, dtype=np.float64) / ch_fs
+            for ch_idx, f_ch, n_bursts, ma_arr, iir_arr, state_arr in selected_debug:
+                result.add_plot(
+                    title=f"Ch {ch_idx + 1} ({f_ch / 1e3:.1f} kHz)",
+                    y={
+                        "FIR (MA)": ma_arr,
+                        "IIR": iir_arr,
+                        "State": state_arr,
+                    },
+                    x=t_axis[: len(ma_arr)],
+                    fs=ch_fs,
+                    x_label="Time",
+                    x_units="s",
+                    y_label="Amplitude / State",
+                )
 
     info.progress(100, "Done")
     return result
