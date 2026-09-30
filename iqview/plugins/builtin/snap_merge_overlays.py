@@ -23,6 +23,29 @@ PLUGIN_DESCRIPTION       = (
 PLUGIN_CATEGORY          = "Post-Processing"
 PLUGIN_NEEDS_WIDEBAND_IQ = False
 
+PLUGIN_DOC = """
+<h3>Snap &amp; Merge Overlays</h3>
+<p>
+Cleans up fragmented or overlapping <code>Rect</code> burst detections by merging adjacent overlays
+that share the same frequency band, optionally snapping time/frequency edges to a regular grid, and
+filtering out short noise spikes.
+</p>
+
+<h4>Algorithm &amp; Operation</h4>
+<ol>
+  <li><b>Same-Band Clustering &amp; Gap Merging:</b> Sorts all <code>Rect</code> overlays in scope by
+      <code>t_start</code> and merges pairs whose fractional frequency overlap is at least
+      <code>min_freq_overlap</code> and whose time separation is at most <code>merge_time_gap_ms</code>.
+      When both overlays carry compatible cached baseband IQ (<code>o.iq</code>), their IQ buffers are
+      stitched together seamlessly.</li>
+  <li><b>Time &amp; Frequency Grid Snapping:</b> Optionally quantizes <code>t_start</code>/<code>t_end</code>
+      to multiples of <code>snap_time_ms</code> and <code>f_start</code>/<code>f_end</code> to multiples of
+      <code>snap_freq_hz</code>.</li>
+  <li><b>Minimum Duration Filter:</b> Removes any resulting <code>Rect</code> overlay shorter than
+      <code>min_duration_ms</code>.</li>
+</ol>
+"""
+
 
 PLUGIN_PARAMS = {
     "merge_time_gap_ms": {

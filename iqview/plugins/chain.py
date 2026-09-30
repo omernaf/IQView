@@ -136,6 +136,7 @@ class PluginChain:
                     "params_spec": copy.deepcopy(resolved.get("params_spec") or {}),
                     "needs_wideband_iq": bool(resolved.get("needs_wideband_iq", True)),
                     "path": resolved.get("path"),
+                    "doc": str(resolved.get("doc", "") or ""),
                     "step_overrides": overrides,
                 }
 
@@ -149,6 +150,7 @@ class PluginChain:
                 "params_spec": copy.deepcopy(getattr(mod, "PLUGIN_PARAMS", {}) or {}),
                 "needs_wideband_iq": bool(getattr(mod, "PLUGIN_NEEDS_WIDEBAND_IQ", True)),
                 "path": getattr(mod, "__file__", None),
+                "doc": str(getattr(mod, "PLUGIN_DOC", "") or ""),
                 "step_overrides": overrides,
             }
 
@@ -161,6 +163,7 @@ class PluginChain:
                 "params_spec": copy.deepcopy(getattr(target, "PLUGIN_PARAMS", {}) or {}),
                 "needs_wideband_iq": bool(getattr(target, "PLUGIN_NEEDS_WIDEBAND_IQ", True)),
                 "path": None,
+                "doc": str(getattr(target, "PLUGIN_DOC", "") or ""),
                 "step_overrides": overrides,
             }
 
@@ -176,6 +179,7 @@ class PluginChain:
                     "params_spec": copy.deepcopy(getattr(builtin_mod, "PLUGIN_PARAMS", {}) or {}),
                     "needs_wideband_iq": bool(getattr(builtin_mod, "PLUGIN_NEEDS_WIDEBAND_IQ", True)),
                     "path": getattr(builtin_mod, "__file__", None),
+                    "doc": str(getattr(builtin_mod, "PLUGIN_DOC", "") or ""),
                     "step_overrides": overrides,
                 }
 
@@ -205,6 +209,7 @@ class PluginChain:
                             "params_spec": copy.deepcopy(getattr(mod, "PLUGIN_PARAMS", {}) or {}),
                             "needs_wideband_iq": bool(getattr(mod, "PLUGIN_NEEDS_WIDEBAND_IQ", True)),
                             "path": os.path.normpath(os.path.abspath(cp)),
+                            "doc": str(getattr(mod, "PLUGIN_DOC", "") or ""),
                             "step_overrides": overrides,
                         }
 
@@ -513,6 +518,22 @@ class PluginChain:
     # Module Binding (when CHAIN = PluginChain(...) is defined in a .py file)
     # ------------------------------------------------------------------
 
+    def get_doc(self) -> str:
+        """Synthesize multi-step HTML documentation from the chain's steps."""
+        parts = [
+            f"<h3>{self.name or 'Plugin Chain'}</h3>",
+            f"<p>{self.description or 'Sequential multi-step plugin pipeline.'}</p>",
+        ]
+        for idx in range(len(self.steps)):
+            try:
+                r = self.resolve_step(idx)
+                step_doc = r.get("doc") or f"<p>Step {idx + 1}: <b>{r['name']}</b></p>"
+                parts.append(f"<hr/><h4>Step {idx + 1}: {r['name']}</h4>{step_doc}")
+            except Exception:
+                t = str(self.steps[idx]["target"])
+                parts.append(f"<hr/><h4>Step {idx + 1}: {t}</h4>")
+        return "\n".join(parts)
+
     def bind_to_module(
         self,
         module: Any,
@@ -542,6 +563,9 @@ class PluginChain:
 
         if not hasattr(module, "PLUGIN_DESCRIPTION") and self.description:
             setattr(module, "PLUGIN_DESCRIPTION", self.description)
+
+        if not getattr(module, "PLUGIN_DOC", None):
+            setattr(module, "PLUGIN_DOC", self.get_doc())
 
         setattr(module, "PLUGIN_PARAMS", self.get_params_spec())
         setattr(module, "PLUGIN_NEEDS_WIDEBAND_IQ", self.needs_wideband_iq())

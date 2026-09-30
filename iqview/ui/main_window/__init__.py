@@ -266,6 +266,13 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
             active_tab.keyPressEvent(event)
             return
 
+        if event.key() == Qt.Key.Key_Delete:
+            sel_id = getattr(self, 'selected_overlay_id', None)
+            if sel_id and hasattr(self, 'remove_overlay'):
+                self.remove_overlay(sel_id)
+                event.accept()
+                return
+
         from ..widgets import key_event_to_name
         key_name = key_event_to_name(event)
         if not key_name:

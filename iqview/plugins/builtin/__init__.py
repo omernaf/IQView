@@ -16,11 +16,13 @@ from . import (
     channelizer_detector,
     fsk_demodulator,
     snap_merge_overlays,
+    snap_to_burst,
 )
 
 BUILTIN_MODULES: List[ModuleType] = [
     channelizer_detector,
     burst_energy_detector,
+    snap_to_burst,
     fsk_demodulator,
     burst_metrics,
     snap_merge_overlays,

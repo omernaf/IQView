@@ -24,6 +24,28 @@ PLUGIN_DESCRIPTION       = (
 PLUGIN_CATEGORY          = "Analysis"
 PLUGIN_NEEDS_WIDEBAND_IQ = False
 
+PLUGIN_DOC = """
+<h3>Burst Metrics (SNR &amp; OBW)</h3>
+<p>
+Measures spectral and time-domain signal quality metrics for every <code>Rect</code> overlay in the
+active scope and writes them into <code>o.metadata</code> and <code>o.hover_str</code>.
+</p>
+
+<h4>Algorithm &amp; Operation</h4>
+<ol>
+  <li><b>Time-Domain Power &amp; PAPR:</b> Computes mean power (RMS dBFS), peak power, and
+      Peak-to-Average Power Ratio (<code>PAPR = 10 * log10(P_peak / P_mean)</code>).</li>
+  <li><b>Welch / Windowed FFT Spectrum:</b> Computes a Hanning-windowed power spectrum across the
+      overlay's baseband IQ (averaging overlapping segments for long bursts).</li>
+  <li><b>Occupied Bandwidth (OBW) &amp; CFO:</b> Integrates the noise-subtracted power spectrum to find
+      the frequency span containing <code>obw_percent</code>% of total burst power, and computes the
+      spectral centroid Carrier Frequency Offset (<code>cfo_hz</code>) relative to the box center.</li>
+  <li><b>Optional OBW Frequency Snap:</b> When <b>Snap Overlay Freq Bounds to OBW</b> is enabled,
+      reshapes each <code>Rect</code>'s frequency bounds <code>[f_start, f_end]</code> to match the
+      measured OBW.</li>
+</ol>
+"""
+
 
 PLUGIN_PARAMS = {
     "obw_percent": {

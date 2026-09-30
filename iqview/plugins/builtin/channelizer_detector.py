@@ -25,6 +25,44 @@ PLUGIN_DESCRIPTION = (
 )
 PLUGIN_CATEGORY    = "Detection"
 
+PLUGIN_DOC = """
+<h3>Channelizer + Energy Detector</h3>
+<p>
+Divides the active frequency span <code>[f_start, f_end]</code> into uniform or overlapping narrowband
+channels anchored at <b>Reference Channel Fc</b>, down-converts each channel to baseband using a
+single-FFT frequency-domain DDC with a 12th-order zero-phase Butterworth filter, and runs a two-speed
+adaptive IIR + <i>M</i>-out-of-<i>N</i> hysteresis energy detector on each channel.
+</p>
+
+<h4>Algorithm &amp; Operation</h4>
+<ol>
+  <li><b>Channel Grid Deduction:</b> Channel center frequencies are placed at
+      <code>f_k = ref_channel_fc + k * channel_spacing * (1 - overlap)</code> within <code>[f_start, f_end]</code>.</li>
+  <li><b>Single-FFT Frequency-Domain DDC:</b> A single multithreaded wideband FFT is computed once.
+      Each channel slices its passband bins, applies a zero-phase Butterworth low-pass response, and executes
+      a narrowband IFFT of rate <code>ch_fs = channel_spacing</code>.</li>
+  <li><b>FIR Envelope (Moving Average):</b> Computes the instantaneous magnitude <code>|IQ|</code> and smooths
+      it with an <code>L</code>-tap moving average filter (<code>FIR</code>).</li>
+  <li><b>Dual-Alpha IIR &amp; M-out-of-N State Machine:</b>
+    <ul>
+      <li><b>INIT (Gray):</b> Runs for <code>init_chunks * chunk_size</code> samples using <code>alpha_low</code>
+          so the noise-floor IIR converges before detection starts.</li>
+      <li><b>IDLE (Red):</b> Tracks the noise floor with <code>y[n] = alpha_low * x[n] + (1 - alpha_low) * y[n-1]</code>.
+          Each sample where <code>x[n] &gt; threshold * y[n-1]</code> counts as a hit. When <code>M</code> hits occur
+          within the last <code>N</code> samples, the detector transitions to <b>ACTIVE</b> (burst start at <code>i - M + 1</code>)
+          and resets the IIR state to the current FIR value <code>y = x[n]</code>.</li>
+      <li><b>ACTIVE (Green):</b> Tracks the active burst energy with <code>alpha_high</code>. Each sample where
+          <code>x[n] &lt; y[n-1] / threshold</code> counts as a hit. When <code>M</code> hits occur within <code>N</code>
+          samples, the detector transitions back to <b>IDLE</b> (burst end at <code>i - M + 1</code>) and resets
+          <code>y = x[n]</code>.</li>
+    </ul>
+  </li>
+  <li><b>Safeguard Margin &amp; Zero-Copy IQ:</b> Each detected burst interval <code>[s0, s1]</code> is expanded by
+      <code>margin</code> samples on both sides (<code>[max(0, s0 - margin), min(N, s1 + margin)]</code>) and
+      stored on the resulting locked <code>Rect</code> overlay as <code>o.iq</code> and <code>o.fs</code>.</li>
+</ol>
+"""
+
 
 PLUGIN_PARAMS = {
     "channel_spacing": {
@@ -110,6 +148,15 @@ PLUGIN_PARAMS = {
         "default": 3,
         "label": "Init Chunks",
         "tooltip": "Number of initial chunks used to converge the IIR noise floor before entering IDLE.",
+    },
+    "margin": {
+        "type": "int",
+        "default": 0,
+        "label": "Margin (samples)",
+        "tooltip": (
+            "Extra safeguard samples taken from each side of every detected burst "
+            "([max(0, start - margin), min(N, end + margin)])."
+        ),
     },
     "debug": {
         "type": "bool",
@@ -417,6 +464,7 @@ def run(samples: np.ndarray, info) -> PluginResult:
     n               = max(m, int(params.get("n", 115)))
     chunk_size      = max(64, int(params.get("chunk_size", 10000)))
     init_chunks     = max(0, int(params.get("init_chunks", 3)))
+    margin          = max(0, int(params.get("margin", 0)))
     debug           = bool(params.get("debug", False))
 
     if channel_spacing <= 0 or fs <= 0:
@@ -524,8 +572,8 @@ def run(samples: np.ndarray, info) -> PluginResult:
         f_hi = f_ch + ch_bw * 0.5
 
         for b_idx in range(len(starts)):
-            s0 = int(starts[b_idx])
-            s1 = int(ends[b_idx])
+            s0 = max(0, int(starts[b_idx]) - margin)
+            s1 = min(len(ch_iq), int(ends[b_idx]) + margin)
             if s1 <= s0:
                 continue
 

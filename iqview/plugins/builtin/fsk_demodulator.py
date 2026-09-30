@@ -26,6 +26,32 @@ PLUGIN_DESCRIPTION       = (
 PLUGIN_CATEGORY          = "Demodulation"
 PLUGIN_NEEDS_WIDEBAND_IQ = False
 
+PLUGIN_DOC = """
+<h3>FSK Demodulator</h3>
+<p>
+Demodulates 2-FSK and GFSK bursts inside existing <code>Rect</code> overlays in the active scope.
+Uses the zero-copy baseband IQ cached on each overlay (<code>o.iq</code>, <code>o.fs</code>) by an
+upstream detector, or lazily extracts baseband IQ from the recording via <code>o.get_samples(samples, info)</code>.
+</p>
+
+<h4>Algorithm &amp; Operation</h4>
+<ol>
+  <li><b>Edge Trimming:</b> Optionally trims low-energy leading/trailing guard samples so noise ramps
+      do not corrupt symbol clock recovery or add spurious edge bits.</li>
+  <li><b>FM Quadrature Discriminator:</b> Computes instantaneous frequency in Hz via conjugate delay-multiply
+      <code>f_inst[n] = arg(x[n] * conj(x[n-1])) * fs / (2 * pi)</code>.</li>
+  <li><b>Automatic CFO &amp; Deviation Estimation:</b> Estimates Carrier Frequency Offset (CFO) from the
+      midpoint between the upper (mark) and lower (space) frequency percentiles, centers the discriminator
+      waveform, and measures peak frequency deviation <code>±Δf</code> (Hz).</li>
+  <li><b>Baud Rate &amp; Symbol Clock Recovery:</b> When <code>baud_rate = 0</code> (Auto), estimates the
+      symbol rate from zero-crossing intervals and spectral timing tone analysis, then finds the optimal
+      sampling phase that maximizes symbol eye opening.</li>
+  <li><b>Bit Slicing &amp; Hex Decoding:</b> Slices symbols into binary (<code>0</code>/<code>1</code>) and
+      hexadecimal strings, annotating each overlay's tooltip and <code>metadata["bits"]</code> /
+      <code>metadata["hex"]</code>.</li>
+</ol>
+"""
+
 
 PLUGIN_PARAMS = {
     "baud_rate": {

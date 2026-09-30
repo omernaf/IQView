@@ -126,6 +126,15 @@ PLUGIN_PARAMS = {
         "label": "Init Chunks",
         "tooltip": "Number of initial chunks used to converge the IIR noise floor before entering IDLE.",
     },
+    "margin": {
+        "type": "int",
+        "default": 0,
+        "label": "Margin (samples)",
+        "tooltip": (
+            "Extra safeguard samples taken from each side of every detected burst "
+            "([max(0, start - margin), min(N, end + margin)])."
+        ),
+    },
     "debug": {
         "type": "bool",
         "default": False,
@@ -454,6 +463,7 @@ def run(samples: np.ndarray, info) -> PluginResult:
     n               = max(m, int(params.get("n", 115)))
     chunk_size      = max(64, int(params.get("chunk_size", 10000)))
     init_chunks     = max(0, int(params.get("init_chunks", 3)))
+    margin          = max(0, int(params.get("margin", 0)))
     debug           = bool(params.get("debug", False))
 
     if channel_spacing <= 0 or fs <= 0:
@@ -573,8 +583,8 @@ def run(samples: np.ndarray, info) -> PluginResult:
         f_hi = f_ch + ch_bw * 0.5
 
         for b_idx in range(len(starts)):
-            s0 = int(starts[b_idx])
-            s1 = int(ends[b_idx])
+            s0 = max(0, int(starts[b_idx]) - margin)
+            s1 = min(len(ch_iq), int(ends[b_idx]) + margin)
             if s1 <= s0:
                 continue
 

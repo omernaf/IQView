@@ -791,17 +791,28 @@ class MarkerPanel(QFrame):
             rl.addWidget(btn_del)
 
             self.overlay_scroll_layout.insertWidget(self.overlay_scroll_layout.count()-1, row)
-            self._overlay_rows.append({
+            rd_entry = {
                 'widget': row, 'lbl_id': lbl_id,
                 'lbl_shape': lbl_shape, 'edit_tag': edit_tag,
                 'btn_inspect': btn_inspect,
                 'btn_vis': btn_vis, 'btn_lock': btn_lock,
                 'btn_edit': btn_edit, 'btn_del': btn_del,
-            })
+                'overlay_id': None,
+            }
+            def _make_row_press(r=rd_entry):
+                def _on_press(ev):
+                    if ev.button() == Qt.MouseButton.LeftButton and r.get('overlay_id'):
+                        if hasattr(self.parent_window, 'select_overlay'):
+                            self.parent_window.select_overlay(r['overlay_id'], scroll_to_row=False)
+                    QWidget.mousePressEvent(r['widget'], ev)
+                return _on_press
+            row.mousePressEvent = _make_row_press(rd_entry)
+            self._overlay_rows.append(rd_entry)
 
         # Update data
         for i, overlay in enumerate(overlays):
             rd = self._overlay_rows[i]
+            rd['overlay_id'] = overlay.id
             rd['widget'].setVisible(True)
             rd['lbl_id'].setText(str(i + 1))
             rd['lbl_id'].setStyleSheet(
@@ -863,7 +874,36 @@ class MarkerPanel(QFrame):
 
         # Hide extra overlay rows that don't correspond to any overlay
         for rd in self._overlay_rows[len(overlays):]:
+            rd['overlay_id'] = None
             rd['widget'].setVisible(False)
+
+        sel_id = getattr(self.parent_window, 'selected_overlay_id', None)
+        self.set_selected_overlay(sel_id, scroll_to_row=False)
+
+    def set_selected_overlay(self, overlay_id, scroll_to_row: bool = True):
+        """Highlight the row matching *overlay_id* and optionally scroll it into view."""
+        if not hasattr(self, '_overlay_rows'):
+            return
+        target_widget = None
+        for rd in self._overlay_rows:
+            oid = rd.get('overlay_id')
+            is_sel = (oid is not None and oid == overlay_id)
+            if is_sel:
+                rd['widget'].setStyleSheet(
+                    "background: rgba(0, 170, 255, 0.18); border-radius: 4px;"
+                )
+                target_widget = rd['widget']
+            else:
+                rd['widget'].setStyleSheet("")
+
+        if scroll_to_row and target_widget is not None and hasattr(self, 'overlay_scroll'):
+            self.overlay_scroll.ensureWidgetVisible(target_widget, 0, 24)
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(
+                0,
+                lambda w=target_widget: self.overlay_scroll.ensureWidgetVisible(w, 0, 24)
+                if w is not None else None,
+            )
 
     def _show_endless_rows(self):
         """Switch the scroll area back to showing endless-marker rows."""
@@ -1154,6 +1194,12 @@ class MarkerPanel(QFrame):
             lbl_name = QLabel()
             lbl_name.setStyleSheet("font-weight: bold; color: #00aaff;")
             
+            btn_docs = QPushButton("📖 Docs")
+            btn_docs.setFixedHeight(28)
+            btn_docs.setMinimumWidth(68)
+            btn_docs.setStyleSheet("QPushButton { padding: 3px 8px; }")
+            btn_docs.setToolTip("View detailed plugin documentation, operation, and parameters")
+
             btn_config = QPushButton("Config")
             btn_config.setFixedHeight(28)
             btn_config.setMinimumWidth(75)
@@ -1181,6 +1227,7 @@ class MarkerPanel(QFrame):
             """)
 
             rl.addWidget(lbl_name, 1)
+            rl.addWidget(btn_docs)
             rl.addWidget(btn_config)
             rl.addWidget(btn_run)
             rl.addWidget(btn_del)
@@ -1188,6 +1235,7 @@ class MarkerPanel(QFrame):
             self.plugins_scroll_layout.insertWidget(self.plugins_scroll_layout.count()-1, row)
             self._plugin_rows.append({
                 'widget': row, 'lbl_name': lbl_name,
+                'btn_docs': btn_docs,
                 'btn_config': btn_config, 'btn_run': btn_run, 'btn_del': btn_del,
             })
 
@@ -1206,6 +1254,8 @@ class MarkerPanel(QFrame):
             has_params = bool(info.get("params_spec"))
             rd['btn_config'].setEnabled(has_params)
 
+            try: rd['btn_docs'].clicked.disconnect()
+            except: pass
             try: rd['btn_config'].clicked.disconnect()
             except: pass
             try: rd['btn_run'].clicked.disconnect()
@@ -1213,12 +1263,20 @@ class MarkerPanel(QFrame):
             try: rd['btn_del'].clicked.disconnect()
             except: pass
 
+            rd['btn_docs'].clicked.connect(lambda _, n=name: self._on_plugin_docs(n))
             rd['btn_config'].clicked.connect(lambda _, n=name: self._on_plugin_config(n))
             rd['btn_run'].clicked.connect(lambda _, n=name: self.parent_window.run_plugin(n))
             rd['btn_del'].clicked.connect(lambda _, n=name: self._on_plugin_unload(n))
 
         for rd in self._plugin_rows[len(plugins_data):]:
             rd['widget'].setVisible(False)
+
+    def _on_plugin_docs(self, name):
+        info = self.parent_window._loaded_plugins.get(name)
+        if not info:
+            return
+        dlg = PluginDocDialog(name, info, parent=self)
+        dlg.exec()
 
     def _on_plugin_config(self, name):
         info = self.parent_window._loaded_plugins.get(name)
@@ -1300,6 +1358,104 @@ class ScientificNumberEdit(QLineEdit):
         self.setValue(self.value())
 
 
+class PluginDocDialog(QDialog):
+    """Rich documentation dialog displaying a plugin's operation, algorithm, and parameter reference."""
+
+    def __init__(self, plugin_name: str, plugin_info: dict, parent=None):
+        super().__init__(parent)
+        self.plugin_name = plugin_name
+        self.plugin_info = plugin_info or {}
+        self.setWindowTitle(f"Plugin Documentation — {plugin_name}")
+        self.resize(720, 600)
+        self._build_ui()
+
+    def _build_ui(self):
+        from PyQt6.QtWidgets import QTextBrowser
+        import html as _html
+
+        layout = QVBoxLayout(self)
+
+        theme = "Dark"
+        if self.parent() and hasattr(self.parent(), "parent_window"):
+            theme = self.parent().parent_window.settings_mgr.get("ui/theme", "Dark")
+        from .themes import get_palette
+        p = get_palette(theme)
+
+        browser = QTextBrowser(self)
+        browser.setOpenExternalLinks(True)
+        browser.setStyleSheet(
+            f"QTextBrowser {{ background-color: {p.bg_input}; color: {p.text_main}; "
+            f"border: 1px solid {p.border}; border-radius: 6px; padding: 12px; font-size: 13px; }}"
+        )
+
+        cat = _html.escape(str(self.plugin_info.get("category", "General")))
+        is_builtin = bool(self.plugin_info.get("builtin", False))
+        needs_wb = bool(self.plugin_info.get("needs_wideband_iq", True))
+        desc = _html.escape(str(self.plugin_info.get("description", "")))
+        raw_doc = str(self.plugin_info.get("doc", "") or "").strip()
+        params_spec = self.plugin_info.get("params_spec", {}) or {}
+
+        badge_type = "Built-In Plugin" if is_builtin else "Custom / Chain Plugin"
+        iq_mode = "Wideband IQ (extracts scope IQ)" if needs_wb else "Overlay Baseband IQ (zero-copy o.iq / lazy DDC)"
+
+        rows_html = []
+        for key, spec in params_spec.items():
+            if not isinstance(spec, dict):
+                spec = {"type": type(spec).__name__, "default": spec, "label": key}
+            lbl = _html.escape(str(spec.get("label", key)))
+            ptype = _html.escape(str(spec.get("type", "str")))
+            def_val = _html.escape(str(spec.get("default", "")))
+            tip = _html.escape(str(spec.get("tooltip", "") or "—"))
+            step_title = spec.get("step_title")
+            if step_title:
+                lbl = f"[{_html.escape(str(step_title))}] {lbl}"
+            rows_html.append(
+                f"<tr>"
+                f"<td style='padding:6px 8px; border-bottom:1px solid {p.border};'><b>{lbl}</b><br/>"
+                f"<code style='color:{p.text_dim};'>{_html.escape(str(key))}</code></td>"
+                f"<td style='padding:6px 8px; border-bottom:1px solid {p.border};'><code>{ptype}</code></td>"
+                f"<td style='padding:6px 8px; border-bottom:1px solid {p.border};'><code>{def_val}</code></td>"
+                f"<td style='padding:6px 8px; border-bottom:1px solid {p.border};'>{tip}</td>"
+                f"</tr>"
+            )
+
+        params_table_html = (
+            f"<h4>Parameters Reference</h4>"
+            f"<table width='100%' cellspacing='0' cellpadding='0' style='border-collapse:collapse;'>"
+            f"<thead><tr style='background-color:{p.bg_widget};'>"
+            f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Parameter</th>"
+            f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Type</th>"
+            f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Default</th>"
+            f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Description</th>"
+            f"</tr></thead>"
+            f"<tbody>{''.join(rows_html)}</tbody></table>"
+            if rows_html
+            else "<p><i>This plugin has no configurable parameters.</i></p>"
+        )
+
+        body_doc = raw_doc if raw_doc else f"<h3>{_html.escape(self.plugin_name)}</h3><p>{desc}</p>"
+
+        full_html = f"""
+        <div style="font-family: 'Segoe UI', sans-serif; line-height: 1.45;">
+            <div style="margin-bottom: 10px; color: {p.text_dim}; font-size: 12px;">
+                <b>Category:</b> {cat} &nbsp;|&nbsp;
+                <b>Type:</b> {badge_type} &nbsp;|&nbsp;
+                <b>IQ Mode:</b> {iq_mode}
+            </div>
+            {body_doc}
+            <hr style="border: 0; border-top: 1px solid {p.border}; margin: 14px 0;" />
+            {params_table_html}
+        </div>
+        """
+        browser.setHtml(full_html)
+        layout.addWidget(browser, 1)
+
+        btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        btn_box.rejected.connect(self.reject)
+        btn_box.accepted.connect(self.accept)
+        layout.addWidget(btn_box)
+
+
 class PluginConfigDialog(QDialog):
     def __init__(self, plugin_name, params_spec, current_params, parent=None, plugin_info=None):
         super().__init__(parent)
@@ -1307,7 +1463,7 @@ class PluginConfigDialog(QDialog):
         self.plugin_info = plugin_info or {}
         self.requested_step_run = None
         self.setWindowTitle(f"Configure {plugin_name}")
-        self.setMinimumWidth(400)
+        self.setMinimumWidth(420)
         self.setup_ui(params_spec, current_params)
         
     def setup_ui(self, params_spec, current_params):
@@ -1406,6 +1562,12 @@ class PluginConfigDialog(QDialog):
             layout.addWidget(form_container)
 
         bottom_row = QHBoxLayout()
+        btn_docs = QPushButton("📖 Docs")
+        btn_docs.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_docs.setToolTip("Open detailed plugin documentation and parameter reference")
+        btn_docs.clicked.connect(self._on_docs_clicked)
+        bottom_row.addWidget(btn_docs)
+
         py_path = self.plugin_info.get("path")
         if py_path and os.path.isfile(py_path):
             btn_save_py = QPushButton("💾 Save as Default in .py")
@@ -1422,6 +1584,10 @@ class PluginConfigDialog(QDialog):
         buttons.rejected.connect(self.reject)
         bottom_row.addWidget(buttons)
         layout.addLayout(bottom_row)
+
+    def _on_docs_clicked(self):
+        dlg = PluginDocDialog(self.plugin_name, self.plugin_info, parent=self)
+        dlg.exec()
 
     def _on_run_step_clicked(self, step_idx: int):
         self.requested_step_run = step_idx

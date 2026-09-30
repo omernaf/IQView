@@ -360,6 +360,7 @@ class PluginManagerMixin:
 
         name           = getattr(module, "PLUGIN_NAME",        base)
         description    = getattr(module, "PLUGIN_DESCRIPTION", "")
+        doc            = str(getattr(module, "PLUGIN_DOC",     "") or "")
         category       = getattr(module, "PLUGIN_CATEGORY",    "Chains" if chain_obj else "Custom")
         run_on_main    = bool(getattr(module, "PLUGIN_RUN_ON_MAIN_THREAD", False))
         needs_wideband = bool(getattr(module, "PLUGIN_NEEDS_WIDEBAND_IQ", True))
@@ -402,6 +403,7 @@ class PluginManagerMixin:
             "chain":                 chain_obj,
             "builtin":               is_builtin,
             "description":           description,
+            "doc":                   doc,
             "category":              category,
             "run_on_main":           run_on_main,
             "needs_wideband_iq":     needs_wideband,

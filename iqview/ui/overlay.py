@@ -558,18 +558,20 @@ class OverlayItem(pg.GraphicsObject):
     Geometry is expressed in world-space (seconds × Hz).
     """
 
-    def __init__(self, overlay: Overlay, waterfall: bool = False, on_geometry_changed=None) -> None:
+    def __init__(self, overlay: Overlay, waterfall: bool = False, on_geometry_changed=None, on_selected=None) -> None:
         super().__init__()
         self.overlay = overlay
         self.waterfall = waterfall
         # Callable(overlay_id, points=…, center=…, radii=…) — fired on mouse release
         self._on_geometry_changed = on_geometry_changed
+        self._on_selected = on_selected
 
-        # Drag state
+        # Drag & selection state
         self._drag_mode: Optional[str] = None   # None | 'move' | handle role
         self._drag_last: Optional[QPointF] = None
         self._hover_handle: Optional[str] = None
         self._hovered: bool = False
+        self._selected: bool = False
 
         self.setAcceptHoverEvents(True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
@@ -778,6 +780,8 @@ class OverlayItem(pg.GraphicsObject):
         else:
             event.ignore()
             return
+        if self._on_selected:
+            self._on_selected(self.overlay.id)
         self._drag_last = pos
         event.accept()
 
@@ -902,20 +906,32 @@ class OverlayItem(pg.GraphicsObject):
         painter.save()
 
         bc = QColor(overlay.border_color or overlay.color)
-        pen = QPen(bc, overlay.border_width)
+        pen_width = overlay.border_width + (2 if self._selected else 0)
+        pen = QPen(bc, pen_width)
         pen.setCosmetic(True)
         pen.setStyle(_BORDER_STYLE_MAP.get(overlay.border_style, Qt.PenStyle.SolidLine))
         painter.setPen(pen)
 
         fc = QColor(overlay.color)
-        fc.setAlphaF(max(0.0, min(1.0, overlay.alpha)))
+        alpha_val = overlay.alpha + (0.15 if self._selected else 0.0)
+        fc.setAlphaF(max(0.0, min(1.0, alpha_val)))
         painter.setBrush(QBrush(fc))
 
-        {
+        shape_painter = {
             OverlayShape.RECT:    self._paint_rect,
             OverlayShape.POLYGON: self._paint_polygon,
             OverlayShape.ELLIPSE: self._paint_ellipse,
-        }.get(overlay.shape, lambda p: None)(painter)
+        }.get(overlay.shape, lambda p: None)
+        shape_painter(painter)
+
+        # Draw crisp high-contrast dashed inner/outer selection indicator when selected
+        if self._selected:
+            sel_pen = QPen(QColor("#ffffff"), max(1, overlay.border_width))
+            sel_pen.setCosmetic(True)
+            sel_pen.setStyle(Qt.PenStyle.DashLine)
+            painter.setPen(sel_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            shape_painter(painter)
 
         # Draw resize handles when interactive and (hovered or being dragged)
         if not overlay.locked and (self._hovered or self._drag_mode):

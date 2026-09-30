@@ -41,6 +41,7 @@ class OverlayManagerMixin:
     def _init_overlays(self) -> None:
         self.overlays: List[Overlay] = []
         self._overlay_items: Dict[str, Any] = {}   # id → OverlayItem | pg.InfiniteLine
+        self.selected_overlay_id: Optional[str] = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -65,11 +66,48 @@ class OverlayManagerMixin:
 
     def refresh_overlays_ui(self) -> None:
         """Refresh overlay list panel, marker info, and multi-row view in one pass."""
-        if hasattr(self, 'marker_panel') and getattr(self, 'interaction_mode', '') == 'OVERLAY':
-            if hasattr(self.marker_panel, 'update_overlay_list'):
+        if hasattr(self, 'marker_panel'):
+            eff_mode = getattr(self, 'interaction_mode', '')
+            if eff_mode in ('ZOOM', 'MOVE'):
+                eff_mode = getattr(self.marker_panel, 'last_marker_mode', '')
+            if eff_mode == 'OVERLAY' and hasattr(self.marker_panel, 'update_overlay_list'):
                 self.marker_panel.update_overlay_list(self.overlays)
         if hasattr(self, 'update_marker_info'):
             self.update_marker_info()
+        self.sync_multi_row_overlays()
+
+    def select_overlay(self, overlay_id: Optional[str], scroll_to_row: bool = True) -> None:
+        """
+        Select an overlay by id (or pass None to clear selection).
+        Highlights the overlay on the spectrogram, switches to the Overlay table
+        if needed, and jumps/scrolls to its row in the Overlay table.
+        """
+        if overlay_id is not None and self._get_overlay_by_id(overlay_id) is None:
+            overlay_id = None
+
+        self.selected_overlay_id = overlay_id
+
+        for oid, item in self._overlay_items.items():
+            if isinstance(item, OverlayItem):
+                new_sel = (oid == overlay_id)
+                if getattr(item, '_selected', False) != new_sel:
+                    item._selected = new_sel
+                    item.update()
+
+        if hasattr(self, 'marker_panel'):
+            if overlay_id is not None and scroll_to_row:
+                curr_mode = getattr(self, 'interaction_mode', 'TIME')
+                if curr_mode in ('ZOOM', 'MOVE'):
+                    self._prev_interaction_mode = 'OVERLAY'
+                    self.marker_panel.last_marker_mode = 'OVERLAY'
+                    self.marker_panel.update_headers(curr_mode)
+                elif curr_mode != 'OVERLAY':
+                    self.set_interaction_mode('OVERLAY')
+                if hasattr(self.marker_panel, 'update_overlay_list'):
+                    self.marker_panel.update_overlay_list(self.overlays)
+            if hasattr(self.marker_panel, 'set_selected_overlay'):
+                self.marker_panel.set_selected_overlay(overlay_id, scroll_to_row=scroll_to_row)
+
         self.sync_multi_row_overlays()
 
     # ------------------------------------------------------------------
@@ -217,6 +255,9 @@ class OverlayManagerMixin:
         if overlay is None:
             return
 
+        if getattr(self, 'selected_overlay_id', None) == overlay_id:
+            self.selected_overlay_id = None
+
         self._remove_graphics_item(overlay_id, overlay)
 
         self.overlays = [o for o in self.overlays if o.id != overlay_id]
@@ -259,6 +300,8 @@ class OverlayManagerMixin:
         """
         to_remove = [o.id for o in self.overlays
                      if source is None or o.source == source]
+        if getattr(self, 'selected_overlay_id', None) in to_remove:
+            self.selected_overlay_id = None
         for oid in to_remove:
             overlay = self._get_overlay_by_id(oid)
             if overlay:
@@ -316,7 +359,13 @@ class OverlayManagerMixin:
             self._overlay_items[overlay.id] = item
         else:
             waterfall = getattr(self.spectrogram_view, 'is_waterfall', False)
-            item = OverlayItem(overlay, waterfall=waterfall, on_geometry_changed=self._persist_overlay_drag)
+            item = OverlayItem(
+                overlay,
+                waterfall=waterfall,
+                on_geometry_changed=self._persist_overlay_drag,
+                on_selected=self.select_overlay,
+            )
+            item._selected = (overlay.id == getattr(self, 'selected_overlay_id', None))
             item.setZValue(overlay.z_order)
             item.setVisible(overlay.visible)
             plot_item.addItem(item, ignoreBounds=True)

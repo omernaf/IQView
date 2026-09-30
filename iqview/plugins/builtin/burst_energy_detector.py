@@ -24,6 +24,31 @@ PLUGIN_DESCRIPTION = (
 )
 PLUGIN_CATEGORY    = "Detection"
 
+PLUGIN_DOC = """
+<h3>Burst Energy Detector</h3>
+<p>
+Fast wideband or sub-band burst detector that locates bursts in time using a smoothed instantaneous
+power envelope and median noise-floor estimator, optionally fits each burst's occupied frequency
+bounds <code>[f_lo, f_hi]</code> via FFT Occupied Bandwidth (OBW), and attaches baseband IQ
+(<code>o.iq</code>, <code>o.fs</code>) to each locked <code>Rect</code> overlay.
+</p>
+
+<h4>Algorithm &amp; Operation</h4>
+<ol>
+  <li><b>Sub-band Extraction:</b> If the active frequency span <code>[f_start, f_end]</code> is narrower
+      than the full recording bandwidth, down-converts and resamples to the sub-band.</li>
+  <li><b>Smoothed Power Envelope:</b> Computes instantaneous power <code>|IQ|^2</code> and smooths it with
+      a moving average window of length <code>smooth_window_us</code> microseconds.</li>
+  <li><b>Robust Noise Floor &amp; Thresholding:</b> Estimates the noise floor from the median of the lower
+      50% of envelope samples and triggers bursts where <code>env &gt; noise_floor * 10^(threshold_db / 10)</code>.</li>
+  <li><b>Gap Merging &amp; Duration Filtering:</b> Merges burst fragments separated by less than
+      <code>min_gap_ms</code> and discards bursts shorter than <code>min_duration_ms</code>.</li>
+  <li><b>Safeguard Margin &amp; Frequency Auto-Fit:</b> Expands each burst interval by <code>margin</code>
+      samples on each side (<code>[max(0, s0 - margin), min(N, s1 + margin)]</code>) and estimates tight
+      frequency bounds <code>[f_lo, f_hi]</code> from the 98% cumulative power spectrum.</li>
+</ol>
+"""
+
 
 PLUGIN_PARAMS = {
     "threshold_db": {
@@ -49,6 +74,15 @@ PLUGIN_PARAMS = {
         "default": 50.0,
         "label": "Smoothing Window (µs)",
         "tooltip": "Moving-average smoothing window duration in microseconds.",
+    },
+    "margin": {
+        "type": "int",
+        "default": 0,
+        "label": "Margin (samples)",
+        "tooltip": (
+            "Extra safeguard samples taken from each side of every detected burst "
+            "([max(0, start - margin), min(N, end + margin)])."
+        ),
     },
     "estimate_freq_bounds": {
         "type": "bool",
@@ -159,6 +193,7 @@ def run(samples: np.ndarray, info) -> PluginResult:
     min_duration_ms  = max(0.0, float(params.get("min_duration_ms", 0.2)))
     min_gap_ms       = max(0.0, float(params.get("min_gap_ms", 0.1)))
     smooth_window_us = max(1.0, float(params.get("smooth_window_us", 50.0)))
+    margin           = max(0, int(params.get("margin", 0)))
     est_freq_bounds  = bool(params.get("estimate_freq_bounds", True))
     debug            = bool(params.get("debug", False))
 
@@ -216,17 +251,22 @@ def run(samples: np.ndarray, info) -> PluginResult:
 
     info.progress(65, f"Packaging {len(starts)} detected burst(s)…")
 
-    for idx, (s0, s1) in enumerate(zip(starts, ends)):
+    for idx, (raw_s0, raw_s1) in enumerate(zip(starts, ends)):
         if info.is_cancelled():
             break
+
+        s0 = max(0, int(raw_s0) - margin)
+        s1 = min(n_samples, int(raw_s1) + margin)
+        if s1 <= s0:
+            continue
 
         b_t0 = t_start + (s0 / sub_fs)
         b_t1 = t_start + (s1 / sub_fs)
         b_dur_ms = (b_t1 - b_t0) * 1e3
         seg = sub_iq[s0:s1].copy()
 
-        mean_pwr = float(np.mean(env[s0:s1]))
-        peak_pwr = float(np.max(env[s0:s1]))
+        mean_pwr = float(np.mean(env[raw_s0:raw_s1])) if raw_s1 > raw_s0 else float(np.mean(env[s0:s1]))
+        peak_pwr = float(np.max(env[raw_s0:raw_s1])) if raw_s1 > raw_s0 else float(np.max(env[s0:s1]))
         snr_db = float(10.0 * np.log10(max(mean_pwr / noise_floor, 1e-12)))
         peak_snr_db = float(10.0 * np.log10(max(peak_pwr / noise_floor, 1e-12)))
 

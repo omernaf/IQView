@@ -636,10 +636,38 @@ class CustomViewBox(pg.ViewBox):
     def mouseClickEvent(self, ev):
         if ev.button() == Qt.MouseButton.LeftButton:
             mode = self.ui_controller.interaction_mode
+            is_spec = getattr(self.ui_controller, 'is_spectrogram', False)
+
+            if is_spec and hasattr(self.ui_controller, 'find_overlays_at_view_pos') and hasattr(self.ui_controller, 'select_overlay'):
+                try:
+                    pos = self.mapSceneToView(ev.scenePos())
+                    hit_overlays = self.ui_controller.find_overlays_at_view_pos(pos, view_box=self)
+                    endless_items = (
+                        set(getattr(self.ui_controller, 'markers_time_endless', []))
+                        | set(getattr(self.ui_controller, 'markers_freq_endless', []))
+                    )
+                    endless_ids = {
+                        oid for oid, gfx in getattr(self.ui_controller, '_overlay_items', {}).items()
+                        if gfx in endless_items
+                    }
+                    hit_overlays = [
+                        o for o in hit_overlays
+                        if o.id not in endless_ids or mode == 'OVERLAY'
+                    ]
+                except Exception:
+                    hit_overlays = []
+
+                if hit_overlays:
+                    self.ui_controller.select_overlay(hit_overlays[0].id, scroll_to_row=True)
+                    ev.accept()
+                    return
+                elif getattr(self.ui_controller, 'selected_overlay_id', None) is not None:
+                    self.ui_controller.select_overlay(None, scroll_to_row=False)
+
             if mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS', 'STATS']:
                 self.ui_controller.place_marker(ev.scenePos(), drag_mode=False, source_vb=self)
             elif mode == 'OVERLAY':
-                # Single click → place a vertical LINE overlay at this time position
+                # Single click → place a default overlay shape at this position
                 pos = self.mapSceneToView(ev.scenePos())
                 self.ui_controller.place_overlay_by_click(pos)
             ev.accept()
