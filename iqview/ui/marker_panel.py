@@ -344,11 +344,35 @@ class MarkerPanel(QFrame):
         self.plugins_layout.setContentsMargins(0, 0, 0, 0)
         self.plugins_layout.setSpacing(2)
         
-        # --- Plugins Control Header ---
+        # --- Plugins Control Header (Quick-Run Bar + Studio + Scope) ---
         self.plugins_control_widget = QWidget()
         self.plugins_control_layout = QHBoxLayout(self.plugins_control_widget)
         self.plugins_control_layout.setContentsMargins(5, 2, 5, 2)
-        self.plugins_control_layout.setSpacing(10)
+        self.plugins_control_layout.setSpacing(6)
+
+        self.cb_quick_plugin = QComboBox()
+        self.cb_quick_plugin.setFixedHeight(28)
+        self.cb_quick_plugin.setMinimumWidth(180)
+        self.cb_quick_plugin.setToolTip("Quick-select a plugin or chain to run/configure")
+
+        self.btn_quick_run = QPushButton("▶ Run")
+        self.btn_quick_run.setFixedHeight(28)
+        self.btn_quick_run.setToolTip("Run the selected plugin in the active scope")
+        self.btn_quick_run.setStyleSheet(
+            "QPushButton { color: #00cc66; font-weight: bold; border: 1px solid #00cc66; border-radius: 4px; padding: 3px 8px; }"
+            "QPushButton:hover { background: rgba(0,204,102,0.2); }"
+        )
+        self.btn_quick_run.clicked.connect(self._on_quick_run_clicked)
+
+        self.btn_quick_config = QPushButton("⚙")
+        self.btn_quick_config.setFixedSize(28, 28)
+        self.btn_quick_config.setToolTip("Configure selected plugin parameters")
+        self.btn_quick_config.clicked.connect(self._on_quick_config_clicked)
+
+        self.btn_quick_docs = QPushButton("📖")
+        self.btn_quick_docs.setFixedSize(28, 28)
+        self.btn_quick_docs.setToolTip("View documentation for selected plugin")
+        self.btn_quick_docs.clicked.connect(self._on_quick_docs_clicked)
         
         self.cb_plugin_scope = QComboBox()
         self.cb_plugin_scope.setFixedHeight(28)
@@ -362,25 +386,51 @@ class MarkerPanel(QFrame):
             "• Full File: entire recording from 0s to end"
         )
 
-        self.btn_load_plugin = QPushButton("Load Plugin...")
+        self.btn_plugin_studio = QPushButton("🛠 Studio…")
+        self.btn_plugin_studio.setFixedHeight(28)
+        self.btn_plugin_studio.setStyleSheet("QPushButton { padding: 3px 8px; font-weight: bold; }")
+        self.btn_plugin_studio.setToolTip("Open Plugin Studio (Manage & Run, Chain Builder, Template Generator)")
+        self.btn_plugin_studio.clicked.connect(lambda: self.parent_window.open_plugin_studio(initial_tab=0))
+
+        self.btn_build_chain = QPushButton("⛓ Chain Builder…")
+        self.btn_build_chain.setFixedHeight(28)
+        self.btn_build_chain.setStyleSheet("QPushButton { padding: 3px 8px; }")
+        self.btn_build_chain.setToolTip("Visually build and run a multi-step plugin chain")
+        self.btn_build_chain.clicked.connect(lambda: self.parent_window.open_plugin_studio(initial_tab=1))
+
+        self.btn_load_plugin = QPushButton("Load .py...")
         self.btn_load_plugin.setFixedHeight(28)
-        self.btn_load_plugin.setMinimumWidth(110)
+        self.btn_load_plugin.setMinimumWidth(85)
         self.btn_load_plugin.setStyleSheet("QPushButton { padding: 3px 8px; }")
         self.btn_load_plugin.clicked.connect(self.parent_window.load_plugin)
         
         self.btn_clear_overlays_plugins = QPushButton("Clear All")
         self.btn_clear_overlays_plugins.setFixedHeight(28)
-        self.btn_clear_overlays_plugins.setMinimumWidth(90)
+        self.btn_clear_overlays_plugins.setMinimumWidth(75)
         self.btn_clear_overlays_plugins.setStyleSheet("QPushButton { padding: 3px 8px; }")
         self.btn_clear_overlays_plugins.clicked.connect(lambda: self.parent_window.clear_overlays())
         
-        self.plugins_control_layout.addWidget(QLabel("Plugins Manager"))
+        self.plugins_control_layout.addWidget(QLabel("Quick Run:"))
+        self.plugins_control_layout.addWidget(self.cb_quick_plugin)
+        self.plugins_control_layout.addWidget(self.btn_quick_run)
+        self.plugins_control_layout.addWidget(self.btn_quick_config)
+        self.plugins_control_layout.addWidget(self.btn_quick_docs)
         self.plugins_control_layout.addStretch()
         self.plugins_control_layout.addWidget(self.cb_plugin_scope)
+        self.plugins_control_layout.addWidget(self.btn_plugin_studio)
+        self.plugins_control_layout.addWidget(self.btn_build_chain)
         self.plugins_control_layout.addWidget(self.btn_load_plugin)
         self.plugins_control_layout.addWidget(self.btn_clear_overlays_plugins)
         
         self.plugins_layout.addWidget(self.plugins_control_widget)
+
+        # --- Active Plugin Overlays Pills Bar ---
+        self.plugin_pills_widget = QWidget()
+        self.plugin_pills_layout = QHBoxLayout(self.plugin_pills_widget)
+        self.plugin_pills_layout.setContentsMargins(6, 1, 6, 1)
+        self.plugin_pills_layout.setSpacing(6)
+        self.plugin_pills_widget.setVisible(False)
+        self.plugins_layout.addWidget(self.plugin_pills_widget)
         
         # --- Plugins Scroll Area ---
         self.plugins_scroll = QScrollArea()
@@ -409,6 +459,8 @@ class MarkerPanel(QFrame):
             self.btn_lock_m1, self.btn_lock_m2, self.btn_lock_delta, self.btn_lock_center,
             self.cb_bpf, self.cb_bsf,
             self.btn_manual_overlay, self.btn_clear_overlays_overlay,
+            self.btn_quick_run, self.btn_quick_config, self.btn_quick_docs,
+            self.btn_plugin_studio, self.btn_build_chain,
             self.btn_load_plugin, self.btn_clear_overlays_plugins,
         ]:
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -1163,11 +1215,40 @@ class MarkerPanel(QFrame):
 
     def update_plugins_list(self, loaded_plugins):
         """
-        Populate the shared scroll area with plugin rows.
-        Each row: Name | Config btn | Run btn | Del btn
+        Populate the shared scroll area with plugin rows and sync the Quick-Run dropdown.
+        Each row: Pin btn | Name + Badge | Docs btn | Config btn | Run btn | Del btn
         """
         if not hasattr(self, '_plugin_rows'):
             self._plugin_rows = []
+
+        pinned_set = set(
+            self.parent_window.get_pinned_plugins()
+            if hasattr(self.parent_window, 'get_pinned_plugins')
+            else []
+        )
+
+        # Sort so pinned plugins appear first, preserving insertion order within each group
+        all_items = list(loaded_plugins.items())
+        plugins_data = (
+            [(n, inf) for n, inf in all_items if n in pinned_set]
+            + [(n, inf) for n, inf in all_items if n not in pinned_set]
+        )
+
+        # Sync Quick-Run dropdown
+        if hasattr(self, 'cb_quick_plugin'):
+            prev_sel = self.cb_quick_plugin.currentData()
+            self.cb_quick_plugin.blockSignals(True)
+            self.cb_quick_plugin.clear()
+            for name, info in plugins_data:
+                prefix = "★ " if name in pinned_set else ""
+                if info.get("chain") is not None:
+                    prefix += "⛓ "
+                self.cb_quick_plugin.addItem(f"{prefix}{name}", userData=name)
+            if prev_sel:
+                idx = self.cb_quick_plugin.findData(prev_sel)
+                if idx >= 0:
+                    self.cb_quick_plugin.setCurrentIndex(idx)
+            self.cb_quick_plugin.blockSignals(False)
 
         # Build / rebuild header once
         if not hasattr(self, '_plugin_header_widget'):
@@ -1181,7 +1262,6 @@ class MarkerPanel(QFrame):
             self.plugins_scroll_layout.insertWidget(0, hw)
 
         # Sync row count
-        plugins_data = list(loaded_plugins.items())
         while len(self._plugin_rows) > len(plugins_data):
             rd = self._plugin_rows.pop()
             rd['widget'].deleteLater()
@@ -1190,6 +1270,11 @@ class MarkerPanel(QFrame):
             rl  = QHBoxLayout(row)
             rl.setContentsMargins(5, 0, 5, 0)
             rl.setSpacing(8)
+
+            btn_pin = QPushButton("☆")
+            btn_pin.setFixedSize(28, 28)
+            btn_pin.setToolTip("Pin/unpin plugin to top of list & Quick-Run dropdown")
+            btn_pin.setStyleSheet("QPushButton { padding: 2px; font-size: 13px; }")
 
             lbl_name = QLabel()
             lbl_name.setStyleSheet("font-weight: bold; color: #00aaff;")
@@ -1224,8 +1309,10 @@ class MarkerPanel(QFrame):
                 QPushButton { background: none; color: #ff4444; font-weight: bold;
                               border-radius: 4px; border: 1px solid #ff4444; padding: 3px 8px; }
                 QPushButton:hover { background: rgba(255,68,68,0.2); }
+                QPushButton:disabled { color: #666666; border-color: #444444; }
             """)
 
+            rl.addWidget(btn_pin)
             rl.addWidget(lbl_name, 1)
             rl.addWidget(btn_docs)
             rl.addWidget(btn_config)
@@ -1234,7 +1321,7 @@ class MarkerPanel(QFrame):
 
             self.plugins_scroll_layout.insertWidget(self.plugins_scroll_layout.count()-1, row)
             self._plugin_rows.append({
-                'widget': row, 'lbl_name': lbl_name,
+                'widget': row, 'btn_pin': btn_pin, 'lbl_name': lbl_name,
                 'btn_docs': btn_docs,
                 'btn_config': btn_config, 'btn_run': btn_run, 'btn_del': btn_del,
             })
@@ -1243,7 +1330,13 @@ class MarkerPanel(QFrame):
         for i, (name, info) in enumerate(plugins_data):
             rd = self._plugin_rows[i]
             rd['widget'].setVisible(True)
-            rd['lbl_name'].setText(name)
+            is_pin = name in pinned_set
+            is_chain = info.get("chain") is not None
+            is_builtin = bool(info.get("builtin", False))
+            badge = " [⛓ Chain]" if is_chain else (" [Built-In]" if is_builtin else " [Custom]")
+
+            rd['btn_pin'].setText("★" if is_pin else "☆")
+            rd['lbl_name'].setText(f"{name}{badge}")
             
             desc = info.get("description", "")
             if desc:
@@ -1253,7 +1346,13 @@ class MarkerPanel(QFrame):
 
             has_params = bool(info.get("params_spec"))
             rd['btn_config'].setEnabled(has_params)
+            rd['btn_del'].setEnabled(not is_builtin)
+            rd['btn_del'].setToolTip(
+                "Built-in plugins are always available" if is_builtin else "Unload this plugin"
+            )
 
+            try: rd['btn_pin'].clicked.disconnect()
+            except: pass
             try: rd['btn_docs'].clicked.disconnect()
             except: pass
             try: rd['btn_config'].clicked.disconnect()
@@ -1263,6 +1362,7 @@ class MarkerPanel(QFrame):
             try: rd['btn_del'].clicked.disconnect()
             except: pass
 
+            rd['btn_pin'].clicked.connect(lambda _, n=name: self.parent_window.toggle_pinned_plugin(n))
             rd['btn_docs'].clicked.connect(lambda _, n=name: self._on_plugin_docs(n))
             rd['btn_config'].clicked.connect(lambda _, n=name: self._on_plugin_config(n))
             rd['btn_run'].clicked.connect(lambda _, n=name: self.parent_window.run_plugin(n))
@@ -1270,6 +1370,94 @@ class MarkerPanel(QFrame):
 
         for rd in self._plugin_rows[len(plugins_data):]:
             rd['widget'].setVisible(False)
+
+        if hasattr(self.parent_window, 'overlays'):
+            self.update_plugin_overlay_pills(self.parent_window.overlays)
+
+    def _on_quick_run_clicked(self):
+        if not hasattr(self, 'cb_quick_plugin'):
+            return
+        name = self.cb_quick_plugin.currentData()
+        if name:
+            self.parent_window.run_plugin(name)
+
+    def _on_quick_config_clicked(self):
+        if not hasattr(self, 'cb_quick_plugin'):
+            return
+        name = self.cb_quick_plugin.currentData()
+        if name:
+            self._on_plugin_config(name)
+
+    def _on_quick_docs_clicked(self):
+        if not hasattr(self, 'cb_quick_plugin'):
+            return
+        name = self.cb_quick_plugin.currentData()
+        if name:
+            self._on_plugin_docs(name)
+
+    def update_plugin_overlay_pills(self, overlays):
+        """Render compact pills for each plugin that currently has overlays on the spectrogram."""
+        if not hasattr(self, 'plugin_pills_widget') or not hasattr(self, 'plugin_pills_layout'):
+            return
+
+        while self.plugin_pills_layout.count():
+            item = self.plugin_pills_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        counts = {}
+        vis_map = {}
+        for o in overlays or []:
+            src = str(getattr(o, 'source', '') or '')
+            if src.startswith('plugin:'):
+                counts[src] = counts.get(src, 0) + 1
+                if getattr(o, 'visible', True):
+                    vis_map[src] = True
+                elif src not in vis_map:
+                    vis_map[src] = False
+
+        if not counts:
+            self.plugin_pills_widget.setVisible(False)
+            return
+
+        self.plugin_pills_widget.setVisible(True)
+        lbl_hdr = QLabel("Active Overlays:")
+        lbl_hdr.setStyleSheet("font-size: 11px; font-weight: bold;")
+        self.plugin_pills_layout.addWidget(lbl_hdr)
+
+        for src, cnt in counts.items():
+            pname = src[len('plugin:'):]
+            is_vis = vis_map.get(src, True)
+
+            pill = QFrame()
+            pill.setStyleSheet(
+                "QFrame { border: 1px solid #444444; border-radius: 4px; padding: 1px 4px; }"
+            )
+            pl = QHBoxLayout(pill)
+            pl.setContentsMargins(4, 1, 4, 1)
+            pl.setSpacing(4)
+
+            lbl = QLabel(f"{pname} ({cnt})")
+            lbl.setStyleSheet("border: none; font-size: 11px;")
+            pl.addWidget(lbl)
+
+            btn_vis = QPushButton("👁" if is_vis else "🚫")
+            btn_vis.setFixedSize(22, 22)
+            btn_vis.setToolTip(f"Show/Hide overlays from '{pname}'")
+            btn_vis.setStyleSheet("QPushButton { padding: 0px; font-size: 11px; }")
+            btn_vis.clicked.connect(lambda _, s=src: self.parent_window.toggle_source_overlays_visible(s))
+            pl.addWidget(btn_vis)
+
+            btn_clr = QPushButton("🧹")
+            btn_clr.setFixedSize(22, 22)
+            btn_clr.setToolTip(f"Clear overlays created by '{pname}'")
+            btn_clr.setStyleSheet("QPushButton { padding: 0px; font-size: 11px; }")
+            btn_clr.clicked.connect(lambda _, s=src: self.parent_window.clear_overlays(source=s))
+            pl.addWidget(btn_clr)
+
+            self.plugin_pills_layout.addWidget(pill)
+
+        self.plugin_pills_layout.addStretch(1)
 
     def _on_plugin_docs(self, name):
         info = self.parent_window._loaded_plugins.get(name)

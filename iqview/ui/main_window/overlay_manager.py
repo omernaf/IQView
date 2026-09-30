@@ -65,16 +65,33 @@ class OverlayManagerMixin:
         return overlay.id
 
     def refresh_overlays_ui(self) -> None:
-        """Refresh overlay list panel, marker info, and multi-row view in one pass."""
+        """Refresh overlay list panel, plugin overlay pills, marker info, and multi-row view in one pass."""
         if hasattr(self, 'marker_panel'):
             eff_mode = getattr(self, 'interaction_mode', '')
             if eff_mode in ('ZOOM', 'MOVE'):
                 eff_mode = getattr(self.marker_panel, 'last_marker_mode', '')
             if eff_mode == 'OVERLAY' and hasattr(self.marker_panel, 'update_overlay_list'):
                 self.marker_panel.update_overlay_list(self.overlays)
+            if hasattr(self.marker_panel, 'update_plugin_overlay_pills'):
+                self.marker_panel.update_plugin_overlay_pills(self.overlays)
         if hasattr(self, 'update_marker_info'):
             self.update_marker_info()
         self.sync_multi_row_overlays()
+
+    def toggle_source_overlays_visible(self, source: str) -> bool:
+        """Toggle visibility of all overlays matching *source* and return the new visibility state."""
+        matching = [o for o in self.overlays if o.source == source]
+        if not matching:
+            return True
+        any_vis = any(o.visible for o in matching)
+        new_vis = not any_vis
+        for o in matching:
+            o.visible = new_vis
+            item = self._overlay_items.get(o.id)
+            if item is not None:
+                item.setVisible(new_vis)
+        self.refresh_overlays_ui()
+        return new_vis
 
     def select_overlay(self, overlay_id: Optional[str], scroll_to_row: bool = True) -> None:
         """

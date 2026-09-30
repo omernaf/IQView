@@ -247,6 +247,18 @@ class PluginManagerMixin:
 
         menu.clear()
 
+        studio_action = QAction("🛠  &Plugin Studio…", self)
+        studio_action.setStatusTip("Open Plugin Studio (Manage, Chain Builder, Template Generator)")
+        studio_action.triggered.connect(lambda: self.open_plugin_studio(initial_tab=0))
+        menu.addAction(studio_action)
+
+        chain_action = QAction("⛓  &Chain Builder…", self)
+        chain_action.setStatusTip("Open the visual Plugin Chain Builder")
+        chain_action.triggered.connect(lambda: self.open_plugin_studio(initial_tab=1))
+        menu.addAction(chain_action)
+
+        menu.addSeparator()
+
         # Static actions
         load_action = QAction("&Load Plugin(s)…", self)
         load_action.setStatusTip("Load one or more Python plugin files (.py)")
@@ -285,6 +297,80 @@ class PluginManagerMixin:
 
         if hasattr(self, 'marker_panel') and hasattr(self.marker_panel, 'update_plugins_list'):
             self.marker_panel.update_plugins_list(self._loaded_plugins)
+
+    def open_plugin_studio(
+        self,
+        initial_tab: int = 0,
+        select_plugin: Optional[str] = None,
+    ) -> None:
+        """Open the 3-tab `PluginStudioDialog`."""
+        from iqview.ui.plugin_studio import PluginStudioDialog
+        dlg = PluginStudioDialog(
+            self,
+            initial_tab=initial_tab,
+            select_plugin=select_plugin,
+            parent=self,
+        )
+        dlg.exec()
+
+    def get_pinned_plugins(self) -> List[str]:
+        """Return list of pinned plugin names."""
+        if not hasattr(self, "settings_mgr"):
+            return getattr(self, "_pinned_plugins_mem", [])
+        raw = str(self.settings_mgr.get("plugins/pinned", "") or "")
+        return [p.strip() for p in raw.split(";;") if p.strip()]
+
+    def toggle_pinned_plugin(self, name: str) -> bool:
+        """Toggle pinned status for *name* and return new pinned state."""
+        pinned = self.get_pinned_plugins()
+        if name in pinned:
+            pinned.remove(name)
+            now_pinned = False
+        else:
+            pinned.append(name)
+            now_pinned = True
+        if hasattr(self, "settings_mgr"):
+            self.settings_mgr.set("plugins/pinned", ";;".join(pinned))
+        else:
+            self._pinned_plugins_mem = pinned
+        self._rebuild_plugins_menu()
+        return now_pinned
+
+    def register_chain_plugin(
+        self,
+        chain: PluginChain,
+        path: Optional[str] = None,
+    ) -> str:
+        """Register a `PluginChain` directly in memory and refresh the UI."""
+        chain.set_resolver(self._resolve_plugin_target)
+        name = chain.name or "Custom Chain"
+        params_spec = chain.get_combined_params_spec()
+        active_params = {
+            k: (spec.get("default") if isinstance(spec, dict) else spec)
+            for k, spec in params_spec.items()
+        }
+        self._loaded_plugins[name] = {
+            "name":                  name,
+            "path":                  path,
+            "mtime":                 os.path.getmtime(path) if (path and os.path.isfile(path)) else 0.0,
+            "module":                None,
+            "func":                  lambda s, ctx, _c=chain: _c.run(s, ctx),
+            "chain":                 chain,
+            "builtin":               False,
+            "description":           chain.description or "",
+            "doc":                   chain.get_doc(),
+            "category":              chain.category or "Chains",
+            "run_on_main":           False,
+            "needs_wideband_iq":     chain.needs_wideband_iq(),
+            "batch_seconds":         None,
+            "batch_overlap_seconds": 0.0,
+            "params_spec":           params_spec,
+            "params":                active_params,
+        }
+        self._rebuild_plugins_menu()
+        if hasattr(self, "statusBar"):
+            self.statusBar().showMessage(f"Registered chain: {name}", 3000)
+        return name
 
     def _restore_builtin_plugins(self) -> None:
         self._load_builtin_plugins()
@@ -342,8 +428,17 @@ class PluginManagerMixin:
             return None
 
         chain_obj: Optional[PluginChain] = None
-        if hasattr(module, "CHAIN") and isinstance(module.CHAIN, PluginChain):
-            chain_obj = module.CHAIN
+        for attr_name in ("CHAIN", "PLUGIN_CHAIN"):
+            cand = getattr(module, attr_name, None)
+            if isinstance(cand, PluginChain):
+                chain_obj = cand
+                break
+        if chain_obj is None:
+            for val in vars(module).values():
+                if isinstance(val, PluginChain):
+                    chain_obj = val
+                    break
+        if chain_obj is not None:
             chain_obj.bind_to_module(
                 module,
                 module_path=path,
@@ -570,7 +665,11 @@ class PluginManagerMixin:
                 t_view_end   = max(float(r.get('t_vis_end',   r['t_end']))   for r in rows)
                 f_range = getattr(self.multi_row_view, '_current_freq_range', (f_min_bound, f_max_bound))
                 f_view_start, f_view_end = float(min(f_range)), float(max(f_range))
-            elif hasattr(self, 'spectrogram_view'):
+            elif (
+                hasattr(self, 'spectrogram_view')
+                and hasattr(self.spectrogram_view, 'img')
+                and getattr(self.spectrogram_view.img, 'image', None) is not None
+            ):
                 xr, yr = self.spectrogram_view.plot_item.viewRange()
                 is_waterfall = bool(getattr(self.spectrogram_view, 'is_waterfall', False))
                 if is_waterfall:

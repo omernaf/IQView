@@ -47,7 +47,7 @@ class PluginChain:
 
     def __init__(
         self,
-        steps: Sequence[Any],
+        steps: Optional[Sequence[Any]] = None,
         name: Optional[str] = None,
         description: str = "",
         category: str = "Chains",
@@ -61,8 +61,15 @@ class PluginChain:
         self._file_module_cache: Dict[str, Any] = {}
 
         self.steps: List[Dict[str, Any]] = []
-        for idx, item in enumerate(steps):
-            self.steps.append(self._normalize_step_spec(idx, item))
+        if steps:
+            for idx, item in enumerate(steps):
+                self.steps.append(self._normalize_step_spec(idx, item))
+
+    def add(self, target: Any, **params: Any) -> "PluginChain":
+        """Append a step to the pipeline and return `self` for fluent chaining."""
+        idx = len(self.steps)
+        self.steps.append(self._normalize_step_spec(idx, (target, params)))
+        return self
 
     @staticmethod
     def _normalize_step_spec(idx: int, item: Any) -> Dict[str, Any]:
@@ -576,6 +583,28 @@ class PluginChain:
 
             setattr(module, "run", _chain_run)
             setattr(module, "_iqview_chain_bound", True)
+
+    def get_combined_params_spec(self) -> Dict[str, Any]:
+        """Alias for `get_params_spec()` returning step-prefixed parameter specs."""
+        return self.get_params_spec()
+
+    def to_python_code(self, standalone: bool = False) -> str:
+        """Generate a `.py` plugin source string for this chain."""
+        steps_seq = [
+            (
+                s["target"] if isinstance(s["target"], str) else getattr(s["target"], "PLUGIN_NAME", str(s["target"])),
+                dict(s.get("params") or {}),
+            )
+            for s in self.steps
+        ]
+        return generate_chain_py(
+            chain_name=self.name or "Custom Chain",
+            steps=steps_seq,
+            description=self.description or "",
+            category=self.category or "Chains",
+            standalone=standalone,
+            plugin_resolver=self._resolver,
+        )
 
 
 # ---------------------------------------------------------------------------

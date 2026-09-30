@@ -366,3 +366,111 @@ def run(samples: np.ndarray, info: dict) -> PluginResult:
 
     return result
 ```
+
+---
+
+## 9. `PluginContext` (`info` Object) & Execution Scopes
+
+In IQView Plugin System 2.0, `info` is a **`PluginContext`** object that supports both clean attribute access (`info.sample_rate`, `info.t_start`, `info.overlays`, `info.params`) and legacy dictionary access (`info["sample_rate"]`):
+
+- `info.sample_rate`, `info.center_freq`
+- `info.t_start`, `info.t_end`, `info.f_start`, `info.f_end`
+- `info.overlays`: List of `Overlay` objects currently on the spectrogram
+- `info.params`: `PluginParams` object supporting both `info.params.threshold_db` and `info.params.get("threshold_db", 6.0)`
+- `info.progress(percent, message)`: Update the live progress dialog
+- `info.is_cancelled()`: Check if the user clicked Cancel
+- `info.iter_batches(duration_s, overlap_s=0.0)`: Iterate over memory-safe chunks of a large file
+
+Users can select the **Execution Scope** in the Plugins toolbar or Plugin Studio:
+- **Current View**: Visible spectrogram viewport
+- **Between Markers**: $M_1 \dots M_2$ time/frequency markers
+- **Full File**: Entire recording from `0.0s` to end of file (combine with `PLUGIN_BATCH_SECONDS` for large files)
+
+---
+
+## 10. Per-Burst Baseband IQ (`o.iq`, `o.fs`) & `o.get_samples()`
+
+Detection plugins can attach each burst's compact complex baseband IQ slice directly to its `Rect` overlay:
+
+```python
+r = Rect(t0, f_low, t1, f_high, display_str="Burst")
+r.iq = burst_iq_slice      # np.ndarray (complex64)
+r.fs = channel_sample_rate # float (Hz)
+result.add(r)
+```
+
+Downstream plugins (such as demodulators or metric analyzers) set `PLUGIN_NEEDS_WIDEBAND_IQ = False` and call:
+
+```python
+burst_iq, burst_fs = o.get_samples(samples, info)
+```
+
+- If `o.iq` is already cached on the overlay in memory, `o.get_samples()` returns `(o.iq, o.fs)` in $O(1)$ time with zero disk I/O.
+- If the overlay was drawn manually by the user (`o.iq is None`), `o.get_samples()` automatically slices `[o.t_start, o.t_end]`, mixes `o.f_center` to baseband, low-pass filters to `o.bandwidth`, and resamples to `o.bandwidth`.
+
+---
+
+## 11. Custom 1D Plot Tabs (`PluginPlotView`) & Native Analysis Tabs
+
+Plugins can open interactive 1D plot tabs built on `Base1DPlotView` (with full $M_1/M_2/\Delta/\text{Center}$ markers, Region Statistics, multi-trace legends, and shaded state regions):
+
+```python
+result.set_plot_tab_title("Energy Detector — Debug")
+result.add_plot(
+    title="Ch 1 (+25.0 kHz)",
+    y={"FIR (Moving Avg)": fir_trace, "IIR": iir_trace},
+    x=t_axis,
+    fs=fs_chan,
+    x_label="Time",
+    x_units="s",
+    y_label="Power",
+    regions=[
+        {"x_start": 0.0, "x_end": 0.02, "color": "#888888", "alpha": 0.22, "label": "INIT"},
+        {"x_start": 0.02, "x_end": 0.06, "color": "#ff3333", "alpha": 0.18, "label": "IDLE"},
+        {"x_start": 0.06, "x_end": 0.09, "color": "#00cc44", "alpha": 0.22, "label": "ACTIVE"},
+    ],
+)
+```
+
+Plugins can also launch native IQView analysis tabs directly:
+- `result.open_time_domain(samples, fs, t_start=0.0, title=...)`
+- `result.open_freq_domain(samples, fs, fc=0.0, title=...)`
+- `result.open_constellation(samples, fs, title=...)`
+- `result.open_eye_diagram(samples, fs, sps=8, title=...)`
+
+---
+
+## 12. Chaining Plugins (`PluginChain` & Visual Chain Builder)
+
+You can chain plugins either **visually** in **Plugins $\rightarrow$ ⛓ Chain Builder…** (inside `PluginStudioDialog`) or in Python using `PluginChain`:
+
+```python
+from iqview import PluginChain
+
+CHAIN = (
+    PluginChain(
+        name="Channelizer + Snap + FSK Demod",
+        description="Detect bursts, snap tightly, and demodulate 2-FSK.",
+        category="Chains",
+    )
+    .add("Channelizer + Energy Detector", channel_spacing=25000.0, margin=10)
+    .add("Snap to Burst", threshold_db=6.0, obw_percent=99.0)
+    .add("FSK Demodulator", debug_plots=True)
+)
+CHAIN.bind_to_module(globals(), __file__)
+```
+
+Inside the UI (**⚙ Config** or **🛠 Studio**), each step in a chain has its own parameter group with **▶ Run Step Only** and **⏩ Run From Here** buttons so you can re-run downstream steps (like `FSK Demodulator`) on already-detected bursts instantaneously.
+
+---
+
+## 13. Built-In Plugin Library
+
+IQView ships with 6 always-available built-in plugins (with full in-UI documentation via the **📖 Docs** button):
+1. **`Channelizer + Energy Detector`**: FFT frequency-domain DDC channelizer + dual-IIR hysteresis energy detector with `margin` safeguard samples and optional 5-channel `debug` plot tab.
+2. **`Burst Energy Detector`**: Fast wideband/sub-band 2D/1D burst detector with `margin` safeguard samples and optional `debug` plot tab.
+3. **`Snap to Burst`**: Tightly reshapes `Rect` overlays in both time and frequency around the burst inside each box, updates `o.iq` and `o.fs`, and populates all extracted signal parameters in `o.metadata`.
+4. **`FSK Demodulator`**: Quadrature FM discriminator, automatic baud-rate and clock recovery, binary/hex decoding into `o.metadata`, and demodulated waveform + symbol decision plots.
+5. **`Burst Metrics (SNR & OBW)`**: Measures SNR, Occupied Bandwidth (`obw_percent`), CFO, PAPR, and RMS power on `Rect` overlays.
+6. **`Snap & Merge Overlays`**: Merges nearby co-channel `Rect` fragments (stitching `o.iq`) and optionally snaps time/frequency edges to a grid.
+
