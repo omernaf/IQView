@@ -162,10 +162,9 @@ def _run_ed_state_machine(
     """
     total_len = len(ma)
     if total_len == 0:
-        return [], [], [], None, None
+        return [], [], [], None
 
     iir_trace = np.empty(total_len, dtype=np.float64) if record_debug else None
-    state_trace = np.zeros(total_len, dtype=np.float64) if record_debug else None
 
     one_minus_low = 1.0 - alpha_low
     one_minus_high = 1.0 - alpha_high
@@ -228,7 +227,6 @@ def _run_ed_state_machine(
                 # Impossible to reach m hits in this chunk -> fast-forward!
                 if record_debug:
                     iir_trace[c_start:c_end] = y_seq
-                    state_trace[c_start:c_end] = 0.0
                 y = float(y_seq[-1])
                 if c_len >= n:
                     ring[:] = hits[-n:]
@@ -253,7 +251,6 @@ def _run_ed_state_machine(
                 # Stays ACTIVE throughout the entire chunk -> fast-forward!
                 if record_debug:
                     iir_trace[c_start:c_end] = y_seq
-                    state_trace[c_start:c_end] = 1.0
                 max_r = float(np.max(chunk / (y_prev + 1e-30)))
                 if max_r > burst_peak_ratio:
                     burst_peak_ratio = max_r
@@ -318,9 +315,7 @@ def _run_ed_state_machine(
                     ring_idx = 0
 
             if record_debug:
-                idx_abs = c_start + offset
-                iir_trace[idx_abs] = y
-                state_trace[idx_abs] = float(state)
+                iir_trace[c_start + offset] = y
 
         ring[:] = ring_list
 
@@ -329,7 +324,64 @@ def _run_ed_state_machine(
         ends.append(total_len - 1)
         peaks.append(burst_peak_ratio)
 
-    return starts, ends, peaks, iir_trace, state_trace
+    return starts, ends, peaks, iir_trace
+
+
+def _build_state_regions(
+    total_len: int,
+    init_samples: int,
+    starts: list,
+    ends: list,
+    t_start: float,
+    ch_fs: float,
+) -> list[dict]:
+    """Build shaded X-region dicts for INIT (gray), IDLE (red), and ACTIVE (green)."""
+    regions: list[dict] = []
+    if total_len <= 1 or ch_fs <= 0:
+        return regions
+
+    start_search_idx = min(init_samples, total_len - 1) if init_samples < total_len else 0
+    if start_search_idx > 0:
+        regions.append({
+            "x_start": t_start,
+            "x_end": t_start + (start_search_idx / ch_fs),
+            "color": "#9e9e9e",
+            "alpha": 0.20,
+            "label": "INIT",
+        })
+
+    curr = start_search_idx
+    for s0, s1 in zip(starts, ends):
+        s0 = max(curr, int(s0))
+        s1 = max(s0, int(s1))
+        if s0 > curr:
+            regions.append({
+                "x_start": t_start + (curr / ch_fs),
+                "x_end": t_start + (s0 / ch_fs),
+                "color": "#ff5252",
+                "alpha": 0.10,
+                "label": "IDLE",
+            })
+        if s1 > s0:
+            regions.append({
+                "x_start": t_start + (s0 / ch_fs),
+                "x_end": t_start + (s1 / ch_fs),
+                "color": "#00e676",
+                "alpha": 0.20,
+                "label": "ACTIVE",
+            })
+        curr = s1
+
+    if curr < total_len - 1:
+        regions.append({
+            "x_start": t_start + (curr / ch_fs),
+            "x_end": t_start + ((total_len - 1) / ch_fs),
+            "color": "#ff5252",
+            "alpha": 0.10,
+            "label": "IDLE",
+        })
+
+    return regions
 
 
 def _compute_channel_centers(
@@ -458,9 +510,9 @@ def run(samples: np.ndarray, info) -> PluginResult:
 
     ma_kernel = np.ones(L, dtype=np.float64) / float(L)
 
-    MAX_DEBUG_CHANNELS = 10
+    MAX_DEBUG_CHANNELS = 5
     debug_active_channels = []
-    debug_idle_channels = []
+    init_samples = init_chunks * chunk_size
 
     # 3. Extract each channel via O(M log M) frequency slice + IFFT and run Energy Detector
     for ch_idx, f_ch in enumerate(channel_fcs):
@@ -493,7 +545,7 @@ def run(samples: np.ndarray, info) -> PluginResult:
         want_debug = debug and (len(debug_active_channels) < MAX_DEBUG_CHANNELS)
 
         # Chunk-vectorized IIR + M-out-of-N Energy Detector
-        starts, ends, peak_ratios, iir_trace, state_trace = _run_ed_state_machine(
+        starts, ends, peak_ratios, iir_trace = _run_ed_state_machine(
             ma,
             alpha_low=alpha_low,
             alpha_high=alpha_high,
@@ -505,15 +557,14 @@ def run(samples: np.ndarray, info) -> PluginResult:
             record_debug=want_debug,
         )
 
-        if want_debug and iir_trace is not None and state_trace is not None:
-            entry = (ch_idx, f_ch, len(starts), ma, iir_trace, state_trace)
-            if starts:
-                debug_active_channels.append(entry)
-            elif len(debug_idle_channels) < MAX_DEBUG_CHANNELS:
-                debug_idle_channels.append(entry)
-
         if not starts:
             continue
+
+        if want_debug and iir_trace is not None:
+            regions = _build_state_regions(
+                len(ma), init_samples, starts, ends, t_start, ch_fs
+            )
+            debug_active_channels.append((ch_idx, f_ch, ma, iir_trace, regions))
 
         ch_color = _channel_color(ch_idx)
         f_lo = f_ch - ch_bw * 0.5
@@ -562,31 +613,23 @@ def run(samples: np.ndarray, info) -> PluginResult:
             ov_rect.fs = ch_fs
             result.add(ov_rect)
 
-    if debug:
-        selected_debug = list(debug_active_channels[:MAX_DEBUG_CHANNELS])
-        if len(selected_debug) < MAX_DEBUG_CHANNELS and debug_idle_channels:
-            rem = MAX_DEBUG_CHANNELS - len(selected_debug)
-            step_idx = max(1, len(debug_idle_channels) // rem)
-            selected_debug.extend(debug_idle_channels[::step_idx][:rem])
-        selected_debug.sort(key=lambda item: item[0])
-
-        if selected_debug:
-            result.set_plot_tab_title("ED Debug (FIR / IIR / State)")
-            t_axis = t_start + np.arange(num_ch_samples, dtype=np.float64) / ch_fs
-            for ch_idx, f_ch, n_bursts, ma_arr, iir_arr, state_arr in selected_debug:
-                result.add_plot(
-                    title=f"Ch {ch_idx + 1} ({f_ch / 1e3:.1f} kHz)",
-                    y={
-                        "FIR (MA)": ma_arr,
-                        "IIR": iir_arr,
-                        "State": state_arr,
-                    },
-                    x=t_axis[: len(ma_arr)],
-                    fs=ch_fs,
-                    x_label="Time",
-                    x_units="s",
-                    y_label="Amplitude / State",
-                )
+    if debug and debug_active_channels:
+        result.set_plot_tab_title("ED Debug (FIR / IIR / State)")
+        t_axis = t_start + np.arange(num_ch_samples, dtype=np.float64) / ch_fs
+        for ch_idx, f_ch, ma_arr, iir_arr, regions in debug_active_channels[:MAX_DEBUG_CHANNELS]:
+            result.add_plot(
+                title=f"Ch {ch_idx + 1} ({f_ch / 1e3:.1f} kHz)",
+                y={
+                    "FIR (MA)": ma_arr,
+                    "IIR": iir_arr,
+                },
+                x=t_axis[: len(ma_arr)],
+                fs=ch_fs,
+                x_label="Time",
+                x_units="s",
+                y_label="Amplitude",
+                regions=regions,
+            )
 
     info.progress(100, "Done")
     return result

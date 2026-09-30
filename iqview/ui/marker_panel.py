@@ -1239,6 +1239,63 @@ class MarkerPanel(QFrame):
         self.parent_window.unload_plugin(name)
 
 
+class ScientificNumberEdit(QLineEdit):
+    """Numeric line edit for plugin parameters that accepts scientific notation (e.g. 500e3, 1e-4)."""
+
+    def __init__(self, value=0.0, is_int: bool = False, min_val=None, max_val=None, parent=None):
+        super().__init__(parent)
+        self._is_int = is_int
+        self._min_val = min_val
+        self._max_val = max_val
+        self._fallback = int(value or 0) if is_int else float(value or 0.0)
+        self.setValue(self._fallback)
+        self.editingFinished.connect(self._normalize_display)
+
+    def setValue(self, val):
+        if val is None:
+            return
+        if self._is_int:
+            v = int(round(float(val)))
+            self._fallback = v
+            self.setText(str(v))
+        else:
+            v = float(val)
+            self._fallback = v
+            self.setText(f"{v:g}")
+
+    def value(self):
+        raw = self.text().strip().replace(" ", "").replace("_", "")
+        if not raw:
+            return self._fallback
+        try:
+            # Support optional SI suffixes if typed, plus standard scientific notation (e.g. 500e3)
+            mult = 1.0
+            if len(raw) > 1 and raw[-1] in ("k", "K", "M", "G", "m", "u", "n"):
+                sfx = raw[-1]
+                raw = raw[:-1]
+                mult = {
+                    "k": 1e3, "K": 1e3,
+                    "M": 1e6, "G": 1e9,
+                    "m": 1e-3, "u": 1e-6, "n": 1e-9,
+                }[sfx]
+            parsed = float(raw) * mult
+            if self._min_val is not None:
+                parsed = max(float(self._min_val), parsed)
+            if self._max_val is not None:
+                parsed = min(float(self._max_val), parsed)
+            if self._is_int:
+                res = int(round(parsed))
+            else:
+                res = float(parsed)
+            self._fallback = res
+            return res
+        except ValueError:
+            return self._fallback
+
+    def _normalize_display(self):
+        self.setValue(self.value())
+
+
 class PluginConfigDialog(QDialog):
     def __init__(self, plugin_name, params_spec, current_params, parent=None):
         super().__init__(parent)
@@ -1257,14 +1314,14 @@ class PluginConfigDialog(QDialog):
         p = get_palette(theme)
         
         self.setStyleSheet(f"""
-            QDoubleSpinBox, QSpinBox {{
+            QDoubleSpinBox, QSpinBox, QLineEdit {{
                 background-color: {p.bg_input};
                 color: {p.text_main};
                 border: 1px solid {p.border};
                 border-radius: 4px;
                 padding: 4px 8px;
             }}
-            QDoubleSpinBox:focus, QSpinBox:focus {{
+            QDoubleSpinBox:focus, QSpinBox:focus, QLineEdit:focus {{
                 border-color: {p.accent};
             }}
         """)
@@ -1282,16 +1339,19 @@ class PluginConfigDialog(QDialog):
             curr_val = current_params.get(key, default_val)
             
             if param_type == "float":
-                widget = QDoubleSpinBox()
-                widget.setRange(spec.get("min", -1e15), spec.get("max", 1e15))
-                widget.setDecimals(spec.get("decimals", 5))
-                if curr_val is not None:
-                    widget.setValue(float(curr_val))
+                widget = ScientificNumberEdit(
+                    value=curr_val if curr_val is not None else 0.0,
+                    is_int=False,
+                    min_val=spec.get("min", -1e15),
+                    max_val=spec.get("max", 1e15),
+                )
             elif param_type == "int":
-                widget = QSpinBox()
-                widget.setRange(spec.get("min", -2147483648), spec.get("max", 2147483647))
-                if curr_val is not None:
-                    widget.setValue(int(curr_val))
+                widget = ScientificNumberEdit(
+                    value=curr_val if curr_val is not None else 0,
+                    is_int=True,
+                    min_val=spec.get("min", -2147483648),
+                    max_val=spec.get("max", 2147483647),
+                )
             elif param_type == "bool":
                 widget = QCheckBox()
                 if curr_val is not None:
@@ -1319,9 +1379,7 @@ class PluginConfigDialog(QDialog):
     def get_values(self):
         values = {}
         for key, (widget, param_type) in self.widgets.items():
-            if param_type == "float":
-                values[key] = widget.value()
-            elif param_type == "int":
+            if param_type in ("float", "int"):
                 values[key] = widget.value()
             elif param_type == "bool":
                 values[key] = widget.isChecked()

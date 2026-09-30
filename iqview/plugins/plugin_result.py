@@ -153,6 +153,7 @@ class PluginResult:
         x_units: str = "s",
         y_label: str = "Amplitude",
         primary_mode: str = "TIME",
+        regions: Optional[List[Dict[str, Any]]] = None,
     ) -> "PluginResult":
         """
         Add a custom 1D sub-plot to this plugin's interactive ``PluginPlotView`` tab.
@@ -182,6 +183,9 @@ class PluginResult:
             Label for the left Y-axis.
         primary_mode : str, default "TIME"
             Primary marker mode: ``"TIME"`` or ``"FREQ"``.
+        regions : list[dict], optional
+            List of background shaded X-region dicts, e.g.
+            ``[{"x_start": 0.0, "x_end": 0.1, "color": "#888888", "alpha": 0.18, "label": "INIT"}]``.
         """
         import numpy as np
 
@@ -210,6 +214,7 @@ class PluginResult:
             "x_units": str(x_units),
             "y_label": str(y_label),
             "primary_mode": mode_norm,
+            "regions": list(regions) if regions else [],
         })
         return self
 

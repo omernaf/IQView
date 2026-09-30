@@ -398,6 +398,18 @@ class PluginPlotView(Base1DPlotView):
             for k in traces:
                 traces[k] = np.repeat(traces[k], 2)
 
+        raw_regions = spec.get("regions") or []
+        norm_regions = []
+        for reg in raw_regions:
+            if isinstance(reg, dict) and "x_start" in reg and "x_end" in reg:
+                norm_regions.append({
+                    "x_start": float(reg["x_start"]),
+                    "x_end": float(reg["x_end"]),
+                    "color": str(reg.get("color", "#888888")),
+                    "alpha": float(reg.get("alpha", 0.18)),
+                    "label": str(reg.get("label", "")),
+                })
+
         return {
             "title": title,
             "traces": traces,
@@ -408,6 +420,7 @@ class PluginPlotView(Base1DPlotView):
             "x_units": str(spec.get("x_units", "s")),
             "y_label": str(spec.get("y_label", "Amplitude")),
             "primary_mode": primary_mode,
+            "regions": norm_regions,
         }
 
     def set_plots(self, plots: list[dict], tab_title: str | None = None) -> None:
@@ -488,6 +501,7 @@ class PluginPlotView(Base1DPlotView):
 
         spec = self.plots[idx]
         self._active_traces = spec["traces"]
+        self._active_regions = spec.get("regions", [])
         trace_names = list(self._active_traces.keys())
 
         self.trace_combo.blockSignals(True)
@@ -573,6 +587,8 @@ class PluginPlotView(Base1DPlotView):
         return min(mins), max(maxs)
 
     def _render_current_subplot(self) -> None:
+        from PyQt6.QtGui import QColor
+
         old_x_range = None
         if hasattr(self, "view_box") and self.view_box.viewRect() is not None:
             old_x_range, old_y_range = self.view_box.viewRange()
@@ -618,10 +634,39 @@ class PluginPlotView(Base1DPlotView):
         theme = self._get_theme_name()
         p = get_palette(theme)
 
-        is_multi = len(self._active_traces) > 1
+        active_regions = getattr(self, "_active_regions", [])
+        is_multi = len(self._active_traces) > 1 or bool(active_regions)
         if is_multi:
             self.legend = self.plot_item.addLegend(offset=(-15, 15))
             self.legend.setLabelTextColor(p.text_main)
+
+        # Render background X-regions (e.g. INIT=gray, IDLE=red, ACTIVE=green)
+        seen_region_labels = set()
+        for reg in active_regions:
+            x0, x1 = float(reg["x_start"]), float(reg["x_end"])
+            if x1 <= x0:
+                continue
+            c_hex = reg.get("color", "#888888")
+            alpha = float(reg.get("alpha", 0.18))
+            qcol = QColor(c_hex)
+            qcol.setAlphaF(alpha)
+            bcol = QColor(c_hex)
+            bcol.setAlphaF(min(1.0, alpha * 1.8))
+            lr = pg.LinearRegionItem(
+                values=[x0, x1],
+                orientation="vertical",
+                brush=pg.mkBrush(qcol),
+                pen=pg.mkPen(bcol, width=1),
+                movable=False,
+            )
+            lr.setZValue(-10)
+            self.plot_item.addItem(lr, ignoreBounds=True)
+
+            r_label = reg.get("label", "")
+            if r_label and r_label not in seen_region_labels and self.legend is not None:
+                seen_region_labels.add(r_label)
+                swatch = pg.PlotDataItem(pen=pg.mkPen(c_hex, width=6))
+                self.legend.addItem(swatch, r_label)
 
         for i, (t_name, t_arr) in enumerate(self._active_traces.items()):
             color = TRACE_COLORS[i % len(TRACE_COLORS)]
