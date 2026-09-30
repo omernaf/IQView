@@ -781,16 +781,11 @@ class OverlayManagerMixin:
         sh = overlay._shape_name().title() if hasattr(overlay, "_shape_name") else "Overlay"
         return f"{sh} ({overlay.id[:6]})"
 
-    def analyze_overlay_in_tab(
-        self,
-        overlay_or_id,
-        tab_type: str = "time",
-        oversample: Optional[float] = None,
-    ) -> None:
+    def analyze_overlay_in_tab(self, overlay_or_id, tab_type: str = "time") -> None:
         """
         Extract the narrowband DDC'd IQ for *overlay_or_id* via `o.get_samples()`
         (down-converting `f_center` to `0 Hz` baseband, filtering to `bandwidth`,
-        and resampling to `bandwidth * oversample`) and open it in a named tab
+        and resampling to `bandwidth`) and open it in a named tab
         `'<Overlay Name> - <Popup Type>'`.
         """
         from PyQt6.QtWidgets import QMessageBox
@@ -816,12 +811,6 @@ class OverlayManagerMixin:
             if not self._confirm_large_segment(overlay.t_start, overlay.t_end, tab_type.title()):
                 return
 
-        if oversample is None:
-            oversample = float(getattr(self, "_overlay_oversample", 1.0) or 1.0)
-        else:
-            oversample = max(0.01, float(oversample))
-            self._overlay_oversample = oversample
-
         ctx = PluginContext(
             sample_rate=float(getattr(self, 'rate', 1.0) or 1.0),
             center_freq=float(getattr(self, 'fc', 0.0) or 0.0),
@@ -832,14 +821,7 @@ class OverlayManagerMixin:
             extract_iq_cb=lambda t0, t1: self.extract_iq_segment(t0, t1),
         )
 
-        seg, seg_fs = overlay.get_samples(
-            samples=None,
-            info=ctx,
-            baseband=True,
-            filter_bw=True,
-            resample=True,
-            oversample=oversample,
-        )
+        seg, seg_fs = overlay.get_samples(samples=None, info=ctx)
         if seg is None or len(seg) == 0:
             QMessageBox.warning(
                 self, "Analyze Overlay",
@@ -852,39 +834,15 @@ class OverlayManagerMixin:
         view = None
         type_label = "Time Domain"
 
-        def _extract_for_oversample(factor: float):
-            c = PluginContext(
-                sample_rate=float(getattr(self, 'rate', 1.0) or 1.0),
-                center_freq=float(getattr(self, 'fc', 0.0) or 0.0),
-                t_start=overlay.t_start,
-                t_end=overlay.t_end,
-                f_start=overlay.f_start,
-                f_end=overlay.f_end,
-                extract_iq_cb=lambda t0, t1: self.extract_iq_segment(t0, t1),
-            )
-            return overlay.get_samples(
-                samples=None,
-                info=c,
-                baseband=True,
-                filter_bw=True,
-                resample=True,
-                oversample=float(factor),
-            )
-
-        base_bw = overlay.bandwidth if overlay.bandwidth > 0 else float(getattr(self, 'rate', 1.0) or 1.0)
-
         if mode == "time":
             from ..time_domain.view import TimeDomainView
             type_label = "Time Domain"
             view = TimeDomainView(seg, overlay.t_start, seg_fs, parent_window=self)
-            view.set_oversample_extractor(_extract_for_oversample, base_rate=base_bw, initial_oversample=oversample)
         elif mode == "freq":
             from ..frequency_domain.view import FrequencyDomainView
             type_label = "Freq Domain"
-            # Signal has been DDC'd so the center of the overlay is now 0 Hz (baseband)
             fc_tab = 0.0 if overlay.bandwidth > 0 else getattr(self, 'fc', 0.0)
             view = FrequencyDomainView(seg, fc_tab, seg_fs, parent_window=self)
-            view.set_oversample_extractor(_extract_for_oversample, base_rate=base_bw, initial_oversample=oversample)
         elif mode == "eye":
             from ..eye_diagram_dialog import EyeDiagramView
             type_label = "Eye Diagram"

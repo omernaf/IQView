@@ -112,13 +112,12 @@ class Base1DPlotView(QWidget):
             QPushButton:checked {{ background-color: {p.accent_dim}; color: {p.accent}; border: 1px solid {p.accent}; }}
         """)
 
-    def setup_oversample_controls(self, toolbar_layout, initial_oversample: float = 1.0):
+    def setup_oversample_controls(self, toolbar_layout):
         """Create the shared 'Oversample:' label and spinbox in any 1D plot toolbar."""
         from PyQt6.QtWidgets import QLabel, QDoubleSpinBox
 
         self._base_samples = getattr(self, "samples", None)
         self._base_rate = float(getattr(self, "rate", 1.0) or 1.0)
-        self._oversample_extractor = None
 
         self.oversample_label = QLabel("Oversample:")
         self.oversample_spin = QDoubleSpinBox()
@@ -126,10 +125,13 @@ class Base1DPlotView(QWidget):
         self.oversample_spin.setDecimals(2)
         self.oversample_spin.setSingleStep(0.5)
         self.oversample_spin.setSuffix(" ×")
-        self.oversample_spin.setValue(float(initial_oversample))
+        self.oversample_spin.setValue(1.0)
         self.oversample_spin.setKeyboardTracking(False)
         self.oversample_spin.setFixedWidth(92)
-        self._update_oversample_tooltip()
+        self.oversample_spin.setToolTip(
+            f"Oversampling factor relative to base sample rate ({self._base_rate:g} Hz).\n"
+            f"For example, 5.20 × resamples the signal to {self._base_rate * 5.2:g} Hz."
+        )
 
         toolbar_layout.addWidget(self.oversample_label)
         toolbar_layout.addWidget(self.oversample_spin)
@@ -137,38 +139,8 @@ class Base1DPlotView(QWidget):
 
         self.oversample_spin.valueChanged.connect(self._on_oversample_factor_changed)
 
-    def _update_oversample_tooltip(self):
-        if not hasattr(self, "oversample_spin"):
-            return
-        base_fs = float(getattr(self, "_base_rate", getattr(self, "rate", 1.0)) or 1.0)
-        self.oversample_spin.setToolTip(
-            f"Oversampling factor relative to base sample rate ({base_fs:g} Hz).\n"
-            f"For example, 5.20 × resamples the signal to {base_fs * 5.2:g} Hz."
-        )
-
-    def set_oversample_extractor(self, extractor, base_rate: float = None, initial_oversample: float = None):
-        """Configure a custom sample extractor (e.g. for an Overlay DDC popup) and initial oversampling factor."""
-        self._oversample_extractor = extractor
-        if base_rate is not None and base_rate > 0:
-            self._base_rate = float(base_rate)
-        self._update_oversample_tooltip()
-        if initial_oversample is not None and hasattr(self, "oversample_spin"):
-            self.oversample_spin.blockSignals(True)
-            self.oversample_spin.setValue(float(initial_oversample))
-            self.oversample_spin.blockSignals(False)
-
     def _on_oversample_factor_changed(self, val: float):
         factor = max(0.01, float(val))
-        if getattr(self, "parent_window", None) is not None:
-            self.parent_window._overlay_oversample = factor
-
-        extractor = getattr(self, "_oversample_extractor", None)
-        if callable(extractor):
-            new_seg, new_fs = extractor(factor)
-            if new_seg is not None and len(new_seg) > 0 and hasattr(self, "set_samples"):
-                self.set_samples(new_seg, new_fs)
-            return
-
         base_samples = getattr(self, "_base_samples", None)
         base_rate = float(getattr(self, "_base_rate", getattr(self, "rate", 1.0)) or 1.0)
         if base_samples is None or len(base_samples) == 0 or not hasattr(self, "set_samples"):

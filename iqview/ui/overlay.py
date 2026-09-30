@@ -277,40 +277,16 @@ class Overlay:
         filter_bw: bool = True,
         decimate: bool = True,
         resample: Optional[bool] = None,
-        oversample: float = 1.0,
     ) -> Tuple[Any, float]:
         """
         Return ``(burst_iq, sample_rate_hz)`` for this overlay via Digital Down-Conversion (DDC).
-
-        Parameters
-        ----------
-        samples : np.ndarray, optional
-            Wideband IQ buffer covering `[info.t_start, info.t_end]`.
-        info : PluginContext | dict, optional
-            Execution context providing `sample_rate`, `center_freq`, and `extract_iq`.
-        baseband : bool
-            If True (default), frequency-shifts `self.f_center` to `0 Hz`.
-        filter_bw : bool
-            If True (default), low-pass filters to `[-bw/2, +bw/2]`.
-        decimate / resample : bool
-            If True (default), resamples the output to `self.bandwidth * oversample`.
-        oversample : float
-            Oversampling multiplier relative to `self.bandwidth` (default `1.0`).
-            For example, `oversample=5.2` produces `out_fs = 5.2 * self.bandwidth`.
         """
         import numpy as np
 
         do_resample = decimate if resample is None else bool(resample)
-        oversample_factor = max(0.01, float(oversample if oversample is not None else 1.0))
         bw = self.bandwidth
-        target_fs = bw * oversample_factor
         sh = self._shape_name()
         has_freq_bounds = sh in ("RECT", "ELLIPSE", "POLYGON", "Y_REGION") and bw > 0
-
-        can_reextract = (
-            (samples is not None and len(samples) > 0)
-            or (info is not None and hasattr(info, "extract_iq"))
-        )
 
         # 1. Fast path: per-burst IQ already cached on this overlay
         if self.iq is not None and len(self.iq) > 0:
@@ -320,15 +296,9 @@ class Overlay:
                 if self.fs is not None and self.fs > 0
                 else (info["sample_rate"] if info is not None and "sample_rate" in info else 1.0)
             )
-            if do_resample and has_freq_bounds and target_fs > 0:
-                # If requesting higher oversampling than cached_fs and wideband source is available,
-                # fall through to fresh wideband extraction so full stopband/transition detail is preserved.
-                if target_fs <= cached_fs * 1.02 or not can_reextract:
-                    if abs(cached_fs - target_fs) / max(cached_fs, target_fs) > 1e-3:
-                        return self._resample_to_bw(cached_iq, cached_fs, target_fs)
-                    return cached_iq, cached_fs
-            else:
-                return cached_iq, cached_fs
+            if do_resample and has_freq_bounds and abs(cached_fs - bw) / max(cached_fs, bw) > 1e-3:
+                return self._resample_to_bw(cached_iq, cached_fs, bw)
+            return cached_iq, cached_fs
 
         # 2. On-demand slice & DDC from wideband samples or info.extract_iq
         fs = float(info["sample_rate"]) if (info is not None and "sample_rate" in info) else 1.0
@@ -352,16 +322,9 @@ class Overlay:
                 seg = np.asarray(extracted, dtype=np.complex64).copy()
 
         if seg is None or len(seg) == 0:
-            if self.iq is not None and len(self.iq) > 0:
-                cached_iq = np.asarray(self.iq, dtype=np.complex64)
-                cached_fs = float(self.fs or fs)
-                if do_resample and has_freq_bounds and target_fs > 0:
-                    return self._resample_to_bw(cached_iq, cached_fs, target_fs)
-                return cached_iq, cached_fs
             return np.empty(0, dtype=np.complex64), fs
 
         # If the source is real-valued (zero imaginary part), convert to analytic signal first
-        # so negative-frequency mirror images do not alias into baseband during DDC mixing.
         if np.max(np.abs(seg.imag)) < 1e-9 * (np.max(np.abs(seg.real)) + 1e-30):
             try:
                 from scipy.signal import hilbert
@@ -387,15 +350,13 @@ class Overlay:
             except Exception:
                 pass
 
-        # Step C: Resample to target_fs = bw * oversample_factor
+        # Step C: Resample to overlay bandwidth
         out_fs = fs
-        if do_resample and has_freq_bounds and target_fs > 0:
-            seg, out_fs = self._resample_to_bw(seg, fs, target_fs)
+        if do_resample and has_freq_bounds and bw > 0:
+            seg, out_fs = self._resample_to_bw(seg, fs, bw)
 
-        # Cache canonical 1x (or first extracted) burst on overlay for fast reuse
-        if self.iq is None or abs(oversample_factor - 1.0) < 1e-6:
-            self.iq = seg
-            self.fs = out_fs
+        self.iq = seg
+        self.fs = out_fs
         return seg, out_fs
 
     def get_samples(
@@ -406,14 +367,8 @@ class Overlay:
         filter_bw: bool = True,
         decimate: bool = True,
         resample: Optional[bool] = None,
-        oversample: float = 1.0,
     ) -> Tuple[Any, float]:
-        """
-        Return ``(burst_iq, sample_rate_hz)`` for this overlay via DDC.
-        Uses cached ``self.iq`` if available, otherwise down-converts ``f_center``
-        to ``0 Hz``, low-pass filters to ``bandwidth``, and resamples to
-        ``bandwidth * oversample``.
-        """
+        """Alias for ``extract_iq(...)``."""
         return self.extract_iq(
             samples=samples,
             info=info,
@@ -421,7 +376,6 @@ class Overlay:
             filter_bw=filter_bw,
             decimate=decimate,
             resample=resample,
-            oversample=oversample,
         )
 
     # ------------------------------------------------------------------
