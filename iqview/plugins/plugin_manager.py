@@ -45,6 +45,7 @@ from PyQt6.QtCore import QObject, QThread, pyqtSignal
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
 
+from iqview.plugins.chain import PluginChain, save_defaults_to_py
 from iqview.plugins.context import PluginContext, PluginParams
 from iqview.plugins.plugin_result import PluginResult
 
@@ -207,8 +208,32 @@ class PluginManagerMixin:
         self._plugins_menu = None  # set by component_setup after menu is built
         self._plugin_thread: Optional[QThread] = None
         self._plugin_worker: Optional[_PluginWorker] = None
-        # Restore plugins saved from a previous session
+        # Load built-in plugins first, then restore custom plugins saved from previous session
+        self._load_builtin_plugins()
         self._load_persisted_plugins()
+
+    def _load_builtin_plugins(self) -> None:
+        """Load the modular built-in plugin library shipped with IQView."""
+        from iqview.plugins.builtin import get_builtin_plugin_paths
+        for path in get_builtin_plugin_paths():
+            self._load_plugin_from_path(
+                path,
+                _persist=False,
+                _silent=True,
+                _builtin=True,
+            )
+
+    def _resolve_plugin_target(self, target: str) -> Optional[dict]:
+        """Resolve a plugin step target name against currently loaded plugins."""
+        if not target:
+            return None
+        if target in self._loaded_plugins:
+            return self._hot_reload_if_modified(target)
+        t_low = str(target).strip().lower()
+        for name in list(self._loaded_plugins.keys()):
+            if name.lower() == t_low:
+                return self._hot_reload_if_modified(name)
+        return None
 
     # ------------------------------------------------------------------
     # Menu management
@@ -228,10 +253,15 @@ class PluginManagerMixin:
         load_action.triggered.connect(self.load_plugin)
         menu.addAction(load_action)
 
+        restore_builtin_action = QAction("Restore &Built-In Plugins", self)
+        restore_builtin_action.setStatusTip("Reload the built-in IQView plugin library")
+        restore_builtin_action.triggered.connect(self._restore_builtin_plugins)
+        menu.addAction(restore_builtin_action)
+
         menu.addSeparator()
 
-        unload_action = QAction("Unload &All", self)
-        unload_action.setStatusTip("Remove all currently loaded plugins")
+        unload_action = QAction("Unload &All Custom", self)
+        unload_action.setStatusTip("Remove all custom user-loaded plugins")
         unload_action.triggered.connect(self._unload_all_plugins)
         unload_action.setEnabled(bool(self._loaded_plugins))
         menu.addAction(unload_action)
@@ -240,7 +270,8 @@ class PluginManagerMixin:
         if self._loaded_plugins:
             menu.addSeparator()
             for name, info in self._loaded_plugins.items():
-                action = QAction(f"▶  {name}", self)
+                prefix = "⛓  " if info.get("chain") is not None else "▶  "
+                action = QAction(f"{prefix}{name}", self)
                 desc = info.get("description", "")
                 tip  = f"Run plugin: {name}"
                 if desc:
@@ -254,6 +285,11 @@ class PluginManagerMixin:
 
         if hasattr(self, 'marker_panel') and hasattr(self.marker_panel, 'update_plugins_list'):
             self.marker_panel.update_plugins_list(self._loaded_plugins)
+
+    def _restore_builtin_plugins(self) -> None:
+        self._load_builtin_plugins()
+        self._rebuild_plugins_menu()
+        self.statusBar().showMessage("Built-in plugins restored.", 3000)
 
     # ------------------------------------------------------------------
     # Load (Single or Multiple .py files)
@@ -286,6 +322,7 @@ class PluginManagerMixin:
         _persist: bool = True,
         _silent: bool = False,
         _preserve_params: Optional[Dict[str, Any]] = None,
+        _builtin: Optional[bool] = None,
     ) -> Optional[str]:
         """Dynamically import a plugin file and register it. Returns plugin name on success."""
         path = os.path.normpath(os.path.abspath(path))
@@ -297,26 +334,44 @@ class PluginManagerMixin:
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
         except Exception as exc:
-            QMessageBox.critical(
-                self, "Plugin Load Error",
-                f"Could not load plugin from:\n{path}\n\n{exc}"
-            )
+            if not _silent:
+                QMessageBox.critical(
+                    self, "Plugin Load Error",
+                    f"Could not load plugin from:\n{path}\n\n{exc}"
+                )
             return None
 
-        if not hasattr(module, "run") or not callable(module.run):
-            QMessageBox.critical(
-                self, "Plugin Load Error",
-                f"The file does not contain a callable `run(samples, info)` function:\n{path}"
+        chain_obj: Optional[PluginChain] = None
+        if hasattr(module, "CHAIN") and isinstance(module.CHAIN, PluginChain):
+            chain_obj = module.CHAIN
+            chain_obj.bind_to_module(
+                module,
+                module_path=path,
+                resolver=self._resolve_plugin_target,
             )
+
+        if not hasattr(module, "run") or not callable(module.run):
+            if not _silent:
+                QMessageBox.critical(
+                    self, "Plugin Load Error",
+                    f"The file does not contain a callable `run(samples, info)` function or `CHAIN = PluginChain(...)`:\n{path}"
+                )
             return None
 
         name           = getattr(module, "PLUGIN_NAME",        base)
         description    = getattr(module, "PLUGIN_DESCRIPTION", "")
-        category       = getattr(module, "PLUGIN_CATEGORY",    "Custom")
+        category       = getattr(module, "PLUGIN_CATEGORY",    "Chains" if chain_obj else "Custom")
         run_on_main    = bool(getattr(module, "PLUGIN_RUN_ON_MAIN_THREAD", False))
         needs_wideband = bool(getattr(module, "PLUGIN_NEEDS_WIDEBAND_IQ", True))
         batch_seconds  = getattr(module, "PLUGIN_BATCH_SECONDS", None)
         batch_overlap  = float(getattr(module, "PLUGIN_BATCH_OVERLAP_SECONDS", 0.0) or 0.0)
+
+        if _builtin is None:
+            from iqview.plugins.builtin import get_builtin_plugin_paths
+            prev = self._loaded_plugins.get(name)
+            is_builtin = bool(prev.get("builtin", False)) if prev else (path in get_builtin_plugin_paths())
+        else:
+            is_builtin = bool(_builtin)
 
         params_spec = getattr(module, "PLUGIN_PARAMS", {})
         active_params: Dict[str, Any] = {}
@@ -339,10 +394,13 @@ class PluginManagerMixin:
             mtime = 0.0
 
         self._loaded_plugins[name] = {
+            "name":                  name,
             "path":                  path,
             "mtime":                 mtime,
             "module":                module,
             "func":                  module.run,
+            "chain":                 chain_obj,
+            "builtin":               is_builtin,
             "description":           description,
             "category":              category,
             "run_on_main":           run_on_main,
@@ -379,10 +437,40 @@ class PluginManagerMixin:
                 _persist=False,
                 _silent=True,
                 _preserve_params=info.get("params"),
+                _builtin=info.get("builtin", False),
             )
             if new_name:
                 return self._loaded_plugins.get(new_name)
         return self._loaded_plugins.get(name)
+
+    def save_plugin_defaults_to_py(
+        self,
+        name: str,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Write `params` back as the default values in the plugin's `.py` file."""
+        info = self._loaded_plugins.get(name)
+        if info is None:
+            return False
+        path = info.get("path")
+        if not path or not os.path.isfile(path):
+            return False
+        values = params if params is not None else info.get("params", {})
+        ok = save_defaults_to_py(path, values)
+        if ok:
+            info["params"] = copy.deepcopy(values)
+            for k, v in values.items():
+                if k in info.get("params_spec", {}) and isinstance(info["params_spec"][k], dict):
+                    info["params_spec"][k]["default"] = v
+            try:
+                info["mtime"] = os.path.getmtime(path)
+            except OSError:
+                pass
+            if hasattr(self, "statusBar"):
+                self.statusBar().showMessage(
+                    f"Saved default parameters to {os.path.basename(path)}", 4000
+                )
+        return ok
 
     # ------------------------------------------------------------------
     # Unload
@@ -396,21 +484,33 @@ class PluginManagerMixin:
             self.statusBar().showMessage(f"Plugin unloaded: {name}", 3000)
 
     def _unload_all_plugins(self) -> None:
-        self._loaded_plugins.clear()
+        # Keep built-in plugins loaded; only unload custom user-loaded plugins
+        custom_names = [
+            k for k, v in self._loaded_plugins.items() if not v.get("builtin", False)
+        ]
+        if custom_names:
+            for k in custom_names:
+                del self._loaded_plugins[k]
+        else:
+            self._loaded_plugins.clear()
         self._save_plugin_paths()
         self._rebuild_plugins_menu()
-        self.statusBar().showMessage("All plugins unloaded.", 3000)
+        self.statusBar().showMessage("Custom plugins unloaded.", 3000)
 
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
 
     def _save_plugin_paths(self) -> None:
-        """Persist current plugin file paths to settings."""
+        """Persist custom (non-builtin) plugin file paths to settings."""
         if not hasattr(self, 'settings_mgr'):
             return
+        from iqview.plugins.builtin import get_builtin_plugin_paths
+        builtin_set = set(get_builtin_plugin_paths())
         paths = ";;".join(
-            info["path"] for info in self._loaded_plugins.values() if info.get("path")
+            info["path"]
+            for info in self._loaded_plugins.values()
+            if info.get("path") and not info.get("builtin", False) and info["path"] not in builtin_set
         )
         self.settings_mgr.set("plugins/loaded_paths", paths)
 
@@ -588,7 +688,13 @@ class PluginManagerMixin:
     # Run
     # ------------------------------------------------------------------
 
-    def run_plugin(self, name: str, scope: Optional[str] = None) -> None:
+    def run_plugin(
+        self,
+        name: str,
+        scope: Optional[str] = None,
+        only_step: Optional[int] = None,
+        from_step: int = 0,
+    ) -> None:
         info = self._hot_reload_if_modified(name)
         if info is None:
             return
@@ -609,7 +715,19 @@ class PluginManagerMixin:
             )
             return
 
-        needs_wideband = bool(info.get("needs_wideband_iq", True))
+        chain_obj: Optional[PluginChain] = info.get("chain")
+        if chain_obj is not None:
+            chain_obj.set_resolver(self._resolve_plugin_target)
+            needs_wideband = chain_obj.needs_wideband_iq(
+                only_step=only_step, from_step=from_step
+            )
+            exec_func = lambda s, ctx, _c=chain_obj, _os=only_step, _fs=from_step: _c.run(
+                s, ctx, only_step=_os, from_step=_fs
+            )
+        else:
+            needs_wideband = bool(info.get("needs_wideband_iq", True))
+            exec_func = info["func"]
+
         batch_seconds  = info.get("batch_seconds", None)
         batch_overlap  = float(info.get("batch_overlap_seconds", 0.0) or 0.0)
         total_dur      = t_end - t_start
@@ -650,11 +768,11 @@ class PluginManagerMixin:
                     merged = PluginResult()
                     for b_samples, b_t0, b_t1 in context.iter_batches(float(batch_seconds), batch_overlap):
                         b_info = context.copy_with(t_start=b_t0, t_end=b_t1, samples_ref=b_samples)
-                        part = info["func"](b_samples, b_info)
+                        part = exec_func(b_samples, b_info)
                         _merge_plugin_results(merged, part)
                     result = merged
                 else:
-                    result = info["func"](samples, context)
+                    result = exec_func(samples, context)
                 self._on_plugin_finished(name, result)
             except Exception:
                 self._on_plugin_error(name, traceback.format_exc())
@@ -663,13 +781,28 @@ class PluginManagerMixin:
         # Otherwise, run on background thread
         self._run_plugin_async(
             name=name,
-            func=info["func"],
+            func=exec_func,
             samples=samples,
             context=context,
             batch_seconds=float(batch_seconds) if batch_seconds is not None else None,
             batch_overlap_seconds=batch_overlap,
             needs_wideband_iq=needs_wideband,
         )
+
+    def run_plugin_step(
+        self,
+        name: str,
+        step_index: int,
+        single_step_only: bool = True,
+        scope: Optional[str] = None,
+    ) -> None:
+        """
+        Execute a specific step (or from `step_index` onward) of a `PluginChain`.
+        """
+        if single_step_only:
+            self.run_plugin(name, scope=scope, only_step=int(step_index))
+        else:
+            self.run_plugin(name, scope=scope, from_step=int(step_index))
 
     def _run_plugin_async(
         self,

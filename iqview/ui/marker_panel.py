@@ -1229,11 +1229,15 @@ class MarkerPanel(QFrame):
         current_params = info.get("params", {})
         
         from PyQt6.QtWidgets import QDialog
-        dlg = PluginConfigDialog(name, params_spec, current_params, self)
+        dlg = PluginConfigDialog(name, params_spec, current_params, self, plugin_info=info)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             new_values = dlg.get_values()
             info["params"] = new_values
             self.parent_window.statusBar().showMessage(f"Updated parameters for {name}", 3000)
+            if dlg.requested_step_run is not None:
+                step_idx = int(dlg.requested_step_run)
+                if hasattr(self.parent_window, "run_plugin_step"):
+                    self.parent_window.run_plugin_step(name, step_idx, single_step_only=True)
 
     def _on_plugin_unload(self, name):
         self.parent_window.unload_plugin(name)
@@ -1297,15 +1301,19 @@ class ScientificNumberEdit(QLineEdit):
 
 
 class PluginConfigDialog(QDialog):
-    def __init__(self, plugin_name, params_spec, current_params, parent=None):
+    def __init__(self, plugin_name, params_spec, current_params, parent=None, plugin_info=None):
         super().__init__(parent)
+        self.plugin_name = plugin_name
+        self.plugin_info = plugin_info or {}
+        self.requested_step_run = None
         self.setWindowTitle(f"Configure {plugin_name}")
-        self.setMinimumWidth(350)
+        self.setMinimumWidth(400)
         self.setup_ui(params_spec, current_params)
         
     def setup_ui(self, params_spec, current_params):
         layout = QVBoxLayout(self)
-        form_layout = QFormLayout()
+        form_container = QWidget()
+        form_layout = QFormLayout(form_container)
         
         theme = "Light"
         if self.parent() and hasattr(self.parent(), 'parent_window'):
@@ -1327,10 +1335,31 @@ class PluginConfigDialog(QDialog):
         """)
         
         self.widgets = {}
+        last_step_index = None
         
         for key, spec in params_spec.items():
             if not isinstance(spec, dict):
                 spec = {"type": "str", "default": spec, "label": key}
+
+            step_idx = spec.get("step_index")
+            step_title = spec.get("step_title")
+            if step_idx is not None and step_idx != last_step_index:
+                last_step_index = step_idx
+                hdr_row = QWidget()
+                hdr_lay = QHBoxLayout(hdr_row)
+                hdr_lay.setContentsMargins(0, 8 if step_idx > 0 else 0, 0, 2)
+                lbl_hdr = QLabel(f"<b>{step_title or f'Step {step_idx + 1}'}</b>")
+                hdr_lay.addWidget(lbl_hdr)
+                hdr_lay.addStretch()
+                btn_step = QPushButton("▶ Run Step Only")
+                btn_step.setCursor(Qt.CursorShape.PointingHandCursor)
+                btn_step.setToolTip(
+                    f"Apply parameters and run only {step_title or f'Step {step_idx + 1}'} "
+                    "on existing overlays / cached IQ"
+                )
+                btn_step.clicked.connect(lambda _c, idx=step_idx: self._on_run_step_clicked(idx))
+                hdr_lay.addWidget(btn_step)
+                form_layout.addRow(hdr_row)
                 
             label_text = spec.get("label", key)
             param_type = spec.get("type", "str")
@@ -1367,14 +1396,43 @@ class PluginConfigDialog(QDialog):
             form_layout.addRow(QLabel(label_text), widget)
             self.widgets[key] = (widget, param_type)
             
-        layout.addLayout(form_layout)
-        
+        if len(params_spec) > 10:
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setWidget(form_container)
+            scroll.setMinimumHeight(420)
+            layout.addWidget(scroll)
+        else:
+            layout.addWidget(form_container)
+
+        bottom_row = QHBoxLayout()
+        py_path = self.plugin_info.get("path")
+        if py_path and os.path.isfile(py_path):
+            btn_save_py = QPushButton("💾 Save as Default in .py")
+            btn_save_py.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn_save_py.setToolTip(f"Write current parameter values as defaults into:\n{py_path}")
+            btn_save_py.clicked.connect(self._on_save_defaults_clicked)
+            bottom_row.addWidget(btn_save_py)
+
+        bottom_row.addStretch()
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        bottom_row.addWidget(buttons)
+        layout.addLayout(bottom_row)
+
+    def _on_run_step_clicked(self, step_idx: int):
+        self.requested_step_run = step_idx
+        self.accept()
+
+    def _on_save_defaults_clicked(self):
+        vals = self.get_values()
+        if self.parent() and hasattr(self.parent(), "parent_window"):
+            pw = self.parent().parent_window
+            if hasattr(pw, "save_plugin_defaults_to_py"):
+                pw.save_plugin_defaults_to_py(self.plugin_name, vals)
         
     def get_values(self):
         values = {}

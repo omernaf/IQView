@@ -283,6 +283,13 @@ class Overlay:
         """
         import numpy as np
 
+        # Support calling `o.extract_iq(info)` or `o.get_samples(info)` directly
+        if info is None and samples is not None and (
+            isinstance(samples, dict) or hasattr(samples, "sample_rate")
+        ):
+            info = samples
+            samples = getattr(info, "_samples_ref", None)
+
         do_resample = decimate if resample is None else bool(resample)
         bw = self.bandwidth
         sh = self._shape_name()
