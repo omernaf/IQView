@@ -116,48 +116,63 @@ class Overlay:
     # Smart Geometry Properties (seconds & Hz)
     # ------------------------------------------------------------------
 
+    def _shape_name(self) -> str:
+        return self.shape.value if hasattr(self.shape, "value") else str(self.shape)
+
     @property
     def t_start(self) -> float:
         """Start time in seconds."""
-        if self.shape in (OverlayShape.RECT, OverlayShape.POLYGON, OverlayShape.X_REGION) and self.points:
+        sh = self._shape_name()
+        if sh in ("RECT", "POLYGON", "X_REGION") and self.points:
             return float(min(p[0] for p in self.points))
-        if self.shape == OverlayShape.ELLIPSE and self.center and self.radii:
+        if sh == "ELLIPSE" and self.center and self.radii:
             return float(self.center[0] - abs(self.radii[0]))
-        if self.shape == OverlayShape.LINE and self.points:
+        if sh in ("LINE", "DOT") and self.points:
             return float(self.points[0][0])
+        if self.center:
+            return float(self.center[0])
         return 0.0
 
     @t_start.setter
     def t_start(self, val: float) -> None:
-        if self.shape == OverlayShape.RECT and len(self.points) >= 2:
+        sh = self._shape_name()
+        if sh == "RECT" and len(self.points) >= 2:
             self.points = [(float(val), self.f_start), (self.t_end, self.f_end)]
-        elif self.shape == OverlayShape.X_REGION and len(self.points) >= 2:
+        elif sh == "X_REGION" and len(self.points) >= 2:
             self.points = [(float(val), 0.0), (self.t_end, 0.0)]
-        elif self.shape == OverlayShape.LINE:
+        elif sh == "LINE":
             self.points = [(float(val), 0.0)]
+        self.iq = None
+        self.fs = None
 
     @property
     def t_end(self) -> float:
         """End time in seconds."""
-        if self.shape in (OverlayShape.RECT, OverlayShape.POLYGON, OverlayShape.X_REGION) and self.points:
+        sh = self._shape_name()
+        if sh in ("RECT", "POLYGON", "X_REGION") and self.points:
             return float(max(p[0] for p in self.points))
-        if self.shape == OverlayShape.ELLIPSE and self.center and self.radii:
+        if sh == "ELLIPSE" and self.center and self.radii:
             return float(self.center[0] + abs(self.radii[0]))
-        if self.shape == OverlayShape.LINE and self.points:
+        if sh in ("LINE", "DOT") and self.points:
             return float(self.points[0][0])
+        if self.center:
+            return float(self.center[0])
         return 0.0
 
     @t_end.setter
     def t_end(self, val: float) -> None:
-        if self.shape == OverlayShape.RECT and len(self.points) >= 2:
+        sh = self._shape_name()
+        if sh == "RECT" and len(self.points) >= 2:
             self.points = [(self.t_start, self.f_start), (float(val), self.f_end)]
-        elif self.shape == OverlayShape.X_REGION and len(self.points) >= 2:
+        elif sh == "X_REGION" and len(self.points) >= 2:
             self.points = [(self.t_start, 0.0), (float(val), 0.0)]
+        self.iq = None
+        self.fs = None
 
     @property
     def t_center(self) -> float:
         """Center time in seconds."""
-        if self.shape == OverlayShape.ELLIPSE and self.center:
+        if self._shape_name() == "ELLIPSE" and self.center:
             return float(self.center[0])
         return 0.5 * (self.t_start + self.t_end)
 
@@ -169,45 +184,57 @@ class Overlay:
     @property
     def f_start(self) -> float:
         """Lower frequency bound in Hz."""
-        if self.shape in (OverlayShape.RECT, OverlayShape.POLYGON, OverlayShape.Y_REGION) and self.points:
+        sh = self._shape_name()
+        if sh in ("RECT", "POLYGON", "Y_REGION") and self.points:
             return float(min(p[1] for p in self.points))
-        if self.shape == OverlayShape.ELLIPSE and self.center and self.radii:
+        if sh == "ELLIPSE" and self.center and self.radii:
             return float(self.center[1] - abs(self.radii[1]))
-        if self.shape == OverlayShape.HLINE and self.points:
+        if sh in ("HLINE", "DOT") and self.points:
             return float(self.points[0][1])
+        if self.center:
+            return float(self.center[1])
         return 0.0
 
     @f_start.setter
     def f_start(self, val: float) -> None:
-        if self.shape == OverlayShape.RECT and len(self.points) >= 2:
+        sh = self._shape_name()
+        if sh == "RECT" and len(self.points) >= 2:
             self.points = [(self.t_start, float(val)), (self.t_end, self.f_end)]
-        elif self.shape == OverlayShape.Y_REGION and len(self.points) >= 2:
+        elif sh == "Y_REGION" and len(self.points) >= 2:
             self.points = [(0.0, float(val)), (0.0, self.f_end)]
-        elif self.shape == OverlayShape.HLINE:
+        elif sh == "HLINE":
             self.points = [(0.0, float(val))]
+        self.iq = None
+        self.fs = None
 
     @property
     def f_end(self) -> float:
         """Upper frequency bound in Hz."""
-        if self.shape in (OverlayShape.RECT, OverlayShape.POLYGON, OverlayShape.Y_REGION) and self.points:
+        sh = self._shape_name()
+        if sh in ("RECT", "POLYGON", "Y_REGION") and self.points:
             return float(max(p[1] for p in self.points))
-        if self.shape == OverlayShape.ELLIPSE and self.center and self.radii:
+        if sh == "ELLIPSE" and self.center and self.radii:
             return float(self.center[1] + abs(self.radii[1]))
-        if self.shape == OverlayShape.HLINE and self.points:
+        if sh in ("HLINE", "DOT") and self.points:
             return float(self.points[0][1])
+        if self.center:
+            return float(self.center[1])
         return 0.0
 
     @f_end.setter
     def f_end(self, val: float) -> None:
-        if self.shape == OverlayShape.RECT and len(self.points) >= 2:
+        sh = self._shape_name()
+        if sh == "RECT" and len(self.points) >= 2:
             self.points = [(self.t_start, self.f_start), (self.t_end, float(val))]
-        elif self.shape == OverlayShape.Y_REGION and len(self.points) >= 2:
+        elif sh == "Y_REGION" and len(self.points) >= 2:
             self.points = [(0.0, self.f_start), (0.0, float(val))]
+        self.iq = None
+        self.fs = None
 
     @property
     def f_center(self) -> float:
         """Center frequency in Hz."""
-        if self.shape == OverlayShape.ELLIPSE and self.center:
+        if self._shape_name() == "ELLIPSE" and self.center:
             return float(self.center[1])
         return 0.5 * (self.f_start + self.f_end)
 
@@ -217,8 +244,30 @@ class Overlay:
         return max(0.0, self.f_end - self.f_start)
 
     # ------------------------------------------------------------------
-    # Per-Burst IQ Extraction & DDC
+    # Per-Burst IQ Extraction & Full DDC (Mix to Baseband + Filter + Resample)
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _resample_to_bw(seg, current_fs: float, target_bw: float):
+        """Resample complex baseband *seg* from *current_fs* to *target_bw* Hz."""
+        import numpy as np
+        if target_bw <= 0 or current_fs <= 0 or len(seg) < 2:
+            return seg, current_fs
+        if abs(current_fs - target_bw) / max(current_fs, target_bw) < 1e-3:
+            return seg, current_fs
+
+        dur = len(seg) / current_fs
+        target_len = max(2, int(round(dur * target_bw)))
+        if target_len == len(seg):
+            return seg, current_fs
+
+        try:
+            from scipy.signal import resample
+            resampled = np.asarray(resample(seg, target_len), dtype=np.complex64)
+            out_fs = float(len(resampled)) / dur if dur > 0 else float(target_bw)
+            return resampled, out_fs
+        except Exception:
+            return seg, current_fs
 
     def extract_iq(
         self,
@@ -226,20 +275,27 @@ class Overlay:
         info: Optional[Any] = None,
         baseband: bool = True,
         filter_bw: bool = True,
-        decimate: bool = False,
+        decimate: bool = True,
+        resample: Optional[bool] = None,
     ) -> Tuple[Any, float]:
         """
-        Return ``(burst_iq, sample_rate_hz)`` for this overlay.
+        Return ``(burst_iq, sample_rate_hz)`` for this overlay via Digital Down-Conversion (DDC).
 
-        1. **Cached Fast Path**: If ``self.iq`` is already attached in memory
-           (e.g., from a channelizer/burst-detector plugin), returns
-           ``(self.iq, self.fs)`` immediately without touching the wideband file.
-        2. **On-Demand DDC Path**: Otherwise slices ``[self.t_start, self.t_end]``
-           from *samples* or ``info.extract_iq()``, mixes ``self.f_center`` to
-           baseband (0 Hz), low-pass filters to ``self.bandwidth``, optionally
-           decimates, caches ``self.iq`` / ``self.fs``, and returns ``(iq, fs)``.
+        1. **Cached Fast Path**: If ``self.iq`` is already attached in memory,
+           returns ``(self.iq, self.fs)`` (resampling to ``self.bandwidth`` if
+           *decimate*/*resample* is True and ``self.fs`` has not yet been resampled).
+        2. **On-Demand DDC Path**: Slices ``[self.t_start, self.t_end]`` from
+           *samples* or ``info.extract_iq()``, frequency-shifts ``self.f_center``
+           down to ``0 Hz`` (new baseband), low-pass filters to ``[-bw/2, +bw/2]``,
+           resamples the signal to ``out_fs = self.bandwidth`` (when *decimate*/*resample*
+           is True), caches ``self.iq`` / ``self.fs``, and returns ``(iq, out_fs)``.
         """
         import numpy as np
+
+        do_resample = decimate if resample is None else bool(resample)
+        bw = self.bandwidth
+        sh = self._shape_name()
+        has_freq_bounds = sh in ("RECT", "ELLIPSE", "POLYGON", "Y_REGION") and bw > 0
 
         # 1. Fast path: per-burst IQ already cached on this overlay
         if self.iq is not None and len(self.iq) > 0:
@@ -249,11 +305,11 @@ class Overlay:
                 if self.fs is not None and self.fs > 0
                 else (info["sample_rate"] if info is not None and "sample_rate" in info else 1.0)
             )
-            if decimate and self.bandwidth > 0 and cached_fs > self.bandwidth * 2.5:
-                target_fs = max(self.bandwidth * 1.25, 1.0)
-                decim = max(1, int(cached_fs // target_fs))
-                if decim > 1 and len(cached_iq) > decim:
-                    return cached_iq[::decim].copy(), cached_fs / decim
+            if do_resample and has_freq_bounds and cached_fs > bw * 1.02:
+                resampled_iq, resampled_fs = self._resample_to_bw(cached_iq, cached_fs, bw)
+                self.iq = resampled_iq
+                self.fs = resampled_fs
+                return resampled_iq, resampled_fs
             return cached_iq, cached_fs
 
         # 2. On-demand slice & DDC from wideband samples or info.extract_iq
@@ -280,38 +336,37 @@ class Overlay:
         if seg is None or len(seg) == 0:
             return np.empty(0, dtype=np.complex64), fs
 
-        # Mix f_center to baseband (0 Hz)
-        has_freq_bounds = self.shape in (
-            OverlayShape.RECT,
-            OverlayShape.ELLIPSE,
-            OverlayShape.POLYGON,
-            OverlayShape.Y_REGION,
-        )
+        # If the source is real-valued (zero imaginary part), convert to analytic signal first
+        # so negative-frequency mirror images do not alias into baseband during DDC mixing.
+        if np.max(np.abs(seg.imag)) < 1e-9 * (np.max(np.abs(seg.real)) + 1e-30):
+            try:
+                from scipy.signal import hilbert
+                seg = np.asarray(hilbert(seg.real.astype(np.float64)), dtype=np.complex64)
+            except Exception:
+                pass
+
+        # Step A: Mix f_center to 0 Hz (new baseband)
         if baseband and has_freq_bounds:
             f_offset = self.f_center - fc
             if abs(f_offset) > 1e-6:
                 t_vec = np.arange(len(seg), dtype=np.float64) / fs
                 seg = (seg * np.exp(-2j * np.pi * f_offset * t_vec)).astype(np.complex64)
 
-        # Low-pass filter to overlay bandwidth
-        bw = self.bandwidth
-        if filter_bw and has_freq_bounds and bw > 0 and bw < fs * 0.96 and len(seg) >= 18:
+        # Step B: Low-pass filter to overlay bandwidth [-bw/2, +bw/2]
+        if filter_bw and has_freq_bounds and bw < fs * 0.98 and len(seg) >= 18:
             try:
                 from scipy.signal import butter, sosfiltfilt
-                cutoff = min(bw * 0.5, fs * 0.48)
+                cutoff = min(bw * 0.5, fs * 0.49)
                 if cutoff > 0:
-                    sos = butter(5, cutoff / (0.5 * fs), btype="low", output="sos")
+                    sos = butter(6, cutoff / (0.5 * fs), btype="low", output="sos")
                     seg = sosfiltfilt(sos, seg).astype(np.complex64)
             except Exception:
                 pass
 
+        # Step C: Resample to the frequency width of the rect (out_fs = bw)
         out_fs = fs
-        if decimate and has_freq_bounds and bw > 0:
-            target_fs = max(bw * 1.25, 1.0)
-            decim = max(1, int(fs // target_fs))
-            if decim > 1 and len(seg) > decim:
-                seg = seg[::decim].copy()
-                out_fs = fs / decim
+        if do_resample and has_freq_bounds and bw < fs * 0.999:
+            seg, out_fs = self._resample_to_bw(seg, fs, bw)
 
         # Cache on overlay so subsequent uses are instant
         self.iq = seg
@@ -324,12 +379,13 @@ class Overlay:
         info: Optional[Any] = None,
         baseband: bool = True,
         filter_bw: bool = True,
-        decimate: bool = False,
+        decimate: bool = True,
+        resample: Optional[bool] = None,
     ) -> Tuple[Any, float]:
         """
-        Return ``(burst_iq, sample_rate_hz)`` for this overlay.
-        Uses cached ``self.iq`` if available, otherwise extracts and DDC-filters
-        from *samples* or *info*. Alias for :meth:`extract_iq`.
+        Return ``(burst_iq, sample_rate_hz)`` for this overlay via DDC.
+        Uses cached ``self.iq`` if available, otherwise down-converts ``f_center``
+        to ``0 Hz``, low-pass filters to ``bandwidth``, and resamples to ``bandwidth``.
         """
         return self.extract_iq(
             samples=samples,
@@ -337,6 +393,7 @@ class Overlay:
             baseband=baseband,
             filter_bw=filter_bw,
             decimate=decimate,
+            resample=resample,
         )
 
     # ------------------------------------------------------------------

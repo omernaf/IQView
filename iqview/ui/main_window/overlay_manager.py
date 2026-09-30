@@ -810,7 +810,9 @@ class OverlayManagerMixin:
             extract_iq_cb=lambda t0, t1: self.extract_iq_segment(t0, t1),
         )
 
-        seg, seg_fs = overlay.get_samples(samples=None, info=ctx, baseband=True, filter_bw=True)
+        seg, seg_fs = overlay.get_samples(
+            samples=None, info=ctx, baseband=True, filter_bw=True, resample=True
+        )
         if seg is None or len(seg) == 0:
             QMessageBox.warning(
                 self, "Analyze Overlay",
@@ -827,7 +829,8 @@ class OverlayManagerMixin:
             self.update_tab_names()
         elif mode == "freq":
             from ..frequency_domain.view import FrequencyDomainView
-            fc_tab = overlay.f_center if overlay.bandwidth > 0 else getattr(self, 'fc', 0.0)
+            # Signal has been DDC'd so the center of the overlay is now 0 Hz (baseband)
+            fc_tab = 0.0 if overlay.bandwidth > 0 else getattr(self, 'fc', 0.0)
             view = FrequencyDomainView(seg, fc_tab, seg_fs, parent_window=self)
             self.tabs.addTab(view, "Freq Domain")
             self.tabs.setCurrentWidget(view)
