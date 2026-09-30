@@ -105,8 +105,9 @@ class Base1DPlotView(QWidget):
         self.toolbar.setStyleSheet(f"""
             {frame_sel} {{ background-color: {p.bg_sidebar}; border-radius: 6px; border: 1px solid {p.border}; }}
             QLabel {{ color: {p.text_dim}; background: transparent; border: none; }}
-            QDoubleSpinBox, QSpinBox {{ background-color: {p.bg_input}; color: {p.text_main}; border: 1px solid {p.border}; border-radius: 4px; padding: 3px 6px; }}
-            QDoubleSpinBox:focus, QSpinBox:focus {{ border-color: {p.accent}; }}
+            QDoubleSpinBox, QSpinBox, QComboBox {{ background-color: {p.bg_input}; color: {p.text_main}; border: 1px solid {p.border}; border-radius: 4px; padding: 3px 6px; }}
+            QDoubleSpinBox:focus, QSpinBox:focus, QComboBox:focus {{ border-color: {p.accent}; }}
+            QComboBox QAbstractItemView {{ background-color: {p.bg_input}; color: {p.text_main}; selection-background-color: {p.accent_dim}; selection-color: {p.accent}; }}
             QPushButton {{ background-color: {p.bg_widget}; padding: 5px 15px; border-radius: 3px; color: {p.text_main}; }}
             QPushButton:hover {{ background-color: {p.border_light}; }}
             QPushButton:checked {{ background-color: {p.accent_dim}; color: {p.accent}; border: 1px solid {p.accent}; }}

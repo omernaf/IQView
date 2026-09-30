@@ -44,17 +44,25 @@ class PluginResult:
 
     Attributes
     ----------
-    _adds     : list[Overlay]
-    _updates  : list[tuple[str, dict]]   — (overlay_id, field_kwargs)
-    _removes  : list[str]                — overlay IDs
-    _replaces : list[tuple[str, Overlay]]— (old_overlay_id, new_overlay)
+    _adds           : list[Overlay]
+    _updates        : list[tuple[str, dict]]   — (overlay_id, field_kwargs)
+    _removes        : list[str]                — overlay IDs
+    _replaces       : list[tuple[str, Overlay]]— (old_overlay_id, new_overlay)
+    _plots          : list[dict]               — custom 1D sub-plot specifications
+    _plot_tab_title : str | None               — optional custom tab title for PluginPlotView
+    _native_tabs    : list[dict]               — requests to open native analysis tabs
+    _logs           : list[str]                — status/console log messages
     """
 
     def __init__(self) -> None:
-        self._adds:     List[Any]                    = []
-        self._updates:  List[Tuple[str, Dict]]       = []
-        self._removes:  List[str]                    = []
-        self._replaces: List[Tuple[str, Any]]        = []
+        self._adds:           List[Any]                    = []
+        self._updates:        List[Tuple[str, Dict]]       = []
+        self._removes:        List[str]                    = []
+        self._replaces:       List[Tuple[str, Any]]        = []
+        self._plots:          List[Dict[str, Any]]         = []
+        self._plot_tab_title: Optional[str]                = None
+        self._native_tabs:    List[Dict[str, Any]]         = []
+        self._logs:           List[str]                    = []
 
     # ------------------------------------------------------------------
     # Builder methods (all return self for chaining)
@@ -132,6 +140,162 @@ class PluginResult:
         return self
 
     # ------------------------------------------------------------------
+    # Custom 1D Plot Tab & Native Analysis Tab Launchers (Phase 2)
+    # ------------------------------------------------------------------
+
+    def add_plot(
+        self,
+        title: str,
+        y: Any,
+        x: Any = None,
+        fs: Optional[float] = None,
+        x_label: str = "Time",
+        x_units: str = "s",
+        y_label: str = "Amplitude",
+        primary_mode: str = "TIME",
+    ) -> "PluginResult":
+        """
+        Add a custom 1D sub-plot to this plugin's interactive ``PluginPlotView`` tab.
+
+        All ``add_plot()`` calls in a plugin run are grouped into **a single main tab**
+        with ``F1..F10`` sub-tab mode buttons in its toolbar (just like ``TimeDomainView``).
+
+        Parameters
+        ----------
+        title : str
+            Name of the sub-plot (shown on the toolbar mode button).
+        y : array-like or dict[str, array-like]
+            1D data array/sequence, OR a dictionary mapping trace names to 1D arrays
+            (e.g. ``{"Moving Avg": fir, "IIR Floor": iir}``) for multi-trace plotting
+            with a legend and active-trace selector.
+        x : array-like, optional
+            Explicit 1D X-axis coordinates. If omitted, derived automatically from
+            ``fs`` (if provided) or sample index ``0..N-1``.
+        fs : float, optional
+            Sample rate in Hz used to construct the X-axis when ``x`` is omitted,
+            and for sample/time conversions and oversampling in the marker panel.
+        x_label : str, default "Time"
+            Label for the bottom X-axis.
+        x_units : str, default "s"
+            Units for the bottom X-axis.
+        y_label : str, default "Amplitude"
+            Label for the left Y-axis.
+        primary_mode : str, default "TIME"
+            Primary marker mode: ``"TIME"`` or ``"FREQ"``.
+        """
+        import numpy as np
+
+        if isinstance(y, dict):
+            y_clean: Any = {}
+            for k, v in y.items():
+                arr = np.asarray(v)
+                if np.iscomplexobj(arr):
+                    arr = np.real(arr)
+                y_clean[str(k)] = np.asarray(arr, dtype=np.float64).ravel()
+        else:
+            arr = np.asarray(y)
+            if np.iscomplexobj(arr):
+                arr = np.real(arr)
+            y_clean = np.asarray(arr, dtype=np.float64).ravel()
+
+        x_clean = np.asarray(x, dtype=np.float64).ravel() if x is not None else None
+        mode_norm = "FREQ" if str(primary_mode).upper().startswith("FREQ") else "TIME"
+
+        self._plots.append({
+            "title": str(title),
+            "y": y_clean,
+            "x": x_clean,
+            "fs": float(fs) if fs is not None else None,
+            "x_label": str(x_label),
+            "x_units": str(x_units),
+            "y_label": str(y_label),
+            "primary_mode": mode_norm,
+        })
+        return self
+
+    def set_plot_tab_title(self, title: str) -> "PluginResult":
+        """Set a custom main tab title for the ``PluginPlotView`` created by this run."""
+        self._plot_tab_title = str(title) if title else None
+        return self
+
+    def open_time_domain(
+        self,
+        samples: Any,
+        fs: float,
+        t_start: float = 0.0,
+        title: Optional[str] = None,
+    ) -> "PluginResult":
+        """Queue opening a native ``TimeDomainView`` tab with ``samples`` at rate ``fs``."""
+        import numpy as np
+        self._native_tabs.append({
+            "type": "time_domain",
+            "samples": np.asarray(samples).ravel(),
+            "fs": float(fs),
+            "t_start": float(t_start),
+            "title": str(title) if title else None,
+        })
+        return self
+
+    def open_freq_domain(
+        self,
+        samples: Any,
+        fs: float,
+        fc: float = 0.0,
+        title: Optional[str] = None,
+    ) -> "PluginResult":
+        """Queue opening a native ``FrequencyDomainView`` tab with ``samples`` at rate ``fs``."""
+        import numpy as np
+        self._native_tabs.append({
+            "type": "freq_domain",
+            "samples": np.asarray(samples).ravel(),
+            "fs": float(fs),
+            "fc": float(fc),
+            "title": str(title) if title else None,
+        })
+        return self
+
+    open_frequency_domain = open_freq_domain
+
+    def open_constellation(
+        self,
+        samples: Any,
+        fs: float,
+        title: Optional[str] = None,
+    ) -> "PluginResult":
+        """Queue opening a native ``ConstellationView`` (Scatter Plot) tab."""
+        import numpy as np
+        self._native_tabs.append({
+            "type": "constellation",
+            "samples": np.asarray(samples).ravel(),
+            "fs": float(fs),
+            "title": str(title) if title else None,
+        })
+        return self
+
+    open_scatter = open_constellation
+
+    def open_eye_diagram(
+        self,
+        samples: Any,
+        fs: float,
+        title: Optional[str] = None,
+    ) -> "PluginResult":
+        """Queue opening a native ``EyeDiagramView`` tab."""
+        import numpy as np
+        self._native_tabs.append({
+            "type": "eye_diagram",
+            "samples": np.asarray(samples).ravel(),
+            "fs": float(fs),
+            "title": str(title) if title else None,
+        })
+        return self
+
+    def log(self, message: str) -> "PluginResult":
+        """Queue a status/console log message to be displayed when the plugin finishes."""
+        self._logs.append(str(message))
+        return self
+
+    # ------------------------------------------------------------------
     # Convenience
     # ------------------------------------------------------------------
 
@@ -141,5 +305,9 @@ class PluginResult:
             f"adds={len(self._adds)}, "
             f"updates={len(self._updates)}, "
             f"removes={len(self._removes)}, "
-            f"replaces={len(self._replaces)})"
+            f"replaces={len(self._replaces)}, "
+            f"plots={len(self._plots)}, "
+            f"native_tabs={len(self._native_tabs)}, "
+            f"logs={len(self._logs)})"
         )
+

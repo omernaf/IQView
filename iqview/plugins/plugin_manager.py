@@ -78,6 +78,11 @@ def _merge_plugin_results(target: PluginResult, part: PluginResult) -> None:
     target._updates.extend(part._updates)
     target._removes.extend(part._removes)
     target._replaces.extend(part._replaces)
+    target._plots.extend(part._plots)
+    if part._plot_tab_title:
+        target._plot_tab_title = part._plot_tab_title
+    target._native_tabs.extend(part._native_tabs)
+    target._logs.extend(part._logs)
 
 
 # ---------------------------------------------------------------------------
@@ -816,14 +821,114 @@ class PluginManagerMixin:
         if hasattr(self, "refresh_overlays_ui"):
             self.refresh_overlays_ui()
 
+        # 5. Custom 1D Plot Tab (at most one main tab per plugin, updated in-place on re-run)
+        n_plots = len(getattr(result, "_plots", []))
+        if n_plots > 0 and hasattr(self, "tabs"):
+            from ..ui.plugin_plot_view import PluginPlotView
+
+            tab_title = getattr(result, "_plot_tab_title", None) or f"{name} - Plots"
+            existing_view = None
+            existing_dv = None
+
+            for i in range(1, self.tabs.count()):
+                w = self.tabs.widget(i)
+                if isinstance(w, PluginPlotView) and getattr(w, "_plugin_name", None) == name:
+                    existing_view = w
+                    break
+
+            if existing_view is None and hasattr(self, "detached_views"):
+                for dv in self.detached_views:
+                    w = getattr(dv, "view", None)
+                    if isinstance(w, PluginPlotView) and getattr(w, "_plugin_name", None) == name:
+                        existing_view = w
+                        existing_dv = dv
+                        break
+
+            if existing_view is not None:
+                existing_view.set_plots(result._plots, tab_title=tab_title)
+                if existing_dv is not None:
+                    existing_dv.update_title()
+                    existing_dv.raise_()
+                else:
+                    self.tabs.setCurrentWidget(existing_view)
+                    if hasattr(self, "update_tab_names"):
+                        self.update_tab_names()
+            else:
+                plot_view = PluginPlotView(
+                    result._plots,
+                    plugin_name=name,
+                    tab_title=tab_title,
+                    parent_window=self,
+                )
+                self.tabs.addTab(plot_view, tab_title)
+                self.tabs.setCurrentWidget(plot_view)
+                if hasattr(self, "update_tab_names"):
+                    self.update_tab_names()
+
+        # 6. Native Analysis Tab Launchers
+        n_native_tabs = 0
+        for tab_spec in getattr(result, "_native_tabs", []):
+            if not hasattr(self, "tabs"):
+                break
+            samples = tab_spec.get("samples")
+            if samples is None or len(samples) == 0:
+                continue
+            fs = float(tab_spec.get("fs", getattr(self, "rate", 1.0)) or 1.0)
+            tab_type = tab_spec.get("type", "time_domain")
+            custom_title = tab_spec.get("title")
+            view = None
+            default_label = "Analysis"
+
+            if tab_type == "time_domain":
+                from ..ui.time_domain.view import TimeDomainView
+                t_start = float(tab_spec.get("t_start", 0.0))
+                view = TimeDomainView(samples, t_start, fs, parent_window=self)
+                default_label = f"{name} - Time Domain"
+            elif tab_type == "freq_domain":
+                from ..ui.frequency_domain.view import FrequencyDomainView
+                fc = float(tab_spec.get("fc", 0.0))
+                view = FrequencyDomainView(samples, fc, fs, parent_window=self)
+                default_label = f"{name} - Freq Domain"
+            elif tab_type == "constellation":
+                from ..ui.constellation_dialog import ConstellationView
+                view = ConstellationView(samples, fs, parent_window=self)
+                default_label = f"{name} - Scatter Plot"
+            elif tab_type == "eye_diagram":
+                from ..ui.eye_diagram_dialog import EyeDiagramView
+                view = EyeDiagramView(samples, fs, parent_window=self)
+                default_label = f"{name} - Eye Diagram"
+
+            if view is not None:
+                title_to_use = custom_title or default_label
+                view._custom_tab_title = title_to_use
+                self.tabs.addTab(view, title_to_use)
+                self.tabs.setCurrentWidget(view)
+                n_native_tabs += 1
+
+        if n_native_tabs > 0 and hasattr(self, "update_tab_names"):
+            self.update_tab_names()
+
+        # 7. Console & Status Bar Logs
+        logs = getattr(result, "_logs", [])
+        for msg in logs:
+            print(f"[IQView Plugin: {name}] {msg}")
+
+        summary_parts = [
+            f"{n_added} added, {n_updated} updated, {n_removed} removed, {n_replaced} replaced"
+        ]
+        if n_plots > 0:
+            summary_parts.append(f"{n_plots} plot(s)")
+        if n_native_tabs > 0:
+            summary_parts.append(f"{n_native_tabs} tab(s)")
+        if logs:
+            summary_parts.append(logs[-1])
+
         self.statusBar().showMessage(
-            f"Plugin '{name}' — "
-            f"{n_added} added, {n_updated} updated, "
-            f"{n_removed} removed, {n_replaced} replaced.",
-            4000,
+            f"Plugin '{name}' — " + " | ".join(summary_parts),
+            5000,
         )
 
-        # Switch to OVERLAY mode so the user immediately sees the results
+        # Switch to OVERLAY mode so the user immediately sees the results on the spectrogram
         any_change = n_added + n_updated + n_removed + n_replaced
         if any_change > 0 and hasattr(self, 'set_interaction_mode'):
             self.set_interaction_mode('OVERLAY')
