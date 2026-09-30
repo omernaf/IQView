@@ -233,9 +233,18 @@ class OverlayManagerMixin:
         if overlay is None:
             return
 
+        geom_changed = any(
+            k in kwargs and getattr(overlay, k, None) != kwargs[k]
+            for k in ("points", "center", "radii", "shape")
+        )
+
         for key, value in kwargs.items():
             if hasattr(overlay, key):
                 setattr(overlay, key, value)
+
+        if geom_changed and "iq" not in kwargs:
+            overlay.iq = None
+            overlay.fs = None
 
         # Re-sync the graphics item (may re-create if shape changed)
         self._sync_overlay_item(overlay, _sync_multi_row=_refresh_ui)
@@ -764,10 +773,12 @@ class OverlayManagerMixin:
 
     def analyze_overlay_in_tab(self, overlay_or_id, tab_type: str = "time") -> None:
         """
-        Extract the narrowband DDC'd IQ for *overlay_or_id* via `o.extract_iq()`
+        Extract the narrowband DDC'd IQ for *overlay_or_id* via `o.get_samples()`
+        (using cached `o.iq` if present, or extracting on-demand from the file)
         and open it directly in Time Domain, Freq Domain, Eye Diagram, or Scatter Plot.
         """
         from PyQt6.QtWidgets import QMessageBox
+        from iqview.plugins.context import PluginContext
 
         overlay = (
             overlay_or_id
@@ -777,29 +788,29 @@ class OverlayManagerMixin:
         if overlay is None:
             return
 
-        if overlay.duration <= 0:
+        has_cached_iq = getattr(overlay, "iq", None) is not None and len(overlay.iq) > 0
+        if not has_cached_iq and overlay.duration <= 0:
             QMessageBox.information(
                 self, "Analyze Overlay",
                 "This overlay does not span a non-zero time duration."
             )
             return
 
-        ctx = None
-        if hasattr(self, '_build_plugin_context'):
-            ctx = self._build_plugin_context(scope="view", samples=None)
-        else:
-            from iqview.plugins.context import PluginContext
-            ctx = PluginContext(
-                sample_rate=getattr(self, 'rate', 1.0),
-                center_freq=getattr(self, 'fc', 0.0),
-                t_start=overlay.t_start,
-                t_end=overlay.t_end,
-                f_start=overlay.f_start,
-                f_end=overlay.f_end,
-                extract_iq_cb=getattr(self, 'extract_iq_segment', None),
-            )
+        if not has_cached_iq and hasattr(self, "_confirm_large_segment"):
+            if not self._confirm_large_segment(overlay.t_start, overlay.t_end, tab_type.title()):
+                return
 
-        seg, seg_fs = overlay.extract_iq(samples=None, info=ctx, baseband=True, filter_bw=True)
+        ctx = PluginContext(
+            sample_rate=float(getattr(self, 'rate', 1.0) or 1.0),
+            center_freq=float(getattr(self, 'fc', 0.0) or 0.0),
+            t_start=overlay.t_start,
+            t_end=overlay.t_end,
+            f_start=overlay.f_start,
+            f_end=overlay.f_end,
+            extract_iq_cb=lambda t0, t1: self.extract_iq_segment(t0, t1),
+        )
+
+        seg, seg_fs = overlay.get_samples(samples=None, info=ctx, baseband=True, filter_bw=True)
         if seg is None or len(seg) == 0:
             QMessageBox.warning(
                 self, "Analyze Overlay",

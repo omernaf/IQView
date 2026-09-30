@@ -502,15 +502,30 @@ class PluginManagerMixin:
 
     def _build_plugin_context(
         self,
-        plugin_info: dict,
-        scope: str,
-        t_start: float,
-        t_end: float,
-        f_start: float,
-        f_end: float,
+        plugin_info: Optional[dict] = None,
+        scope: str = "view",
+        t_start: Optional[float] = None,
+        t_end: Optional[float] = None,
+        f_start: Optional[float] = None,
+        f_end: Optional[float] = None,
         samples_ref: Optional[np.ndarray] = None,
+        samples: Optional[np.ndarray] = None,
     ) -> PluginContext:
-        """Construct a rich `PluginContext` (`info`) object for plugin execution."""
+        """Construct a rich `PluginContext` (`info`) object for plugin execution or overlay inspection."""
+        if t_start is None or t_end is None or f_start is None or f_end is None:
+            b_t0, b_t1, b_f0, b_f1 = self._get_execution_bounds(scope)
+            if t_start is None:
+                t_start = b_t0
+            if t_end is None:
+                t_end = b_t1
+            if f_start is None:
+                f_start = b_f0
+            if f_end is None:
+                f_end = b_f1
+
+        if samples_ref is None and samples is not None:
+            samples_ref = samples
+
         fs = float(getattr(self, 'rate', 1.0) or 1.0)
         fc = float(getattr(self, 'fc', 0.0) or 0.0)
         total_samples = self.get_total_samples() if hasattr(self, 'get_total_samples') else 0
@@ -541,15 +556,17 @@ class PluginManagerMixin:
             _snapshot_overlay_for_thread(o) for o in getattr(self, 'overlays', [])
         ]
 
+        params_dict = copy.deepcopy(plugin_info.get("params", {})) if isinstance(plugin_info, dict) else {}
+
         return PluginContext(
             sample_rate=fs,
             center_freq=fc,
-            t_start=t_start,
-            t_end=t_end,
-            f_start=f_start,
-            f_end=f_end,
+            t_start=float(t_start),
+            t_end=float(t_end),
+            f_start=float(f_start),
+            f_end=float(f_end),
             overlays=overlay_snapshots,
-            params=PluginParams(copy.deepcopy(plugin_info.get("params", {}))),
+            params=PluginParams(params_dict),
             time_markers=t_markers,
             freq_markers=f_markers,
             filter_bounds=filter_bounds,

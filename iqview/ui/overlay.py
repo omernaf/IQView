@@ -318,6 +318,27 @@ class Overlay:
         self.fs = out_fs
         return seg, out_fs
 
+    def get_samples(
+        self,
+        samples: Optional[Any] = None,
+        info: Optional[Any] = None,
+        baseband: bool = True,
+        filter_bw: bool = True,
+        decimate: bool = False,
+    ) -> Tuple[Any, float]:
+        """
+        Return ``(burst_iq, sample_rate_hz)`` for this overlay.
+        Uses cached ``self.iq`` if available, otherwise extracts and DDC-filters
+        from *samples* or *info*. Alias for :meth:`extract_iq`.
+        """
+        return self.extract_iq(
+            samples=samples,
+            info=info,
+            baseband=baseband,
+            filter_bw=filter_bw,
+            decimate=decimate,
+        )
+
     # ------------------------------------------------------------------
     # Hover Tooltip Formatting (Truncated Preview)
     # ------------------------------------------------------------------
@@ -678,6 +699,8 @@ class OverlayItem(pg.GraphicsObject):
                     o.points[idx] = self._from_view(px + dx, py + dy)
             except ValueError:
                 pass
+        o.iq = None
+        o.fs = None
 
     def _apply_move_drag(self, delta: QPointF) -> None:
         o = self.overlay
@@ -686,6 +709,8 @@ class OverlayItem(pg.GraphicsObject):
             o.points = [(p[0] + dt, p[1] + df) for p in o.points]
         if o.center:
             o.center = (o.center[0] + dt, o.center[1] + df)
+        o.iq = None
+        o.fs = None
 
     # ------------------------------------------------------------------
     # Qt mouse events
