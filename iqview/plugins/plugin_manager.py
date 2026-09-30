@@ -247,12 +247,12 @@ class PluginManagerMixin:
 
         menu.clear()
 
-        studio_action = QAction("🛠  &Plugin Studio…", self)
+        studio_action = QAction("&Plugin Studio…", self)
         studio_action.setStatusTip("Open Plugin Studio (Manage, Chain Builder, Template Generator)")
         studio_action.triggered.connect(lambda: self.open_plugin_studio(initial_tab=0))
         menu.addAction(studio_action)
 
-        chain_action = QAction("⛓  &Chain Builder…", self)
+        chain_action = QAction("&Chain Builder…", self)
         chain_action.setStatusTip("Open the visual Plugin Chain Builder")
         chain_action.triggered.connect(lambda: self.open_plugin_studio(initial_tab=1))
         menu.addAction(chain_action)
@@ -282,8 +282,7 @@ class PluginManagerMixin:
         if self._loaded_plugins:
             menu.addSeparator()
             for name, info in self._loaded_plugins.items():
-                prefix = "⛓  " if info.get("chain") is not None else "▶  "
-                action = QAction(f"{prefix}{name}", self)
+                action = QAction(f"▶  {name}", self)
                 desc = info.get("description", "")
                 tip  = f"Run plugin: {name}"
                 if desc:

@@ -8,7 +8,7 @@ Tabs
 1. Manage & Run      — Search/filter plugins, pin favorites, edit parameters
                        inline (with per-step chain execution & Save Defaults to .py),
                        and read rich plugin documentation.
-2. ⛓ Chain Builder   — Visually assemble multi-step PluginChain pipelines,
+2. Chain Builder     — Visually assemble multi-step PluginChain pipelines,
                        configure per-step default parameters, register in-session,
                        test-run, or export as a reference or standalone .py file.
 3. + Create Plugin   — Scaffold new .py plugins from 5 starter templates with a
@@ -117,8 +117,8 @@ class PluginStudioDialog(QDialog):
         self.tab_chain = QWidget()
         self.tab_create = QWidget()
 
-        self.tabs.addTab(self.tab_manage, "⚙ Manage && Run")
-        self.tabs.addTab(self.tab_chain, "⛓ Chain Builder")
+        self.tabs.addTab(self.tab_manage, "Manage && Run")
+        self.tabs.addTab(self.tab_chain, "Chain Builder")
         self.tabs.addTab(self.tab_create, "+ Create Plugin (.py)")
 
         self._build_manage_tab()
@@ -151,7 +151,7 @@ class PluginStudioDialog(QDialog):
 
         filter_row = QHBoxLayout()
         self.ed_search = QLineEdit()
-        self.ed_search.setPlaceholderText("🔍 Search plugins…")
+        self.ed_search.setPlaceholderText("Search plugins…")
         self.ed_search.textChanged.connect(lambda _: self._populate_manage_list())
 
         self.cb_filter_type = QComboBox()
@@ -159,7 +159,7 @@ class PluginStudioDialog(QDialog):
         self.cb_filter_type.addItem("Built-In", userData="builtin")
         self.cb_filter_type.addItem("Chains", userData="chain")
         self.cb_filter_type.addItem("Custom (.py)", userData="custom")
-        self.cb_filter_type.addItem("Pinned (★)", userData="pinned")
+        self.cb_filter_type.addItem("Favorites (★)", userData="pinned")
         self.cb_filter_type.currentIndexChanged.connect(lambda _: self._populate_manage_list())
 
         filter_row.addWidget(self.ed_search, 1)
@@ -171,11 +171,11 @@ class PluginStudioDialog(QDialog):
         left_layout.addWidget(self.list_manage_plugins, 1)
 
         left_btns = QHBoxLayout()
-        btn_load = QPushButton("📂 Load .py…")
+        btn_load = QPushButton("Load .py…")
         btn_load.setToolTip("Load one or more Python plugin files (.py)")
         btn_load.clicked.connect(self._on_studio_load_plugin)
 
-        btn_new_chain = QPushButton("⛓ New Chain…")
+        btn_new_chain = QPushButton("New Chain…")
         btn_new_chain.setToolTip("Switch to the Chain Builder tab")
         btn_new_chain.clicked.connect(lambda: self.tabs.setCurrentIndex(1))
 
@@ -205,18 +205,18 @@ class PluginStudioDialog(QDialog):
         self.lbl_manage_title.setStyleSheet(f"font-size: 15px; font-weight: bold; color: {p.text_header}; border: none;")
         title_row.addWidget(self.lbl_manage_title, 1)
 
-        self.btn_pin_plugin = QPushButton("☆ Pin")
-        self.btn_pin_plugin.setFixedWidth(80)
-        self.btn_pin_plugin.setToolTip("Pin/unpin this plugin to the Quick-Run bar")
+        self.btn_pin_plugin = QPushButton("☆ Favorite")
+        self.btn_pin_plugin.setFixedWidth(95)
+        self.btn_pin_plugin.setToolTip("Mark/unmark this plugin as a Favorite on the main Plugins tab")
         self.btn_pin_plugin.clicked.connect(self._on_toggle_pin_selected)
         title_row.addWidget(self.btn_pin_plugin)
 
-        self.btn_open_doc_popup = QPushButton("📖 Popup Docs")
+        self.btn_open_doc_popup = QPushButton("Popup Docs")
         self.btn_open_doc_popup.setToolTip("Open documentation in a standalone dialog")
         self.btn_open_doc_popup.clicked.connect(self._on_open_selected_doc_dialog)
         title_row.addWidget(self.btn_open_doc_popup)
 
-        self.btn_edit_in_chain_builder = QPushButton("⛓ Edit Chain")
+        self.btn_edit_in_chain_builder = QPushButton("Edit Chain")
         self.btn_edit_in_chain_builder.setToolTip("Load this chain into the Chain Builder tab for editing")
         self.btn_edit_in_chain_builder.clicked.connect(self._on_edit_selected_chain)
         self.btn_edit_in_chain_builder.setVisible(False)
@@ -245,7 +245,7 @@ class PluginStudioDialog(QDialog):
         self.cb_studio_scope.currentIndexChanged.connect(self._sync_scope_to_panel)
         exec_row.addWidget(self.cb_studio_scope)
 
-        self.btn_studio_run = QPushButton("▶ Run Plugin")
+        self.btn_studio_run = QPushButton("Run Plugin")
         self.btn_studio_run.setStyleSheet(
             f"QPushButton {{ background-color: {p.accent_dim}; color: {p.text_header}; font-weight: bold; padding: 6px 14px; }}"
             f"QPushButton:hover {{ border-color: {p.accent}; }}"
@@ -255,11 +255,11 @@ class PluginStudioDialog(QDialog):
 
         exec_row.addStretch(1)
 
-        self.btn_toggle_plugin_ov = QPushButton("👁 Show/Hide Overlays")
+        self.btn_toggle_plugin_ov = QPushButton("Show/Hide Overlays")
         self.btn_toggle_plugin_ov.clicked.connect(self._on_toggle_selected_plugin_overlays)
         exec_row.addWidget(self.btn_toggle_plugin_ov)
 
-        self.btn_clear_plugin_ov = QPushButton("🧹 Clear Overlays")
+        self.btn_clear_plugin_ov = QPushButton("Clear Overlays")
         self.btn_clear_plugin_ov.clicked.connect(self._on_clear_selected_plugin_overlays)
         exec_row.addWidget(self.btn_clear_plugin_ov)
 
@@ -285,13 +285,13 @@ class PluginStudioDialog(QDialog):
         params_page_layout.addWidget(self.params_scroll, 1)
 
         param_actions_row = QHBoxLayout()
-        self.btn_apply_params = QPushButton("✓ Apply Parameters")
+        self.btn_apply_params = QPushButton("Apply Parameters")
         self.btn_apply_params.clicked.connect(self._on_apply_manage_params)
 
-        self.btn_reset_params = QPushButton("↺ Reset to Defaults")
+        self.btn_reset_params = QPushButton("Reset to Defaults")
         self.btn_reset_params.clicked.connect(self._on_reset_manage_params)
 
-        self.btn_save_defaults_py = QPushButton("💾 Save Defaults to .py")
+        self.btn_save_defaults_py = QPushButton("Save Defaults to .py")
         self.btn_save_defaults_py.setToolTip("Write current parameter values as defaults into the plugin's .py file")
         self.btn_save_defaults_py.clicked.connect(self._on_save_defaults_to_py)
 
@@ -308,8 +308,8 @@ class PluginStudioDialog(QDialog):
             f"QTextBrowser {{ background-color: {p.bg_input}; color: {p.text_main}; border: 1px solid {p.border}; border-radius: 4px; padding: 10px; }}"
         )
 
-        self.manage_subtabs.addTab(self.params_page, "⚙ Parameters && Step Execution")
-        self.manage_subtabs.addTab(self.doc_browser, "📖 Documentation && Reference")
+        self.manage_subtabs.addTab(self.params_page, "Parameters && Step Execution")
+        self.manage_subtabs.addTab(self.doc_browser, "Documentation && Reference")
         right_layout.addWidget(self.manage_subtabs, 1)
 
         splitter.addWidget(right_widget)
@@ -318,7 +318,7 @@ class PluginStudioDialog(QDialog):
         layout.addWidget(splitter, 1)
 
     # ==================================================================
-    # TAB 2: ⛓ Chain Builder
+    # TAB 2: Chain Builder
     # ==================================================================
 
     def _build_chain_tab(self) -> None:
@@ -363,7 +363,7 @@ class PluginStudioDialog(QDialog):
         self.list_available_for_chain.itemDoubleClicked.connect(lambda _: self._on_add_step_to_chain())
         col1_layout.addWidget(self.list_available_for_chain, 1)
 
-        btn_add_step = QPushButton("➕ Add Selected Plugin to Pipeline →")
+        btn_add_step = QPushButton("Add Selected Plugin to Pipeline")
         btn_add_step.clicked.connect(self._on_add_step_to_chain)
         col1_layout.addWidget(btn_add_step)
         chain_splitter.addWidget(col1)
@@ -376,13 +376,13 @@ class PluginStudioDialog(QDialog):
         col2_layout.addWidget(self.list_chain_steps, 1)
 
         step_btns = QHBoxLayout()
-        btn_up = QPushButton("⬆ Up")
+        btn_up = QPushButton("Move Up")
         btn_up.clicked.connect(self._on_move_chain_step_up)
-        btn_down = QPushButton("⬇ Down")
+        btn_down = QPushButton("Move Down")
         btn_down.clicked.connect(self._on_move_chain_step_down)
-        btn_rm = QPushButton("🗑 Remove")
+        btn_rm = QPushButton("Remove")
         btn_rm.clicked.connect(self._on_remove_chain_step)
-        btn_clr = QPushButton("🧹 Clear")
+        btn_clr = QPushButton("Clear")
         btn_clr.clicked.connect(self._on_clear_chain_steps)
 
         step_btns.addWidget(btn_up)
@@ -401,7 +401,7 @@ class PluginStudioDialog(QDialog):
         self.lbl_chain_step_title.setWordWrap(True)
         step_hdr_row.addWidget(self.lbl_chain_step_title, 1)
 
-        self.btn_chain_step_docs = QPushButton("📖 Step Docs")
+        self.btn_chain_step_docs = QPushButton("Step Docs")
         self.btn_chain_step_docs.setEnabled(False)
         self.btn_chain_step_docs.clicked.connect(self._on_open_chain_step_docs)
         step_hdr_row.addWidget(self.btn_chain_step_docs)
@@ -430,19 +430,19 @@ class PluginStudioDialog(QDialog):
         bottom_bar.addWidget(self.chk_chain_standalone)
         bottom_bar.addStretch(1)
 
-        btn_reg_session = QPushButton("⚡ Register Chain in Session")
+        btn_reg_session = QPushButton("Register Chain in Session")
         btn_reg_session.setToolTip("Register this chain immediately in IQView without needing to save a .py file")
         btn_reg_session.clicked.connect(self._on_register_chain_in_session)
         bottom_bar.addWidget(btn_reg_session)
 
-        btn_run_chain_now = QPushButton("▶ Register && Run Chain Now")
+        btn_run_chain_now = QPushButton("Register && Run Chain Now")
         btn_run_chain_now.setStyleSheet(
             f"QPushButton {{ background-color: {p.accent_dim}; color: {p.text_header}; font-weight: bold; padding: 6px 14px; }}"
         )
         btn_run_chain_now.clicked.connect(self._on_register_and_run_chain)
         bottom_bar.addWidget(btn_run_chain_now)
 
-        btn_save_chain_py = QPushButton("💾 Save Chain as .py…")
+        btn_save_chain_py = QPushButton("Save Chain as .py…")
         btn_save_chain_py.clicked.connect(self._on_save_chain_as_py)
         bottom_bar.addWidget(btn_save_chain_py)
 
@@ -502,9 +502,9 @@ class PluginStudioDialog(QDialog):
         param_layout.addWidget(self.tbl_tpl_params, 1)
 
         p_btn_row = QHBoxLayout()
-        btn_add_p = QPushButton("➕ Add Parameter")
+        btn_add_p = QPushButton("Add Parameter")
         btn_add_p.clicked.connect(self._on_add_template_param_row)
-        btn_del_p = QPushButton("🗑 Remove Selected")
+        btn_del_p = QPushButton("Remove Selected")
         btn_del_p.clicked.connect(self._on_remove_template_param_row)
         p_btn_row.addWidget(btn_add_p)
         p_btn_row.addWidget(btn_del_p)
@@ -523,9 +523,9 @@ class PluginStudioDialog(QDialog):
         code_layout.addWidget(self.ed_tpl_code, 1)
 
         code_btn_row = QHBoxLayout()
-        btn_regen = QPushButton("↺ Regenerate Preview from Form")
+        btn_regen = QPushButton("Regenerate Preview from Form")
         btn_regen.clicked.connect(self._update_template_code_preview)
-        btn_save_load = QPushButton("💾 Save && Load .py Plugin…")
+        btn_save_load = QPushButton("Save && Load .py Plugin…")
         btn_save_load.setStyleSheet(
             f"QPushButton {{ background-color: {p.accent_dim}; color: {p.text_header}; font-weight: bold; padding: 6px 14px; }}"
         )
@@ -600,7 +600,7 @@ class PluginStudioDialog(QDialog):
             ):
                 continue
 
-            badge = "⛓ Chain" if is_chain else ("Built-In" if is_builtin else "Custom")
+            badge = "Chain" if is_chain else ("Built-In" if is_builtin else "Custom")
             pin_prefix = "★ " if is_pin else ""
             cnt = ov_counts.get(name, 0)
             cnt_suffix = f"  ({cnt} overlays)" if cnt > 0 else ""
@@ -615,14 +615,17 @@ class PluginStudioDialog(QDialog):
                 selected_row = row_idx
             row_idx += 1
 
-        self.list_manage_plugins.blockSignals(False)
         if self.list_manage_plugins.count() > 0:
             self.list_manage_plugins.setCurrentRow(selected_row)
+            self.list_manage_plugins.blockSignals(False)
             self._on_manage_selection_changed(self.list_manage_plugins.currentItem(), None)
         else:
+            self.list_manage_plugins.blockSignals(False)
             self._selected_manage_plugin = None
             self.lbl_manage_title.setText("No matching plugins")
             self.lbl_manage_meta.setText("")
+            self._rebuild_manage_params_form("", {})
+            self._rebuild_manage_doc_html("", {})
 
     def _on_manage_selection_changed(self, current: Optional[QListWidgetItem], _prev) -> None:
         if current is None:
@@ -640,7 +643,7 @@ class PluginStudioDialog(QDialog):
         desc = str(info.get("description", ""))
 
         pinned = name in self._get_pinned_set()
-        self.btn_pin_plugin.setText("★ Pinned" if pinned else "☆ Pin")
+        self.btn_pin_plugin.setText("★ Favorite" if pinned else "☆ Favorite")
 
         self.lbl_manage_title.setText(name)
         t_label = "PluginChain" if is_chain else ("Built-In Plugin" if is_builtin else "Custom .py Plugin")
@@ -718,10 +721,16 @@ class PluginStudioDialog(QDialog):
             w.setText(str(val))
 
     def _rebuild_manage_params_form(self, name: str, info: dict) -> None:
-        while self.params_form_layout.count():
-            item = self.params_form_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        old_container = self.params_scroll.takeWidget()
+        if old_container is not None:
+            old_container.hide()
+            old_container.setParent(None)
+            old_container.deleteLater()
+
+        self.params_container = QWidget()
+        self.params_form_layout = QVBoxLayout(self.params_container)
+        self.params_form_layout.setContentsMargins(4, 4, 4, 4)
+        self.params_form_layout.setSpacing(8)
         self._manage_param_widgets.clear()
 
         params_spec = info.get("params_spec", {}) or {}
@@ -732,6 +741,7 @@ class PluginStudioDialog(QDialog):
             lbl.setStyleSheet(f"color: {self.palette_obj.text_dim}; font-style: italic;")
             self.params_form_layout.addWidget(lbl)
             self.params_form_layout.addStretch(1)
+            self.params_scroll.setWidget(self.params_container)
             return
 
         has_steps = any(
@@ -757,11 +767,11 @@ class PluginStudioDialog(QDialog):
 
                 hdr = QHBoxLayout()
                 hdr.addStretch(1)
-                btn_step_only = QPushButton("▶ Run Step Only")
+                btn_step_only = QPushButton("Run Step Only")
                 btn_step_only.setToolTip(f"Apply parameters and run only {grp_info['title']}")
                 btn_step_only.clicked.connect(lambda _, idx=s_idx: self._on_run_chain_step_from_manage(idx, True))
 
-                btn_from_here = QPushButton("⏩ Run From Here")
+                btn_from_here = QPushButton("Run From Here")
                 btn_from_here.setToolTip(f"Apply parameters and run from {grp_info['title']} onward")
                 btn_from_here.clicked.connect(lambda _, idx=s_idx: self._on_run_chain_step_from_manage(idx, False))
 
@@ -796,6 +806,7 @@ class PluginStudioDialog(QDialog):
             self.params_form_layout.addWidget(form_box)
 
         self.params_form_layout.addStretch(1)
+        self.params_scroll.setWidget(self.params_container)
 
     def _rebuild_manage_doc_html(self, name: str, info: dict) -> None:
         p = self.palette_obj
@@ -834,8 +845,10 @@ class PluginStudioDialog(QDialog):
         )
 
         body = raw_doc if raw_doc else f"<h3>{_html.escape(name)}</h3><p>{desc}</p>"
+        has_inline_table = "<table" in raw_doc.lower()
+        extra_table = "" if has_inline_table else f"<hr/>{table_html}"
         self.doc_browser.setHtml(
-            f"<div style=\"font-family:'Segoe UI',sans-serif; line-height:1.45;\">{body}<hr/>{table_html}</div>"
+            f"<div style=\"font-family:'Segoe UI',sans-serif; line-height:1.45;\">{body}{extra_table}</div>"
         )
 
     def _collect_manage_params(self) -> Dict[str, Any]:
@@ -966,7 +979,7 @@ class PluginStudioDialog(QDialog):
         loaded = getattr(self.parent_window, "_loaded_plugins", {})
         for name, info in loaded.items():
             if info.get("chain") is not None:
-                self.cb_load_existing_chain.addItem(f"⛓ {name}", userData=name)
+                self.cb_load_existing_chain.addItem(f"{name} [Chain]", userData=name)
                 continue
             cat = info.get("category", "General")
             item = QListWidgetItem(f"{name}  [{cat}]")
@@ -1014,11 +1027,16 @@ class PluginStudioDialog(QDialog):
         self.list_chain_steps.blockSignals(False)
 
         if 0 <= select_row < len(self._chain_steps):
+            self.list_chain_steps.blockSignals(True)
             self.list_chain_steps.setCurrentRow(select_row)
+            self.list_chain_steps.blockSignals(False)
             self._on_chain_step_selected(select_row)
         elif self._chain_steps:
-            self.list_chain_steps.setCurrentRow(len(self._chain_steps) - 1)
-            self._on_chain_step_selected(len(self._chain_steps) - 1)
+            last_idx = len(self._chain_steps) - 1
+            self.list_chain_steps.blockSignals(True)
+            self.list_chain_steps.setCurrentRow(last_idx)
+            self.list_chain_steps.blockSignals(False)
+            self._on_chain_step_selected(last_idx)
         else:
             self._active_chain_step_idx = -1
             self._on_chain_step_selected(-1)
@@ -1086,13 +1104,20 @@ class PluginStudioDialog(QDialog):
             self._save_active_chain_step_edits()
         self._active_chain_step_idx = row
 
-        while self.chain_step_form_layout.rowCount():
-            self.chain_step_form_layout.removeRow(0)
+        old_host = self.chain_step_scroll.takeWidget()
+        if old_host is not None:
+            old_host.hide()
+            old_host.setParent(None)
+            old_host.deleteLater()
+
+        self.chain_step_form_host = QWidget()
+        self.chain_step_form_layout = QFormLayout(self.chain_step_form_host)
         self._chain_step_widgets.clear()
 
         if row < 0 or row >= len(self._chain_steps):
             self.lbl_chain_step_title.setText("Select a pipeline step to configure its default parameters.")
             self.btn_chain_step_docs.setEnabled(False)
+            self.chain_step_scroll.setWidget(self.chain_step_form_host)
             return
 
         step_entry = self._chain_steps[row]
@@ -1106,6 +1131,7 @@ class PluginStudioDialog(QDialog):
 
         if not params_spec:
             self.chain_step_form_layout.addRow(QLabel("No configurable parameters for this step."))
+            self.chain_step_scroll.setWidget(self.chain_step_form_host)
             return
 
         for key, spec in params_spec.items():
@@ -1117,6 +1143,8 @@ class PluginStudioDialog(QDialog):
                 lbl_w.setToolTip(str(spec["tooltip"]))
             self.chain_step_form_layout.addRow(lbl_w, w)
             self._chain_step_widgets[key] = w
+
+        self.chain_step_scroll.setWidget(self.chain_step_form_host)
 
     def _on_open_chain_step_docs(self) -> None:
         if 0 <= self._active_chain_step_idx < len(self._chain_steps):
@@ -1281,6 +1309,7 @@ class PluginStudioDialog(QDialog):
 
         params_dict_lines = ["PLUGIN_PARAMS = {"]
         param_reads = []
+        doc_table_rows = []
         for r in range(self.tbl_tpl_params.rowCount()):
             key = (self.tbl_tpl_params.item(r, 0).text() if self.tbl_tpl_params.item(r, 0) else f"p{r}").strip()
             ptype = (self.tbl_tpl_params.item(r, 1).text() if self.tbl_tpl_params.item(r, 1) else "float").strip()
@@ -1311,12 +1340,47 @@ class PluginStudioDialog(QDialog):
                 f"    {key!r}: {{\"type\": {ptype!r}, \"default\": {def_repr}, \"label\": {label!r}, \"tooltip\": {tip!r}}},"
             )
             param_reads.append(f"    {key} = {cast_fn}(info.params.get({key!r}, {def_repr}))")
+            doc_table_rows.append(
+                f"    <tr>"
+                f"<td style='padding:4px 8px;'><b>{_html.escape(label)}</b> (<code>{_html.escape(key)}</code>)</td>"
+                f"<td style='padding:4px 8px;'><code>{_html.escape(ptype)}</code></td>"
+                f"<td style='padding:4px 8px;'><code>{_html.escape(def_repr)}</code></td>"
+                f"<td style='padding:4px 8px;'>{_html.escape(tip or '—')}</td>"
+                f"</tr>"
+            )
         params_dict_lines.append("}")
         params_block = "\n".join(params_dict_lines)
         reads_block = "\n".join(param_reads) if param_reads else "    pass"
 
+        if doc_table_rows:
+            doc_params_section = (
+                "<h4>Parameters</h4>\n"
+                "<table border='1' cellspacing='0' cellpadding='4' style='border-collapse:collapse; width:100%;'>\n"
+                "  <thead>\n"
+                "    <tr>\n"
+                "      <th align='left' style='padding:4px 8px;'>Parameter</th>\n"
+                "      <th align='left' style='padding:4px 8px;'>Type</th>\n"
+                "      <th align='left' style='padding:4px 8px;'>Default</th>\n"
+                "      <th align='left' style='padding:4px 8px;'>Description</th>\n"
+                "    </tr>\n"
+                "  </thead>\n"
+                "  <tbody>\n"
+                + "\n".join(doc_table_rows)
+                + "\n  </tbody>\n</table>"
+            )
+        else:
+            doc_params_section = "<h4>Parameters</h4>\n<p><i>This plugin has no configurable parameters.</i></p>"
+
         if tpl_id == "plot_1d":
             extra_flags = "PLUGIN_NEEDS_WIDEBAND_IQ = True"
+            doc_op_section = (
+                "<h4>Operation &amp; Algorithm</h4>\n"
+                "<ol>\n"
+                "  <li><b>Power Envelope</b>: Computes instantaneous power <code>|x[n]|²</code> over the active scope.</li>\n"
+                "  <li><b>Moving-Average Smoothing</b>: Convolves the instantaneous power with a rectangular window.</li>\n"
+                "  <li><b>Threshold Comparison &amp; Plotting</b>: Estimates the median noise floor and opens an interactive 1D plot tab.</li>\n"
+                "</ol>"
+            )
             body = f"""def run(samples: np.ndarray, info) -> PluginResult:
     result = PluginResult()
 {reads_block}
@@ -1344,6 +1408,14 @@ class PluginStudioDialog(QDialog):
 """
         elif tpl_id == "batch_detector":
             extra_flags = "PLUGIN_NEEDS_WIDEBAND_IQ = True\nPLUGIN_BATCH_SECONDS = 1.0"
+            doc_op_section = (
+                "<h4>Operation &amp; Algorithm</h4>\n"
+                "<ol>\n"
+                "  <li><b>Batch Streaming</b>: Processes long recordings in <code>PLUGIN_BATCH_SECONDS</code> chunks to bound memory usage.</li>\n"
+                "  <li><b>Adaptive Thresholding</b>: Estimates noise floor from the 25th percentile power and detects contiguous regions above threshold.</li>\n"
+                "  <li><b>Overlay Creation &amp; Zero-Copy IQ</b>: Emits locked <code>Rect</code> overlays and attaches <code>r.iq</code> and <code>r.fs</code> for downstream plugins.</li>\n"
+                "</ol>"
+            )
             body = f"""def run(samples: np.ndarray, info) -> PluginResult:
     result = PluginResult()
 {reads_block}
@@ -1376,6 +1448,14 @@ class PluginStudioDialog(QDialog):
 """
         elif tpl_id == "overlay_processor":
             extra_flags = "PLUGIN_NEEDS_WIDEBAND_IQ = False"
+            doc_op_section = (
+                "<h4>Operation &amp; Algorithm</h4>\n"
+                "<ol>\n"
+                "  <li><b>Overlay Iteration</b>: Iterates over all <code>Rect</code> overlays in <code>info.overlays</code>.</li>\n"
+                "  <li><b>Baseband Extraction</b>: Calls <code>o.get_samples(samples, info)</code> to reuse cached <code>o.iq</code> or perform lazy DDC.</li>\n"
+                "  <li><b>In-Place Annotation</b>: Updates each overlay's <code>metadata</code> and <code>hover_str</code> via <code>result.update(o.id, ...)</code>.</li>\n"
+                "</ol>"
+            )
             body = f"""def run(samples: np.ndarray, info) -> PluginResult:
     result = PluginResult()
 {reads_block}
@@ -1393,6 +1473,13 @@ class PluginStudioDialog(QDialog):
 """
         elif tpl_id == "native_tabs":
             extra_flags = "PLUGIN_NEEDS_WIDEBAND_IQ = True"
+            doc_op_section = (
+                "<h4>Operation &amp; Algorithm</h4>\n"
+                "<ol>\n"
+                "  <li><b>Signal Extraction</b>: Reads complex IQ samples from the selected scope.</li>\n"
+                "  <li><b>Native Tab Launch</b>: Opens IQView's built-in Time Domain and Constellation analysis tabs via <code>PluginResult</code>.</li>\n"
+                "</ol>"
+            )
             body = f"""def run(samples: np.ndarray, info) -> PluginResult:
     result = PluginResult()
 {reads_block}
@@ -1404,6 +1491,10 @@ class PluginStudioDialog(QDialog):
 """
         else:
             extra_flags = "PLUGIN_NEEDS_WIDEBAND_IQ = True"
+            doc_op_section = (
+                "<h4>Operation &amp; Algorithm</h4>\n"
+                "<p>Describe the signal processing stages, inputs, and outputs of this plugin here.</p>"
+            )
             body = f"""def run(samples: np.ndarray, info) -> PluginResult:
     result = PluginResult()
 {reads_block}
@@ -1425,6 +1516,8 @@ PLUGIN_CATEGORY = {cat!r}
 PLUGIN_DOC = """
 <h3>{_html.escape(name)}</h3>
 <p>{_html.escape(desc)}</p>
+{doc_op_section}
+{doc_params_section}
 """
 
 {params_block}
@@ -1458,3 +1551,4 @@ PLUGIN_DOC = """
                 self, "Plugin Created & Loaded",
                 f"Saved plugin to:\n{path}\n\nand loaded '{loaded_name}' into IQView."
             )
+

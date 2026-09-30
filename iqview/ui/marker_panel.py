@@ -386,17 +386,11 @@ class MarkerPanel(QFrame):
             "• Full File: entire recording from 0s to end"
         )
 
-        self.btn_plugin_studio = QPushButton("🛠 Studio…")
+        self.btn_plugin_studio = QPushButton("Plugin Studio…")
         self.btn_plugin_studio.setFixedHeight(28)
         self.btn_plugin_studio.setStyleSheet("QPushButton { padding: 3px 8px; font-weight: bold; }")
         self.btn_plugin_studio.setToolTip("Open Plugin Studio (Manage & Run, Chain Builder, Template Generator)")
         self.btn_plugin_studio.clicked.connect(lambda: self.parent_window.open_plugin_studio(initial_tab=0))
-
-        self.btn_build_chain = QPushButton("⛓ Chain Builder…")
-        self.btn_build_chain.setFixedHeight(28)
-        self.btn_build_chain.setStyleSheet("QPushButton { padding: 3px 8px; }")
-        self.btn_build_chain.setToolTip("Visually build and run a multi-step plugin chain")
-        self.btn_build_chain.clicked.connect(lambda: self.parent_window.open_plugin_studio(initial_tab=1))
 
         self.btn_load_plugin = QPushButton("Load .py...")
         self.btn_load_plugin.setFixedHeight(28)
@@ -418,7 +412,6 @@ class MarkerPanel(QFrame):
         self.plugins_control_layout.addStretch()
         self.plugins_control_layout.addWidget(self.cb_plugin_scope)
         self.plugins_control_layout.addWidget(self.btn_plugin_studio)
-        self.plugins_control_layout.addWidget(self.btn_build_chain)
         self.plugins_control_layout.addWidget(self.btn_load_plugin)
         self.plugins_control_layout.addWidget(self.btn_clear_overlays_plugins)
         
@@ -460,7 +453,7 @@ class MarkerPanel(QFrame):
             self.cb_bpf, self.cb_bsf,
             self.btn_manual_overlay, self.btn_clear_overlays_overlay,
             self.btn_quick_run, self.btn_quick_config, self.btn_quick_docs,
-            self.btn_plugin_studio, self.btn_build_chain,
+            self.btn_plugin_studio,
             self.btn_load_plugin, self.btn_clear_overlays_plugins,
         ]:
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -1227,28 +1220,30 @@ class MarkerPanel(QFrame):
             else []
         )
 
-        # Sort so pinned plugins appear first, preserving insertion order within each group
+        # Show only favorite (pinned) plugins on the main Plugins tab
         all_items = list(loaded_plugins.items())
-        plugins_data = (
-            [(n, inf) for n, inf in all_items if n in pinned_set]
-            + [(n, inf) for n, inf in all_items if n not in pinned_set]
-        )
+        plugins_data = [(n, inf) for n, inf in all_items if n in pinned_set]
 
-        # Sync Quick-Run dropdown
+        # Sync Quick-Run dropdown with favorite plugins
         if hasattr(self, 'cb_quick_plugin'):
             prev_sel = self.cb_quick_plugin.currentData()
             self.cb_quick_plugin.blockSignals(True)
             self.cb_quick_plugin.clear()
             for name, info in plugins_data:
-                prefix = "★ " if name in pinned_set else ""
-                if info.get("chain") is not None:
-                    prefix += "⛓ "
-                self.cb_quick_plugin.addItem(f"{prefix}{name}", userData=name)
+                self.cb_quick_plugin.addItem(f"★ {name}", userData=name)
             if prev_sel:
                 idx = self.cb_quick_plugin.findData(prev_sel)
                 if idx >= 0:
                     self.cb_quick_plugin.setCurrentIndex(idx)
             self.cb_quick_plugin.blockSignals(False)
+            has_favs = len(plugins_data) > 0
+            self.cb_quick_plugin.setEnabled(has_favs)
+            if hasattr(self, 'btn_quick_run'):
+                self.btn_quick_run.setEnabled(has_favs)
+            if hasattr(self, 'btn_quick_config'):
+                self.btn_quick_config.setEnabled(has_favs)
+            if hasattr(self, 'btn_quick_docs'):
+                self.btn_quick_docs.setEnabled(has_favs)
 
         # Build / rebuild header once
         if not hasattr(self, '_plugin_header_widget'):
@@ -1256,10 +1251,22 @@ class MarkerPanel(QFrame):
             hl = QHBoxLayout(hw)
             hl.setContentsMargins(5, 2, 5, 2)
             hl.setSpacing(8)
-            l_name = QLabel("Plugin Name"); l_name.setObjectName("header_label")
+            l_name = QLabel("Favorite Plugins"); l_name.setObjectName("header_label")
             hl.addWidget(l_name, 1)
             self._plugin_header_widget = hw
             self.plugins_scroll_layout.insertWidget(0, hw)
+
+        if not hasattr(self, '_lbl_no_favorites'):
+            self._lbl_no_favorites = QLabel(
+                "No favorite plugins marked yet. Open 'Plugin Studio…' to browse all plugins, "
+                "run them, or mark favorites (★) to pin them here."
+            )
+            self._lbl_no_favorites.setStyleSheet("color: #888888; font-style: italic; padding: 6px 8px;")
+            self._lbl_no_favorites.setWordWrap(True)
+            self.plugins_scroll_layout.insertWidget(1, self._lbl_no_favorites)
+
+        self._plugin_header_widget.setVisible(len(plugins_data) > 0)
+        self._lbl_no_favorites.setVisible(len(plugins_data) == 0)
 
         # Sync row count
         while len(self._plugin_rows) > len(plugins_data):
@@ -1271,17 +1278,17 @@ class MarkerPanel(QFrame):
             rl.setContentsMargins(5, 0, 5, 0)
             rl.setSpacing(8)
 
-            btn_pin = QPushButton("☆")
+            btn_pin = QPushButton("★")
             btn_pin.setFixedSize(28, 28)
-            btn_pin.setToolTip("Pin/unpin plugin to top of list & Quick-Run dropdown")
+            btn_pin.setToolTip("Remove from favorite plugins")
             btn_pin.setStyleSheet("QPushButton { padding: 2px; font-size: 13px; }")
 
             lbl_name = QLabel()
             lbl_name.setStyleSheet("font-weight: bold; color: #00aaff;")
             
-            btn_docs = QPushButton("📖 Docs")
+            btn_docs = QPushButton("Docs")
             btn_docs.setFixedHeight(28)
-            btn_docs.setMinimumWidth(68)
+            btn_docs.setMinimumWidth(60)
             btn_docs.setStyleSheet("QPushButton { padding: 3px 8px; }")
             btn_docs.setToolTip("View detailed plugin documentation, operation, and parameters")
 
@@ -1333,7 +1340,7 @@ class MarkerPanel(QFrame):
             is_pin = name in pinned_set
             is_chain = info.get("chain") is not None
             is_builtin = bool(info.get("builtin", False))
-            badge = " [⛓ Chain]" if is_chain else (" [Built-In]" if is_builtin else " [Custom]")
+            badge = " [Chain]" if is_chain else (" [Built-In]" if is_builtin else " [Custom]")
 
             rd['btn_pin'].setText("★" if is_pin else "☆")
             rd['lbl_name'].setText(f"{name}{badge}")
@@ -1622,6 +1629,12 @@ class PluginDocDialog(QDialog):
         )
 
         body_doc = raw_doc if raw_doc else f"<h3>{_html.escape(self.plugin_name)}</h3><p>{desc}</p>"
+        has_inline_table = "<table" in raw_doc.lower()
+        extra_params_block = (
+            ""
+            if has_inline_table
+            else f'<hr style="border: 0; border-top: 1px solid {p.border}; margin: 14px 0;" />{params_table_html}'
+        )
 
         full_html = f"""
         <div style="font-family: 'Segoe UI', sans-serif; line-height: 1.45;">
@@ -1631,8 +1644,7 @@ class PluginDocDialog(QDialog):
                 <b>IQ Mode:</b> {iq_mode}
             </div>
             {body_doc}
-            <hr style="border: 0; border-top: 1px solid {p.border}; margin: 14px 0;" />
-            {params_table_html}
+            {extra_params_block}
         </div>
         """
         browser.setHtml(full_html)
