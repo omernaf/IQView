@@ -376,7 +376,6 @@ def run(samples: np.ndarray, info) -> PluginResult:
     if channel_spacing <= 0 or fs <= 0:
         return result
 
-    # 6 dB -> 10**(6/10) = 3.981 (~4.0x)
     thresh_mult = float(10.0 ** (threshold_db / 10.0))
 
     # 1. Deduce all channel centers inside [f_start, f_end]

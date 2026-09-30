@@ -311,6 +311,10 @@ class SpectrogramView(QWidget):
         # Update custom overlays for the new orientation
         if hasattr(self.parent_window, 'refresh_overlays_theme'):
             self.parent_window.refresh_overlays_theme()
+        # Re-render Multi-Row view if currently active so its axes match Waterfall mode
+        if hasattr(self.parent_window, 'multi_row_view') and hasattr(self.parent_window, 'spectrogram_stack'):
+            if self.parent_window.spectrogram_stack.currentIndex() == 1:
+                self.parent_window.multi_row_view.apply_waterfall_mode()
         # Update marker button icons/tooltips in the panel
         if hasattr(self.parent_window, 'marker_panel'):
             self.parent_window.marker_panel.refresh_waterfall_ui()

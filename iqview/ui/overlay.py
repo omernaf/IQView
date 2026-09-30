@@ -857,7 +857,7 @@ class OverlayItem(pg.GraphicsObject):
     def attach_to_plot(self, plot_item: pg.PlotItem) -> None:
         self._plot_item = plot_item
         if self._label is not None:
-            plot_item.addItem(self._label)
+            plot_item.addItem(self._label, ignoreBounds=True)
             self._update_label_pos()
 
     def detach_from_plot(self) -> None:

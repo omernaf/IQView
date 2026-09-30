@@ -312,14 +312,14 @@ class OverlayManagerMixin:
                 return
             item.setZValue(overlay.z_order)
             item.setVisible(overlay.visible)
-            plot_item.addItem(item)
+            plot_item.addItem(item, ignoreBounds=True)
             self._overlay_items[overlay.id] = item
         else:
             waterfall = getattr(self.spectrogram_view, 'is_waterfall', False)
             item = OverlayItem(overlay, waterfall=waterfall, on_geometry_changed=self._persist_overlay_drag)
             item.setZValue(overlay.z_order)
             item.setVisible(overlay.visible)
-            plot_item.addItem(item)
+            plot_item.addItem(item, ignoreBounds=True)
             item.attach_to_plot(plot_item)
             self._overlay_items[overlay.id] = item
 
