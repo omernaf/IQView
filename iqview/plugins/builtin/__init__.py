@@ -15,6 +15,7 @@ from . import (
     block_fec_decoder,
     burst_energy_detector,
     burst_metrics,
+    occupied_bandwidth,
     channelizer_detector,
     crc_checker,
     diff_decoder,
@@ -41,6 +42,7 @@ BUILTIN_MODULES: List[ModuleType] = [
     block_fec_decoder,
     crc_checker,
     burst_metrics,
+    occupied_bandwidth,
     snap_merge_overlays,
 ]
 
