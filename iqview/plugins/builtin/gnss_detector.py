@@ -693,19 +693,16 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
                 f"Peak {peak_cn0:.1f} dB-Hz | LO {lo_bias_hz/1e3:+.2f} kHz"
             )
 
-            # Structured HTML hover dashboard with aligned monospace table
+            # Structured Markdown hover dashboard with aligned table
             hover_lines = [
-                f"<b><font size='+1'>🛰️ {band_spec['name']} — Satellite Constellation Fix</font></b>",
-                f"<b>RF Carrier:</b> {band_fc / 1e6:.2f} MHz &nbsp;|&nbsp; "
-                f"<b>Bandwidth:</b> {band_bw / 1e6:.2f} MHz &nbsp;|&nbsp; "
-                f"<b>SVs Acquired:</b> {len(band_detections)}",
-                f"<b>Est. SDR LO Clock Bias:</b> {lo_bias_hz:>+6.0f} Hz ({lo_bias_ppm:>+4.1f} ppm) &nbsp;|&nbsp; "
-                f"<b>Peak C/N₀:</b> {peak_cn0:.1f} dB-Hz &nbsp;|&nbsp; "
-                f"<b>Mean C/N₀:</b> {mean_cn0:.1f} dB-Hz",
-                "─────────────────────────────────────────────────────────────────────────────",
-                "<pre>",
-                f"{'PRN':<6} {'Quality':<12} {'C/N₀':<11} {'Observed':<13} {'Orbital (Est)':<17} {'Code Delay':<13} {'PNR':<6}",
-                "─" * 77,
+                f"### {band_spec['name']} - Satellite Constellation Fix",
+                "",
+                f"- **RF Carrier:** {band_fc / 1e6:.2f} MHz | **Bandwidth:** {band_bw / 1e6:.2f} MHz | **SVs Acquired:** {len(band_detections)}",
+                f"- **Est. SDR LO Clock Bias:** {lo_bias_hz:>+6.0f} Hz ({lo_bias_ppm:>+4.1f} ppm)",
+                f"- **Signal Quality:** Peak C/N0 {peak_cn0:.1f} dB-Hz | Mean C/N0 {mean_cn0:.1f} dB-Hz",
+                "",
+                "| PRN | Quality | C/N0 | Doppler (Obs) | Orbital (Est) | Code Delay | PNR |",
+                "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
             ]
 
             for d in sorted_dets:
@@ -716,13 +713,13 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
                 prn_num = int(d["prn"])
 
                 if cn0 >= 44.0:
-                    quality = "🟢 STRONG"
+                    quality = "STRONG"
                     status_str = "STRONG"
                 elif cn0 >= 40.0:
-                    quality = "🟡 NOMINAL"
+                    quality = "NOMINAL"
                     status_str = "NOMINAL"
                 else:
-                    quality = "🟠 LOW ELEV"
+                    quality = "LOW ELEV"
                     status_str = "LOW_ELEVATION"
 
                 if abs(orb_d) < 600.0:
@@ -740,15 +737,15 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
                 d["doppler_orbital_est_hz"] = round(orb_d, 1)
 
                 hover_lines.append(
-                    f"PRN {prn_num:02d}  {quality:<12} {cn0:>4.1f} dB-Hz {d['doppler_hz']:>+7.0f} Hz   "
-                    f"{orb_d:>+6.0f} Hz ({motion:<3}) {delay:>6.1f} chips {pnr:>5.1f}x"
+                    f"| PRN {prn_num:02d} | {quality} | {cn0:.1f} dB-Hz | "
+                    f"{d['doppler_hz']:>+6.0f} Hz | {orb_d:>+5.0f} Hz ({motion}) | "
+                    f"{delay:.1f} chips | {pnr:.1f}x |"
                 )
 
-            hover_lines.append("─" * 77)
-            hover_lines.append("</pre>")
+            hover_lines.append("")
             hover_lines.append(
-                "<i>Tip: Switch to the <b>GNSS Acquisition Summary</b> plot tab to inspect constellation health, "
-                "Doppler motion, and correlation profiles.</i>"
+                "*Tip: Switch to the **GNSS Acquisition Summary** plot tab to inspect constellation health, "
+                "Doppler motion, and correlation profiles.*"
             )
 
             rect = Rect(
@@ -761,7 +758,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
                 border_width=2,
                 border_color=band_spec["color"],
                 display_str=display_str,
-                hover_str="<br>".join(hover_lines),
+                hover_str="\n".join(hover_lines),
                 metadata={
                     "protocol": "GNSS",
                     "constellation": "GPS" if "GPS" in band_key else "GLONASS",

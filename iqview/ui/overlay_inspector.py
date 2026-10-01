@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
@@ -88,8 +89,8 @@ class OverlayInspectorDialog(QDialog):
 
         title_tag = f" — {overlay.display_str}" if overlay.display_str else ""
         self.setWindowTitle(f"Overlay Inspector ({overlay.shape.value}){title_tag}")
-        self.setMinimumSize(660, 540)
-        self.resize(720, 620)
+        self.setMinimumSize(680, 560)
+        self.resize(760, 660)
 
         self._setup_ui()
 
@@ -104,6 +105,32 @@ class OverlayInspectorDialog(QDialog):
         if self.parent_window and hasattr(self.parent_window, "settings_mgr"):
             theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
         return get_palette(theme)
+
+    @staticmethod
+    def _detect_markup(text: str) -> str:
+        """Return 'html', 'markdown', or 'plain'."""
+        raw = (text or "").strip()
+        if not raw:
+            return "plain"
+        raw_lower = raw.lower()
+        if (
+            "<html" in raw_lower
+            or "<table" in raw_lower
+            or "<br" in raw_lower
+            or "<p" in raw_lower
+            or "<div" in raw_lower
+            or "<pre" in raw_lower
+        ):
+            return "html"
+        if (
+            ("\n|" in raw or raw.startswith("|"))
+            or ("\n#" in raw or raw.startswith("#"))
+            or ("**" in raw or "```" in raw)
+            or ("\n- " in raw or raw.startswith("- "))
+            or ("\n* " in raw or raw.startswith("* "))
+        ):
+            return "markdown"
+        return "plain"
 
     def _copy_with_feedback(self, text: str, btn: QPushButton, orig_label: str = "Copy") -> None:
         clipboard = QApplication.clipboard()
@@ -145,6 +172,13 @@ class OverlayInspectorDialog(QDialog):
                 padding: 4px 6px;
                 font-family: 'Consolas', 'Courier New', monospace;
                 font-size: 12px;
+            }}
+            QTextBrowser#hover_browser {{
+                background-color: {p.bg_input};
+                color: {p.text_main};
+                border: 1px solid {p.border};
+                border-radius: 4px;
+                padding: 6px 8px;
             }}
             QPushButton {{
                 background-color: {p.bg_input};
@@ -297,6 +331,15 @@ class OverlayInspectorDialog(QDialog):
             h_hdr.addWidget(lbl_h)
             h_hdr.addStretch()
 
+            markup_type = self._detect_markup(o.hover_str)
+
+            if markup_type in ("markdown", "html"):
+                btn_toggle_raw = QPushButton("Show Raw")
+                btn_toggle_raw.setFixedHeight(24)
+                h_hdr.addWidget(btn_toggle_raw)
+            else:
+                btn_toggle_raw = None
+
             btn_copy_hover = QPushButton("Copy Text")
             btn_copy_hover.setFixedHeight(24)
             btn_copy_hover.clicked.connect(
@@ -305,10 +348,61 @@ class OverlayInspectorDialog(QDialog):
             h_hdr.addWidget(btn_copy_hover)
             hl_vbox.addLayout(h_hdr)
 
-            hover_edit = QPlainTextEdit()
+            hover_edit = QTextBrowser()
+            hover_edit.setObjectName("hover_browser")
             hover_edit.setReadOnly(True)
-            hover_edit.setPlainText(o.hover_str)
-            hover_edit.setMaximumHeight(110)
+            hover_edit.setOpenExternalLinks(True)
+            hover_edit.setMinimumHeight(140)
+            hover_edit.setMaximumHeight(280)
+
+            showing_raw = False
+
+            def _render_hover_content():
+                if showing_raw:
+                    hover_edit.setPlainText(o.hover_str)
+                    hover_edit.setFont(QFont("Consolas", 10))
+                    if btn_toggle_raw:
+                        btn_toggle_raw.setText("Show Formatted")
+                else:
+                    if markup_type == "markdown":
+                        from PyQt6.QtGui import QTextDocument
+                        doc = QTextDocument()
+                        doc.setMarkdown(o.hover_str)
+                        html = doc.toHtml()
+                        style_block = (
+                            f"<style type='text/css'>"
+                            f"body {{ color: {p.text_main}; font-family: 'Segoe UI', system-ui, sans-serif; font-size: 12px; }}"
+                            f"table {{ border: 1px solid {p.border}; border-collapse: collapse; margin-top: 6px; margin-bottom: 6px; }}"
+                            f"th, td {{ padding: 4px 8px; border: 1px solid {p.border}; font-size: 11px; }}"
+                            f"th {{ background-color: {p.bg_widget}; color: {p.accent}; font-weight: bold; }}"
+                            f"h3, h4 {{ margin-top: 2px; margin-bottom: 6px; color: {p.accent}; }}"
+                            f"p {{ margin-top: 2px; margin-bottom: 4px; }}"
+                            f"ul {{ margin-top: 2px; margin-bottom: 4px; padding-left: 18px; }}"
+                            f"li {{ margin-top: 1px; margin-bottom: 1px; }}"
+                            f"hr {{ height: 1px; background-color: {p.border}; border: none; margin: 6px 0; }}"
+                            f"code {{ font-family: 'Consolas', 'Courier New', monospace; background-color: {p.bg_widget}; padding: 1px 3px; border-radius: 3px; }}"
+                            f"</style>"
+                        )
+                        if "</head>" in html:
+                            html = html.replace("</head>", style_block + "</head>")
+                        hover_edit.setHtml(html)
+                    elif markup_type == "html":
+                        hover_edit.setHtml(o.hover_str)
+                    else:
+                        hover_edit.setPlainText(o.hover_str)
+                        hover_edit.setFont(QFont("Consolas", 10))
+                    if btn_toggle_raw:
+                        btn_toggle_raw.setText("Show Raw")
+
+            def _toggle_raw():
+                nonlocal showing_raw
+                showing_raw = not showing_raw
+                _render_hover_content()
+
+            if btn_toggle_raw:
+                btn_toggle_raw.clicked.connect(_toggle_raw)
+
+            _render_hover_content()
             hl_vbox.addWidget(hover_edit)
             root.addWidget(hover_card)
 

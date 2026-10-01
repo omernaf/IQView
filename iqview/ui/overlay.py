@@ -406,19 +406,67 @@ class Overlay:
 
     def get_truncated_hover(
         self,
-        max_line_len: int = 72,
-        max_lines: int = 6,
-        max_total_chars: int = 260,
+        max_line_len: int = 140,
+        max_lines: int = 24,
+        max_total_chars: int = 4000,
     ) -> str:
         """
-        Return a compact tooltip string for mouse hover, truncating long lines
-        or bitstreams with ``...`` and adding a hint to right-click for the
-        visual Overlay Inspector popup.
+        Return a tooltip string for mouse hover.
+
+        If Markdown or HTML formatting is detected, converts it to rich HTML
+        for Qt tooltip rendering. For plain text (backward compatibility),
+        truncates long lines or bitstreams while preserving readability.
         """
         raw = (self.hover_str or "").strip()
         if not raw and not self.metadata:
             return ""
 
+        # Check for HTML or Markdown formatting
+        is_html = (
+            ("<html" in raw.lower())
+            or ("<table" in raw.lower())
+            or ("<br" in raw.lower())
+            or ("<p" in raw.lower())
+            or ("<div" in raw.lower())
+            or ("<pre" in raw.lower())
+        )
+        is_markdown = (
+            ("\n|" in raw or raw.startswith("|"))
+            or ("\n#" in raw or raw.startswith("#"))
+            or ("**" in raw or "```" in raw)
+            or ("\n- " in raw or raw.startswith("- "))
+            or ("\n* " in raw or raw.startswith("* "))
+        )
+
+        if is_html:
+            return raw
+
+        if is_markdown:
+            md_text = raw
+            if bool(self.metadata) and "Inspect Overlay" not in md_text:
+                md_text += "\n\n*(Right-click → Inspect Overlay)*"
+            try:
+                from PyQt6.QtGui import QTextDocument
+                doc = QTextDocument()
+                doc.setMarkdown(md_text)
+                html = doc.toHtml()
+                style_block = (
+                    "<style type='text/css'>"
+                    "table { border: 1px solid #4a505b; border-collapse: collapse; margin-top: 4px; margin-bottom: 4px; }"
+                    "td, th { padding: 3px 6px; border: 1px solid #3d424b; font-size: 11px; }"
+                    "th { font-weight: bold; background-color: rgba(255, 255, 255, 0.08); }"
+                    "h3, h4 { margin-top: 2px; margin-bottom: 4px; color: #52a9ff; }"
+                    "p, li { margin-top: 2px; margin-bottom: 2px; font-size: 11px; }"
+                    "hr { height: 1px; background-color: #4a505b; border: none; margin: 4px 0; }"
+                    "</style>"
+                )
+                if "</head>" in html:
+                    return html.replace("</head>", style_block + "</head>")
+                return html
+            except Exception:
+                pass
+
+        # Plain text fallback: line-by-line truncation
         was_truncated = False
         lines: List[str] = []
 
@@ -436,8 +484,8 @@ class Overlay:
         elif self.metadata:
             # Build a compact preview from metadata when hover_str is empty
             items = list(self.metadata.items())
-            if len(items) > 4:
-                items = items[:4]
+            if len(items) > 6:
+                items = items[:6]
                 was_truncated = True
             for k, v in items:
                 val_str = str(v)
