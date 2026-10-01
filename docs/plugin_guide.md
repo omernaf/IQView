@@ -12,11 +12,11 @@ Plugins run safely on an isolated background worker thread (`QThread`), ensuring
 ## Table of Contents
 
 1. [Plugin Architecture & Execution Model](#1-plugin-architecture--execution-model)
-2. [Plugin Anatomy & Module Metadata](#2-plugin-anatomy--module-metadata)
-3. [The `PluginContext` (`info`) Execution Object](#3-the-plugincontext-info-execution-object)
-4. [The Object-Oriented Overlay API](#4-the-object-oriented-overlay-api)
+2. [Plugin Anatomy, Discovery & Lifecycle](#2-plugin-anatomy-discovery--lifecycle)
+3. [The `PluginContext` (`info`) Object & Samples Buffer](#3-the-plugincontext-info-object--samples-buffer)
+4. [The Object-Oriented Overlay API & Serialization](#4-the-object-oriented-overlay-api--serialization)
 5. [Cached Per-Burst Baseband IQ (`o.iq`, `o.fs`) & DDC Extraction](#5-cached-per-burst-baseband-iq-oiq-ofs--ddc-extraction)
-6. [The `PluginResult` Return Object](#6-the-pluginresult-return-object)
+6. [The `PluginResult` Return Object & Error Handling](#6-the-pluginresult-return-object--error-handling)
 7. [Custom 1D Plot Tabs (`PluginPlotView`)](#7-custom-1d-plot-tabs-pluginplotview)
 8. [Native Analysis Tab Launchers](#8-native-analysis-tab-launchers)
 9. [Dynamic Parameters & Automatic Session Persistence](#9-dynamic-parameters--automatic-session-persistence)
@@ -49,11 +49,12 @@ Plugins run safely on an isolated background worker thread (`QThread`), ensuring
 +------------------------------------------------------------------------+
 ```
 
-### Execution Scopes
+### Execution Scopes & Marker Fallback Semantics
 When a plugin runs, it operates over a defined region of the recording. Users select the active **Execution Scope** from the toolbar dropdown or the Plugin Studio:
 * **Current View (`"view"`)**: Bounded by the currently visible time $[t_{\text{start}}, t_{\text{end}}]$ and frequency $[f_{\text{start}}, f_{\text{end}}]$ of the spectrogram viewport (multi-row and waterfall aware).
 * **Between Markers (`"markers"`)**: Bounded by active time markers ($M_1, M_2$) and frequency markers.
-* **Full File (`"full_file"`)**: Spans the entire recording from $t = 0.0$ to the end of the file across the full Nyquist bandwidth.
+  * **Automatic Fallback**: If fewer than two time markers are active on the spectrogram, the time bounds $[t_{\text{start}}, t_{\text{end}}]$ automatically fall back to the visible viewport time range. Likewise, if fewer than two frequency markers are active, frequency bounds $[f_{\text{start}}, f_{\text{end}}]$ fall back to the visible viewport frequency range.
+* **Full File (`"full_file"`)**: Spans the entire recording from $t = 0.0$ to the end of the file across the full Nyquist bandwidth ($f_c \pm f_s/2$).
 
 ### Asynchronous Processing & Progress Reporting
 Plugins do not freeze the UI. If execution takes more than 250 ms, a modal progress dialog appears with a cancel button. Inside `run()`, plugins report progress and check for cancellation:
@@ -75,7 +76,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
 
 ---
 
-## 2. Plugin Anatomy & Module Metadata
+## 2. Plugin Anatomy, Discovery & Lifecycle
 
 An IQView plugin is a standard Python `.py` file that defines a top-level `run` function and optional module-level constants declaring its metadata, parameters, documentation, and resource requirements:
 
@@ -136,7 +137,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
 
 | Constant | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `PLUGIN_NAME` | `str` | Filename stem | Display name shown in menus, toolbars, and the Studio. |
+| `PLUGIN_NAME` | `str` | Filename stem | Display name shown in menus, toolbars, and the Studio. Does not need to match the filename. |
 | `PLUGIN_DESCRIPTION` | `str` | `""` | Brief one-line summary displayed in tooltips and catalogs. |
 | `PLUGIN_CATEGORY` | `str` | `"Custom"` | Grouping category (e.g. `Detection`, `Demodulation`, `Metrics`, `Chains`). |
 | `PLUGIN_DOC` | `str` | `""` | Full in-app documentation in GitHub-flavored Markdown (`.md`). |
@@ -146,9 +147,31 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
 | `PLUGIN_BATCH_OVERLAP_SECONDS` | `float` | `0.0` | Overlap duration in seconds between consecutive chunks when batching. |
 | `PLUGIN_RUN_ON_MAIN_THREAD` | `bool` | `False` | Forces execution on the Qt main GUI thread. Useful for interactive debugging. |
 
+### Plugin Discovery & File Locations
+* **File Paths**: Plugin `.py` files can live **anywhere on the filesystem**.
+  * Users can load plugins from any folder via **Plugins $\rightarrow$ Load Plugin(s)...** or through the **Plugin Studio**.
+  * IQView records loaded plugin paths in application settings (`plugins/loaded_paths`), automatically reloading them across sessions.
+  * Standard built-in plugins are located in `iqview/plugins/builtin/`.
+* **Naming Conventions**: The filename on disk does **not** have to match `PLUGIN_NAME`. If `PLUGIN_NAME` is defined in the script, it overrides the filename stem for all menu entries, toolbar items, and result tags.
+
+### Import Environment & Third-Party Library Safety
+* **In-Process Architecture**: Plugins execute in the same Python process as IQView. Top-level exports are available for direct import without modifying `sys.path`:
+  ```python
+  from iqview import PluginResult, PluginContext, PluginParams, PluginChain
+  from iqview.overlays import Rect, Polygon, Ellipse, VerticalLine, OverlayShape
+  ```
+* **Safe Libraries**: Any standard mathematical, scientific, or DSP library installed in the environment is safe to import inside `run()`:
+  * `numpy`, `scipy` (`scipy.signal`, `scipy.fft`, `scipy.ndimage`, `scipy.optimize`), `math`, `re`, `json`, `collections`.
+  * `matplotlib` in non-interactive / headless mode (e.g. `matplotlib.use("Agg")`).
+* **Concurrency Constraint (PyQt Hazards)**: **Never import or instantiate `PyQt6.QtWidgets` widgets inside `run()`**. Because `run()` executes on a worker `QThread`, calling Qt GUI elements directly from this thread violates Qt threading rules and will crash the application. Always request UI operations via `PluginResult`.
+
+### Module Lifecycle, In-Memory State & Automatic Hot-Reloading
+* **State Persistence**: When a plugin is executed, IQView retains the loaded module in memory. Module-level caches, lookup tables, and pre-loaded neural network weights persist across repeated runs as long as the file is untouched on disk.
+* **Automatic Hot-Reloading**: Before executing a plugin, IQView inspects the file's modification timestamp (`mtime`). If the `.py` file has been modified and saved, IQView automatically **hot-reloads** the module so code changes take effect immediately without requiring an application restart.
+
 ---
 
-## 3. The `PluginContext` (`info`) Execution Object
+## 3. The `PluginContext` (`info`) Object & Samples Buffer
 
 When `run(samples, info)` is called, `info` is an instance of `PluginContext`. It provides dual-access syntax: clean Python attributes (`info.sample_rate`) and legacy dictionary subscripting (`info["sample_rate"]`).
 
@@ -159,9 +182,9 @@ When `run(samples, info)` is called, `info` is an instance of `PluginContext`. I
 fs = info.sample_rate      # float: Sample rate in Hz (alias: info.fs)
 fc = info.center_freq      # float: Center frequency in Hz (alias: info.fc)
 
-# Scope Boundaries
+# Scope Boundaries (Absolute Units)
 t0, t1 = info.t_start, info.t_end    # float: Scope time boundaries in seconds
-f0, f1 = info.f_start, info.f_end    # float: Scope frequency boundaries in Hz
+f0, f1 = info.f_start, info.f_end    # float: Scope frequency boundaries in absolute RF Hz
 dur = info.duration                  # float: Scope duration (t_end - t_start) in seconds
 bw = info.bandwidth                  # float: Scope bandwidth (f_end - f_start) in Hz
 
@@ -179,6 +202,24 @@ f_markers = info.freq_markers        # list[float]: Active frequency marker valu
 bpf = info.filter_bounds             # tuple[float, float] | None: Active (f_lo, f_hi) filter bounds
 ```
 
+### The `samples` Buffer Semantics & Alignment
+* **Data Format**: When populated, `samples` is always a 1-D NumPy array of `dtype=np.complex64`.
+* **Time Indexing**: Sample index `0` corresponds exactly to `info.t_start`. The timestamp for sample index $n$ is:
+  $$t = \text{info.t\_start} + \frac{n}{\text{info.sample\_rate}}$$
+* **Wideband Nature**: When `samples` is provided, it is **raw wideband IQ** sampled at the global sample rate (`info.sample_rate`). Even if the execution scope is frequency-bounded (e.g. zoomed in to a 50 kHz channel), `samples` is **not** pre-mixed to the center frequency or decimated to the sub-band bandwidth. The frequency boundaries are passed in `info.f_start` and `info.f_end` to indicate the active sub-band.
+* **When `samples` Is Empty or `None`**:
+  * If `PLUGIN_NEEDS_WIDEBAND_IQ = False` is set, `samples` is passed as an empty array (`len(samples) == 0`). Downstream plugins obtain burst data via `o.get_samples(samples, info)`.
+  * If `PLUGIN_BATCH_SECONDS` chunked streaming is active, wideband pre-extraction is bypassed, and chunks are streamed individually to `run()`.
+  * *Always include a safe guard*: `if samples is None or len(samples) == 0: return PluginResult()`.
+
+### Frequency Coordinates & Bandwidth
+* **Absolute RF Frequencies**: `info.f_start` and `info.f_end` are expressed in **absolute RF Hz** (centered around `info.center_freq`). For example, if center frequency is 915 MHz with 2 MHz bandwidth, `f_start` might be `914.5e6` and `f_end` `915.5e6`. To convert to a zero-centered baseband offset:
+  $$f_{\text{offset}} = f - \text{info.center\_freq}$$
+* **Bandwidth Definition**: `info.bandwidth` is strictly:
+  $$\text{info.bandwidth} = \text{info.f\_end} - \text{info.f\_start}$$
+  It follows the active Execution Scope (the viewport for `"view"`, the markers for `"markers"`, or full Nyquist for `"full_file"`).
+* **Filter Bounds Independence**: Active BPF or BSF filter boundaries do **not** override `info.bandwidth` or `info.f_start/f_end`. Instead, filter limits are provided separately as an informative tuple via `info.filter_bounds` (which is `(f_lo, f_hi)` if a filter is active, or `None`).
+
 ### Context Methods
 
 #### Parameter Access: `info.params`
@@ -194,18 +235,26 @@ Extracts raw complex64 samples for any arbitrary time slice $[t_0, t_1]$ directl
 burst_samples = info.extract_iq(1.200, 1.250)
 ```
 
-#### Safe Memory Streaming: `info.iter_batches(duration_s, overlap_s=0.0)`
-Iterates over the active execution scope in manageable chunks, automatically reporting progress:
-```python
-for chunk_samples, chunk_t0, chunk_t1 in info.iter_batches(duration_s=0.5, overlap_s=0.02):
-    if info.is_cancelled():
-        break
-    # Process 500 ms chunk...
-```
+#### Batch Streaming Paradigms: Declarative vs. Programmatic
+IQView provides two alternative batching paradigms for handling massive recordings without memory exhaustion:
+1. **Declarative Host Batching (`PLUGIN_BATCH_SECONDS`)**:
+   * Set `PLUGIN_BATCH_SECONDS = 1.0` (and optional `PLUGIN_BATCH_OVERLAP_SECONDS = 0.05`) at module level.
+   * The host background worker automatically slices the active scope and calls your `run(batch_samples, batch_info)` repeatedly—once per chunk.
+   * On each invocation, `batch_info.t_start` and `batch_info.t_end` are shifted to bound that specific chunk.
+   * Overlays emitted across chunks are concatenated by the host. To avoid duplicate detections across chunk boundaries, set `PLUGIN_BATCH_OVERLAP_SECONDS = 0.0` or pipe into a merge plugin.
+2. **Programmatic In-Plugin Batching (`info.iter_batches()`)**:
+   * Leave `PLUGIN_BATCH_SECONDS = None`, set `PLUGIN_NEEDS_WIDEBAND_IQ = False`, and iterate directly inside your single `run()` call:
+     ```python
+     for chunk_samples, chunk_t0, chunk_t1 in info.iter_batches(duration_s=0.5, overlap_s=0.0):
+         if info.is_cancelled():
+             break
+         # Process 500 ms chunk...
+     ```
+   * *Note: Do not combine both paradigms at the same time.*
 
 ---
 
-## 4. The Object-Oriented Overlay API
+## 4. The Object-Oriented Overlay API & Serialization
 
 IQView provides strictly typed overlay classes under `iqview.overlays`. Overlays placed by plugins are **locked by default** (`locked=True`) so they cannot be accidentally moved or resized when panning the spectrogram.
 
@@ -224,6 +273,16 @@ from iqview.overlays import (
     OverlayShape,   # Enum: RECT, POLYGON, ELLIPSE, LINE, HLINE, X_REGION, Y_REGION, DOT
 )
 ```
+
+### Shape Checking: `OverlayShape` Enum vs. String Name
+To verify the geometric shape of an overlay, compare against the typed enum:
+```python
+from iqview.overlays import OverlayShape
+
+if o.shape == OverlayShape.RECT:
+    # Process rectangular burst...
+```
+*(The convenience helper `o._shape_name()` returning `"RECT"`, `"POLYGON"`, etc. is also fully supported).*
 
 ### Creating Overlays
 
@@ -258,6 +317,16 @@ All overlay objects provide unified world-space accessors (in seconds and Hz):
 | `o.f_center` | Center frequency $\frac{f_0 + f_1}{2}$ in Hz. |
 | `o.bandwidth` | Frequency span $(f_1 - f_0)$ in Hz. |
 
+### Overlay Identity & Lifetime Stability
+* **UUID Stability**: Each overlay is assigned a UUID string (`o.id`) upon creation that remains stable throughout the entire application session.
+* **Targeting Overlays**: Methods such as `result.update(o.id, ...)` and `result.remove(o.id)` consume this exact string ID (or the `Overlay` instance directly). Deep-copied snapshots passed to `info.overlays` preserve the identical `o.id`.
+
+### Sidecar Serialization & Metadata Rules
+* **JSON Sidecar Persistence**: Overlays serialize to disk via `.json` sidecars (`to_dict()`).
+* **Supported Metadata Types**: Any standard JSON-serializable Python data type survives a session save (`int`, `float`, `str`, `bool`, `list`, `dict`, `None`).
+* **Transient Fields Excluded**: `o.iq` and `o.fs` are **deliberately excluded** from JSON sidecars to keep sidecar files lightweight and avoid storing multi-gigabyte raw sample buffers in text files.
+* **Type Conversion Requirement**: Non-JSON data types stored in `o.metadata` (such as NumPy scalar types, complex numbers, NumPy arrays, or Python functions) will raise a serialization error unless converted beforehand (e.g. `float(val)` or `arr.tolist()`).
+
 ---
 
 ## 5. Cached Per-Burst Baseband IQ (`o.iq`, `o.fs`) & DDC Extraction
@@ -279,7 +348,7 @@ And retrieve the burst signal via `o.get_samples(samples, info)`:
 
 ```python
 for o in info.overlays:
-    if o._shape_name() != "RECT":
+    if o.shape != OverlayShape.RECT:
         continue
 
     # Zero disk I/O if o.iq is already cached!
@@ -299,11 +368,14 @@ for o in info.overlays:
    - Applies an anti-aliasing low-pass filter with bandwidth equal to `o.bandwidth`.
    - Resamples and decimates the signal to `o.bandwidth` Hz.
 
+### Attaching Baseband IQ to Non-Owned Overlays
+Plugins are fully permitted to attach or update `o.iq` and `o.fs` on overlays created by other plugins or drawn manually by the user. While `result.remove()` is restricted to overlays owned by the calling plugin, **`result.update()` has no ownership restrictions**. Calling `result.update(o.id, iq=burst_iq, fs=burst_fs)` or `result.update(o)` successfully caches and persists the baseband signal on the live overlay in memory.
+
 ---
 
-## 6. The `PluginResult` Return Object
+## 6. The `PluginResult` Return Object & Error Handling
 
-Every plugin's `run()` function must return a `PluginResult` object. It provides a fluent builder interface to queue operations:
+Every plugin's `run()` function must return a `PluginResult` object (`run()` cannot return `None`). It provides a fluent builder interface to queue operations:
 
 ```python
 from iqview import PluginResult
@@ -328,11 +400,19 @@ result.remove(overlay_id)
 result.replace(old_id, tightly_fitted_rect)
 ```
 
-### Chaining Operations
-All methods return `self`:
-```python
-return PluginResult().add(r1).add(r2).update(o.id, locked=True).log("Completed")
-```
+### Return Type Contract
+The plugin runner strictly checks the return value of `run()`. If a plugin returns `None` or any type other than `PluginResult`, execution aborts and an error dialog informs the user. To perform no actions or exit early, return an empty result: `return PluginResult()`.
+
+### Exception Handling & Stack Tracebacks
+If `run()` raises an unhandled Python exception, the background worker catches it safely without crashing the application. A modal error dialog (`QMessageBox.critical`) is presented to the user displaying the **complete exception type, message, and full stack traceback**.
+
+### Logging & Warning Mechanisms
+* **`result.log("message")`**:
+  * Prints `[IQView Plugin: <name>] message` to standard output / terminal console.
+  * Surfaces the message on the **main application bottom status bar** for 5 seconds upon completion.
+* **Alternative Warning Methods**:
+  * **Progress Dialog**: Call `info.progress(pct, "Warning: Low SNR detected...")` to update the modal progress status text live.
+  * **Overlay Tooltips**: Set `hover_str="Warning: SNR < 6 dB"` or prefix `display_str="⚠ Signal"` to provide visual warning indicators on the spectrogram.
 
 ---
 
@@ -472,10 +552,11 @@ CHAIN = (
 CHAIN.bind_to_module(globals(), __file__)
 ```
 
-### In-Memory Pipeline Flow
-1. **Step 1 (`Channelizer`)**: Scans wideband IQ, detects bursts, creates `Rect` overlays, and attaches baseband slices to `r.iq` and `r.fs`.
-2. **Step 2 (`Snap to Burst`)**: Inspects `info.overlays`, computes precision time and bandwidth edges, tightly reshapes each `Rect`, updates `o.iq`, and calculates SNR, PAPR, and CFO metadata.
-3. **Step 3 (`FSK Demodulator`)**: Slices `o.iq` directly (zero disk reads), demodulates FM, recovers the bitstream, and attaches decoded hex/binary data to `o.metadata`.
+### In-Memory Pipeline Flow & Visibility Timing
+* **Execution Sequence**: Each step executes sequentially and returns its `PluginResult`.
+* **Immediate Reconciliation**: Overlay operations (`adds`, `updates`, `replaces`, `removes`) are applied in memory immediately after a step returns.
+* **Step Visibility Timing**: Any `o.iq` and `o.fs` slices attached to overlays in Step $k$ become **immediately available** in `info.overlays` to Step $k+1$.
+* **Automatic Cleanup**: Re-running a chain automatically removes overlays previously produced by that chain within the active time scope before executing Step 0, preventing duplicate overlay stacking.
 
 ### Step-by-Step UI Execution
 In the **Plugin Studio** or **Config** panel, each step in a chain has its own control card:
@@ -572,7 +653,7 @@ Streamed Energy Detector with Baseband IQ Caching
 from __future__ import annotations
 import numpy as np
 from iqview import PluginResult, PluginContext
-from iqview.overlays import Rect
+from iqview.overlays import Rect, OverlayShape
 
 PLUGIN_NAME                  = "Streamed Energy Detector"
 PLUGIN_DESCRIPTION           = "Memory-bounded burst detector caching baseband IQ on overlays"
@@ -661,6 +742,7 @@ Overlay Metrics Analyzer
 from __future__ import annotations
 import numpy as np
 from iqview import PluginResult, PluginContext
+from iqview.overlays import OverlayShape
 
 PLUGIN_NAME              = "Overlay Metrics Analyzer"
 PLUGIN_DESCRIPTION       = "Calculates Peak and RMS power for all Rect overlays"
@@ -671,7 +753,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
     result = PluginResult()
 
     for o in info.overlays:
-        if o._shape_name() != "RECT":
+        if o.shape != OverlayShape.RECT:
             continue
 
         # Zero disk read if o.iq is cached; automatic DDC if not
