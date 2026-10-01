@@ -290,8 +290,43 @@ class PluginResult:
         return self
 
     # ------------------------------------------------------------------
-    # Convenience
+    # Convenience & Inspection Properties
     # ------------------------------------------------------------------
+
+    @property
+    def adds(self) -> List[Any]:
+        """List of overlays queued to be added."""
+        return self._adds
+
+    @property
+    def updates(self) -> List[Tuple[str, Dict]]:
+        """List of (overlay_id, field_kwargs) tuples queued for update."""
+        return self._updates
+
+    @property
+    def removes(self) -> List[str]:
+        """List of overlay IDs queued for removal."""
+        return self._removes
+
+    @property
+    def replaces(self) -> List[Tuple[str, Any]]:
+        """List of (old_overlay_id, new_overlay) tuples queued for replacement."""
+        return self._replaces
+
+    @property
+    def plots(self) -> List[Dict[str, Any]]:
+        """List of custom 1D sub-plot specifications."""
+        return self._plots
+
+    @property
+    def plot_tab_title(self) -> Optional[str]:
+        """Custom tab title for PluginPlotView, or None."""
+        return self._plot_tab_title
+
+    @property
+    def logs(self) -> List[str]:
+        """List of queued status/console log messages."""
+        return self._logs
 
     def __repr__(self) -> str:  # pragma: no cover
         return (
