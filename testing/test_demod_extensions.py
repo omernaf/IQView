@@ -353,6 +353,35 @@ class TestBlockFECDecoder(unittest.TestCase):
         self.assertEqual(up.metadata["fec_corrected_blocks"], 1)
         self.assertEqual(up.metadata["fec_bit_errors_corrected"], 1)
 
+    def test_custom_g_matrix_nonsystematic_decoding(self):
+        # Non-systematic G matrix (k=3, n=6)
+        G = np.array([
+            [1, 1, 0, 1, 0, 0],
+            [0, 1, 1, 0, 1, 0],
+            [1, 0, 1, 1, 1, 1],
+        ], dtype=np.uint8)
+        g_str = "110100, 011010, 101111"
+
+        # Message m = [1, 0, 1]
+        msg = np.array([1, 0, 1], dtype=np.uint8)
+        cw = (msg @ G) % 2  # [0, 1, 1, 0, 1, 1]
+        
+        # Inject bit error at bit 4
+        rx = cw.copy()
+        rx[4] ^= 1  # [0, 1, 1, 0, 0, 1]
+
+        overlay = Overlay(shape=OverlayShape.RECT)
+        overlay.metadata = {"bits": "".join(str(b) for b in rx)}
+
+        ctx = _make_context(overlay, {"code": "Custom G Matrix", "custom_g_matrix": g_str})
+        res = fec_mod.run(np.empty(0, dtype=np.complex64), ctx)
+
+        up = _apply_result(overlay, res)
+        # Message bits must be mathematically recovered as "101"
+        self.assertEqual(up.metadata["bits"], "101")
+        self.assertEqual(up.metadata["fec_corrected_blocks"], 1)
+        self.assertEqual(up.metadata["fec_bit_errors_corrected"], 1)
+
 
 class TestCRCChecker(unittest.TestCase):
     """Test CRC Checker (crc_checker.py)."""

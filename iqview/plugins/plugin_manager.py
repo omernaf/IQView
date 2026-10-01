@@ -428,11 +428,9 @@ class PluginManagerMixin:
             k: (spec.get("default") if isinstance(spec, dict) else spec)
             for k, spec in params_spec.items()
         }
-        saved_session_params = self.get_saved_plugin_params(name)
-        for k, val in saved_session_params.items():
-            if k in active_params:
-                active_params[k] = val
 
+        # Chains explicitly define step parameters in their pipeline definition.
+        # Save newly configured chain parameters directly without resurrecting stale session params.
         self.save_plugin_params(name, active_params)
         self._loaded_plugins[name] = {
             "name":                  name,
@@ -578,12 +576,14 @@ class PluginManagerMixin:
                     active_params[k] = val
 
         if chain_obj is not None and hasattr(chain_obj, "steps"):
+            # Ensure chain step explicit parameter overrides defined in the chain definition
+            # are respected and not clobbered by stale session parameters
             for step_idx, s_dict in enumerate(chain_obj.steps):
+                step_overrides = s_dict.get("params", {}) or {}
                 prefix = f"step{step_idx}."
-                for k, v in active_params.items():
-                    if str(k).startswith(prefix):
-                        raw_k = str(k)[len(prefix):]
-                        s_dict.setdefault("params", {})[raw_k] = v
+                for raw_k, step_val in step_overrides.items():
+                    full_k = f"{prefix}{raw_k}"
+                    active_params[full_k] = step_val
 
         try:
             mtime = os.path.getmtime(path)

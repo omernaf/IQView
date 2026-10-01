@@ -1378,6 +1378,11 @@ class PluginStudioDialog(QDialog):
         orig_name = self._editing_chain_orig_name
         py_path = self._editing_chain_path
 
+        # If this chain is not backed by a .py file yet, prompt user to save as .py
+        if not py_path or not os.path.isfile(py_path):
+            self._on_save_chain_as_py()
+            return
+
         reg_name = self.parent_window.register_chain_plugin(
             chain,
             path=py_path,
@@ -1393,6 +1398,8 @@ class PluginStudioDialog(QDialog):
                 with open(py_path, "w", encoding="utf-8") as f:
                     f.write(code)
                 file_saved = True
+                if reg_name in self.parent_window._loaded_plugins:
+                    self.parent_window._loaded_plugins[reg_name]["mtime"] = os.path.getmtime(py_path)
             except Exception as exc:
                 QMessageBox.warning(
                     self,
@@ -1456,6 +1463,15 @@ class PluginStudioDialog(QDialog):
             return
         with open(path, "w", encoding="utf-8") as f:
             f.write(code)
+
+        # Update saved session parameters so stale params from old saves don't resurrect
+        params_spec = chain.get_combined_params_spec()
+        active_params = {
+            k: (spec.get("default") if isinstance(spec, dict) else spec)
+            for k, spec in params_spec.items()
+        }
+        if hasattr(self.parent_window, "save_plugin_params"):
+            self.parent_window.save_plugin_params(chain.name, active_params)
 
         loaded_name = self.parent_window._load_plugin_from_path(path)
         if loaded_name:

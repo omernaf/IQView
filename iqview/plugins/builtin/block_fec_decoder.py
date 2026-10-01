@@ -277,18 +277,79 @@ def _rref_gf2(A: np.ndarray) -> np.ndarray:
     return R
 
 
-def _build_custom_syndrome_table(G_raw: np.ndarray) -> Tuple[np.ndarray, int, int, Dict[tuple, np.ndarray]]:
-    """Derive H and single-error syndrome table for a custom G matrix."""
-    R = _rref_gf2(G_raw)
-    k, n = R.shape
-    # Check if systematic [I_k | P]
-    is_sys = np.array_equal(R[:, :k], np.eye(k, dtype=np.uint8))
-    if not is_sys:
-        # Fallback: assume user provided systematic [I_k | P]
-        P = G_raw[:, k:]
-    else:
-        P = R[:, k:]
-    H = np.hstack([P.T, np.eye(n - k, dtype=np.uint8)])
+def _null_space_gf2(G: np.ndarray) -> Tuple[np.ndarray, List[int]]:
+    """Compute basis for null space: H such that G @ H.T % 2 = 0."""
+    k, n = G.shape
+    M = G.copy() % 2
+    pivots = []
+    r = 0
+    for c in range(n):
+        if r >= k:
+            break
+        p = None
+        for i in range(r, k):
+            if M[i, c] == 1:
+                p = i
+                break
+        if p is None:
+            continue
+        M[[r, p]] = M[[p, r]]
+        pivots.append(c)
+        for i in range(k):
+            if i != r and M[i, c] == 1:
+                M[i] ^= M[r]
+        r += 1
+
+    free_vars = [c for c in range(n) if c not in pivots]
+    H_rows = []
+    for free in free_vars:
+        h = np.zeros(n, dtype=np.uint8)
+        h[free] = 1
+        for row, piv in enumerate(pivots):
+            if M[row, free] == 1:
+                h[piv] = 1
+        H_rows.append(h)
+    H = np.array(H_rows, dtype=np.uint8) if H_rows else np.empty((0, n), dtype=np.uint8)
+    return H, pivots
+
+
+def _invert_gf2(A: np.ndarray) -> np.ndarray:
+    """Invert square matrix A over GF(2)."""
+    n = A.shape[0]
+    aug = np.hstack([A.copy() % 2, np.eye(n, dtype=np.uint8)])
+    for c in range(n):
+        p = None
+        for r in range(c, n):
+            if aug[r, c] == 1:
+                p = r
+                break
+        if p is None:
+            raise ValueError("Matrix is singular over GF(2)")
+        aug[[c, p]] = aug[[p, c]]
+        for r in range(n):
+            if r != c and aug[r, c] == 1:
+                aug[r] ^= aug[c]
+    return aug[:, n:]
+
+
+def _right_inverse_gf2(G: np.ndarray, pivots: List[int]) -> np.ndarray:
+    """Compute right inverse G_R (n x k) such that G @ G_R % 2 = I_k."""
+    k, n = G.shape
+    G_sub = G[:, pivots]
+    G_sub_inv = _invert_gf2(G_sub)
+    G_R = np.zeros((n, k), dtype=np.uint8)
+    G_R[pivots, :] = G_sub_inv
+    return G_R
+
+
+def _build_custom_syndrome_table(G_raw: np.ndarray) -> Tuple[np.ndarray, int, int, Dict[tuple, np.ndarray], np.ndarray]:
+    """
+    Derive exact parity-check matrix H, right-inverse G_R, and syndrome table
+    for any generator matrix G (systematic or non-systematic).
+    """
+    k, n = G_raw.shape
+    H, pivots = _null_space_gf2(G_raw)
+    G_R = _right_inverse_gf2(G_raw, pivots)
 
     synd_table = {}
     for i in range(n):
@@ -307,7 +368,7 @@ def _build_custom_syndrome_table(G_raw: np.ndarray) -> Tuple[np.ndarray, int, in
                 s = tuple(int(x) for x in ((e @ H.T) % 2))
                 if s not in synd_table:
                     synd_table[s] = e
-    return H, k, n, synd_table
+    return H, k, n, synd_table, G_R
 
 
 def _parse_custom_g(g_str: str) -> Optional[np.ndarray]:
@@ -408,17 +469,21 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
         if g_mat is None:
             result.log(f"Block FEC: Invalid custom G matrix string: {custom_g_str!r}")
             return result
-        H_cust, k_block, n_block, synd_table = _build_custom_syndrome_table(g_mat)
+        H_cust, k_block, n_block, synd_table, G_R = _build_custom_syndrome_table(g_mat)
         code_name = f"Custom({n_block},{k_block})"
 
         def _custom_dec(block: np.ndarray) -> Tuple[np.ndarray, int]:
             s = tuple(int(x) for x in ((block @ H_cust.T) % 2))
             if all(x == 0 for x in s):
-                return block[:k_block].copy(), 0
+                m = (block @ G_R) % 2
+                return m.copy(), 0
             if s in synd_table:
                 e = synd_table[s]
-                return (block ^ e)[:k_block], int(np.sum(e))
-            return block[:k_block].copy(), -1
+                corr = (block ^ e) % 2
+                m = (corr @ G_R) % 2
+                return m.copy(), int(np.sum(e))
+            m = (block @ G_R) % 2
+            return m.copy(), -1
 
         block_decoder = _custom_dec
     else:
