@@ -1,4 +1,23 @@
-from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QCheckBox, QPushButton, QHBoxLayout, QStackedWidget, QWidget, QScrollArea, QVBoxLayout, QButtonGroup, QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox, QSpinBox, QLineEdit
+from PyQt6.QtWidgets import (
+    QButtonGroup,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 from PyQt6.QtCore import Qt, pyqtSignal, QSize, QEvent
 from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap
 import importlib.resources
@@ -1836,6 +1855,15 @@ class PluginConfigDialog(QDialog):
                 widget = QCheckBox()
                 if curr_val is not None:
                     widget.setChecked(bool(curr_val))
+            elif param_type in ("choice", "dropdown", "select", "enum") or ("choices" in spec) or ("options" in spec):
+                widget = QComboBox()
+                raw_choices = spec.get("choices") if "choices" in spec else spec.get("options", [])
+                choices = [str(c) for c in raw_choices]
+                widget.addItems(choices)
+                if curr_val is not None and str(curr_val) in choices:
+                    widget.setCurrentText(str(curr_val))
+                elif choices:
+                    widget.setCurrentIndex(0)
             else:
                 widget = QLineEdit()
                 if curr_val is not None:
@@ -1887,6 +1915,8 @@ class PluginConfigDialog(QDialog):
                 values[key] = widget.value()
             elif param_type == "bool":
                 values[key] = widget.isChecked()
+            elif isinstance(widget, QComboBox):
+                values[key] = widget.currentText()
             else:
                 values[key] = widget.text()
         return values

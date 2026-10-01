@@ -759,12 +759,15 @@ class PluginStudioDialog(QDialog):
         elif ptype == "bool":
             w = QCheckBox()
             w.setChecked(bool(val))
-        elif ptype == "choice":
+        elif ptype in ("choice", "dropdown", "select", "enum") or ("choices" in spec) or ("options" in spec):
             w = QComboBox()
-            choices = [str(c) for c in spec.get("choices", [])]
+            raw_choices = spec.get("choices") if "choices" in spec else spec.get("options", [])
+            choices = [str(c) for c in raw_choices]
             w.addItems(choices)
-            if str(val) in choices:
+            if val is not None and str(val) in choices:
                 w.setCurrentText(str(val))
+            elif choices:
+                w.setCurrentIndex(0)
         else:
             w = QLineEdit()
             w.setText(str(val if val is not None else ""))

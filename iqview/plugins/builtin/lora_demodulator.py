@@ -94,14 +94,16 @@ LEGAL_LORA_BWS = [
 
 PLUGIN_PARAMS = {
     "sf": {
-        "type": "int",
+        "type": "choice",
         "default": 0,
+        "choices": [0, 5, 6, 7, 8, 9, 10, 11, 12],
         "label": "Spreading Factor (0 = Auto)",
         "tooltip": "LoRa Spreading Factor (5 to 12). Set to 0 to automatically detect SF from chirp sweep slope.",
     },
     "bw": {
-        "type": "float",
+        "type": "choice",
         "default": 0.0,
+        "choices": [0.0, 7812.5, 10416.7, 15625.0, 20833.3, 31250.0, 41666.7, 62500.0, 125000.0, 250000.0, 500000.0, 812500.0, 1000000.0, 1625000.0],
         "label": "Bandwidth (Hz, 0 = Auto)",
         "tooltip": "Bandwidth in Hz. Set to 0 to automatically snap to the legal LoRa bandwidth matching the overlay.",
     },
@@ -366,7 +368,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
         result.log("No Rect overlays found in active scope.")
         return result
 
-    sf_param          = int(info.params.get("sf", 0))
+    sf_param          = int(float(info.params.get("sf", 0)))
     bw_param          = float(info.params.get("bw", 0.0))
     trim_edges        = bool(info.params.get("trim_edges", True))
     max_hover_symbols = max(4, int(info.params.get("max_hover_symbols", 32)))

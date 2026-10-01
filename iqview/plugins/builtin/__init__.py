@@ -11,13 +11,19 @@ from types import ModuleType
 from typing import Dict, List, Optional
 
 from . import (
+    bit_reversal,
+    block_fec_decoder,
     burst_energy_detector,
     burst_metrics,
     channelizer_detector,
+    crc_checker,
+    diff_decoder,
     fsk_demodulator,
     lora_demodulator,
     snap_merge_overlays,
     snap_to_burst,
+    uw_sync,
+    xor_mask,
 )
 
 BUILTIN_MODULES: List[ModuleType] = [
@@ -26,6 +32,12 @@ BUILTIN_MODULES: List[ModuleType] = [
     snap_to_burst,
     fsk_demodulator,
     lora_demodulator,
+    uw_sync,
+    diff_decoder,
+    xor_mask,
+    bit_reversal,
+    block_fec_decoder,
+    crc_checker,
     burst_metrics,
     snap_merge_overlays,
 ]
