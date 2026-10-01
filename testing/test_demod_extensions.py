@@ -337,6 +337,22 @@ class TestBlockFECDecoder(unittest.TestCase):
         self.assertEqual(up.metadata["fec_pad_bits"], 4)
         self.assertEqual(up.metadata["fec_total_blocks"], 2)
 
+    def test_custom_g_matrix_decoding(self):
+        # User entered custom G matrix string (Hamming 7,4 equivalent)
+        g_str = "1000110, 0100011, 0010111, 0001101"
+        # Message [1, 1, 0, 1] -> Codeword: row0 ^ row1 ^ row3 = [1, 1, 0, 1, 0, 0, 0]
+        # Inject 1 bit error at bit 4 -> [1, 1, 0, 1, 1, 0, 0]
+        overlay = Overlay(shape=OverlayShape.RECT)
+        overlay.metadata = {"bits": "1101100"}
+
+        ctx = _make_context(overlay, {"code": "Custom G Matrix", "custom_g_matrix": g_str})
+        res = fec_mod.run(np.empty(0, dtype=np.complex64), ctx)
+
+        up = _apply_result(overlay, res)
+        self.assertEqual(up.metadata["bits"], "1101")
+        self.assertEqual(up.metadata["fec_corrected_blocks"], 1)
+        self.assertEqual(up.metadata["fec_bit_errors_corrected"], 1)
+
 
 class TestCRCChecker(unittest.TestCase):
     """Test CRC Checker (crc_checker.py)."""

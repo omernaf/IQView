@@ -40,18 +40,60 @@ Divides the bitstream into blocks of length $n$, corrects bit errors, and output
 * **Hamming(8,4)**: Extended [8,4,4] Hamming code with overall parity bit. Corrects 1 error, detects 2 errors per 8-bit block.
 * **Golay(23,12)**: Perfect [23,12,7] binary Golay code. Corrects up to 3 bit errors per 23-bit block ($12$ data bits output).
 * **Golay(24,12)**: Extended [24,12,8] binary Golay code with parity bit. Corrects up to 3 bit errors, detects 4 errors.
-* **Reed-Solomon(255,223) / RS(255,239)**: Standard byte-oriented RS codes over GF(256) with field polynomial $x^8 + x^4 + x^3 + x^2 + 1$ (`0x11D`).
 * **Custom Generator Matrix**: User can provide any $k \\times n$ binary generator matrix $G$. Automatically derives the parity-check matrix $H$ and constructs maximum-likelihood coset leader syndromes.
 
+---
+
+### How to Input a Custom Generator Matrix ($G$)
+
+To decode using a custom linear block code:
+1. Select **`Custom G Matrix`** in the **FEC Code** (`code`) drop-down.
+2. In the **Custom G Matrix** (`custom_g_matrix`) field, enter the rows of your generator matrix:
+   * **Dimensions**: $k$ rows (number of message/data bits) $\\times$ $n$ columns (total codeword bits), where $k < n$.
+   * **Delimiters**: Rows can be separated by commas (`,`), semicolons (`;`), or newlines (`\\n`).
+   * **Bits**: Values must be `0` or `1`. Spaces between bits are optional and ignored (e.g. `1000110` or `1 0 0 0 1 1 0`).
+   * **Systematic & General Forms**: You can supply $G$ directly in systematic form $[I_k \\mid P]$ or in general form; the decoder computes the row-reduced echelon form over $\\text{GF}(2)$ to derive $H = [P^T \\mid I_{n-k}]$.
+
+#### Copy-Paste Examples
+
+* **Hamming(7,4)** (4 data bits $\\to$ 7 codeword bits):
+  ```
+  1000110, 0100011, 0010111, 0001101
+  ```
+  *(or multiline)*:
+  ```
+  1 0 0 0 1 1 0
+  0 1 0 0 0 1 1
+  0 0 1 0 1 1 1
+  0 0 0 1 1 0 1
+  ```
+
+* **Extended Hamming(8,4)** (4 data bits $\\to$ 8 codeword bits with overall parity):
+  ```
+  10001101, 01000111, 00101111, 00011011
+  ```
+
+* **Repetition Code [3,1]** (1 data bit repeated 3 times, corrects 1 error):
+  ```
+  111
+  ```
+
+* **Single Parity-Check [5,4]** (4 data bits + 1 even parity bit):
+  ```
+  10001, 01001, 00101, 00011
+  ```
+
+---
+
 ### Parameters
-* **FEC Code** (`code`): Code selection dropdown.
-* **Custom G Matrix** (`custom_g_matrix`): Multiline or comma-separated binary rows defining $G$ (e.g. `1000110, 0100011, 0010111, 0001101`).
+* **FEC Code** (`code`): Code selection drop-down (`Hamming(7,4)`, `Hamming(8,4)`, `Golay(23,12)`, `Golay(24,12)`, or `Custom G Matrix`).
+* **Custom G Matrix** (`custom_g_matrix`): Comma-, semicolon-, or newline-separated binary rows defining $G$ ($k \\times n$).
 
 ### Output Metadata
 * `metadata["bits_pre_fec"]`: Bits before error correction
 * `metadata["bits"]`: Error-corrected message bitstream
 * `metadata["hex"]`: Hex formatted message
-* `metadata["fec_code"]`: Selected code name
+* `metadata["fec_code"]`: Selected code name (e.g. `Hamming(7,4)` or `Custom(7,4)`)
 * `metadata["fec_total_blocks"]`: Total blocks evaluated
 * `metadata["fec_clean_blocks"]`: Blocks with syndrome = 0 (no errors)
 * `metadata["fec_corrected_blocks"]`: Blocks where errors were corrected
@@ -71,14 +113,19 @@ PLUGIN_PARAMS = {
             "Golay(24,12)",
             "Custom G Matrix",
         ],
+        "preset_values": {
+            "Custom G Matrix": {
+                "custom_g_matrix": "1000110, 0100011, 0010111, 0001101",
+            },
+        },
         "label": "FEC Code",
         "tooltip": "Select a standard block code or choose Custom G Matrix.",
     },
     "custom_g_matrix": {
         "type": "str",
-        "default": "",
+        "default": "1000110, 0100011, 0010111, 0001101",
         "label": "Custom G Matrix",
-        "tooltip": "Comma- or newline-separated binary rows for custom generator matrix G (k x n).",
+        "tooltip": "Comma-, semicolon-, or newline-separated binary rows for G (k x n), e.g. 1000110, 0100011, 0010111, 0001101.",
     },
 }
 
@@ -248,7 +295,18 @@ def _build_custom_syndrome_table(G_raw: np.ndarray) -> Tuple[np.ndarray, int, in
         e = np.zeros(n, dtype=np.uint8)
         e[i] = 1
         s = tuple(int(x) for x in ((e @ H.T) % 2))
-        synd_table[s] = e
+        if s not in synd_table:
+            synd_table[s] = e
+
+    if n <= 16:
+        for i in range(n):
+            for j in range(i + 1, n):
+                e = np.zeros(n, dtype=np.uint8)
+                e[i] = 1
+                e[j] = 1
+                s = tuple(int(x) for x in ((e @ H.T) % 2))
+                if s not in synd_table:
+                    synd_table[s] = e
     return H, k, n, synd_table
 
 

@@ -502,8 +502,78 @@ PLUGIN_PARAMS = {
         "label": "Sync Pattern",
         "tooltip": "Binary preamble string for packet alignment",
     },
+    "code": {
+        "type": "choice",
+        "default": "Hamming(7,4)",
+        "choices": ["Hamming(7,4)", "Hamming(8,4)", "Golay(24,12)", "Custom G Matrix"],
+        "label": "FEC Code",
+        "tooltip": "Select standard block code or Custom G Matrix",
+    },
 }
 ```
+
+### Drop-Down Lists (`type: "choice"`) & Preset Auto-Overrides
+Parameters configured with `type: "choice"` (or containing a `choices` or `options` list) automatically render as native drop-down lists (`QComboBox`) across the Plugins tab, the Overlay Config dialog, and Chain Builder.
+
+When configuring presets that auto-fill other parameter fields, specify `"preset_values"`:
+```python
+"preset": {
+    "type": "choice",
+    "default": "CRC-16-CCITT",
+    "choices": ["CRC-16-CCITT", "CRC-32-IEEE", "Custom"],
+    "preset_values": {
+        "CRC-16-CCITT": {"poly_hex": "0x1021", "crc_bits": 16, "init_hex": "0xFFFF"},
+        "CRC-32-IEEE":  {"poly_hex": "0x04C11DB7", "crc_bits": 32, "init_hex": "0xFFFFFFFF"},
+    },
+}
+```
+* **Dynamic Overrides**: When a user selects a preset, all related parameter fields on the UI are instantly populated with the preset's values.
+* **Auto-Revert to Custom**: If the user modifies any auto-populated field, the preset drop-down automatically reverts to `"Custom"`.
+
+---
+
+### Custom Generator Matrix Input Guide (Block FEC Decoder)
+
+The **Block FEC Decoder** plugin allows users to input any custom binary linear block code via a Generator matrix $G$ ($k \times n$).
+
+#### How to Input
+1. In the **FEC Code** (`code`) drop-down, select **`Custom G Matrix`**.
+2. In the **Custom G Matrix** (`custom_g_matrix`) text box, enter the binary rows of $G$:
+   * **Dimensions**: $k$ rows (message/data bit count) $\times$ $n$ columns (block codeword length), where $k < n$.
+   * **Delimiters**: Rows can be separated by commas (`,`), semicolons (`;`), or newlines (`\n`).
+   * **Bits**: Values must be `0` or `1`. Spaces between bits are optional and ignored.
+   * **Systematic & General Form**: You can supply $G$ directly in systematic form $[I_k \mid P]$ or in general form; the plugin automatically computes the row-reduced echelon form over $\text{GF}(2)$ to derive the parity-check matrix $H = [P^T \mid I_{n-k}]$ and builds maximum-likelihood syndrome coset leader tables.
+
+#### Examples
+
+* **Hamming(7,4)** ($k=4, n=7$, corrects 1 bit error):
+  ```
+  1000110, 0100011, 0010111, 0001101
+  ```
+  *(or multiline)*:
+  ```
+  1 0 0 0 1 1 0
+  0 1 0 0 0 1 1
+  0 0 1 0 1 1 1
+  0 0 0 1 1 0 1
+  ```
+
+* **Extended Hamming(8,4)** ($k=4, n=8$, with overall parity):
+  ```
+  10001101, 01000111, 00101111, 00011011
+  ```
+
+* **Repetition Code [3,1]** (1 message bit repeated 3 times, corrects 1 error):
+  ```
+  111
+  ```
+
+* **Single Parity-Check [5,4]** (4 data bits + 1 even parity bit):
+  ```
+  10001, 01001, 00101, 00011
+  ```
+
+---
 
 ### Accessing Parameters Inside `run()`
 ```python
@@ -512,6 +582,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
     taps = int(info.params.get("filter_taps", 32))
     invert = bool(info.params.invert)
     preamble = str(info.params.get("preamble", "10101010"))
+    code = str(info.params.get("code", "Hamming(7,4)"))
     ...
 ```
 
