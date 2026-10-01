@@ -24,29 +24,17 @@ PLUGIN_DESCRIPTION = (
 )
 PLUGIN_CATEGORY    = "Detection"
 
-PLUGIN_DOC = """
-<h3>Burst Energy Detector</h3>
-<p>
-Fast wideband or sub-band burst detector that locates bursts in time using a smoothed instantaneous
-power envelope and median noise-floor estimator, optionally fits each burst's occupied frequency
-bounds <code>[f_lo, f_hi]</code> via FFT Occupied Bandwidth (OBW), and attaches baseband IQ
-(<code>o.iq</code>, <code>o.fs</code>) to each locked <code>Rect</code> overlay.
-</p>
+PLUGIN_DOC = """# Burst Energy Detector
 
-<h4>Algorithm &amp; Operation</h4>
-<ol>
-  <li><b>Sub-band Extraction:</b> If the active frequency span <code>[f_start, f_end]</code> is narrower
-      than the full recording bandwidth, down-converts and resamples to the sub-band.</li>
-  <li><b>Smoothed Power Envelope:</b> Computes instantaneous power <code>|IQ|^2</code> and smooths it with
-      a moving average window of length <code>smooth_window_us</code> microseconds.</li>
-  <li><b>Robust Noise Floor &amp; Thresholding:</b> Estimates the noise floor from the median of the lower
-      50% of envelope samples and triggers bursts where <code>env &gt; noise_floor * 10^(threshold_db / 10)</code>.</li>
-  <li><b>Gap Merging &amp; Duration Filtering:</b> Merges burst fragments separated by less than
-      <code>min_gap_ms</code> and discards bursts shorter than <code>min_duration_ms</code>.</li>
-  <li><b>Safeguard Margin &amp; Frequency Auto-Fit:</b> Expands each burst interval by <code>margin</code>
-      samples on each side (<code>[max(0, s0 - margin), min(N, s1 + margin)]</code>) and estimates tight
-      frequency bounds <code>[f_lo, f_hi]</code> from the 98% cumulative power spectrum.</li>
-</ol>
+Fast wideband or sub-band burst detector that locates bursts in time using a smoothed instantaneous power envelope and median noise-floor estimator, optionally fits each burst's occupied frequency bounds `[f_lo, f_hi]` via FFT Occupied Bandwidth (OBW), and attaches baseband IQ (`o.iq`, `o.fs`) to each locked `Rect` overlay.
+
+### Algorithm & Operation
+
+1. **Sub-band Extraction**: If the active frequency span `[f_start, f_end]` is narrower than the full recording bandwidth, down-converts and resamples to the sub-band.
+2. **Smoothed Power Envelope**: Computes instantaneous power `|IQ|^2` and smooths it with a moving average window of length `smooth_window_us` microseconds.
+3. **Robust Noise Floor & Thresholding**: Estimates the noise floor from the median of the lower 50% of envelope samples and triggers bursts where `env > noise_floor * 10^(threshold_db / 10)`.
+4. **Gap Merging & Duration Filtering**: Merges burst fragments separated by less than `min_gap_ms` and discards bursts shorter than `min_duration_ms`.
+5. **Safeguard Margin & Frequency Auto-Fit**: Expands each burst interval by `margin` samples on each side (`[max(0, s0 - margin), min(N, s1 + margin)]`) and estimates tight frequency bounds `[f_lo, f_hi]` from the 98% cumulative power spectrum.
 """
 
 

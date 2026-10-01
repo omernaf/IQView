@@ -659,6 +659,11 @@ class CustomViewBox(pg.ViewBox):
 
                 if hit_overlays:
                     self.ui_controller.select_overlay(hit_overlays[0].id, scroll_to_row=True)
+                    is_double = getattr(ev, 'double', lambda: False)()
+                    if is_double and hasattr(self.ui_controller, 'inspect_overlay'):
+                        self.ui_controller.inspect_overlay(hit_overlays[0])
+                        ev.accept()
+                        return
                     ev.accept()
                     return
                 elif getattr(self.ui_controller, 'selected_overlay_id', None) is not None:
@@ -693,13 +698,13 @@ class CustomViewBox(pg.ViewBox):
                 top_ov = hit_overlays[0]
                 tag_preview = f" '{top_ov.display_str}'" if top_ov.display_str else f" ({top_ov.shape.value})"
 
-                inspect_act = menu.addAction(f"🔍 Inspect Overlay{tag_preview} & Metadata…")
+                inspect_act = menu.addAction(f"Inspect Overlay{tag_preview} & Metadata…")
                 inspect_act.triggered.connect(
                     lambda _c=False, o=top_ov: self.ui_controller.inspect_overlay(o)
                 )
 
                 if top_ov.duration > 0 and hasattr(self.ui_controller, 'analyze_overlay_in_tab'):
-                    an_menu = menu.addMenu(f"📈 Analyze Overlay{tag_preview} in…")
+                    an_menu = menu.addMenu(f"Analyze Overlay{tag_preview} in…")
                     for lbl, mode_k in [
                         ("Time Domain (DDC Baseband)", "time"),
                         ("Frequency Domain (DDC Baseband)", "freq"),
@@ -712,7 +717,7 @@ class CustomViewBox(pg.ViewBox):
                         )
 
                 if top_ov.hover_str or top_ov.metadata:
-                    copy_act = menu.addAction("📋 Copy Overlay Text / Bits")
+                    copy_act = menu.addAction("Copy Overlay Text / Bits")
                     def _copy_ov_text(_c=False, o=top_ov):
                         import json
                         cb = QtWidgets.QApplication.clipboard()
@@ -726,12 +731,12 @@ class CustomViewBox(pg.ViewBox):
                     copy_act.triggered.connect(_copy_ov_text)
 
                 if hasattr(self.ui_controller, 'marker_panel') and hasattr(self.ui_controller.marker_panel, '_on_overlay_edit'):
-                    edit_act = menu.addAction("✏ Edit Overlay Style / Geometry…")
+                    edit_act = menu.addAction("Edit Overlay Style / Geometry…")
                     edit_act.triggered.connect(
                         lambda _c=False, oid=top_ov.id: self.ui_controller.marker_panel._on_overlay_edit(oid)
                     )
 
-                del_act = menu.addAction("🗑 Delete Overlay")
+                del_act = menu.addAction("Delete Overlay")
                 del_act.triggered.connect(
                     lambda _c=False, oid=top_ov.id: self.ui_controller.remove_overlay(oid)
                 )
@@ -740,7 +745,7 @@ class CustomViewBox(pg.ViewBox):
                     other_menu = menu.addMenu(f"Other Overlapping Overlays ({len(hit_overlays) - 1})…")
                     for ov_other in hit_overlays[1:]:
                         other_lbl = ov_other.display_str or f"{ov_other.shape.value} ({ov_other.t_start:.4f}s)"
-                        act_o = other_menu.addAction(f"🔍 Inspect {other_lbl}")
+                        act_o = other_menu.addAction(f"Inspect {other_lbl}")
                         act_o.triggered.connect(
                             lambda _c=False, o=ov_other: self.ui_controller.inspect_overlay(o)
                         )

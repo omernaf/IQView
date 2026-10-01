@@ -381,6 +381,7 @@ class OverlayManagerMixin:
                 waterfall=waterfall,
                 on_geometry_changed=self._persist_overlay_drag,
                 on_selected=self.select_overlay,
+                on_double_clicked=self._on_overlay_item_double_clicked,
             )
             item._selected = (overlay.id == getattr(self, 'selected_overlay_id', None))
             item.setZValue(overlay.z_order)
@@ -391,6 +392,10 @@ class OverlayManagerMixin:
 
         if _sync_multi_row:
             self.sync_multi_row_overlays()
+
+    def _on_overlay_item_double_clicked(self, oid: str) -> None:
+        self.select_overlay(oid, scroll_to_row=True)
+        self.inspect_overlay(oid)
 
     def _create_line_item(self, overlay: Overlay) -> Optional[pg.InfiniteLine]:
         """Build a pg.InfiniteLine for a LINE or HLINE overlay.

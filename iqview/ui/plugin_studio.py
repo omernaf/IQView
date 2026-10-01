@@ -6,8 +6,9 @@ documenting, and scaffolding IQView plugins (Phase 4).
 Tabs
 ----
 1. Manage & Run      — Search/filter plugins, pin favorites, edit parameters
-                       inline (with per-step chain execution & Save Defaults to .py),
-                       and read rich plugin documentation.
+                       inline (with per-step chain execution), and read rich
+                       plugin documentation. Parameters are auto-saved to the
+                       session so they persist across restarts.
 2. Chain Builder     — Visually assemble multi-step PluginChain pipelines,
                        configure per-step default parameters, register in-session,
                        test-run, or export as a reference or standalone .py file.
@@ -317,13 +318,8 @@ class PluginStudioDialog(QDialog):
         self.btn_reset_params = QPushButton("Reset to Defaults")
         self.btn_reset_params.clicked.connect(self._on_reset_manage_params)
 
-        self.btn_save_defaults_py = QPushButton("Save Defaults to .py")
-        self.btn_save_defaults_py.setToolTip("Write current parameter values as defaults into the plugin's .py file")
-        self.btn_save_defaults_py.clicked.connect(self._on_save_defaults_to_py)
-
         param_actions_row.addWidget(self.btn_apply_params)
         param_actions_row.addWidget(self.btn_reset_params)
-        param_actions_row.addWidget(self.btn_save_defaults_py)
         param_actions_row.addStretch(1)
         params_page_layout.addLayout(param_actions_row)
 
@@ -734,14 +730,6 @@ class PluginStudioDialog(QDialog):
         self.lbl_manage_meta.setText(f"Category: {cat}  |  Type: {t_label}  |  IQ Mode: {iq_label}\n{desc}")
 
         self.btn_edit_in_chain_builder.setVisible(is_chain)
-        has_params = bool(info.get("params_spec"))
-        self.btn_save_defaults_py.setEnabled(has_params)
-        if is_chain and not info.get("path"):
-            self.btn_save_defaults_py.setToolTip("Save tuned parameters as in-session defaults (prompts to export .py)")
-        elif info.get("path"):
-            self.btn_save_defaults_py.setToolTip(f"Write current parameter values as defaults directly into:\n{info.get('path')}")
-        else:
-            self.btn_save_defaults_py.setToolTip("Save current parameter values as defaults")
 
         self._rebuild_manage_params_form(name, info)
         self._rebuild_manage_doc_html(name, info)
@@ -920,45 +908,72 @@ class PluginStudioDialog(QDialog):
     def _rebuild_manage_doc_html(self, name: str, info: dict) -> None:
         p = self.palette_obj
         raw_doc = str(info.get("doc", "") or "").strip()
-        desc = _html.escape(str(info.get("description", "")))
+        desc = str(info.get("description", ""))
         params_spec = info.get("params_spec", {}) or {}
 
-        rows_html = []
-        for key, spec in params_spec.items():
-            if not isinstance(spec, dict):
-                spec = {"type": type(spec).__name__, "default": spec, "label": key}
-            lbl = _html.escape(str(spec.get("label", key)))
-            ptype = _html.escape(str(spec.get("type", "str")))
-            def_val = _html.escape(str(spec.get("default", "")))
-            tip = _html.escape(str(spec.get("tooltip", "") or "—"))
-            rows_html.append(
-                f"<tr>"
-                f"<td style='padding:5px 8px; border-bottom:1px solid {p.border};'><b>{lbl}</b><br/><code style='color:{p.text_dim};'>{_html.escape(str(key))}</code></td>"
-                f"<td style='padding:5px 8px; border-bottom:1px solid {p.border};'><code>{ptype}</code></td>"
-                f"<td style='padding:5px 8px; border-bottom:1px solid {p.border};'><code>{def_val}</code></td>"
-                f"<td style='padding:5px 8px; border-bottom:1px solid {p.border};'>{tip}</td>"
-                f"</tr>"
+        is_html = bool(re.search(r"<(?:h[1-6]|p|div|table|ol|ul|br)\b", raw_doc, re.IGNORECASE))
+
+        if not is_html:
+            rows_md = []
+            for key, spec in params_spec.items():
+                if not isinstance(spec, dict):
+                    spec = {"type": type(spec).__name__, "default": spec, "label": key}
+                lbl = str(spec.get("label", key))
+                ptype = str(spec.get("type", "str"))
+                def_val = str(spec.get("default", ""))
+                tip = str(spec.get("tooltip", "") or "—")
+                rows_md.append(f"| **{lbl}** (`{key}`) | `{ptype}` | `{def_val}` | {tip} |")
+
+            table_md = (
+                "### Parameters Reference\n\n"
+                "| Parameter | Type | Default | Description |\n"
+                "| :--- | :--- | :--- | :--- |\n"
+                + "\n".join(rows_md)
+                if rows_md
+                else "*No configurable parameters.*"
             )
 
-        table_html = (
-            f"<h4>Parameters Reference</h4>"
-            f"<table width='100%' cellspacing='0' cellpadding='0' style='border-collapse:collapse;'>"
-            f"<thead><tr style='background-color:{p.bg_widget};'>"
-            f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Parameter</th>"
-            f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Type</th>"
-            f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Default</th>"
-            f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Description</th>"
-            f"</tr></thead><tbody>{''.join(rows_html)}</tbody></table>"
-            if rows_html
-            else "<p><i>No configurable parameters.</i></p>"
-        )
+            body = raw_doc if raw_doc else f"# {name}\n\n{desc}"
+            has_inline_table = ("<table" in raw_doc.lower()) or ("| ---" in raw_doc or "|:---" in raw_doc or "| :---" in raw_doc)
+            extra_table = "" if has_inline_table else f"\n\n---\n\n{table_md}"
+            self.doc_browser.setMarkdown(f"{body}{extra_table}")
+        else:
+            rows_html = []
+            for key, spec in params_spec.items():
+                if not isinstance(spec, dict):
+                    spec = {"type": type(spec).__name__, "default": spec, "label": key}
+                lbl = _html.escape(str(spec.get("label", key)))
+                ptype = _html.escape(str(spec.get("type", "str")))
+                def_val = _html.escape(str(spec.get("default", "")))
+                tip = _html.escape(str(spec.get("tooltip", "") or "—"))
+                rows_html.append(
+                    f"<tr>"
+                    f"<td style='padding:5px 8px; border-bottom:1px solid {p.border};'><b>{lbl}</b><br/><code style='color:{p.text_dim};'>{_html.escape(str(key))}</code></td>"
+                    f"<td style='padding:5px 8px; border-bottom:1px solid {p.border};'><code>{ptype}</code></td>"
+                    f"<td style='padding:5px 8px; border-bottom:1px solid {p.border};'><code>{def_val}</code></td>"
+                    f"<td style='padding:5px 8px; border-bottom:1px solid {p.border};'>{tip}</td>"
+                    f"</tr>"
+                )
 
-        body = raw_doc if raw_doc else f"<h3>{_html.escape(name)}</h3><p>{desc}</p>"
-        has_inline_table = "<table" in raw_doc.lower()
-        extra_table = "" if has_inline_table else f"<hr/>{table_html}"
-        self.doc_browser.setHtml(
-            f"<div style=\"font-family:'Segoe UI',sans-serif; line-height:1.45;\">{body}{extra_table}</div>"
-        )
+            table_html = (
+                f"<h4>Parameters Reference</h4>"
+                f"<table width='100%' cellspacing='0' cellpadding='0' style='border-collapse:collapse;'>"
+                f"<thead><tr style='background-color:{p.bg_widget};'>"
+                f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Parameter</th>"
+                f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Type</th>"
+                f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Default</th>"
+                f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Description</th>"
+                f"</tr></thead><tbody>{''.join(rows_html)}</tbody></table>"
+                if rows_html
+                else "<p><i>No configurable parameters.</i></p>"
+            )
+
+            body = raw_doc if raw_doc else f"<h3>{_html.escape(name)}</h3><p>{_html.escape(desc)}</p>"
+            has_inline_table = "<table" in raw_doc.lower()
+            extra_table = "" if has_inline_table else f"<hr/>{table_html}"
+            self.doc_browser.setHtml(
+                f"<div style=\"font-family:'Segoe UI',sans-serif; line-height:1.45;\">{body}{extra_table}</div>"
+            )
 
     def _collect_manage_params(self) -> Dict[str, Any]:
         return {k: self._read_param_widget_value(w) for k, w in self._manage_param_widgets.items()}
@@ -969,7 +984,10 @@ class PluginStudioDialog(QDialog):
         info = self.parent_window._loaded_plugins.get(self._selected_manage_plugin)
         if not info:
             return
-        info["params"] = self._collect_manage_params()
+        params = self._collect_manage_params()
+        info["params"] = params
+        if hasattr(self.parent_window, "save_plugin_params"):
+            self.parent_window.save_plugin_params(self._selected_manage_plugin, params)
         if hasattr(self.parent_window, "statusBar"):
             self.parent_window.statusBar().showMessage(
                 f"Applied parameters for '{self._selected_manage_plugin}'", 3000
@@ -987,43 +1005,6 @@ class PluginStudioDialog(QDialog):
             default_val = spec.get("default") if isinstance(spec, dict) else spec
             self._set_param_widget_value(w, default_val)
         self._on_apply_manage_params()
-
-    def _on_save_defaults_to_py(self) -> None:
-        if not self._selected_manage_plugin:
-            return
-        self._on_apply_manage_params()
-        info = self.parent_window._loaded_plugins.get(self._selected_manage_plugin, {})
-        py_path = info.get("path")
-        if py_path and os.path.isfile(py_path):
-            ok = self.parent_window.save_plugin_defaults_to_py(self._selected_manage_plugin)
-            if ok:
-                QMessageBox.information(
-                    self, "Defaults Saved",
-                    f"Saved current parameter values as defaults directly into:\n{py_path}"
-                )
-            else:
-                QMessageBox.warning(
-                    self, "Cannot Save Defaults",
-                    f"Could not write defaults to:\n{py_path}"
-                )
-        elif info.get("chain") is not None:
-            # Sync in-memory chain step defaults
-            self.parent_window.save_plugin_defaults_to_py(self._selected_manage_plugin)
-            reply = QMessageBox.question(
-                self,
-                "Save Chain Defaults",
-                f"Parameter defaults for '{self._selected_manage_plugin}' have been updated for this session.\n\n"
-                "Would you like to export and save this chain as a .py file so these defaults persist across restarts?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                self._on_edit_selected_chain()
-                self._on_save_chain_as_py()
-        else:
-            QMessageBox.information(
-                self, "Defaults Applied",
-                f"Parameters for '{self._selected_manage_plugin}' are updated for this session."
-            )
 
     def _sync_scope_to_panel(self) -> None:
         scope = self.cb_studio_scope.currentData()
@@ -1607,12 +1588,7 @@ class PluginStudioDialog(QDialog):
             )
             param_reads.append(f"    {key} = {cast_fn}(info.params.get({key!r}, {def_repr}))")
             doc_table_rows.append(
-                f"    <tr>"
-                f"<td style='padding:4px 8px;'><b>{_html.escape(label)}</b> (<code>{_html.escape(key)}</code>)</td>"
-                f"<td style='padding:4px 8px;'><code>{_html.escape(ptype)}</code></td>"
-                f"<td style='padding:4px 8px;'><code>{_html.escape(def_repr)}</code></td>"
-                f"<td style='padding:4px 8px;'>{_html.escape(tip or '—')}</td>"
-                f"</tr>"
+                f"| **{label}** (`{key}`) | `{ptype}` | `{def_repr}` | {tip or '—'} |"
             )
         params_dict_lines.append("}")
         params_block = "\n".join(params_dict_lines)
@@ -1620,32 +1596,21 @@ class PluginStudioDialog(QDialog):
 
         if doc_table_rows:
             doc_params_section = (
-                "<h4>Parameters</h4>\n"
-                "<table border='1' cellspacing='0' cellpadding='4' style='border-collapse:collapse; width:100%;'>\n"
-                "  <thead>\n"
-                "    <tr>\n"
-                "      <th align='left' style='padding:4px 8px;'>Parameter</th>\n"
-                "      <th align='left' style='padding:4px 8px;'>Type</th>\n"
-                "      <th align='left' style='padding:4px 8px;'>Default</th>\n"
-                "      <th align='left' style='padding:4px 8px;'>Description</th>\n"
-                "    </tr>\n"
-                "  </thead>\n"
-                "  <tbody>\n"
+                "### Parameters\n\n"
+                "| Parameter | Type | Default | Description |\n"
+                "| :--- | :--- | :--- | :--- |\n"
                 + "\n".join(doc_table_rows)
-                + "\n  </tbody>\n</table>"
             )
         else:
-            doc_params_section = "<h4>Parameters</h4>\n<p><i>This plugin has no configurable parameters.</i></p>"
+            doc_params_section = "### Parameters\n\n*This plugin has no configurable parameters.*"
 
         if tpl_id == "plot_1d":
             extra_flags = "PLUGIN_NEEDS_WIDEBAND_IQ = True"
             doc_op_section = (
-                "<h4>Operation &amp; Algorithm</h4>\n"
-                "<ol>\n"
-                "  <li><b>Power Envelope</b>: Computes instantaneous power <code>|x[n]|²</code> over the active scope.</li>\n"
-                "  <li><b>Moving-Average Smoothing</b>: Convolves the instantaneous power with a rectangular window.</li>\n"
-                "  <li><b>Threshold Comparison &amp; Plotting</b>: Estimates the median noise floor and opens an interactive 1D plot tab.</li>\n"
-                "</ol>"
+                "### Operation & Algorithm\n\n"
+                "1. **Power Envelope**: Computes instantaneous power `|x[n]|²` over the active scope.\n"
+                "2. **Moving-Average Smoothing**: Convolves the instantaneous power with a rectangular window.\n"
+                "3. **Threshold Comparison & Plotting**: Estimates the median noise floor and opens an interactive 1D plot tab."
             )
             body = f"""def run(samples: np.ndarray, info) -> PluginResult:
     result = PluginResult()
@@ -1675,12 +1640,10 @@ class PluginStudioDialog(QDialog):
         elif tpl_id == "batch_detector":
             extra_flags = "PLUGIN_NEEDS_WIDEBAND_IQ = True\nPLUGIN_BATCH_SECONDS = 1.0"
             doc_op_section = (
-                "<h4>Operation &amp; Algorithm</h4>\n"
-                "<ol>\n"
-                "  <li><b>Batch Streaming</b>: Processes long recordings in <code>PLUGIN_BATCH_SECONDS</code> chunks to bound memory usage.</li>\n"
-                "  <li><b>Adaptive Thresholding</b>: Estimates noise floor from the 25th percentile power and detects contiguous regions above threshold.</li>\n"
-                "  <li><b>Overlay Creation &amp; Zero-Copy IQ</b>: Emits locked <code>Rect</code> overlays and attaches <code>r.iq</code> and <code>r.fs</code> for downstream plugins.</li>\n"
-                "</ol>"
+                "### Operation & Algorithm\n\n"
+                "1. **Batch Streaming**: Processes long recordings in `PLUGIN_BATCH_SECONDS` chunks to bound memory usage.\n"
+                "2. **Adaptive Thresholding**: Estimates noise floor from the 25th percentile power and detects contiguous regions above threshold.\n"
+                "3. **Overlay Creation & Zero-Copy IQ**: Emits locked `Rect` overlays and attaches `r.iq` and `r.fs` for downstream plugins."
             )
             body = f"""def run(samples: np.ndarray, info) -> PluginResult:
     result = PluginResult()
@@ -1715,12 +1678,10 @@ class PluginStudioDialog(QDialog):
         elif tpl_id == "overlay_processor":
             extra_flags = "PLUGIN_NEEDS_WIDEBAND_IQ = False"
             doc_op_section = (
-                "<h4>Operation &amp; Algorithm</h4>\n"
-                "<ol>\n"
-                "  <li><b>Overlay Iteration</b>: Iterates over all <code>Rect</code> overlays in <code>info.overlays</code>.</li>\n"
-                "  <li><b>Baseband Extraction</b>: Calls <code>o.get_samples(samples, info)</code> to reuse cached <code>o.iq</code> or perform lazy DDC.</li>\n"
-                "  <li><b>In-Place Annotation</b>: Updates each overlay's <code>metadata</code> and <code>hover_str</code> via <code>result.update(o.id, ...)</code>.</li>\n"
-                "</ol>"
+                "### Operation & Algorithm\n\n"
+                "1. **Overlay Iteration**: Iterates over all `Rect` overlays in `info.overlays`.\n"
+                "2. **Baseband Extraction**: Calls `o.get_samples(samples, info)` to reuse cached `o.iq` or perform lazy DDC.\n"
+                "3. **In-Place Annotation**: Updates each overlay's `metadata` and `hover_str` via `result.update(o.id, ...)`."
             )
             body = f"""def run(samples: np.ndarray, info) -> PluginResult:
     result = PluginResult()
@@ -1740,11 +1701,9 @@ class PluginStudioDialog(QDialog):
         elif tpl_id == "native_tabs":
             extra_flags = "PLUGIN_NEEDS_WIDEBAND_IQ = True"
             doc_op_section = (
-                "<h4>Operation &amp; Algorithm</h4>\n"
-                "<ol>\n"
-                "  <li><b>Signal Extraction</b>: Reads complex IQ samples from the selected scope.</li>\n"
-                "  <li><b>Native Tab Launch</b>: Opens IQView's built-in Time Domain and Constellation analysis tabs via <code>PluginResult</code>.</li>\n"
-                "</ol>"
+                "### Operation & Algorithm\n\n"
+                "1. **Signal Extraction**: Reads complex IQ samples from the selected scope.\n"
+                "2. **Native Tab Launch**: Opens IQView's built-in Time Domain and Constellation analysis tabs via `PluginResult`."
             )
             body = f"""def run(samples: np.ndarray, info) -> PluginResult:
     result = PluginResult()
@@ -1758,8 +1717,8 @@ class PluginStudioDialog(QDialog):
         else:
             extra_flags = "PLUGIN_NEEDS_WIDEBAND_IQ = True"
             doc_op_section = (
-                "<h4>Operation &amp; Algorithm</h4>\n"
-                "<p>Describe the signal processing stages, inputs, and outputs of this plugin here.</p>"
+                "### Operation & Algorithm\n\n"
+                "Describe the signal processing stages, inputs, and outputs of this plugin here."
             )
             body = f"""def run(samples: np.ndarray, info) -> PluginResult:
     result = PluginResult()
@@ -1779,10 +1738,12 @@ PLUGIN_DESCRIPTION = {desc!r}
 PLUGIN_CATEGORY = {cat!r}
 {extra_flags}
 
-PLUGIN_DOC = """
-<h3>{_html.escape(name)}</h3>
-<p>{_html.escape(desc)}</p>
+PLUGIN_DOC = """# {name}
+
+{desc}
+
 {doc_op_section}
+
 {doc_params_section}
 """
 
@@ -1827,24 +1788,31 @@ PLUGIN_DOC = """
             m_desc = re.search(r'PLUGIN_DESCRIPTION\s*=\s*["\']([^"\']+)["\']', code_text)
             desc = m_desc.group(1) if m_desc else self.ed_tpl_desc.text().strip()
             doc_body = (
-                f"<h3>{_html.escape(name)}</h3>"
-                f"<p>{_html.escape(desc)}</p>"
-                f"<p style='color:{p.text_dim}; font-style:italic;'>"
-                f"Define <code>PLUGIN_DOC = \"\"\"...\"\"\"</code> in the code editor to customize this live documentation preview."
-                f"</p>"
+                f"# {name}\n\n"
+                f"{desc}\n\n"
+                f"*Define `PLUGIN_DOC = \"\"\"...\"\"\"` in the code editor to customize this live documentation preview.*"
             )
 
-        full_html = f"""
-        <div style="font-family: 'Segoe UI', sans-serif; line-height: 1.45; color: {p.text_main};">
-            <div style="margin-bottom: 10px; color: {p.text_dim}; font-size: 11px;">
-                <b>Category:</b> {_html.escape(cat)} &nbsp;|&nbsp;
-                <b>Type:</b> Custom Plugin (.py) &nbsp;|&nbsp;
-                <b>IQ Mode:</b> {_html.escape(iq_mode)}
+        is_html = bool(re.search(r"<(?:h[1-6]|p|div|table|ol|ul|br)\b", doc_body, re.IGNORECASE))
+        if not is_html:
+            full_md = (
+                f"**Category:** {cat} | **Type:** Custom Plugin (.py) | **IQ Mode:** {iq_mode}\n\n"
+                f"---\n\n"
+                f"{doc_body}"
+            )
+            self.tpl_doc_preview.setMarkdown(full_md)
+        else:
+            full_html = f"""
+            <div style="font-family: 'Segoe UI', sans-serif; line-height: 1.45; color: {p.text_main};">
+                <div style="margin-bottom: 10px; color: {p.text_dim}; font-size: 11px;">
+                    <b>Category:</b> {_html.escape(cat)} &nbsp;|&nbsp;
+                    <b>Type:</b> Custom Plugin (.py) &nbsp;|&nbsp;
+                    <b>IQ Mode:</b> {_html.escape(iq_mode)}
+                </div>
+                {doc_body}
             </div>
-            {doc_body}
-        </div>
-        """
-        self.tpl_doc_preview.setHtml(full_html)
+            """
+            self.tpl_doc_preview.setHtml(full_html)
 
     def _on_save_and_load_template(self) -> None:
         code = self.ed_tpl_code.toPlainText()

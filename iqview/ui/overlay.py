@@ -558,13 +558,21 @@ class OverlayItem(pg.GraphicsObject):
     Geometry is expressed in world-space (seconds × Hz).
     """
 
-    def __init__(self, overlay: Overlay, waterfall: bool = False, on_geometry_changed=None, on_selected=None) -> None:
+    def __init__(
+        self,
+        overlay: Overlay,
+        waterfall: bool = False,
+        on_geometry_changed=None,
+        on_selected=None,
+        on_double_clicked=None,
+    ) -> None:
         super().__init__()
         self.overlay = overlay
         self.waterfall = waterfall
         # Callable(overlay_id, points=…, center=…, radii=…) — fired on mouse release
         self._on_geometry_changed = on_geometry_changed
         self._on_selected = on_selected
+        self._on_double_clicked = on_double_clicked
 
         # Drag & selection state
         self._drag_mode: Optional[str] = None   # None | 'move' | handle role
@@ -808,6 +816,16 @@ class OverlayItem(pg.GraphicsObject):
         self._drag_mode = None
         self._drag_last = None
         event.accept()
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            pos = event.pos()
+            if self._inside_shape(pos) or self._hit_handle(pos):
+                if self._on_double_clicked:
+                    self._on_double_clicked(self.overlay.id)
+                event.accept()
+                return
+        super().mouseDoubleClickEvent(event)
 
     # ------------------------------------------------------------------
     # Hover events — handle highlighting + cursor feedback

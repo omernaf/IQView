@@ -27,49 +27,23 @@ PLUGIN_DESCRIPTION = (
 PLUGIN_CATEGORY    = "Post-Processing"
 PLUGIN_NEEDS_WIDEBAND_IQ = False
 
-PLUGIN_DOC = """
-<h3>Snap to Burst</h3>
-<p>
-Inspects every <code>Rect</code> overlay in the active scope, searches for a signal burst inside
-its time and frequency bounds, reshapes the <code>Rect</code> to fit tightly around the burst,
-updates the overlay's baseband IQ (<code>o.iq</code>, <code>o.fs</code>), and writes all measured
-burst parameters into <code>o.metadata</code>.
-</p>
+PLUGIN_DOC = """# Snap to Burst
 
-<h4>Algorithm &amp; Operation</h4>
-<ol>
-  <li><b>Baseband Extraction:</b> Extracts the complex baseband IQ inside each <code>Rect</code> overlay
-      via <code>o.get_samples(samples, info)</code>.</li>
-  <li><b>Time-Domain Burst Detection:</b>
-    <ul>
-      <li>Computes the smoothed instantaneous power envelope <code>|IQ|^2</code> using a moving-average
-          window of length <code>smooth_window_us</code>.</li>
-      <li>Estimates the local noise floor from the lower percentile of the envelope and verifies that
-          the burst exceeds the noise floor by at least <code>threshold_db</code>.</li>
-      <li>Finds contiguous active intervals, merges gaps shorter than <code>min_gap_ms</code>, selects
-          the highest-energy burst inside the box, and expands both ends by <code>margin</code> samples.</li>
-    </ul>
-  </li>
-  <li><b>Frequency-Domain Tight Fitting (OBW):</b>
-    <ul>
-      <li>Computes the windowed FFT power spectral density of the time-cropped burst and subtracts the
-          spectral noise floor.</li>
-      <li>Locates the lower and upper frequency edges containing <code>obw_percent</code>% of the burst's
-          spectral power, determining the tight frequency span <code>[new_f0, new_f1]</code> and center
-          frequency <code>fc_hz</code>.</li>
-    </ul>
-  </li>
-  <li><b>Baseband IQ Refinement &amp; Parameter Extraction:</b>
-    <ul>
-      <li>Down-converts, filters, and resamples the cropped burst to the new tight frequency bounds so
-          <code>o.iq</code> and <code>o.fs</code> match the reshaped <code>Rect</code>.</li>
-      <li>Extracts and stores <code>fc_hz</code>, <code>bw_hz</code>, <code>obw_hz</code>,
-          <code>cfo_hz</code>, <code>t_start_s</code>, <code>t_end_s</code>, <code>duration_ms</code>,
-          <code>snr_db</code>, <code>peak_snr_db</code>, <code>papr_db</code>, <code>rms_dbfs</code>,
-          <code>num_samples</code>, and <code>sample_rate_hz</code> in <code>o.metadata</code>.</li>
-    </ul>
-  </li>
-</ol>
+Inspects every `Rect` overlay in the active scope, searches for a signal burst inside its time and frequency bounds, reshapes the `Rect` to fit tightly around the burst, updates the overlay's baseband IQ (`o.iq`, `o.fs`), and writes all measured burst parameters into `o.metadata`.
+
+### Algorithm & Operation
+
+1. **Baseband Extraction**: Extracts the complex baseband IQ inside each `Rect` overlay via `o.get_samples(samples, info)`.
+2. **Time-Domain Burst Detection**:
+   - Computes the smoothed instantaneous power envelope `|IQ|^2` using a moving-average window of length `smooth_window_us`.
+   - Estimates the local noise floor from the lower percentile of the envelope and verifies that the burst exceeds the noise floor by at least `threshold_db`.
+   - Finds contiguous active intervals, merges gaps shorter than `min_gap_ms`, selects the highest-energy burst inside the box, and expands both ends by `margin` samples.
+3. **Frequency-Domain Tight Fitting (OBW)**:
+   - Computes the windowed FFT power spectral density of the time-cropped burst and subtracts the spectral noise floor.
+   - Locates the lower and upper frequency edges containing `obw_percent`% of the burst's spectral power, determining the tight frequency span `[new_f0, new_f1]` and center frequency `fc_hz`.
+4. **Baseband IQ Refinement & Parameter Extraction**:
+   - Down-converts, filters, and resamples the cropped burst to the new tight frequency bounds so `o.iq` and `o.fs` match the reshaped `Rect`.
+   - Extracts and stores `fc_hz`, `bw_hz`, `obw_hz`, `cfo_hz`, `t_start_s`, `t_end_s`, `duration_ms`, `snr_db`, `peak_snr_db`, `papr_db`, `rms_dbfs`, `num_samples`, and `sample_rate_hz` in `o.metadata`.
 """
 
 

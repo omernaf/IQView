@@ -3,6 +3,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QSize, QEvent
 from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap
 import importlib.resources
 import os
+import re
 from .widgets import FormattedLineEdit, DoubleClickButton, format_tooltip_with_keybind, get_theme_icon
 from .themes import get_palette
 
@@ -1481,6 +1482,8 @@ class MarkerPanel(QFrame):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             new_values = dlg.get_values()
             info["params"] = new_values
+            if hasattr(self.parent_window, "save_plugin_params"):
+                self.parent_window.save_plugin_params(name, new_values)
             self.parent_window.statusBar().showMessage(f"Updated parameters for {name}", 3000)
             if dlg.requested_step_run is not None:
                 step_idx = int(dlg.requested_step_run)
@@ -1608,61 +1611,100 @@ class PluginDocDialog(QDialog):
         badge_type = "Built-In Plugin" if is_builtin else "Custom / Chain Plugin"
         iq_mode = "Wideband IQ (extracts scope IQ)" if needs_wb else "Overlay Baseband IQ (zero-copy o.iq / lazy DDC)"
 
-        rows_html = []
-        for key, spec in params_spec.items():
-            if not isinstance(spec, dict):
-                spec = {"type": type(spec).__name__, "default": spec, "label": key}
-            lbl = _html.escape(str(spec.get("label", key)))
-            ptype = _html.escape(str(spec.get("type", "str")))
-            def_val = _html.escape(str(spec.get("default", "")))
-            tip = _html.escape(str(spec.get("tooltip", "") or "—"))
-            step_title = spec.get("step_title")
-            if step_title:
-                lbl = f"[{_html.escape(str(step_title))}] {lbl}"
-            rows_html.append(
-                f"<tr>"
-                f"<td style='padding:6px 8px; border-bottom:1px solid {p.border};'><b>{lbl}</b><br/>"
-                f"<code style='color:{p.text_dim};'>{_html.escape(str(key))}</code></td>"
-                f"<td style='padding:6px 8px; border-bottom:1px solid {p.border};'><code>{ptype}</code></td>"
-                f"<td style='padding:6px 8px; border-bottom:1px solid {p.border};'><code>{def_val}</code></td>"
-                f"<td style='padding:6px 8px; border-bottom:1px solid {p.border};'>{tip}</td>"
-                f"</tr>"
+        is_html = bool(re.search(r"<(?:h[1-6]|p|div|table|ol|ul|br)\b", raw_doc, re.IGNORECASE))
+
+        if not is_html:
+            # Markdown rendering mode
+            rows_md = []
+            for key, spec in params_spec.items():
+                if not isinstance(spec, dict):
+                    spec = {"type": type(spec).__name__, "default": spec, "label": key}
+                lbl = str(spec.get("label", key))
+                ptype = str(spec.get("type", "str"))
+                def_val = str(spec.get("default", ""))
+                tip = str(spec.get("tooltip", "") or "—")
+                step_title = spec.get("step_title")
+                if step_title:
+                    lbl = f"[{step_title}] {lbl}"
+                rows_md.append(f"| **{lbl}** (`{key}`) | `{ptype}` | `{def_val}` | {tip} |")
+
+            params_table_md = (
+                "### Parameters Reference\n\n"
+                "| Parameter | Type | Default | Description |\n"
+                "| :--- | :--- | :--- | :--- |\n"
+                + "\n".join(rows_md)
+                if rows_md
+                else "*This plugin has no configurable parameters.*"
             )
 
-        params_table_html = (
-            f"<h4>Parameters Reference</h4>"
-            f"<table width='100%' cellspacing='0' cellpadding='0' style='border-collapse:collapse;'>"
-            f"<thead><tr style='background-color:{p.bg_widget};'>"
-            f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Parameter</th>"
-            f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Type</th>"
-            f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Default</th>"
-            f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Description</th>"
-            f"</tr></thead>"
-            f"<tbody>{''.join(rows_html)}</tbody></table>"
-            if rows_html
-            else "<p><i>This plugin has no configurable parameters.</i></p>"
-        )
+            body_doc = raw_doc if raw_doc else f"# {self.plugin_name}\n\n{desc}"
+            has_inline_table = ("<table" in raw_doc.lower()) or ("| ---" in raw_doc or "|:---" in raw_doc or "| :---" in raw_doc)
+            extra_params_block = "" if has_inline_table else f"\n\n---\n\n{params_table_md}"
 
-        body_doc = raw_doc if raw_doc else f"<h3>{_html.escape(self.plugin_name)}</h3><p>{desc}</p>"
-        has_inline_table = "<table" in raw_doc.lower()
-        extra_params_block = (
-            ""
-            if has_inline_table
-            else f'<hr style="border: 0; border-top: 1px solid {p.border}; margin: 14px 0;" />{params_table_html}'
-        )
+            full_md = (
+                f"**Category:** {cat} | **Type:** {badge_type} | **IQ Mode:** {iq_mode}\n\n"
+                f"---\n\n"
+                f"{body_doc}"
+                f"{extra_params_block}"
+            )
+            browser.setMarkdown(full_md)
+        else:
+            # Legacy HTML rendering mode
+            rows_html = []
+            for key, spec in params_spec.items():
+                if not isinstance(spec, dict):
+                    spec = {"type": type(spec).__name__, "default": spec, "label": key}
+                lbl = _html.escape(str(spec.get("label", key)))
+                ptype = _html.escape(str(spec.get("type", "str")))
+                def_val = _html.escape(str(spec.get("default", "")))
+                tip = _html.escape(str(spec.get("tooltip", "") or "—"))
+                step_title = spec.get("step_title")
+                if step_title:
+                    lbl = f"[{_html.escape(str(step_title))}] {lbl}"
+                rows_html.append(
+                    f"<tr>"
+                    f"<td style='padding:6px 8px; border-bottom:1px solid {p.border};'><b>{lbl}</b><br/>"
+                    f"<code style='color:{p.text_dim};'>{_html.escape(str(key))}</code></td>"
+                    f"<td style='padding:6px 8px; border-bottom:1px solid {p.border};'><code>{ptype}</code></td>"
+                    f"<td style='padding:6px 8px; border-bottom:1px solid {p.border};'><code>{def_val}</code></td>"
+                    f"<td style='padding:6px 8px; border-bottom:1px solid {p.border};'>{tip}</td>"
+                    f"</tr>"
+                )
 
-        full_html = f"""
-        <div style="font-family: 'Segoe UI', sans-serif; line-height: 1.45;">
-            <div style="margin-bottom: 10px; color: {p.text_dim}; font-size: 12px;">
-                <b>Category:</b> {cat} &nbsp;|&nbsp;
-                <b>Type:</b> {badge_type} &nbsp;|&nbsp;
-                <b>IQ Mode:</b> {iq_mode}
+            params_table_html = (
+                f"<h4>Parameters Reference</h4>"
+                f"<table width='100%' cellspacing='0' cellpadding='0' style='border-collapse:collapse;'>"
+                f"<thead><tr style='background-color:{p.bg_widget};'>"
+                f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Parameter</th>"
+                f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Type</th>"
+                f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Default</th>"
+                f"<th align='left' style='padding:6px 8px; border-bottom:2px solid {p.border};'>Description</th>"
+                f"</tr></thead>"
+                f"<tbody>{''.join(rows_html)}</tbody></table>"
+                if rows_html
+                else "<p><i>This plugin has no configurable parameters.</i></p>"
+            )
+
+            body_doc = raw_doc if raw_doc else f"<h3>{_html.escape(self.plugin_name)}</h3><p>{desc}</p>"
+            has_inline_table = "<table" in raw_doc.lower()
+            extra_params_block = (
+                ""
+                if has_inline_table
+                else f'<hr style="border: 0; border-top: 1px solid {p.border}; margin: 14px 0;" />{params_table_html}'
+            )
+
+            full_html = f"""
+            <div style="font-family: 'Segoe UI', sans-serif; line-height: 1.45;">
+                <div style="margin-bottom: 10px; color: {p.text_dim}; font-size: 12px;">
+                    <b>Category:</b> {cat} &nbsp;|&nbsp;
+                    <b>Type:</b> {badge_type} &nbsp;|&nbsp;
+                    <b>IQ Mode:</b> {iq_mode}
+                </div>
+                {body_doc}
+                {extra_params_block}
             </div>
-            {body_doc}
-            {extra_params_block}
-        </div>
-        """
-        browser.setHtml(full_html)
+            """
+            browser.setHtml(full_html)
         layout.addWidget(browser, 1)
 
         btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
@@ -1821,14 +1863,6 @@ class PluginConfigDialog(QDialog):
         btn_docs.clicked.connect(self._on_docs_clicked)
         bottom_row.addWidget(btn_docs)
 
-        py_path = self.plugin_info.get("path")
-        if py_path and os.path.isfile(py_path):
-            btn_save_py = QPushButton("Save Defaults to .py")
-            btn_save_py.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn_save_py.setToolTip(f"Write current parameter values as defaults into:\n{py_path}")
-            btn_save_py.clicked.connect(self._on_save_defaults_clicked)
-            bottom_row.addWidget(btn_save_py)
-
         bottom_row.addStretch()
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -1845,13 +1879,6 @@ class PluginConfigDialog(QDialog):
     def _on_run_step_clicked(self, step_idx: int):
         self.requested_step_run = step_idx
         self.accept()
-
-    def _on_save_defaults_clicked(self):
-        vals = self.get_values()
-        if self.parent() and hasattr(self.parent(), "parent_window"):
-            pw = self.parent().parent_window
-            if hasattr(pw, "save_plugin_defaults_to_py"):
-                pw.save_plugin_defaults_to_py(self.plugin_name, vals)
         
     def get_values(self):
         values = {}

@@ -25,42 +25,20 @@ PLUGIN_DESCRIPTION = (
 )
 PLUGIN_CATEGORY    = "Detection"
 
-PLUGIN_DOC = """
-<h3>Channelizer + Energy Detector</h3>
-<p>
-Divides the active frequency span <code>[f_start, f_end]</code> into uniform or overlapping narrowband
-channels anchored at <b>Reference Channel Fc</b>, down-converts each channel to baseband using a
-single-FFT frequency-domain DDC with a 12th-order zero-phase Butterworth filter, and runs a two-speed
-adaptive IIR + <i>M</i>-out-of-<i>N</i> hysteresis energy detector on each channel.
-</p>
+PLUGIN_DOC = """# Channelizer + Energy Detector
 
-<h4>Algorithm &amp; Operation</h4>
-<ol>
-  <li><b>Channel Grid Deduction:</b> Channel center frequencies are placed at
-      <code>f_k = ref_channel_fc + k * channel_spacing * (1 - overlap)</code> within <code>[f_start, f_end]</code>.</li>
-  <li><b>Single-FFT Frequency-Domain DDC:</b> A single multithreaded wideband FFT is computed once.
-      Each channel slices its passband bins, applies a zero-phase Butterworth low-pass response, and executes
-      a narrowband IFFT of rate <code>ch_fs = channel_spacing</code>.</li>
-  <li><b>FIR Envelope (Moving Average):</b> Computes the instantaneous magnitude <code>|IQ|</code> and smooths
-      it with an <code>L</code>-tap moving average filter (<code>FIR</code>).</li>
-  <li><b>Dual-Alpha IIR &amp; M-out-of-N State Machine:</b>
-    <ul>
-      <li><b>INIT (Gray):</b> Runs for <code>init_chunks * chunk_size</code> samples using <code>alpha_low</code>
-          so the noise-floor IIR converges before detection starts.</li>
-      <li><b>IDLE (Red):</b> Tracks the noise floor with <code>y[n] = alpha_low * x[n] + (1 - alpha_low) * y[n-1]</code>.
-          Each sample where <code>x[n] &gt; threshold * y[n-1]</code> counts as a hit. When <code>M</code> hits occur
-          within the last <code>N</code> samples, the detector transitions to <b>ACTIVE</b> (burst start at <code>i - M + 1</code>)
-          and resets the IIR state to the current FIR value <code>y = x[n]</code>.</li>
-      <li><b>ACTIVE (Green):</b> Tracks the active burst energy with <code>alpha_high</code>. Each sample where
-          <code>x[n] &lt; y[n-1] / threshold</code> counts as a hit. When <code>M</code> hits occur within <code>N</code>
-          samples, the detector transitions back to <b>IDLE</b> (burst end at <code>i - M + 1</code>) and resets
-          <code>y = x[n]</code>.</li>
-    </ul>
-  </li>
-  <li><b>Safeguard Margin &amp; Zero-Copy IQ:</b> Each detected burst interval <code>[s0, s1]</code> is expanded by
-      <code>margin</code> samples on both sides (<code>[max(0, s0 - margin), min(N, s1 + margin)]</code>) and
-      stored on the resulting locked <code>Rect</code> overlay as <code>o.iq</code> and <code>o.fs</code>.</li>
-</ol>
+Divides the active frequency span `[f_start, f_end]` into uniform or overlapping narrowband channels anchored at **Reference Channel Fc**, down-converts each channel to baseband using a single-FFT frequency-domain DDC with a 12th-order zero-phase Butterworth filter, and runs a two-speed adaptive IIR + *M*-out-of-*N* hysteresis energy detector on each channel.
+
+### Algorithm & Operation
+
+1. **Channel Grid Deduction**: Channel center frequencies are placed at `f_k = ref_channel_fc + k * channel_spacing * (1 - overlap)` within `[f_start, f_end]`.
+2. **Single-FFT Frequency-Domain DDC**: A single multithreaded wideband FFT is computed once. Each channel slices its passband bins, applies a zero-phase Butterworth low-pass response, and executes a narrowband IFFT of rate `ch_fs = channel_spacing`.
+3. **FIR Envelope (Moving Average)**: Computes the instantaneous magnitude `|IQ|` and smooths it with an `L`-tap moving average filter (`FIR`).
+4. **Dual-Alpha IIR & M-out-of-N State Machine**:
+   - **INIT (Gray)**: Runs for `init_chunks * chunk_size` samples using `alpha_low` so the noise-floor IIR converges before detection starts.
+   - **IDLE (Red)**: Tracks the noise floor with `y[n] = alpha_low * x[n] + (1 - alpha_low) * y[n-1]`. Each sample where `x[n] > threshold * y[n-1]` counts as a hit. When `M` hits occur within the last `N` samples, the detector transitions to **ACTIVE** (burst start at `i - M + 1`) and resets the IIR state to the current FIR value `y = x[n]`.
+   - **ACTIVE (Green)**: Tracks the active burst energy with `alpha_high`. Each sample where `x[n] < y[n-1] / threshold` counts as a hit. When `M` hits occur within `N` samples, the detector transitions back to **IDLE** (burst end at `i - M + 1`) and resets `y = x[n]`.
+5. **Safeguard Margin & Zero-Copy IQ**: Each detected burst interval `[s0, s1]` is expanded by `margin` samples on both sides (`[max(0, s0 - margin), min(N, s1 + margin)]`) and stored on the resulting locked `Rect` overlay as `o.iq` and `o.fs`.
 """
 
 

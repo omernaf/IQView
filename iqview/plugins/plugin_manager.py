@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import json
 import os
 import traceback
 import uuid
@@ -45,7 +46,7 @@ from PyQt6.QtCore import QObject, QThread, pyqtSignal
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
 
-from iqview.plugins.chain import PluginChain, save_defaults_to_py
+from iqview.plugins.chain import PluginChain
 from iqview.plugins.context import PluginContext, PluginParams
 from iqview.plugins.plugin_result import PluginResult
 
@@ -335,6 +336,63 @@ class PluginManagerMixin:
         self._rebuild_plugins_menu()
         return now_pinned
 
+    # ------------------------------------------------------------------
+    # Parameter Session Persistence
+    # ------------------------------------------------------------------
+
+    def _get_all_saved_plugin_params(self) -> Dict[str, Dict[str, Any]]:
+        """Return the full dictionary of saved plugin parameters from session settings."""
+        if hasattr(self, "settings_mgr") and self.settings_mgr is not None:
+            raw = self.settings_mgr.get("plugins/saved_params", "{}")
+            if isinstance(raw, dict):
+                return copy.deepcopy(raw)
+            if isinstance(raw, str) and raw.strip():
+                try:
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, dict):
+                        return parsed
+                except Exception:
+                    pass
+        return copy.deepcopy(getattr(self, "_saved_plugin_params_mem", {}))
+
+    def get_saved_plugin_params(self, name: str) -> Dict[str, Any]:
+        """Return last-used session parameters for plugin *name*."""
+        all_saved = self._get_all_saved_plugin_params()
+        entry = all_saved.get(name, {})
+        return copy.deepcopy(entry) if isinstance(entry, dict) else {}
+
+    def save_plugin_params(self, name: str, params: Optional[Dict[str, Any]] = None) -> None:
+        """Persist active parameter values for plugin *name* into the user's session."""
+        if not name:
+            return
+        info = self._loaded_plugins.get(name)
+        if params is None:
+            if info is None:
+                return
+            params = info.get("params", {})
+        if not isinstance(params, dict):
+            return
+
+        if info is not None:
+            info["params"] = copy.deepcopy(params)
+            chain_obj = info.get("chain")
+            if chain_obj is not None and hasattr(chain_obj, "steps"):
+                for step_idx, s_dict in enumerate(chain_obj.steps):
+                    prefix = f"step{step_idx}."
+                    for k, v in params.items():
+                        if str(k).startswith(prefix):
+                            raw_k = str(k)[len(prefix):]
+                            s_dict.setdefault("params", {})[raw_k] = v
+
+        all_saved = self._get_all_saved_plugin_params()
+        all_saved[name] = copy.deepcopy(params)
+        self._saved_plugin_params_mem = all_saved
+        if hasattr(self, "settings_mgr") and self.settings_mgr is not None:
+            try:
+                self.settings_mgr.set("plugins/saved_params", json.dumps(all_saved))
+            except Exception:
+                pass
+
     def register_chain_plugin(
         self,
         chain: PluginChain,
@@ -369,6 +427,12 @@ class PluginManagerMixin:
             k: (spec.get("default") if isinstance(spec, dict) else spec)
             for k, spec in params_spec.items()
         }
+        saved_session_params = self.get_saved_plugin_params(name)
+        for k, val in saved_session_params.items():
+            if k in active_params:
+                active_params[k] = val
+
+        self.save_plugin_params(name, active_params)
         self._loaded_plugins[name] = {
             "name":                  name,
             "path":                  path,
@@ -500,11 +564,25 @@ class PluginManagerMixin:
                 else:
                     active_params[k] = p_spec
 
+        # Overlay saved session parameters (if any)
+        saved_session_params = self.get_saved_plugin_params(name)
+        for k, val in saved_session_params.items():
+            if k in active_params:
+                active_params[k] = val
+
         # Preserve user-customized parameter values across hot-reloads if keys still exist
         if _preserve_params and isinstance(_preserve_params, dict):
             for k, val in _preserve_params.items():
                 if k in active_params:
                     active_params[k] = val
+
+        if chain_obj is not None and hasattr(chain_obj, "steps"):
+            for step_idx, s_dict in enumerate(chain_obj.steps):
+                prefix = f"step{step_idx}."
+                for k, v in active_params.items():
+                    if str(k).startswith(prefix):
+                        raw_k = str(k)[len(prefix):]
+                        s_dict.setdefault("params", {})[raw_k] = v
 
         try:
             mtime = os.path.getmtime(path)
@@ -562,45 +640,6 @@ class PluginManagerMixin:
                 return self._loaded_plugins.get(new_name)
         return self._loaded_plugins.get(name)
 
-    def save_plugin_defaults_to_py(
-        self,
-        name: str,
-        params: Optional[Dict[str, Any]] = None,
-    ) -> bool:
-        """Write `params` back as the default values in the plugin's `.py` file."""
-        info = self._loaded_plugins.get(name)
-        if info is None:
-            return False
-        values = params if params is not None else info.get("params", {})
-
-        # Sync in-memory chain step defaults if this is a PluginChain
-        chain_obj = info.get("chain")
-        if chain_obj is not None and hasattr(chain_obj, "steps"):
-            for step_idx, s_dict in enumerate(chain_obj.steps):
-                prefix = f"step{step_idx}."
-                for k, v in values.items():
-                    if str(k).startswith(prefix):
-                        raw_k = str(k)[len(prefix):]
-                        s_dict.setdefault("params", {})[raw_k] = v
-
-        path = info.get("path")
-        if not path or not os.path.isfile(path):
-            return False
-        ok = save_defaults_to_py(path, values)
-        if ok:
-            info["params"] = copy.deepcopy(values)
-            for k, v in values.items():
-                if k in info.get("params_spec", {}) and isinstance(info["params_spec"][k], dict):
-                    info["params_spec"][k]["default"] = v
-            try:
-                info["mtime"] = os.path.getmtime(path)
-            except OSError:
-                pass
-            if hasattr(self, "statusBar"):
-                self.statusBar().showMessage(
-                    f"Saved default parameters to {os.path.basename(path)}", 4000
-                )
-        return ok
 
     # ------------------------------------------------------------------
     # Unload
@@ -1199,6 +1238,9 @@ class PluginManagerMixin:
         any_change = n_added + n_updated + n_removed + n_replaced
         if any_change > 0 and hasattr(self, 'set_interaction_mode'):
             self.set_interaction_mode('OVERLAY')
+
+        # Auto-persist params into the session
+        self.save_plugin_params(name)
 
     def _on_plugin_error(self, name: str, msg: str) -> None:
         QMessageBox.critical(

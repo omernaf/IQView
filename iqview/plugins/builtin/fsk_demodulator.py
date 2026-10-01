@@ -26,30 +26,17 @@ PLUGIN_DESCRIPTION       = (
 PLUGIN_CATEGORY          = "Demodulation"
 PLUGIN_NEEDS_WIDEBAND_IQ = False
 
-PLUGIN_DOC = """
-<h3>FSK Demodulator</h3>
-<p>
-Demodulates 2-FSK and GFSK bursts inside existing <code>Rect</code> overlays in the active scope.
-Uses the zero-copy baseband IQ cached on each overlay (<code>o.iq</code>, <code>o.fs</code>) by an
-upstream detector, or lazily extracts baseband IQ from the recording via <code>o.get_samples(samples, info)</code>.
-</p>
+PLUGIN_DOC = """# FSK Demodulator
 
-<h4>Algorithm &amp; Operation</h4>
-<ol>
-  <li><b>Edge Trimming:</b> Optionally trims low-energy leading/trailing guard samples so noise ramps
-      do not corrupt symbol clock recovery or add spurious edge bits.</li>
-  <li><b>FM Quadrature Discriminator:</b> Computes instantaneous frequency in Hz via conjugate delay-multiply
-      <code>f_inst[n] = arg(x[n] * conj(x[n-1])) * fs / (2 * pi)</code>.</li>
-  <li><b>Automatic CFO &amp; Deviation Estimation:</b> Estimates Carrier Frequency Offset (CFO) from the
-      midpoint between the upper (mark) and lower (space) frequency percentiles, centers the discriminator
-      waveform, and measures peak frequency deviation <code>±Δf</code> (Hz).</li>
-  <li><b>Baud Rate &amp; Symbol Clock Recovery:</b> When <code>baud_rate = 0</code> (Auto), estimates the
-      symbol rate from zero-crossing intervals and spectral timing tone analysis, then finds the optimal
-      sampling phase that maximizes symbol eye opening.</li>
-  <li><b>Bit Slicing &amp; Hex Decoding:</b> Slices symbols into binary (<code>0</code>/<code>1</code>) and
-      hexadecimal strings, annotating each overlay's tooltip and <code>metadata["bits"]</code> /
-      <code>metadata["hex"]</code>.</li>
-</ol>
+Demodulates 2-FSK and GFSK bursts inside existing `Rect` overlays in the active scope. Uses the zero-copy baseband IQ cached on each overlay (`o.iq`, `o.fs`) by an upstream detector, or lazily extracts baseband IQ from the recording via `o.get_samples(samples, info)`.
+
+### Algorithm & Operation
+
+1. **Edge Trimming**: Optionally trims low-energy leading/trailing guard samples so noise ramps do not corrupt symbol clock recovery or add spurious edge bits.
+2. **FM Quadrature Discriminator**: Computes instantaneous frequency in Hz via conjugate delay-multiply `f_inst[n] = arg(x[n] * conj(x[n-1])) * fs / (2 * pi)`.
+3. **Automatic CFO & Deviation Estimation**: Estimates Carrier Frequency Offset (CFO) from the midpoint between the upper (mark) and lower (space) frequency percentiles, centers the discriminator waveform, and measures peak frequency deviation `±Δf` (Hz).
+4. **Baud Rate & Symbol Clock Recovery**: When `baud_rate = 0` (Auto), estimates the symbol rate from zero-crossing intervals and spectral timing tone analysis, then finds the optimal sampling phase that maximizes symbol eye opening.
+5. **Bit Slicing & Hex Decoding**: Slices symbols into binary (`0`/`1`) and hexadecimal strings, annotating each overlay's tooltip and `metadata["bits"]` / `metadata["hex"]`.
 """
 
 
@@ -252,9 +239,9 @@ def _demodulate_fsk_burst(
             f"{int(padded_bits[i : i + 4], 2):X}"
             for i in range(0, len(padded_bits), 4)
         ]
-        hex_str = "0x" + "".join(hex_digits)
+        hex_str = "".join(hex_digits)
     else:
-        hex_str = "0x0"
+        hex_str = ""
 
     return {
         "bits": bits,

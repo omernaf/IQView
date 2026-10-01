@@ -583,7 +583,13 @@ class MultiRowSpectrogramView(QWidget):
                         t_max_o = o.center[0] + o.radii[0]
 
                     if t_max_o >= t_s and t_min_o <= t_e:
-                        item = OverlayItem(o, waterfall=is_waterfall)
+                        item = OverlayItem(
+                            o,
+                            waterfall=is_waterfall,
+                            on_geometry_changed=getattr(self.parent_window, '_persist_overlay_drag', None),
+                            on_selected=getattr(self.parent_window, 'select_overlay', None),
+                            on_double_clicked=getattr(self.parent_window, '_on_overlay_item_double_clicked', None),
+                        )
                         item.setZValue(z_ord)
                         item.setVisible(getattr(o, 'visible', True))
                         row['plot'].addItem(item)

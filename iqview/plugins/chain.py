@@ -19,11 +19,9 @@ Example usage in a `.py` plugin file:
 
 from __future__ import annotations
 
-import ast
 import copy
 import importlib.util
 import os
-import pprint
 import uuid
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -526,20 +524,21 @@ class PluginChain:
     # ------------------------------------------------------------------
 
     def get_doc(self) -> str:
-        """Synthesize multi-step HTML documentation from the chain's steps."""
+        """Synthesize multi-step Markdown documentation from the chain's steps."""
         parts = [
-            f"<h3>{self.name or 'Plugin Chain'}</h3>",
-            f"<p>{self.description or 'Sequential multi-step plugin pipeline.'}</p>",
+            f"# {self.name or 'Plugin Chain'}",
+            f"{self.description or 'Sequential multi-step plugin pipeline.'}",
+            "",
         ]
         for idx in range(len(self.steps)):
             try:
                 r = self.resolve_step(idx)
-                step_doc = r.get("doc") or f"<p>Step {idx + 1}: <b>{r['name']}</b></p>"
-                parts.append(f"<hr/><h4>Step {idx + 1}: {r['name']}</h4>{step_doc}")
+                step_doc = r.get("doc") or f"Step {idx + 1}: **{r['name']}**"
+                parts.append(f"---\n\n### Step {idx + 1}: {r['name']}\n\n{step_doc}")
             except Exception:
                 t = str(self.steps[idx]["target"])
-                parts.append(f"<hr/><h4>Step {idx + 1}: {t}</h4>")
-        return "\n".join(parts)
+                parts.append(f"---\n\n### Step {idx + 1}: {t}")
+        return "\n\n".join(parts)
 
     def bind_to_module(
         self,
@@ -714,149 +713,6 @@ def generate_chain_py(
     return "\n".join(lines)
 
 
-def _node_offset_span(source_lines: List[str], node: ast.AST) -> Optional[Tuple[int, int]]:
-    """Convert an AST node's (lineno, col_offset, end_lineno, end_col_offset) to a byte/char slice."""
-    if not hasattr(node, "lineno") or not hasattr(node, "end_lineno"):
-        return None
-    if node.lineno is None or node.end_lineno is None:
-        return None
-
-    line_starts = [0]
-    for ln in source_lines:
-        line_starts.append(line_starts[-1] + len(ln))
-
-    start_idx = line_starts[node.lineno - 1] + (node.col_offset or 0)
-    end_idx = line_starts[node.end_lineno - 1] + (node.end_col_offset or 0)
-    return start_idx, end_idx
 
 
-def save_defaults_to_py(py_path: str, new_params: Dict[str, Any]) -> bool:
-    """
-    Update the default parameter values directly inside a `.py` plugin or chain file,
-    preserving all comments, formatting, and surrounding code.
 
-    Supports both:
-      1. Standard plugins defining `PLUGIN_PARAMS = { "key": {"default": ..., ...} }`
-      2. Chain files defining `CHAIN = PluginChain([ ("Step", {"key": ...}), ... ])`
-
-    Returns True if the file was updated on disk.
-    """
-    if not py_path or not os.path.isfile(py_path) or not new_params:
-        return False
-
-    try:
-        with open(py_path, "r", encoding="utf-8") as fh:
-            src = fh.read()
-    except OSError:
-        return False
-
-    try:
-        tree = ast.parse(src)
-    except SyntaxError:
-        return False
-
-    src_lines = src.splitlines(keepends=True)
-    replacements: List[Tuple[int, int, str]] = []
-
-    for node in tree.body:
-        # Check assignments to PLUGIN_PARAMS or CHAIN
-        targets = []
-        val_node = None
-        if isinstance(node, ast.Assign):
-            targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
-            val_node = node.value
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            targets = [node.target.id]
-            val_node = node.value
-
-        # Case 1: PLUGIN_PARAMS = { ... }
-        if "PLUGIN_PARAMS" in targets and isinstance(val_node, ast.Dict):
-            for k_node, v_node in zip(val_node.keys, val_node.values):
-                if not isinstance(k_node, ast.Constant) or not isinstance(k_node.value, str):
-                    continue
-                param_key = k_node.value
-                if param_key not in new_params:
-                    continue
-                new_val_repr = repr(new_params[param_key])
-
-                if isinstance(v_node, ast.Dict):
-                    for sub_k, sub_v in zip(v_node.keys, v_node.values):
-                        if (
-                            isinstance(sub_k, ast.Constant)
-                            and sub_k.value == "default"
-                            and sub_v is not None
-                        ):
-                            span = _node_offset_span(src_lines, sub_v)
-                            if span is not None:
-                                replacements.append((span[0], span[1], new_val_repr))
-                elif v_node is not None:
-                    span = _node_offset_span(src_lines, v_node)
-                    if span is not None:
-                        replacements.append((span[0], span[1], new_val_repr))
-
-        # Case 2: CHAIN = PluginChain([ ... ])
-        if "CHAIN" in targets and isinstance(val_node, ast.Call):
-            if val_node.args and isinstance(val_node.args[0], (ast.List, ast.Tuple)):
-                step_elts = val_node.args[0].elts
-                for step_idx, elt in enumerate(step_elts):
-                    prefix = f"step{step_idx}."
-                    step_updates = {
-                        k[len(prefix):]: v
-                        for k, v in new_params.items()
-                        if str(k).startswith(prefix)
-                    }
-                    if not step_updates:
-                        continue
-
-                    if isinstance(elt, (ast.Tuple, ast.List)) and len(elt.elts) >= 2:
-                        dict_node = elt.elts[1]
-                        if isinstance(dict_node, ast.Dict):
-                            existing_keys = set()
-                            for dk, dv in zip(dict_node.keys, dict_node.values):
-                                if isinstance(dk, ast.Constant) and isinstance(dk.value, str):
-                                    raw_k = dk.value
-                                    existing_keys.add(raw_k)
-                                    if raw_k in step_updates and dv is not None:
-                                        span = _node_offset_span(src_lines, dv)
-                                        if span is not None:
-                                            replacements.append((span[0], span[1], repr(step_updates[raw_k])))
-
-                            missing_keys = {
-                                k: v for k, v in step_updates.items() if k not in existing_keys
-                            }
-                            if missing_keys:
-                                dict_span = _node_offset_span(src_lines, dict_node)
-                                if dict_span is not None:
-                                    # Build updated dict literal
-                                    merged_dict = {}
-                                    for dk, dv in zip(dict_node.keys, dict_node.values):
-                                        if isinstance(dk, ast.Constant) and isinstance(dk.value, str):
-                                            try:
-                                                merged_dict[dk.value] = ast.literal_eval(dv)
-                                            except Exception:
-                                                pass
-                                    merged_dict.update(step_updates)
-                                    formatted = "{\n" + "".join(
-                                        f"        {mk!r}: {mv!r},\n" for mk, mv in merged_dict.items()
-                                    ) + "    }"
-                                    replacements = [
-                                        r for r in replacements
-                                        if not (dict_span[0] <= r[0] and r[1] <= dict_span[1])
-                                    ]
-                                    replacements.append((dict_span[0], dict_span[1], formatted))
-
-    if not replacements:
-        return False
-
-    # Apply replacements in reverse character order so offsets stay valid
-    replacements.sort(key=lambda r: r[0], reverse=True)
-    new_src = src
-    for s_idx, e_idx, text in replacements:
-        new_src = new_src[:s_idx] + text + new_src[e_idx:]
-
-    try:
-        with open(py_path, "w", encoding="utf-8") as fh:
-            fh.write(new_src)
-        return True
-    except OSError:
-        return False
