@@ -1,9 +1,20 @@
 # IQView package
 import numpy as np
 from iqview.plugins.plugin_result import PluginResult
+from iqview.plugins.context import PluginContext, PluginParams
+from iqview.plugins.chain import PluginChain
+from iqview.plugins.format_utils import format_hover_bits
 
 __version__ = "0.7.0"
-__all__ = ["view", "PluginResult", "__version__"]
+__all__ = [
+    "view",
+    "PluginResult",
+    "PluginContext",
+    "PluginParams",
+    "PluginChain",
+    "format_hover_bits",
+    "__version__",
+]
 
 
 def view(

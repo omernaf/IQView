@@ -572,7 +572,7 @@ class DataHandlerMixin:
     # IQ extraction (unchanged — reads directly from file)
     # ------------------------------------------------------------------
 
-    def extract_iq_segment(self, start_sec, end_sec):
+    def extract_iq_segment(self, start_sec, end_sec, _prompt_large=True):
         """
         Extracts raw complex IQ samples from the data source for a given time range.
         Works with both file paths (on-disk) and in-memory bytes buffers (stdin mode).
@@ -581,13 +581,17 @@ class DataHandlerMixin:
             start_sample = int(round(start_sec * self.rate))
             end_sample = int(round(end_sec * self.rate))
             if start_sample > end_sample: start_sample, end_sample = end_sample, start_sample
+            start_sample = max(0, start_sample)
+            total_samples = self.get_total_samples()
+            if total_samples > 0:
+                end_sample = min(total_samples, end_sample)
 
             num_samples = end_sample - start_sample
             if num_samples <= 0: return None
 
             # Safety Check: Warn if selection is exceptionally large (> 500 million samples)
             # 500M complex64 samples ≈ 4GB RAM.
-            if num_samples > 500_000_000:
+            if _prompt_large and num_samples > 500_000_000:
                 from PyQt6.QtWidgets import QMessageBox
                 reply = QMessageBox.question(
                     self, "Large Data Extraction",

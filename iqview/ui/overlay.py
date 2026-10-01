@@ -58,6 +58,9 @@ SHAPE_LABELS: Dict[str, OverlayShape] = {
 TAG_POSITIONS = ["center", "top-left", "top-right", "bottom-left", "bottom-right"]
 
 
+from iqview.plugins.format_utils import format_hover_bits
+
+
 # ---------------------------------------------------------------------------
 # Overlay dataclass
 # ---------------------------------------------------------------------------
@@ -105,8 +108,400 @@ class Overlay:
     source:   str  = "user"            # 'user' or mod name (for namespacing)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    # --- Transient per-burst IQ cache (in-memory only, excluded from JSON sidecar) ---
+    iq: Optional[Any]   = field(default=None, repr=False, compare=False)
+    fs: Optional[float] = field(default=None, repr=False, compare=False)
+
     # Identity (auto-generated; do not set manually)
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+    # ------------------------------------------------------------------
+    # Smart Geometry Properties (seconds & Hz)
+    # ------------------------------------------------------------------
+
+    def _shape_name(self) -> str:
+        return self.shape.value if hasattr(self.shape, "value") else str(self.shape)
+
+    @property
+    def t_start(self) -> float:
+        """Start time in seconds."""
+        sh = self._shape_name()
+        if sh in ("RECT", "POLYGON", "X_REGION") and self.points:
+            return float(min(p[0] for p in self.points))
+        if sh == "ELLIPSE" and self.center and self.radii:
+            return float(self.center[0] - abs(self.radii[0]))
+        if sh in ("LINE", "DOT") and self.points:
+            return float(self.points[0][0])
+        if self.center:
+            return float(self.center[0])
+        return 0.0
+
+    @t_start.setter
+    def t_start(self, val: float) -> None:
+        sh = self._shape_name()
+        if sh == "RECT" and len(self.points) >= 2:
+            self.points = [(float(val), self.f_start), (self.t_end, self.f_end)]
+        elif sh == "X_REGION" and len(self.points) >= 2:
+            self.points = [(float(val), 0.0), (self.t_end, 0.0)]
+        elif sh == "LINE":
+            self.points = [(float(val), 0.0)]
+        self.iq = None
+        self.fs = None
+
+    @property
+    def t_end(self) -> float:
+        """End time in seconds."""
+        sh = self._shape_name()
+        if sh in ("RECT", "POLYGON", "X_REGION") and self.points:
+            return float(max(p[0] for p in self.points))
+        if sh == "ELLIPSE" and self.center and self.radii:
+            return float(self.center[0] + abs(self.radii[0]))
+        if sh in ("LINE", "DOT") and self.points:
+            return float(self.points[0][0])
+        if self.center:
+            return float(self.center[0])
+        return 0.0
+
+    @t_end.setter
+    def t_end(self, val: float) -> None:
+        sh = self._shape_name()
+        if sh == "RECT" and len(self.points) >= 2:
+            self.points = [(self.t_start, self.f_start), (float(val), self.f_end)]
+        elif sh == "X_REGION" and len(self.points) >= 2:
+            self.points = [(self.t_start, 0.0), (float(val), 0.0)]
+        self.iq = None
+        self.fs = None
+
+    @property
+    def t_center(self) -> float:
+        """Center time in seconds."""
+        if self._shape_name() == "ELLIPSE" and self.center:
+            return float(self.center[0])
+        return 0.5 * (self.t_start + self.t_end)
+
+    @property
+    def duration(self) -> float:
+        """Time duration in seconds (`t_end - t_start`)."""
+        return max(0.0, self.t_end - self.t_start)
+
+    @property
+    def f_start(self) -> float:
+        """Lower frequency bound in Hz."""
+        sh = self._shape_name()
+        if sh in ("RECT", "POLYGON", "Y_REGION") and self.points:
+            return float(min(p[1] for p in self.points))
+        if sh == "ELLIPSE" and self.center and self.radii:
+            return float(self.center[1] - abs(self.radii[1]))
+        if sh in ("HLINE", "DOT") and self.points:
+            return float(self.points[0][1])
+        if self.center:
+            return float(self.center[1])
+        return 0.0
+
+    @f_start.setter
+    def f_start(self, val: float) -> None:
+        sh = self._shape_name()
+        if sh == "RECT" and len(self.points) >= 2:
+            self.points = [(self.t_start, float(val)), (self.t_end, self.f_end)]
+        elif sh == "Y_REGION" and len(self.points) >= 2:
+            self.points = [(0.0, float(val)), (0.0, self.f_end)]
+        elif sh == "HLINE":
+            self.points = [(0.0, float(val))]
+        self.iq = None
+        self.fs = None
+
+    @property
+    def f_end(self) -> float:
+        """Upper frequency bound in Hz."""
+        sh = self._shape_name()
+        if sh in ("RECT", "POLYGON", "Y_REGION") and self.points:
+            return float(max(p[1] for p in self.points))
+        if sh == "ELLIPSE" and self.center and self.radii:
+            return float(self.center[1] + abs(self.radii[1]))
+        if sh in ("HLINE", "DOT") and self.points:
+            return float(self.points[0][1])
+        if self.center:
+            return float(self.center[1])
+        return 0.0
+
+    @f_end.setter
+    def f_end(self, val: float) -> None:
+        sh = self._shape_name()
+        if sh == "RECT" and len(self.points) >= 2:
+            self.points = [(self.t_start, self.f_start), (self.t_end, float(val))]
+        elif sh == "Y_REGION" and len(self.points) >= 2:
+            self.points = [(0.0, self.f_start), (0.0, float(val))]
+        self.iq = None
+        self.fs = None
+
+    @property
+    def f_center(self) -> float:
+        """Center frequency in Hz."""
+        if self._shape_name() == "ELLIPSE" and self.center:
+            return float(self.center[1])
+        return 0.5 * (self.f_start + self.f_end)
+
+    @property
+    def bandwidth(self) -> float:
+        """Frequency span in Hz (`f_end - f_start`)."""
+        return max(0.0, self.f_end - self.f_start)
+
+    # ------------------------------------------------------------------
+    # Per-Burst IQ Extraction & Full DDC (Mix to Baseband + Filter + Resample)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _resample_to_bw(seg, current_fs: float, target_bw: float):
+        """Resample complex baseband *seg* from *current_fs* to *target_bw* Hz."""
+        import numpy as np
+        if target_bw <= 0 or current_fs <= 0 or len(seg) < 2:
+            return seg, current_fs
+        if abs(current_fs - target_bw) / max(current_fs, target_bw) < 1e-3:
+            return seg, current_fs
+
+        dur = len(seg) / current_fs
+        target_len = max(2, int(round(dur * target_bw)))
+        if target_len == len(seg):
+            return seg, current_fs
+
+        try:
+            from scipy.signal import resample
+            resampled = np.asarray(resample(seg, target_len), dtype=np.complex64)
+            out_fs = float(len(resampled)) / dur if dur > 0 else float(target_bw)
+            return resampled, out_fs
+        except Exception:
+            return seg, current_fs
+
+    def extract_iq(
+        self,
+        samples: Optional[Any] = None,
+        info: Optional[Any] = None,
+        baseband: bool = True,
+        filter_bw: bool = True,
+        decimate: bool = True,
+        resample: Optional[bool] = None,
+    ) -> Tuple[Any, float]:
+        """
+        Return ``(burst_iq, sample_rate_hz)`` for this overlay via Digital Down-Conversion (DDC).
+        """
+        import numpy as np
+
+        # Support calling `o.extract_iq(info)` or `o.get_samples(info)` directly
+        if info is None and samples is not None and (
+            isinstance(samples, dict) or hasattr(samples, "sample_rate")
+        ):
+            info = samples
+            samples = getattr(info, "_samples_ref", None)
+
+        do_resample = decimate if resample is None else bool(resample)
+        bw = self.bandwidth
+        sh = self._shape_name()
+        has_freq_bounds = sh in ("RECT", "ELLIPSE", "POLYGON", "Y_REGION") and bw > 0
+
+        # 1. Fast path: per-burst IQ already cached on this overlay
+        if self.iq is not None and len(self.iq) > 0:
+            cached_iq = np.asarray(self.iq, dtype=np.complex64)
+            cached_fs = float(
+                self.fs
+                if self.fs is not None and self.fs > 0
+                else (info["sample_rate"] if info is not None and "sample_rate" in info else 1.0)
+            )
+            if do_resample and has_freq_bounds and abs(cached_fs - bw) / max(cached_fs, bw) > 1e-3:
+                return self._resample_to_bw(cached_iq, cached_fs, bw)
+            return cached_iq, cached_fs
+
+        # 2. On-demand slice & DDC from wideband samples or info.extract_iq
+        fs = float(info["sample_rate"]) if (info is not None and "sample_rate" in info) else 1.0
+        fc = float(info["center_freq"]) if (info is not None and "center_freq" in info) else 0.0
+
+        t0, t1 = self.t_start, self.t_end
+        if t1 <= t0:
+            return np.empty(0, dtype=np.complex64), fs
+
+        seg = None
+        if samples is not None and len(samples) > 0 and info is not None and "t_start" in info:
+            info_t0 = float(info["t_start"])
+            s0 = max(0, int(round((t0 - info_t0) * fs)))
+            s1 = min(len(samples), int(round((t1 - info_t0) * fs)))
+            if s1 > s0:
+                seg = np.asarray(samples[s0:s1], dtype=np.complex64).copy()
+
+        if (seg is None or len(seg) == 0) and info is not None and hasattr(info, "extract_iq"):
+            extracted = info.extract_iq(t0, t1)
+            if extracted is not None and len(extracted) > 0:
+                seg = np.asarray(extracted, dtype=np.complex64).copy()
+
+        if seg is None or len(seg) == 0:
+            return np.empty(0, dtype=np.complex64), fs
+
+        # If the source is real-valued (zero imaginary part), convert to analytic signal first
+        if np.max(np.abs(seg.imag)) < 1e-9 * (np.max(np.abs(seg.real)) + 1e-30):
+            try:
+                from scipy.signal import hilbert
+                seg = np.asarray(hilbert(seg.real.astype(np.float64)), dtype=np.complex64)
+            except Exception:
+                pass
+
+        # Step A: Mix f_center to 0 Hz (new baseband)
+        if baseband and has_freq_bounds:
+            f_offset = self.f_center - fc
+            if abs(f_offset) > 1e-6:
+                t_vec = np.arange(len(seg), dtype=np.float64) / fs
+                seg = (seg * np.exp(-2j * np.pi * f_offset * t_vec)).astype(np.complex64)
+
+        # Step B: Low-pass filter to overlay bandwidth [-bw/2, +bw/2]
+        if filter_bw and has_freq_bounds and bw < fs * 0.98 and len(seg) >= 18:
+            try:
+                from scipy.signal import butter, sosfiltfilt
+                cutoff = min(bw * 0.5, fs * 0.49)
+                if cutoff > 0:
+                    sos = butter(6, cutoff / (0.5 * fs), btype="low", output="sos")
+                    seg = sosfiltfilt(sos, seg).astype(np.complex64)
+            except Exception:
+                pass
+
+        # Step C: Resample to overlay bandwidth
+        out_fs = fs
+        if do_resample and has_freq_bounds and bw > 0:
+            seg, out_fs = self._resample_to_bw(seg, fs, bw)
+
+        self.iq = seg
+        self.fs = out_fs
+        return seg, out_fs
+
+    def get_samples(
+        self,
+        samples: Optional[Any] = None,
+        info: Optional[Any] = None,
+        baseband: bool = True,
+        filter_bw: bool = True,
+        decimate: bool = True,
+        resample: Optional[bool] = None,
+    ) -> Tuple[Any, float]:
+        """Alias for ``extract_iq(...)``."""
+        return self.extract_iq(
+            samples=samples,
+            info=info,
+            baseband=baseband,
+            filter_bw=filter_bw,
+            decimate=decimate,
+            resample=resample,
+        )
+
+    def update_hover_bits(
+        self,
+        bits: Any,
+        hex_str: Optional[str] = None,
+        max_hover_bits: int = 64,
+    ) -> "Overlay":
+        """Update self.hover_str with updated 'Bits:' and 'Hex:' preview lines."""
+        self.hover_str = format_hover_bits(
+            self.hover_str, bits, hex_str=hex_str, max_hover_bits=max_hover_bits
+        )
+        return self
+
+    # ------------------------------------------------------------------
+    # Hover Tooltip Formatting (Truncated Preview)
+    # ------------------------------------------------------------------
+
+    def get_truncated_hover(
+        self,
+        max_line_len: int = 140,
+        max_lines: int = 24,
+        max_total_chars: int = 4000,
+    ) -> str:
+        """
+        Return a tooltip string for mouse hover.
+
+        If Markdown or HTML formatting is detected, converts it to rich HTML
+        for Qt tooltip rendering. For plain text (backward compatibility),
+        truncates long lines or bitstreams while preserving readability.
+        """
+        raw = (self.hover_str or "").strip()
+        if not raw and not self.metadata:
+            return ""
+
+        # Check for HTML or Markdown formatting
+        is_html = (
+            ("<html" in raw.lower())
+            or ("<table" in raw.lower())
+            or ("<br" in raw.lower())
+            or ("<p" in raw.lower())
+            or ("<div" in raw.lower())
+            or ("<pre" in raw.lower())
+        )
+        is_markdown = (
+            ("\n|" in raw or raw.startswith("|"))
+            or ("\n#" in raw or raw.startswith("#"))
+            or ("**" in raw or "```" in raw)
+            or ("\n- " in raw or raw.startswith("- "))
+            or ("\n* " in raw or raw.startswith("* "))
+        )
+
+        if is_html:
+            return raw
+
+        if is_markdown:
+            md_text = raw
+            if bool(self.metadata) and "Inspect Overlay" not in md_text:
+                md_text += "\n\n*(Right-click → Inspect Overlay)*"
+            try:
+                from PyQt6.QtGui import QTextDocument
+                doc = QTextDocument()
+                doc.setMarkdown(md_text)
+                html = doc.toHtml()
+                style_block = (
+                    "<style type='text/css'>"
+                    "table { border: 1px solid #4a505b; border-collapse: collapse; margin-top: 4px; margin-bottom: 4px; }"
+                    "td, th { padding: 3px 6px; border: 1px solid #3d424b; font-size: 11px; }"
+                    "th { font-weight: bold; background-color: rgba(255, 255, 255, 0.08); }"
+                    "h3, h4 { margin-top: 2px; margin-bottom: 4px; color: #52a9ff; }"
+                    "p, li { margin-top: 2px; margin-bottom: 2px; font-size: 11px; }"
+                    "hr { height: 1px; background-color: #4a505b; border: none; margin: 4px 0; }"
+                    "</style>"
+                )
+                if "</head>" in html:
+                    return html.replace("</head>", style_block + "</head>")
+                return html
+            except Exception:
+                pass
+
+        # Plain text fallback: line-by-line truncation
+        was_truncated = False
+        lines: List[str] = []
+
+        if raw:
+            raw_lines = raw.splitlines()
+            if len(raw_lines) > max_lines:
+                raw_lines = raw_lines[:max_lines]
+                was_truncated = True
+            for ln in raw_lines:
+                if len(ln) > max_line_len:
+                    lines.append(ln[:max_line_len] + "...")
+                    was_truncated = True
+                else:
+                    lines.append(ln)
+        elif self.metadata:
+            # Build a compact preview from metadata when hover_str is empty
+            items = list(self.metadata.items())
+            if len(items) > 6:
+                items = items[:6]
+                was_truncated = True
+            for k, v in items:
+                val_str = str(v)
+                if len(val_str) > max_line_len - len(str(k)) - 4:
+                    val_str = val_str[: max(12, max_line_len - len(str(k)) - 4)] + "..."
+                    was_truncated = True
+                lines.append(f"{k}: {val_str}")
+
+        preview = "\n".join(lines)
+        if len(preview) > max_total_chars:
+            preview = preview[:max_total_chars].rstrip() + "..."
+            was_truncated = True
+
+        if was_truncated or bool(self.metadata):
+            preview += "\n(Right-click → Inspect Overlay)"
+        return preview
 
     # ------------------------------------------------------------------
     # Serialisation helpers
@@ -226,25 +621,36 @@ class OverlayItem(pg.GraphicsObject):
     Geometry is expressed in world-space (seconds × Hz).
     """
 
-    def __init__(self, overlay: Overlay, waterfall: bool = False, on_geometry_changed=None) -> None:
+    def __init__(
+        self,
+        overlay: Overlay,
+        waterfall: bool = False,
+        on_geometry_changed=None,
+        on_selected=None,
+        on_double_clicked=None,
+    ) -> None:
         super().__init__()
         self.overlay = overlay
         self.waterfall = waterfall
         # Callable(overlay_id, points=…, center=…, radii=…) — fired on mouse release
         self._on_geometry_changed = on_geometry_changed
+        self._on_selected = on_selected
+        self._on_double_clicked = on_double_clicked
 
-        # Drag state
+        # Drag & selection state
         self._drag_mode: Optional[str] = None   # None | 'move' | handle role
         self._drag_last: Optional[QPointF] = None
         self._hover_handle: Optional[str] = None
         self._hovered: bool = False
+        self._selected: bool = False
 
         self.setAcceptHoverEvents(True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
         self._update_interaction_flags()
 
-        if overlay.hover_str:
-            self.setToolTip(overlay.hover_str)
+        tip = overlay.get_truncated_hover()
+        if tip:
+            self.setToolTip(tip)
 
         self._label: Optional[pg.TextItem] = None
         self._plot_item: Optional[pg.PlotItem] = None
@@ -412,6 +818,8 @@ class OverlayItem(pg.GraphicsObject):
                     o.points[idx] = self._from_view(px + dx, py + dy)
             except ValueError:
                 pass
+        o.iq = None
+        o.fs = None
 
     def _apply_move_drag(self, delta: QPointF) -> None:
         o = self.overlay
@@ -420,6 +828,8 @@ class OverlayItem(pg.GraphicsObject):
             o.points = [(p[0] + dt, p[1] + df) for p in o.points]
         if o.center:
             o.center = (o.center[0] + dt, o.center[1] + df)
+        o.iq = None
+        o.fs = None
 
     # ------------------------------------------------------------------
     # Qt mouse events
@@ -441,6 +851,8 @@ class OverlayItem(pg.GraphicsObject):
         else:
             event.ignore()
             return
+        if self._on_selected:
+            self._on_selected(self.overlay.id)
         self._drag_last = pos
         event.accept()
 
@@ -467,6 +879,16 @@ class OverlayItem(pg.GraphicsObject):
         self._drag_mode = None
         self._drag_last = None
         event.accept()
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            pos = event.pos()
+            if self._inside_shape(pos) or self._hit_handle(pos):
+                if self._on_double_clicked:
+                    self._on_double_clicked(self.overlay.id)
+                event.accept()
+                return
+        super().mouseDoubleClickEvent(event)
 
     # ------------------------------------------------------------------
     # Hover events — handle highlighting + cursor feedback
@@ -527,7 +949,7 @@ class OverlayItem(pg.GraphicsObject):
     def attach_to_plot(self, plot_item: pg.PlotItem) -> None:
         self._plot_item = plot_item
         if self._label is not None:
-            plot_item.addItem(self._label)
+            plot_item.addItem(self._label, ignoreBounds=True)
             self._update_label_pos()
 
     def detach_from_plot(self) -> None:
@@ -565,20 +987,32 @@ class OverlayItem(pg.GraphicsObject):
         painter.save()
 
         bc = QColor(overlay.border_color or overlay.color)
-        pen = QPen(bc, overlay.border_width)
+        pen_width = overlay.border_width + (2 if self._selected else 0)
+        pen = QPen(bc, pen_width)
         pen.setCosmetic(True)
         pen.setStyle(_BORDER_STYLE_MAP.get(overlay.border_style, Qt.PenStyle.SolidLine))
         painter.setPen(pen)
 
         fc = QColor(overlay.color)
-        fc.setAlphaF(max(0.0, min(1.0, overlay.alpha)))
+        alpha_val = overlay.alpha + (0.15 if self._selected else 0.0)
+        fc.setAlphaF(max(0.0, min(1.0, alpha_val)))
         painter.setBrush(QBrush(fc))
 
-        {
+        shape_painter = {
             OverlayShape.RECT:    self._paint_rect,
             OverlayShape.POLYGON: self._paint_polygon,
             OverlayShape.ELLIPSE: self._paint_ellipse,
-        }.get(overlay.shape, lambda p: None)(painter)
+        }.get(overlay.shape, lambda p: None)
+        shape_painter(painter)
+
+        # Draw crisp high-contrast dashed inner/outer selection indicator when selected
+        if self._selected:
+            sel_pen = QPen(QColor("#ffffff"), max(1, overlay.border_width))
+            sel_pen.setCosmetic(True)
+            sel_pen.setStyle(Qt.PenStyle.DashLine)
+            painter.setPen(sel_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            shape_painter(painter)
 
         # Draw resize handles when interactive and (hovered or being dragged)
         if not overlay.locked and (self._hovered or self._drag_mode):
@@ -648,7 +1082,7 @@ class OverlayItem(pg.GraphicsObject):
 
     def refresh(self) -> None:
         """Re-sync visuals after overlay data is mutated in-place."""
-        self.setToolTip(self.overlay.hover_str)
+        self.setToolTip(self.overlay.get_truncated_hover())
         self._update_interaction_flags()
 
         if self._label is not None:

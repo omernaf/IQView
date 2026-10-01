@@ -92,6 +92,70 @@ class Base1DPlotView(QWidget):
         return "Dark"
 
     # ------------------------------------------------------------------
+    # Shared Toolbar Style & Oversample Controls
+    # ------------------------------------------------------------------
+
+    def update_toolbar_style(self):
+        if not hasattr(self, "toolbar"):
+            return
+        theme = self._get_theme_name()
+        p = get_palette(theme)
+        obj_name = self.toolbar.objectName()
+        frame_sel = f"QFrame#{obj_name}" if obj_name else "QFrame"
+        self.toolbar.setStyleSheet(f"""
+            {frame_sel} {{ background-color: {p.bg_sidebar}; border-radius: 6px; border: 1px solid {p.border}; }}
+            QLabel {{ color: {p.text_dim}; background: transparent; border: none; }}
+            QDoubleSpinBox, QSpinBox, QComboBox {{ background-color: {p.bg_input}; color: {p.text_main}; border: 1px solid {p.border}; border-radius: 4px; padding: 3px 6px; }}
+            QDoubleSpinBox:focus, QSpinBox:focus, QComboBox:focus {{ border-color: {p.accent}; }}
+            QComboBox QAbstractItemView {{ background-color: {p.bg_input}; color: {p.text_main}; selection-background-color: {p.accent_dim}; selection-color: {p.accent}; }}
+            QPushButton {{ background-color: {p.bg_widget}; padding: 5px 15px; border-radius: 3px; color: {p.text_main}; }}
+            QPushButton:hover {{ background-color: {p.border_light}; }}
+            QPushButton:checked {{ background-color: {p.accent_dim}; color: {p.accent}; border: 1px solid {p.accent}; }}
+        """)
+
+    def setup_oversample_controls(self, toolbar_layout):
+        """Create the shared 'Oversample:' label and spinbox in any 1D plot toolbar."""
+        from PyQt6.QtWidgets import QLabel, QDoubleSpinBox
+
+        self._base_samples = getattr(self, "samples", None)
+        self._base_rate = float(getattr(self, "rate", 1.0) or 1.0)
+
+        self.oversample_label = QLabel("Oversample:")
+        self.oversample_spin = QDoubleSpinBox()
+        self.oversample_spin.setRange(0.1, 1000.0)
+        self.oversample_spin.setDecimals(2)
+        self.oversample_spin.setSingleStep(0.5)
+        self.oversample_spin.setSuffix(" ×")
+        self.oversample_spin.setValue(1.0)
+        self.oversample_spin.setKeyboardTracking(False)
+        self.oversample_spin.setFixedWidth(92)
+        self.oversample_spin.setToolTip(
+            f"Oversampling factor relative to base sample rate ({self._base_rate:g} Hz).\n"
+            f"For example, 5.20 × resamples the signal to {self._base_rate * 5.2:g} Hz."
+        )
+
+        toolbar_layout.addWidget(self.oversample_label)
+        toolbar_layout.addWidget(self.oversample_spin)
+        toolbar_layout.addSpacing(12)
+
+        self.oversample_spin.valueChanged.connect(self._on_oversample_factor_changed)
+
+    def _on_oversample_factor_changed(self, val: float):
+        factor = max(0.01, float(val))
+        base_samples = getattr(self, "_base_samples", None)
+        base_rate = float(getattr(self, "_base_rate", getattr(self, "rate", 1.0)) or 1.0)
+        if base_samples is None or len(base_samples) == 0 or not hasattr(self, "set_samples"):
+            return
+
+        if abs(factor - 1.0) < 1e-6:
+            self.set_samples(base_samples, base_rate)
+        else:
+            from scipy import signal as sp_signal
+            num_out = max(2, int(round(len(base_samples) * factor)))
+            resampled = sp_signal.resample(base_samples, num_out).astype(base_samples.dtype, copy=False)
+            self.set_samples(resampled, base_rate * factor)
+
+    # ------------------------------------------------------------------
     # Keybinds & Tooltips
     # ------------------------------------------------------------------
 

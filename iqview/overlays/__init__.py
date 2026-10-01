@@ -7,17 +7,23 @@ formatted overlays without manually managing internal dictionaries or enums.
 """
 
 from typing import List, Tuple, Optional, Dict, Any
-from iqview.ui.overlay import Overlay, OverlayShape
+from iqview.ui.overlay import Overlay, OverlayShape, format_hover_bits
 
 __all__ = [
     "Rect",
     "Polygon",
     "Ellipse",
+    "Point",
+    "Dot",
     "VerticalLine",
+    "TimeLine",
     "HorizontalLine",
+    "FreqLine",
     "TimeRegion",
-    "FreqRegion"
+    "FreqRegion",
+    "format_hover_bits",
 ]
+
 
 class Rect(Overlay):
     """
@@ -37,9 +43,13 @@ class Rect(Overlay):
                  hover_str: str = "",
                  tag_pos: str = "center",
                  visible: bool = True,
-                 locked: bool = False,
+                 locked: bool = True,
                  z_order: int = 8,
-                 metadata: Optional[Dict[str, Any]] = None):
+                 metadata: Optional[Dict[str, Any]] = None,
+                 iq: Optional[Any] = None,
+                 fs: Optional[float] = None,
+                 label: Optional[str] = None,
+                 hover: Optional[str] = None):
         """
         Parameters
         ----------
@@ -62,9 +72,9 @@ class Rect(Overlay):
         border_style : str, optional
             Line style: "solid", "dash", "dot", "dashdot" (default "solid").
         display_str : str, optional
-            Text label permanently drawn on the overlay (default "").
+            Text label permanently drawn on the overlay (default ""). Alias: `label`.
         hover_str : str, optional
-            Tooltip text shown when the mouse hovers over the overlay (default "").
+            Tooltip text shown when the mouse hovers over the overlay (default ""). Alias: `hover`.
         tag_pos : str, optional
             Position of the text label: "center", "top-left", "top-right", "bottom-left", "bottom-right" (default "center").
         visible : bool, optional
@@ -75,15 +85,22 @@ class Rect(Overlay):
             Stacking order for rendering. Higher numbers render on top (default 8).
         metadata : dict, optional
             Arbitrary key-value store for plugin use.
+        iq : np.ndarray, optional
+            Cached narrowband/baseband IQ slice for this burst in memory.
+        fs : float, optional
+            Sample rate of `iq` in Hz.
         """
         super().__init__(
             shape=OverlayShape.RECT,
-            points=[(t_start, f_start), (t_end, f_end)],
+            points=[(min(t_start, t_end), min(f_start, f_end)), (max(t_start, t_end), max(f_start, f_end))],
             color=color, alpha=alpha, border_width=border_width,
             border_color=border_color, border_style=border_style,
-            display_str=display_str, hover_str=hover_str, tag_pos=tag_pos,
+            display_str=label if label is not None else display_str,
+            hover_str=hover if hover is not None else hover_str,
+            tag_pos=tag_pos,
             visible=visible, locked=locked, z_order=z_order,
-            source="plugin", metadata=metadata or {}
+            source="plugin", metadata=metadata or {},
+            iq=iq, fs=fs
         )
 
 
@@ -103,9 +120,13 @@ class Polygon(Overlay):
                  hover_str: str = "",
                  tag_pos: str = "center",
                  visible: bool = True,
-                 locked: bool = False,
+                 locked: bool = True,
                  z_order: int = 8,
-                 metadata: Optional[Dict[str, Any]] = None):
+                 metadata: Optional[Dict[str, Any]] = None,
+                 iq: Optional[Any] = None,
+                 fs: Optional[float] = None,
+                 label: Optional[str] = None,
+                 hover: Optional[str] = None):
         """
         Parameters
         ----------
@@ -117,9 +138,12 @@ class Polygon(Overlay):
             points=vertices,
             color=color, alpha=alpha, border_width=border_width,
             border_color=border_color, border_style=border_style,
-            display_str=display_str, hover_str=hover_str, tag_pos=tag_pos,
+            display_str=label if label is not None else display_str,
+            hover_str=hover if hover is not None else hover_str,
+            tag_pos=tag_pos,
             visible=visible, locked=locked, z_order=z_order,
-            source="plugin", metadata=metadata or {}
+            source="plugin", metadata=metadata or {},
+            iq=iq, fs=fs
         )
 
 
@@ -141,9 +165,13 @@ class Ellipse(Overlay):
                  hover_str: str = "",
                  tag_pos: str = "center",
                  visible: bool = True,
-                 locked: bool = False,
+                 locked: bool = True,
                  z_order: int = 8,
-                 metadata: Optional[Dict[str, Any]] = None):
+                 metadata: Optional[Dict[str, Any]] = None,
+                 iq: Optional[Any] = None,
+                 fs: Optional[float] = None,
+                 label: Optional[str] = None,
+                 hover: Optional[str] = None):
         """
         Parameters
         ----------
@@ -162,10 +190,51 @@ class Ellipse(Overlay):
             radii=(t_radius, f_radius),
             color=color, alpha=alpha, border_width=border_width,
             border_color=border_color, border_style=border_style,
-            display_str=display_str, hover_str=hover_str, tag_pos=tag_pos,
+            display_str=label if label is not None else display_str,
+            hover_str=hover if hover is not None else hover_str,
+            tag_pos=tag_pos,
+            visible=visible, locked=locked, z_order=z_order,
+            source="plugin", metadata=metadata or {},
+            iq=iq, fs=fs
+        )
+
+
+class Point(Overlay):
+    """
+    A single point/dot marker at (t, f) on the spectrogram.
+    """
+    def __init__(self,
+                 t: float,
+                 f: float,
+                 color: str = "#ffcc00",
+                 alpha: float = 0.85,
+                 border_width: int = 2,
+                 border_color: str = "",
+                 border_style: str = "solid",
+                 display_str: str = "",
+                 hover_str: str = "",
+                 tag_pos: str = "top-right",
+                 visible: bool = True,
+                 locked: bool = True,
+                 z_order: int = 9,
+                 metadata: Optional[Dict[str, Any]] = None,
+                 label: Optional[str] = None,
+                 hover: Optional[str] = None):
+        super().__init__(
+            shape=OverlayShape.DOT,
+            points=[(t, f)],
+            center=(t, f),
+            color=color, alpha=alpha, border_width=border_width,
+            border_color=border_color or color, border_style=border_style,
+            display_str=label if label is not None else display_str,
+            hover_str=hover if hover is not None else hover_str,
+            tag_pos=tag_pos,
             visible=visible, locked=locked, z_order=z_order,
             source="plugin", metadata=metadata or {}
         )
+
+
+Dot = Point
 
 
 class VerticalLine(Overlay):
@@ -182,9 +251,11 @@ class VerticalLine(Overlay):
                  hover_str: str = "",
                  tag_pos: str = "top-right",
                  visible: bool = True,
-                 locked: bool = False,
+                 locked: bool = True,
                  z_order: int = 9,
-                 metadata: Optional[Dict[str, Any]] = None):
+                 metadata: Optional[Dict[str, Any]] = None,
+                 label: Optional[str] = None,
+                 hover: Optional[str] = None):
         """
         Parameters
         ----------
@@ -196,10 +267,15 @@ class VerticalLine(Overlay):
             points=[(t, 0.0)],
             color=color, alpha=alpha, border_width=border_width,
             border_color=color, border_style=border_style,
-            display_str=display_str, hover_str=hover_str, tag_pos=tag_pos,
+            display_str=label if label is not None else display_str,
+            hover_str=hover if hover is not None else hover_str,
+            tag_pos=tag_pos,
             visible=visible, locked=locked, z_order=z_order,
             source="plugin", metadata=metadata or {}
         )
+
+
+TimeLine = VerticalLine
 
 
 class HorizontalLine(Overlay):
@@ -216,9 +292,11 @@ class HorizontalLine(Overlay):
                  hover_str: str = "",
                  tag_pos: str = "top-right",
                  visible: bool = True,
-                 locked: bool = False,
+                 locked: bool = True,
                  z_order: int = 9,
-                 metadata: Optional[Dict[str, Any]] = None):
+                 metadata: Optional[Dict[str, Any]] = None,
+                 label: Optional[str] = None,
+                 hover: Optional[str] = None):
         """
         Parameters
         ----------
@@ -230,10 +308,15 @@ class HorizontalLine(Overlay):
             points=[(0.0, f)],
             color=color, alpha=alpha, border_width=border_width,
             border_color=color, border_style=border_style,
-            display_str=display_str, hover_str=hover_str, tag_pos=tag_pos,
+            display_str=label if label is not None else display_str,
+            hover_str=hover if hover is not None else hover_str,
+            tag_pos=tag_pos,
             visible=visible, locked=locked, z_order=z_order,
             source="plugin", metadata=metadata or {}
         )
+
+
+FreqLine = HorizontalLine
 
 
 class TimeRegion(Overlay):
@@ -252,9 +335,13 @@ class TimeRegion(Overlay):
                  hover_str: str = "",
                  tag_pos: str = "center",
                  visible: bool = True,
-                 locked: bool = False,
+                 locked: bool = True,
                  z_order: int = 8,
-                 metadata: Optional[Dict[str, Any]] = None):
+                 metadata: Optional[Dict[str, Any]] = None,
+                 iq: Optional[Any] = None,
+                 fs: Optional[float] = None,
+                 label: Optional[str] = None,
+                 hover: Optional[str] = None):
         """
         Parameters
         ----------
@@ -265,12 +352,15 @@ class TimeRegion(Overlay):
         """
         super().__init__(
             shape=OverlayShape.X_REGION,
-            points=[(t_start, 0.0), (t_end, 0.0)],
+            points=[(min(t_start, t_end), 0.0), (max(t_start, t_end), 0.0)],
             color=color, alpha=alpha, border_width=border_width,
             border_color=border_color, border_style=border_style,
-            display_str=display_str, hover_str=hover_str, tag_pos=tag_pos,
+            display_str=label if label is not None else display_str,
+            hover_str=hover if hover is not None else hover_str,
+            tag_pos=tag_pos,
             visible=visible, locked=locked, z_order=z_order,
-            source="plugin", metadata=metadata or {}
+            source="plugin", metadata=metadata or {},
+            iq=iq, fs=fs
         )
 
 
@@ -290,9 +380,13 @@ class FreqRegion(Overlay):
                  hover_str: str = "",
                  tag_pos: str = "center",
                  visible: bool = True,
-                 locked: bool = False,
+                 locked: bool = True,
                  z_order: int = 8,
-                 metadata: Optional[Dict[str, Any]] = None):
+                 metadata: Optional[Dict[str, Any]] = None,
+                 iq: Optional[Any] = None,
+                 fs: Optional[float] = None,
+                 label: Optional[str] = None,
+                 hover: Optional[str] = None):
         """
         Parameters
         ----------
@@ -303,10 +397,13 @@ class FreqRegion(Overlay):
         """
         super().__init__(
             shape=OverlayShape.Y_REGION,
-            points=[(0.0, f_start), (0.0, f_end)],
+            points=[(0.0, min(f_start, f_end)), (0.0, max(f_start, f_end))],
             color=color, alpha=alpha, border_width=border_width,
             border_color=border_color, border_style=border_style,
-            display_str=display_str, hover_str=hover_str, tag_pos=tag_pos,
+            display_str=label if label is not None else display_str,
+            hover_str=hover if hover is not None else hover_str,
+            tag_pos=tag_pos,
             visible=visible, locked=locked, z_order=z_order,
-            source="plugin", metadata=metadata or {}
+            source="plugin", metadata=metadata or {},
+            iq=iq, fs=fs
         )

@@ -636,10 +636,43 @@ class CustomViewBox(pg.ViewBox):
     def mouseClickEvent(self, ev):
         if ev.button() == Qt.MouseButton.LeftButton:
             mode = self.ui_controller.interaction_mode
+            is_spec = getattr(self.ui_controller, 'is_spectrogram', False)
+
+            if is_spec and hasattr(self.ui_controller, 'find_overlays_at_view_pos') and hasattr(self.ui_controller, 'select_overlay'):
+                try:
+                    pos = self.mapSceneToView(ev.scenePos())
+                    hit_overlays = self.ui_controller.find_overlays_at_view_pos(pos, view_box=self)
+                    endless_items = (
+                        set(getattr(self.ui_controller, 'markers_time_endless', []))
+                        | set(getattr(self.ui_controller, 'markers_freq_endless', []))
+                    )
+                    endless_ids = {
+                        oid for oid, gfx in getattr(self.ui_controller, '_overlay_items', {}).items()
+                        if gfx in endless_items
+                    }
+                    hit_overlays = [
+                        o for o in hit_overlays
+                        if o.id not in endless_ids or mode == 'OVERLAY'
+                    ]
+                except Exception:
+                    hit_overlays = []
+
+                if hit_overlays:
+                    self.ui_controller.select_overlay(hit_overlays[0].id, scroll_to_row=True)
+                    is_double = getattr(ev, 'double', lambda: False)()
+                    if is_double and hasattr(self.ui_controller, 'inspect_overlay'):
+                        self.ui_controller.inspect_overlay(hit_overlays[0])
+                        ev.accept()
+                        return
+                    ev.accept()
+                    return
+                elif getattr(self.ui_controller, 'selected_overlay_id', None) is not None:
+                    self.ui_controller.select_overlay(None, scroll_to_row=False)
+
             if mode in ['TIME', 'FREQ', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'FREQ_ENDLESS', 'MAG_ENDLESS', 'STATS']:
                 self.ui_controller.place_marker(ev.scenePos(), drag_mode=False, source_vb=self)
             elif mode == 'OVERLAY':
-                # Single click → place a vertical LINE overlay at this time position
+                # Single click → place a default overlay shape at this position
                 pos = self.mapSceneToView(ev.scenePos())
                 self.ui_controller.place_overlay_by_click(pos)
             ev.accept()
@@ -652,6 +685,72 @@ class CustomViewBox(pg.ViewBox):
     def raise_custom_menu(self, ev):
         menu = QtWidgets.QMenu()
         is_spec = getattr(self.ui_controller, 'is_spectrogram', False)
+
+        # ── Overlay-specific context actions when right-clicking an overlay ──
+        if is_spec and hasattr(self.ui_controller, 'find_overlays_at_view_pos'):
+            try:
+                view_pos = self.mapSceneToView(ev.scenePos())
+                hit_overlays = self.ui_controller.find_overlays_at_view_pos(view_pos, view_box=self)
+            except Exception:
+                hit_overlays = []
+
+            if hit_overlays:
+                top_ov = hit_overlays[0]
+                tag_preview = f" '{top_ov.display_str}'" if top_ov.display_str else f" ({top_ov.shape.value})"
+
+                inspect_act = menu.addAction(f"Inspect Overlay{tag_preview} & Metadata…")
+                inspect_act.triggered.connect(
+                    lambda _c=False, o=top_ov: self.ui_controller.inspect_overlay(o)
+                )
+
+                if top_ov.duration > 0 and hasattr(self.ui_controller, 'analyze_overlay_in_tab'):
+                    an_menu = menu.addMenu(f"Analyze Overlay{tag_preview} in…")
+                    for lbl, mode_k in [
+                        ("Time Domain (DDC Baseband)", "time"),
+                        ("Frequency Domain (DDC Baseband)", "freq"),
+                        ("Eye Diagram", "eye"),
+                        ("Scatter Plot / Constellation", "constellation"),
+                    ]:
+                        act_an = an_menu.addAction(lbl)
+                        act_an.triggered.connect(
+                            lambda _c=False, o=top_ov, m=mode_k: self.ui_controller.analyze_overlay_in_tab(o, m)
+                        )
+
+                if top_ov.hover_str or top_ov.metadata:
+                    copy_act = menu.addAction("Copy Overlay Text / Bits")
+                    def _copy_ov_text(_c=False, o=top_ov):
+                        import json
+                        cb = QtWidgets.QApplication.clipboard()
+                        if cb is not None:
+                            if "bits" in o.metadata:
+                                cb.setText(str(o.metadata["bits"]))
+                            elif o.hover_str:
+                                cb.setText(o.hover_str)
+                            else:
+                                cb.setText(json.dumps(o.metadata, indent=2, default=str))
+                    copy_act.triggered.connect(_copy_ov_text)
+
+                if hasattr(self.ui_controller, 'marker_panel') and hasattr(self.ui_controller.marker_panel, '_on_overlay_edit'):
+                    edit_act = menu.addAction("Edit Overlay Style / Geometry…")
+                    edit_act.triggered.connect(
+                        lambda _c=False, oid=top_ov.id: self.ui_controller.marker_panel._on_overlay_edit(oid)
+                    )
+
+                del_act = menu.addAction("Delete Overlay")
+                del_act.triggered.connect(
+                    lambda _c=False, oid=top_ov.id: self.ui_controller.remove_overlay(oid)
+                )
+
+                if len(hit_overlays) > 1:
+                    other_menu = menu.addMenu(f"Other Overlapping Overlays ({len(hit_overlays) - 1})…")
+                    for ov_other in hit_overlays[1:]:
+                        other_lbl = ov_other.display_str or f"{ov_other.shape.value} ({ov_other.t_start:.4f}s)"
+                        act_o = other_menu.addAction(f"Inspect {other_lbl}")
+                        act_o.triggered.connect(
+                            lambda _c=False, o=ov_other: self.ui_controller.inspect_overlay(o)
+                        )
+
+                menu.addSeparator()
         
         view_all_act = menu.addAction("View All")
         view_all_act.triggered.connect(self.ui_controller.reset_zoom)

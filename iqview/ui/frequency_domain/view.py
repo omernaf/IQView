@@ -131,10 +131,11 @@ class FrequencyDomainView(Base1DPlotView):
         self.plot_buttons = []
         
         self.toolbar_layout.addStretch()
+        self.setup_oversample_controls(self.toolbar_layout)
         
-        range_label = QLabel(f"Samples: {len(samples)}")
-        range_label.setStyleSheet("color: #888; font-family: Consolas; font-size: 11px;")
-        self.toolbar_layout.addWidget(range_label)
+        self.range_label = QLabel(f"Samples: {len(samples)}")
+        self.range_label.setStyleSheet("color: #888; font-family: Consolas; font-size: 11px;")
+        self.toolbar_layout.addWidget(self.range_label)
         
         self.main_layout.addWidget(self.toolbar)
         
@@ -269,6 +270,26 @@ class FrequencyDomainView(Base1DPlotView):
         
         self.compute_fft()
         
+        saved_mode = getattr(self, '_current_plot_mode_key', 'magnitude')
+        available = getattr(self, 'available_modes', {})
+        target = saved_mode if saved_mode in available else 'magnitude'
+        if target in available:
+            available[target]()
+
+    def set_samples(self, samples: np.ndarray, sample_rate: float, center_freq: float = None) -> None:
+        """Replace the underlying IQ samples and sample rate (e.g. when changing oversampling) and re-render."""
+        if samples is None or len(samples) == 0 or sample_rate <= 0:
+            return
+        self.samples = samples
+        self.rate = float(sample_rate)
+        if center_freq is not None:
+            self.center_freq = float(center_freq)
+        self._filtered_samples = None
+        if hasattr(self, 'range_label'):
+            self.range_label.setText(f"Samples: {len(samples)}  |  Fs: {self.rate:g} Hz")
+        self._first_plot = True
+        self.zoom_y_dict.clear()
+        self.compute_fft()
         saved_mode = getattr(self, '_current_plot_mode_key', 'magnitude')
         available = getattr(self, 'available_modes', {})
         target = saved_mode if saved_mode in available else 'magnitude'
@@ -905,11 +926,6 @@ class FrequencyDomainView(Base1DPlotView):
         yr = y_max - y_min if y_max != y_min else 1.0
         self.plot_item.setYRange(float(y_min - yr * 0.05), float(y_max + yr * 0.05), padding=0)
         self.update_scrollbars()
-
-    def update_toolbar_style(self):
-        theme = self.settings_mgr.get("ui/theme", "Dark")
-        p = get_palette(theme)
-        self.toolbar.setStyleSheet(f"background: {p.bg_sidebar}; border-bottom: 1px solid {p.border};")
 
     def refresh_plot_style(self):
         theme = self.settings_mgr.get("ui/theme", "Dark")

@@ -3,6 +3,15 @@
 ## [0.7.0] - 2026-09-28
 
 ### Added
+- **Plugin System 2.0 & Plugin Studio**:
+  - **Plugin Studio (`PluginStudioDialog`)**: Added a 3-tab visual suite for managing/running plugins, visually assembling `PluginChain` pipelines, and scaffolding new `.py` plugins from starter templates with a live real-time Markdown documentation preview.
+  - **Multi-Step Plugin Pipelines (`PluginChain`)**: Added declarative and visual plugin chaining with in-memory overlay/IQ propagation, step-isolated parameter tuning, **Run Step Only**, and **Run From Here** execution.
+  - **Object-Oriented `PluginContext` & `PluginResult`**: Modernized the plugin runtime with dual attribute/dict access, memory-bounded batch iteration (`info.iter_batches`), progress reporting, cooperative cancellation, and native analysis tab launchers.
+  - **Zero-Overhead Per-Burst Baseband IQ (`o.iq`, `o.fs`)**: Burst detection plugins can attach baseband slices directly to overlays; downstream plugins read them via `o.get_samples()` with zero disk I/O and automatic lazy DDC fallback.
+  - **Custom 1D Plot Tabs (`PluginPlotView`)**: Plugins can open interactive 1D sub-plot tabs with multi-trace legends, shaded state regions, markers, and region statistics.
+  - **Session Parameter Persistence**: Plugin parameters are automatically remembered across application sessions without altering `.py` source code on disk.
+  - **Overlay UX Improvements**: Plugin overlays are locked by default to prevent accidental movement; double-clicking opens the inspector; clicking selects the overlay row in the table; the `Delete` key removes selected overlays; and right-click context menus are streamlined.
+  - **Favorites-Filtered Main Toolbar**: The spectrogram toolbar's Plugins tab now displays user-starred Favorites only for a cleaner workspace.
 - **Maximum Overlap Mode (`MAX`)**: Added full support for maximum overlap processing (i.e. advancing the FFT window by exactly 1 sample per step). Entering `100` or `MAX` in the sidebar or Settings dialog automatically sets the display to `MAX` and configures the DSP step size to 1 sample, maximizing time-domain resolution and signal transient capture.
 - **File Drag & Drop on Application Window**: Added `dragEnterEvent` and `dropEvent` support directly to `SpectrogramWindow`, allowing files to be dragged and dropped into an open IQView window to immediately load and register them in Open Recent.
 

@@ -118,11 +118,12 @@ class TimeDomainView(Base1DPlotView):
         self.plot_buttons = []
         
         self.toolbar_layout.addStretch()
+        self.setup_oversample_controls(self.toolbar_layout)
         
         end_time = start_time + len(samples) / sample_rate
-        range_label = QLabel(f"Range: {start_time:,.6f} to {end_time:,.6f} s")
-        range_label.setStyleSheet("color: #888; font-family: Consolas; font-size: 11px;")
-        self.toolbar_layout.addWidget(range_label)
+        self.range_label = QLabel(f"Range: {start_time:,.6f} to {end_time:,.6f} s")
+        self.range_label.setStyleSheet("color: #888; font-family: Consolas; font-size: 11px;")
+        self.toolbar_layout.addWidget(self.range_label)
         
         self.main_layout.addWidget(self.toolbar)
         
@@ -271,6 +272,24 @@ class TimeDomainView(Base1DPlotView):
         elif mode in ['TIME', 'MAG', 'Y', 'FILTER', 'TIME_ENDLESS', 'MAG_ENDLESS']: cursor = Qt.CursorShape.CrossCursor
         self.plot_widget.setCursor(cursor)
 
+
+    def set_samples(self, samples: np.ndarray, sample_rate: float) -> None:
+        """Replace the underlying IQ samples and sample rate (e.g. when changing oversampling) and re-render."""
+        if samples is None or len(samples) == 0 or sample_rate <= 0:
+            return
+        self.samples = samples
+        self.rate = float(sample_rate)
+        end_time = self.start_time + len(samples) / self.rate
+        self.time_axis = np.linspace(self.start_time, end_time, len(samples))
+        if hasattr(self, 'stats_region'):
+            self.stats_region.setBounds([self.time_axis[0], self.time_axis[-1]])
+        if hasattr(self, 'range_label'):
+            self.range_label.setText(f"Range: {self.start_time:,.6f} to {end_time:,.6f} s  |  Fs: {self.rate:g} Hz")
+        self.zoom_y_dict.clear()
+        checked_btn = self.mode_group.checkedButton()
+        mode_name = checked_btn.text() if checked_btn else (self.plot_buttons[0].text() if self.plot_buttons else "Real")
+        if mode_name in self.available_modes:
+            self.available_modes[mode_name]()
 
     def _plot_mode(self, mode_name: str):
         filter_len = int(self.settings_mgr.get("core/inst_freq_filter_len", 7)) if self.settings_mgr else 7
@@ -636,16 +655,6 @@ class TimeDomainView(Base1DPlotView):
         
         # Re-plot to refresh curve and marker colors
         self._update_plot(self.current_plot_data, self.y_label_text)
-
-    def update_toolbar_style(self):
-        theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")
-        p = get_palette(theme)
-        self.toolbar.setStyleSheet(f"""
-            QFrame#td_toolbar {{ background-color: {p.bg_sidebar}; border-radius: 6px; border: 1px solid {p.border}; }}
-            QPushButton {{ background-color: {p.bg_widget}; padding: 5px 15px; border-radius: 3px; color: {p.text_main}; }}
-            QPushButton:hover {{ background-color: {p.border_light}; }}
-            QPushButton:checked {{ background-color: {p.accent_dim}; color: {p.accent}; border: 1px solid {p.accent}; }}
-        """)
 
     def refresh_plot_style(self):
         theme = self.parent_window.settings_mgr.get("ui/theme", "Dark")

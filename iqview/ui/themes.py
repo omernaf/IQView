@@ -113,13 +113,13 @@ def get_main_stylesheet(theme_name):
             padding: 4px;
             font-size: 14px;
         }}
-        QLineEdit {{ 
+        QLineEdit, QSpinBox, QDoubleSpinBox {{ 
             background-color: {p.bg_input}; 
             color: {p.text_main}; 
             border: 1px solid {p.border}; 
             border-radius: 4px; padding: 4px 8px; 
         }}
-        QLineEdit:focus {{ border-color: {p.accent}; }}
+        QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {{ border-color: {p.accent}; }}
         QLineEdit[readOnly="true"] {{ color: {p.text_dim}; background-color: {p.bg_widget}; }}
         
         QComboBox {{ 

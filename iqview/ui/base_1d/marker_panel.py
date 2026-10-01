@@ -518,8 +518,16 @@ class Base1DMarkerPanel(QFrame):
         self.btn_lock_m1.blockSignals(False)
         self.btn_lock_m2.blockSignals(False)
 
+    def _get_settings_mgr(self):
+        pw = getattr(self.controller, "parent_window", None)
+        if pw and getattr(pw, "settings_mgr", None):
+            return pw.settings_mgr
+        return getattr(self.controller, "settings_mgr", None)
+
     def update_button_tooltips(self):
-        s = self.controller.parent_window.settings_mgr
+        s = self._get_settings_mgr()
+        if s is None:
+            return
         self._update_domain_tooltips(s)
         self.btn_marker_mag.setToolTip(format_tooltip_with_keybind(
             "Magnitude Markers (Double-click to clear)", s.get("keybinds/mag_markers", "M")
@@ -563,7 +571,8 @@ class Base1DMarkerPanel(QFrame):
         pass
 
     def refresh_theme(self):
-        theme = self.controller.parent_window.settings_mgr.get("ui/theme", "Dark")
+        s = self._get_settings_mgr()
+        theme = s.get("ui/theme", "Dark") if s else "Dark"
         p = get_palette(theme)
         self.update_button_tooltips()
 
