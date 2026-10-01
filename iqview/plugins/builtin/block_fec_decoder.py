@@ -18,7 +18,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
-from iqview import PluginResult, PluginContext
+from iqview import PluginResult, PluginContext, format_hover_bits
 from iqview.overlays import OverlayShape
 
 
@@ -578,11 +578,16 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
         if pad_bits > 0:
             fec_line += f" | padded +{pad_bits}b"
         kept_lines.append(fec_line)
+        updated_hover = format_hover_bits(
+            "\n".join(kept_lines),
+            out_bits,
+            hex_str=new_meta.get("hex"),
+        )
 
         result.update(
             ov.id,
             display_str=new_label,
-            hover_str="\n".join(kept_lines),
+            hover_str=updated_hover,
             metadata=new_meta,
         )
         fec_count += 1

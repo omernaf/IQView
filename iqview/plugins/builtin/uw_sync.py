@@ -15,7 +15,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
-from iqview import PluginResult, PluginContext
+from iqview import PluginResult, PluginContext, format_hover_bits
 from iqview.overlays import OverlayShape
 
 
@@ -260,17 +260,25 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
                 f"{found_errors} err, {found_polarity}) | {len(payload_bits)} payload bits"
             )
             kept_lines.append(sync_line)
+            updated_hover = format_hover_bits(
+                "\n".join(kept_lines),
+                payload_bits,
+                hex_str=new_meta.get("hex"),
+            )
 
             result.update(
                 ov.id,
                 display_str=new_label,
-                hover_str="\n".join(kept_lines),
+                hover_str=updated_hover,
                 metadata=new_meta,
             )
             synced_count += 1
         else:
             new_meta["uw_found"] = False
-            result.update(ov.id, metadata=new_meta)
+            base_hover = (getattr(ov, "hover_str", "") or "").strip()
+            kept_lines = [ln for ln in base_hover.splitlines() if not ln.startswith("Sync:")]
+            kept_lines.append(f"Sync: No sync word {uw_hex} match found")
+            result.update(ov.id, hover_str="\n".join(kept_lines), metadata=new_meta)
 
     result.log(f"Sync Word Slicer: Synchronized {synced_count}/{total} burst(s).")
     if bursts_with_bits == 0 and total > 0:

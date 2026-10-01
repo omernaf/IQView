@@ -7,7 +7,7 @@ formatted overlays without manually managing internal dictionaries or enums.
 """
 
 from typing import List, Tuple, Optional, Dict, Any
-from iqview.ui.overlay import Overlay, OverlayShape
+from iqview.ui.overlay import Overlay, OverlayShape, format_hover_bits
 
 __all__ = [
     "Rect",
@@ -21,6 +21,7 @@ __all__ = [
     "FreqLine",
     "TimeRegion",
     "FreqRegion",
+    "format_hover_bits",
 ]
 
 

@@ -29,6 +29,7 @@ import numpy as np
 
 from iqview.plugins.context import PluginContext, PluginParams
 from iqview.plugins.plugin_result import PluginResult
+from iqview.plugins.format_utils import format_hover_bits
 
 
 class PluginChain:
@@ -489,6 +490,13 @@ class PluginChain:
             for oid, fields in step_res._updates:
                 target_ov = next((w for w in working_overlays if w.id == oid), None)
                 if target_ov is not None:
+                    new_meta = fields.get("metadata")
+                    if isinstance(new_meta, dict) and "bits" in new_meta and "hover_str" not in fields:
+                        fields["hover_str"] = format_hover_bits(
+                            getattr(target_ov, "hover_str", ""),
+                            new_meta["bits"],
+                            hex_str=new_meta.get("hex"),
+                        )
                     for fk, fv in fields.items():
                         setattr(target_ov, fk, fv)
                 if oid not in chain_added_map:

@@ -14,7 +14,7 @@ import re
 from typing import Any, Dict, List, Optional
 import numpy as np
 
-from iqview import PluginResult, PluginContext
+from iqview import PluginResult, PluginContext, format_hover_bits
 from iqview.overlays import OverlayShape
 
 
@@ -256,11 +256,16 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
         base_hover = (getattr(ov, "hover_str", "") or "").strip()
         kept_lines = [ln for ln in base_hover.splitlines() if not ln.startswith("XOR:")]
         kept_lines.append(f"XOR: Masked {len(out_bits)} bits with {mask_label}")
+        updated_hover = format_hover_bits(
+            "\n".join(kept_lines),
+            out_bits,
+            hex_str=new_meta.get("hex"),
+        )
 
         result.update(
             ov.id,
             display_str=new_label,
-            hover_str="\n".join(kept_lines),
+            hover_str=updated_hover,
             metadata=new_meta,
         )
         masked_count += 1

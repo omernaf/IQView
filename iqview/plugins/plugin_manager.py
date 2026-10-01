@@ -49,6 +49,7 @@ from PyQt6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
 from iqview.plugins.chain import PluginChain
 from iqview.plugins.context import PluginContext, PluginParams
 from iqview.plugins.plugin_result import PluginResult
+from iqview.plugins.format_utils import format_hover_bits
 
 
 def _snapshot_overlay_for_thread(o) -> Any:
@@ -1125,6 +1126,12 @@ class PluginManagerMixin:
                 self.remove_overlay(old_id, _refresh_ui=False)
             new_overlay.id     = str(uuid.uuid4())
             new_overlay.source = original_source
+            if isinstance(new_overlay.metadata, dict) and "bits" in new_overlay.metadata and not new_overlay.hover_str:
+                new_overlay.hover_str = format_hover_bits(
+                    getattr(original, "hover_str", "") if original is not None else "",
+                    new_overlay.metadata["bits"],
+                    hex_str=new_overlay.metadata.get("hex"),
+                )
             self.add_overlay(new_overlay, _refresh_ui=False)
             n_replaced += 1
 
@@ -1134,6 +1141,13 @@ class PluginManagerMixin:
             if existing is None:
                 print(f"[IQView Plugin] update: overlay {oid!r} not found, skipping.")
                 continue
+            new_meta = fields.get("metadata")
+            if isinstance(new_meta, dict) and "bits" in new_meta and "hover_str" not in fields:
+                fields["hover_str"] = format_hover_bits(
+                    getattr(existing, "hover_str", ""),
+                    new_meta["bits"],
+                    hex_str=new_meta.get("hex"),
+                )
             self.update_overlay(oid, _refresh_ui=False, **fields)
             n_updated += 1
 
@@ -1142,6 +1156,12 @@ class PluginManagerMixin:
             try:
                 overlay.id     = str(uuid.uuid4())
                 overlay.source = plugin_source
+                if isinstance(overlay.metadata, dict) and "bits" in overlay.metadata and not overlay.hover_str:
+                    overlay.hover_str = format_hover_bits(
+                        "",
+                        overlay.metadata["bits"],
+                        hex_str=overlay.metadata.get("hex"),
+                    )
                 self.add_overlay(overlay, _refresh_ui=False)
                 n_added += 1
             except Exception as exc:

@@ -58,6 +58,9 @@ SHAPE_LABELS: Dict[str, OverlayShape] = {
 TAG_POSITIONS = ["center", "top-left", "top-right", "bottom-left", "bottom-right"]
 
 
+from iqview.plugins.format_utils import format_hover_bits
+
+
 # ---------------------------------------------------------------------------
 # Overlay dataclass
 # ---------------------------------------------------------------------------
@@ -384,6 +387,18 @@ class Overlay:
             decimate=decimate,
             resample=resample,
         )
+
+    def update_hover_bits(
+        self,
+        bits: Any,
+        hex_str: Optional[str] = None,
+        max_hover_bits: int = 64,
+    ) -> "Overlay":
+        """Update self.hover_str with updated 'Bits:' and 'Hex:' preview lines."""
+        self.hover_str = format_hover_bits(
+            self.hover_str, bits, hex_str=hex_str, max_hover_bits=max_hover_bits
+        )
+        return self
 
     # ------------------------------------------------------------------
     # Hover Tooltip Formatting (Truncated Preview)

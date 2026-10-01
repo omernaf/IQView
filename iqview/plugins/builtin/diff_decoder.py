@@ -14,7 +14,7 @@ import copy
 from typing import Any, Dict, List, Optional
 import numpy as np
 
-from iqview import PluginResult, PluginContext
+from iqview import PluginResult, PluginContext, format_hover_bits
 from iqview.overlays import OverlayShape
 
 
@@ -171,11 +171,16 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
         base_hover = (getattr(ov, "hover_str", "") or "").strip()
         kept_lines = [ln for ln in base_hover.splitlines() if not ln.startswith("Diff:")]
         kept_lines.append(f"Diff: Decoded {len(out_bits)} bits ({mode_label}, init={init_bit})")
+        updated_hover = format_hover_bits(
+            "\n".join(kept_lines),
+            out_bits,
+            hex_str=new_meta.get("hex"),
+        )
 
         result.update(
             ov.id,
             display_str=new_label,
-            hover_str="\n".join(kept_lines),
+            hover_str=updated_hover,
             metadata=new_meta,
         )
         decoded_count += 1

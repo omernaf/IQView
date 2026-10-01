@@ -16,7 +16,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
-from iqview import PluginResult, PluginContext
+from iqview import PluginResult, PluginContext, format_hover_bits
 from iqview.overlays import OverlayShape
 
 
@@ -443,7 +443,25 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
         overlay.metadata["crc_poly"]       = f"0x{poly:X}"
         overlay.metadata["crc_bits"]       = width
 
-        result.update(overlay)
+        base_hover = (getattr(overlay, "hover_str", "") or "").strip()
+        kept_lines = [
+            ln for ln in base_hover.splitlines()
+            if not ln.startswith("CRC:") and not ln.lower().startswith("bits:") and not ln.lower().startswith("hex:")
+        ]
+        crc_status = "PASS" if crc_valid else "FAIL"
+        crc_line = (
+            f"CRC: {crc_status} (rx=0x{rx_crc_val:0{hex_len}x}, calc=0x{calc_crc:0{hex_len}x}, "
+            f"poly=0x{poly:X}) | {len(payload_bits)} payload bits"
+        )
+        kept_lines.append(crc_line)
+        updated_hover = format_hover_bits(
+            "\n".join(kept_lines),
+            payload_bits,
+            hex_str=overlay.metadata["hex"],
+        )
+        overlay.hover_str = updated_hover
+
+        result.update(overlay, hover_str=updated_hover)
         processed_count += 1
 
     result.log(
