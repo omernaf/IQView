@@ -65,6 +65,7 @@ def parse_args():
     parser.add_argument('-r', '--rate', type=float, default=float(sm.get("core/fs", 1e6)), help='Sample rate in Hz')
     parser.add_argument('-c', '--fc', type=float, default=float(sm.get("core/fc", 0.0)), help='Center frequency in Hz')
     parser.add_argument('-s', '--fft', type=int, default=int(sm.get("core/fft_size", 1024)), help='FFT bin size')
+    parser.add_argument('--norm', '--normalization', dest='norm_db', type=float, default=0.0, help='Normalization factor in dB (default: 0.0)')
     parser.add_argument('--profile', action='store_true', help='Enable cProfile profiling')
     parser.add_argument('-n', '--name', type=str, default=None, help='Custom window name')
 
@@ -432,7 +433,7 @@ def main():
     window = SpectrogramWindow(data_source, dtype, fs, fc, args.fft, args.profile,
                                is_complex=is_complex, window_name=window_name,
                                lazy_rendering=lazy_override, file_path=file_path,
-                               type_str=type_str)
+                               type_str=type_str, norm_db=getattr(args, 'norm_db', 0.0))
     window.show()
     
     if startup_error:

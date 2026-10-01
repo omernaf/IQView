@@ -25,6 +25,7 @@ def view(
     dtype: str = "complex64",
     name: str = None,
     lazy: bool = None,
+    norm_db: float = 0.0,
 ):
     """
     Open the IQView Spectrogram Viewer directly from Python.
@@ -276,6 +277,7 @@ def view(
         lazy_rendering=lazy,
         file_path=file_path,
         type_str=type_str,
+        norm_db=norm_db,
     )
     window.show()
 

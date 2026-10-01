@@ -262,7 +262,8 @@ class UIComponentsMixin:
                                  window_type=self.window_type,
                                  overlap_percent=self.overlap_percent,
                                  window_size=getattr(self, 'window_size', self.fft_size),
-                                 parent_window=self)
+                                 parent_window=self,
+                                 norm_db=getattr(self, 'norm_db', 0.0))
         self.sidebar.parametersChanged.connect(self.on_parameters_changed)
         self.sidebar.multirowChanged.connect(self.on_multirow_changed)
         self.spec_h_layout.addWidget(self.sidebar)

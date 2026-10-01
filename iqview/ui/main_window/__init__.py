@@ -14,9 +14,10 @@ from ...utils.settings_manager import SettingsManager
 from ..themes import get_main_stylesheet
 
 class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, OverlayManagerMixin, ViewControllerMixin, DataHandlerMixin, PluginManagerMixin):
-    def __init__(self, data_source, data_type, sample_rate, center_freq, fft_size, profile_enabled=False, is_complex=True, window_name=None, lazy_rendering=None, file_path=None, type_str=None):
+    def __init__(self, data_source, data_type, sample_rate, center_freq, fft_size, profile_enabled=False, is_complex=True, window_name=None, lazy_rendering=None, file_path=None, type_str=None, norm_db=0.0):
         super().__init__()
         self.settings_mgr = SettingsManager()
+        self.norm_db = float(norm_db)
         # Per-instance rendering mode override from CLI (None = use QSettings value).
         self._lazy_rendering_override = lazy_rendering
         

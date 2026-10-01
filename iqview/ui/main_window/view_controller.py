@@ -12,13 +12,19 @@ from ..detached_window import DetachedViewWindow
 
 class ViewControllerMixin:
     def on_parameters_changed(self, params):
+        old_norm_db = getattr(self, 'norm_db', 0.0)
+        new_norm_db = float(params.get('norm_db', 0.0))
+        norm_changed = (old_norm_db != new_norm_db)
+
         needs_reprocess = (self.fft_size != params['fft_size'] or 
                            self.overlap_percent != params['overlap_percent'] or
                            self.window_type != params['window_type'] or
-                           getattr(self, 'window_size', None) != params.get('window_size', params['fft_size']))
+                           getattr(self, 'window_size', None) != params.get('window_size', params['fft_size']) or
+                           norm_changed)
         
         old_rate, old_fc = self.rate, self.fc
         self.rate, self.fc = params['fs'], params['fc']
+        self.norm_db = new_norm_db
         self.fft_size, self.window_type, self.overlap_percent = params['fft_size'], params['window_type'], params['overlap_percent']
         self.window_size = params.get('window_size', params['fft_size'])
         
@@ -29,13 +35,19 @@ class ViewControllerMixin:
         delta_psd = 0.0
         if old_rate > 0 and self.rate > 0 and old_rate != self.rate:
             delta_psd = float(-10.0 * np.log10(self.rate / old_rate))
+        
+        # When normalization factor changes, dB values shift by -(new_norm_db - old_norm_db)
+        delta_norm = float(new_norm_db - old_norm_db)
+        total_delta_db = delta_psd - delta_norm
+
+        if total_delta_db != 0.0:
             if hasattr(self, 'spectrogram_view') and hasattr(self.spectrogram_view, 'level_region'):
                 low, high = self.spectrogram_view.level_region.getRegion()
                 if hasattr(self.spectrogram_view.level_region, 'lines') and len(self.spectrogram_view.level_region.lines) > 0:
                     bounds = self.spectrogram_view.level_region.lines[0].bounds()
                     if bounds and bounds[0] is not None and bounds[1] is not None:
-                        self.spectrogram_view.level_region.setBounds([bounds[0] + delta_psd, bounds[1] + delta_psd])
-                self.spectrogram_view.level_region.setRegion([low + delta_psd, high + delta_psd])
+                        self.spectrogram_view.level_region.setBounds([bounds[0] + total_delta_db, bounds[1] + total_delta_db])
+                self.spectrogram_view.level_region.setRegion([low + total_delta_db, high + total_delta_db])
         
         if needs_reprocess:
             self.start_processing()
@@ -94,14 +106,14 @@ class ViewControllerMixin:
 
             if not needs_reprocess:
                 if getattr(self, 'full_spectrogram_cache', None) is not None:
-                    if delta_psd != 0.0:
-                        self.full_spectrogram_cache = self.full_spectrogram_cache + np.float32(delta_psd)
+                    if total_delta_db != 0.0:
+                        self.full_spectrogram_cache = self.full_spectrogram_cache + np.float32(total_delta_db)
                     self.spectrogram_view.update_spectrogram(
                         self.full_spectrogram_cache, self.fc, self.rate, 0.0, self.time_duration, auto_range=False
                     )
                 elif getattr(self.spectrogram_view, '_last_spectrogram', None) is not None:
-                    if delta_psd != 0.0:
-                        self.spectrogram_view._last_spectrogram = self.spectrogram_view._last_spectrogram + np.float32(delta_psd)
+                    if total_delta_db != 0.0:
+                        self.spectrogram_view._last_spectrogram = self.spectrogram_view._last_spectrogram + np.float32(total_delta_db)
                     scale_t = self.time_duration / old_duration
                     t0 = (self.spectrogram_view._last_t_start or 0.0) * scale_t
                     t1 = (self.spectrogram_view._last_t_end or old_duration) * scale_t
@@ -1076,9 +1088,12 @@ class ViewControllerMixin:
         self.data_type = new_data_type
         self.current_type_str = new_type_str
 
+        # Reset normalization factor to 0.0 by default for new files
+        self.norm_db = 0.0
+
         # Update sidebar parameters
         if hasattr(self, 'sidebar'):
-            self.sidebar.update_params(fs=self.rate, fc=self.fc)
+            self.sidebar.update_params(fs=self.rate, fc=self.fc, norm_db=0.0)
 
         # Update window title
         if getattr(self, 'custom_window_name', None):

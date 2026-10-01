@@ -116,6 +116,7 @@ class DataHandlerMixin:
                 filter_mode=self.filter_mode, f_min=f_min_rel, f_max=f_max_rel,
                 is_complex=self.is_complex,
                 window_size=getattr(self, 'window_size', None),
+                norm_db=getattr(self, 'norm_db', 0.0),
                 filter_type=str(self.settings_mgr.get("core/filter_type", "Elliptic")),
                 filter_order=int(self.settings_mgr.get("core/filter_order", 8)),
                 filter_ripple=float(self.settings_mgr.get("core/filter_ripple", 0.1)),
@@ -255,6 +256,7 @@ class DataHandlerMixin:
             window_type=self.window_type,
             overlap_percent=self.overlap_percent,
             window_size=getattr(self, 'window_size', None),
+            norm_db=getattr(self, 'norm_db', 0.0),
             filter_mode=self.filter_mode,
             f_min=f_min_rel,
             f_max=f_max_rel,
@@ -358,6 +360,7 @@ class DataHandlerMixin:
             filter_mode=self.filter_mode,
             f_min=f_min_rel, f_max=f_max_rel,
             window_size=getattr(self, 'window_size', None),
+            norm_db=getattr(self, 'norm_db', 0.0),
             filter_type=str(self.settings_mgr.get("core/filter_type", "Elliptic")),
             filter_order=int(self.settings_mgr.get("core/filter_order", 8)),
             filter_ripple=float(self.settings_mgr.get("core/filter_ripple", 0.1)),
@@ -512,6 +515,7 @@ class DataHandlerMixin:
             window_type=self.window_type,
             overlap_percent=self.overlap_percent,
             window_size=getattr(self, 'window_size', None),
+            norm_db=getattr(self, 'norm_db', 0.0),
             filter_mode=self.filter_mode,
             f_min=f_min_rel,
             f_max=f_max_rel,
@@ -626,6 +630,10 @@ class DataHandlerMixin:
 
             if self.data_type == np.int16:
                 raw_data /= 32768.0
+
+            norm_db = float(getattr(self, 'norm_db', 0.0))
+            if norm_db != 0.0:
+                raw_data *= np.float32(10.0 ** (-norm_db / 20.0))
 
             if self.is_complex:
                 if self.data_type == np.float64:

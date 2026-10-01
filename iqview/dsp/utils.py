@@ -20,7 +20,7 @@ class FileReaderThread(QThread):
     def __init__(self, source, dtype, fft_size, overlap_percent, sample_rate, 
                  profile_enabled=False, window_type="Hanning",
                  filter_mode=None, f_min=None, f_max=None, is_complex=True,
-                 window_size=None, **kwargs):
+                 window_size=None, norm_db=0.0, **kwargs):
         super().__init__()
         self.source = source
         self.dtype = dtype
@@ -28,6 +28,8 @@ class FileReaderThread(QThread):
         self.fft_size = fft_size
         self.window_size = window_size if window_size is not None else fft_size
         self.sample_rate = sample_rate
+        self.norm_db = float(norm_db)
+        self.norm_factor = np.float32(10.0 ** (-self.norm_db / 20.0))
         self.profile_enabled = profile_enabled
         self.running = True
         
@@ -169,6 +171,9 @@ class FileReaderThread(QThread):
                     if self.dtype == np.int16:
                         raw_array /= 32768.0
 
+                    if self.norm_factor != 1.0:
+                        raw_array *= self.norm_factor
+
                     if self.is_complex:
                         # Real/Imag de-interleave
                         full_complex = raw_array[0::2] + 1j * raw_array[1::2]
@@ -296,7 +301,7 @@ class ViewportAwareReader(QThread):
                  pixel_width, is_complex=True, window_type="Hanning",
                  overlap_percent=0.0,
                  filter_mode=None, f_min=None, f_max=None,
-                 window_size=None,
+                 window_size=None, norm_db=0.0,
                  **kwargs):
         super().__init__()
         self.source        = source
@@ -308,6 +313,8 @@ class ViewportAwareReader(QThread):
         self.t_end         = t_end
         self.pixel_width   = max(1, int(pixel_width))
         self.is_complex    = is_complex
+        self.norm_db       = float(norm_db)
+        self.norm_factor   = np.float32(10.0 ** (-self.norm_db / 20.0))
         self.running       = True
 
         # Filter settings
@@ -450,6 +457,9 @@ class ViewportAwareReader(QThread):
                     if self.dtype == np.int16:
                         raw_array /= 32768.0
 
+                    if self.norm_factor != 1.0:
+                        raw_array *= self.norm_factor
+
                     if self.is_complex:
                         valid_complex = raw_array[0::2] + 1j * raw_array[1::2]
                     else:
@@ -547,6 +557,7 @@ class MultiRowProcessor(QThread):
                  start_sample, samples_per_row, period,
                  is_complex=True, window_type="Hanning", overlap_percent=100.0,
                  window_size=None, filter_mode=None, f_min=None, f_max=None,
+                 norm_db=0.0,
                  **kwargs):
         super().__init__()
         self.source         = source
@@ -559,6 +570,8 @@ class MultiRowProcessor(QThread):
         self.period         = int(max(1, period))
         self.is_complex     = is_complex
         self.window_size    = window_size if window_size is not None else fft_size
+        self.norm_db        = float(norm_db)
+        self.norm_factor    = np.float32(10.0 ** (-self.norm_db / 20.0))
         self.running        = True
 
         # Window function
@@ -645,7 +658,7 @@ class MultiRowProcessor(QThread):
 
                     if actual_end <= actual_start or self.num_cols <= 0:
                         results.append(
-                            np.full((self.fft_size, 1), -100.0 - self.psd_norm_db, dtype=np.float32)
+                            np.full((self.fft_size, 1), -100.0 - self.psd_norm_db - self.norm_db, dtype=np.float32)
                         )
                         self.progress.emit(row_i + 1, self.num_rows)
                         continue
@@ -661,7 +674,7 @@ class MultiRowProcessor(QThread):
 
                     if len(raw_bytes) == 0:
                         results.append(
-                            np.full((self.fft_size, 1), -100.0 - self.psd_norm_db, dtype=np.float32)
+                            np.full((self.fft_size, 1), -100.0 - self.psd_norm_db - self.norm_db, dtype=np.float32)
                         )
                         self.progress.emit(row_i + 1, self.num_rows)
                         continue
@@ -669,6 +682,9 @@ class MultiRowProcessor(QThread):
                     raw_array = np.frombuffer(raw_bytes, dtype=self.dtype).astype(np.float32)
                     if self.dtype == np.int16:
                         raw_array /= 32768.0
+
+                    if self.norm_factor != 1.0:
+                        raw_array *= self.norm_factor
 
                     if self.is_complex:
                         complex_data = raw_array[0::2] + 1j * raw_array[1::2]

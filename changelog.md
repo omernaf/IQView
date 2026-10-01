@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **Normalization Factor in dB (`norm_db`)**:
+  - Added an interactive **Normalization (dB)** input in the sidebar under **Core Settings** on the main screen (defaulting to `0`).
+  - Normalizes signal power by $10^{-\text{norm\_dB} / 10}$ (scaling sample amplitudes by $10^{-\text{norm\_dB} / 20}$), so setting 10 dB makes power 10× smaller (-10 dB) to compensate for frontend gain, LNAs, and AGCs, enabling samples to represent calibrated RF power values (such as dBm).
+  - Fully integrated across all DSP pipelines: `FileReaderThread`, `ViewportAwareReader` (lazy mode), `MultiRowProcessor`, and `extract_iq_segment` (time domain, frequency domain, constellation, eye diagram, overlays, export, and plugins).
+  - Automatically shifts the colorbar level bounds in sync with normalization changes to preserve visual contrast.
+  - Resets to 0 dB by default when loading a new file or session.
+  - Added `--norm` / `--normalization` CLI flags to `iqview` and `norm_db` argument to `iqview.view(...)`.
+
 ## [0.7.0] - 2026-09-28
 
 ### Added

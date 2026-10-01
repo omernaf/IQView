@@ -173,11 +173,13 @@ class SidePanel(QFrame):
     multirowChanged   = pyqtSignal(dict)
 
     def __init__(self, fs, fc, fft_size, window_type="Hamming",
-                 overlap_percent=100.0, window_size=None, parent_window=None):
+                 overlap_percent=100.0, window_size=None, parent_window=None,
+                 norm_db=0.0):
         super().__init__()
         self.parent_window   = parent_window
         self.fs              = fs
         self.fc              = fc
+        self.norm_db         = float(norm_db)
         self.fft_size        = fft_size
         self.window_size     = window_size if window_size is not None else fft_size
         self.window_type     = window_type
@@ -316,6 +318,12 @@ class SidePanel(QFrame):
         self.fc_edit = QLineEdit(str(self.fc))
         self.fc_edit.returnPressed.connect(self.on_edit_finished)
         lyt.addWidget(self.fc_edit)
+
+        lyt.addWidget(QLabel("Normalization (dB)"))
+        self.norm_edit = QLineEdit(f"{self.norm_db:g}")
+        self.norm_edit.setToolTip("Normalization factor in dB (e.g. 10 dB normalizes sample power by 10x / -10 dB)")
+        self.norm_edit.returnPressed.connect(self.on_edit_finished)
+        lyt.addWidget(self.norm_edit)
 
         # --- DSP SETTINGS ---
         self._add_section_header(lyt, "DSP Settings")
@@ -572,12 +580,19 @@ class SidePanel(QFrame):
         try:
             self.fs = float(self.fs_edit.text())
             self.fc = float(self.fc_edit.text())
+            if hasattr(self, 'norm_edit'):
+                try:
+                    self.norm_db = float(self.norm_edit.text())
+                except ValueError:
+                    self.norm_db = 0.0
+                    self.norm_edit.setText("0")
             
             self.update_derived_values()
             
             params = {
                 'fs': self.fs,
                 'fc': self.fc,
+                'norm_db': self.norm_db,
                 'fft_size': self.fft_size,
                 'window_size': self.window_size,
                 'window_type': self.window_type,
@@ -627,14 +642,18 @@ class SidePanel(QFrame):
     # External update helpers
     # ------------------------------------------------------------------
 
-    def update_params(self, fs=None, fc=None):
-        """Called by the main window when fs/fc are detected from filename."""
+    def update_params(self, fs=None, fc=None, norm_db=None):
+        """Called by the main window when fs/fc are detected from filename or new file is loaded."""
         if fs is not None:
             self.fs = fs
             self.fs_edit.setText(str(fs))
         if fc is not None:
             self.fc = fc
             self.fc_edit.setText(str(fc))
+        if norm_db is not None:
+            self.norm_db = float(norm_db)
+            if hasattr(self, 'norm_edit'):
+                self.norm_edit.setText(f"{self.norm_db:g}")
         if hasattr(self, 'freq_min_edit') and hasattr(self, 'freq_max_edit'):
             self.freq_min_edit.set_hz(self.fc - self.fs / 2.0)
             self.freq_max_edit.set_hz(self.fc + self.fs / 2.0)
