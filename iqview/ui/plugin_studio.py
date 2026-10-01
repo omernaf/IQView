@@ -57,7 +57,7 @@ from PyQt6.QtWidgets import (
 )
 
 from iqview.plugins.chain import PluginChain
-from .marker_panel import PluginDocDialog, ScientificNumberEdit
+from .marker_panel import PluginDocDialog, ScientificNumberEdit, setup_preset_overrides
 from .themes import get_palette, get_scrollbar_stylesheet
 
 
@@ -905,6 +905,8 @@ class PluginStudioDialog(QDialog):
                 self._manage_param_widgets[key] = w
             self.params_form_layout.addWidget(form_box)
 
+        setup_preset_overrides(params_spec, self._manage_param_widgets, self._set_param_widget_value)
+
         self.params_form_layout.addStretch(1)
         self.params_scroll.setWidget(self.params_container)
 
@@ -1342,6 +1344,8 @@ class PluginStudioDialog(QDialog):
                 lbl_w.setToolTip(str(spec["tooltip"]))
             self.chain_step_form_layout.addRow(lbl_w, w)
             self._chain_step_widgets[key] = w
+
+        setup_preset_overrides(params_spec, self._chain_step_widgets, self._set_param_widget_value)
 
         self.chain_step_scroll.setWidget(self.chain_step_form_host)
 

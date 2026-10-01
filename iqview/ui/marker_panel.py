@@ -23,6 +23,7 @@ from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap
 import importlib.resources
 import os
 import re
+from typing import Any, Dict, Optional, Tuple
 from .widgets import FormattedLineEdit, DoubleClickButton, format_tooltip_with_keybind, get_theme_icon
 from .themes import get_palette
 
@@ -1732,6 +1733,95 @@ class PluginDocDialog(QDialog):
         layout.addWidget(btn_box)
 
 
+def _set_dialog_widget_value(w: QWidget, val: Any) -> None:
+    """Set value on an arbitrary param editor widget."""
+    if val is None:
+        return
+    if isinstance(w, ScientificNumberEdit):
+        w.setValue(val)
+    elif isinstance(w, QCheckBox):
+        w.setChecked(bool(val))
+    elif isinstance(w, QComboBox):
+        w.setCurrentText(str(val))
+    elif isinstance(w, QLineEdit):
+        w.setText(str(val))
+
+
+def setup_preset_overrides(params_spec: dict, widgets_map: dict, set_val_fn) -> None:
+    """
+    Connect choice dropdowns that define 'preset_values' to dynamically override
+    other parameter widgets when a preset is selected, and revert the preset to 'Custom'
+    if the user manually edits any of the overridden fields.
+    """
+    if not isinstance(params_spec, dict) or not widgets_map:
+        return
+
+    for key, spec in params_spec.items():
+        if not isinstance(spec, dict):
+            continue
+        preset_values = spec.get("preset_values")
+        if not preset_values or not isinstance(preset_values, dict):
+            continue
+
+        cb_widget = widgets_map.get(key)
+        if isinstance(cb_widget, tuple):
+            cb_widget = cb_widget[0]
+        if not isinstance(cb_widget, QComboBox):
+            continue
+
+        def _make_preset_handler(p_cb, p_vals):
+            def _on_preset_changed(selected_text):
+                text = str(selected_text).strip()
+                if text not in p_vals:
+                    return
+                overrides = p_vals[text]
+                for target_key, target_val in overrides.items():
+                    target_w = widgets_map.get(target_key)
+                    if isinstance(target_w, tuple):
+                        target_w = target_w[0]
+                    if target_w is not None:
+                        target_w.blockSignals(True)
+                        set_val_fn(target_w, target_val)
+                        target_w.blockSignals(False)
+            return _on_preset_changed
+
+        cb_widget.currentTextChanged.connect(_make_preset_handler(cb_widget, preset_values))
+
+        # Collect all parameters affected by any preset
+        target_keys = set()
+        for overrides in preset_values.values():
+            if isinstance(overrides, dict):
+                target_keys.update(overrides.keys())
+
+        def _make_manual_edit_handler(p_cb):
+            def _on_manual_edit(*args):
+                custom_label = None
+                for i in range(p_cb.count()):
+                    txt = p_cb.itemText(i)
+                    if "custom" in txt.lower():
+                        custom_label = txt
+                        break
+                if custom_label and p_cb.currentText() != custom_label:
+                    p_cb.blockSignals(True)
+                    p_cb.setCurrentText(custom_label)
+                    p_cb.blockSignals(False)
+            return _on_manual_edit
+
+        for t_key in target_keys:
+            t_w = widgets_map.get(t_key)
+            if isinstance(t_w, tuple):
+                t_w = t_w[0]
+            if t_w is None:
+                continue
+            handler = _make_manual_edit_handler(cb_widget)
+            if isinstance(t_w, (QLineEdit, ScientificNumberEdit)):
+                t_w.textChanged.connect(handler)
+            elif isinstance(t_w, QCheckBox):
+                t_w.toggled.connect(handler)
+            elif isinstance(t_w, QComboBox):
+                t_w.currentTextChanged.connect(handler)
+
+
 class PluginConfigDialog(QDialog):
     def __init__(self, plugin_name, params_spec, current_params, parent=None, plugin_info=None):
         super().__init__(parent)
@@ -1874,7 +1964,9 @@ class PluginConfigDialog(QDialog):
                 
             form_layout.addRow(QLabel(label_text), widget)
             self.widgets[key] = (widget, param_type)
-            
+
+        setup_preset_overrides(params_spec, self.widgets, _set_dialog_widget_value)
+
         if len(params_spec) > 10:
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)

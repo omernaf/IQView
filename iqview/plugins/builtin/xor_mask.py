@@ -61,6 +61,11 @@ PLUGIN_PARAMS = {
             "CC1101 PN9",
             "TI CC2500",
         ],
+        "preset_values": {
+            "Invert All (0xFF)":  {"mask_hex": "0xFF"},
+            "Alternating (0xAA)": {"mask_hex": "0xAA"},
+            "Alternating (0x55)": {"mask_hex": "0x55"},
+        },
         "label": "Preset",
         "tooltip": "Select a standard de-whitening preset or choose Custom Hex Mask.",
     },

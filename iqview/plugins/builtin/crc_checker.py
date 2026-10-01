@@ -79,6 +79,18 @@ CRC_PRESETS = {
     "CRC-32C":            (32, 0x1EDC6F41, 0xFFFFFFFF, 0xFFFFFFFF, True,  True),
 }
 
+CRC_PRESET_VALUES = {
+    "CRC-8":              {"crc_bits": 8,  "poly_hex": "0x07",       "init_hex": "0x00",       "xorout_hex": "0x00",       "refin": False, "refout": False},
+    "CRC-8-Dallas":       {"crc_bits": 8,  "poly_hex": "0x31",       "init_hex": "0x00",       "xorout_hex": "0x00",       "refin": True,  "refout": True},
+    "CRC-16-CCITT":       {"crc_bits": 16, "poly_hex": "0x1021",     "init_hex": "0xFFFF",     "xorout_hex": "0x0000",     "refin": False, "refout": False},
+    "CRC-16-IBM":         {"crc_bits": 16, "poly_hex": "0x8005",     "init_hex": "0x0000",     "xorout_hex": "0x0000",     "refin": True,  "refout": True},
+    "CRC-16-MODBUS":      {"crc_bits": 16, "poly_hex": "0x8005",     "init_hex": "0xFFFF",     "xorout_hex": "0x0000",     "refin": True,  "refout": True},
+    "CRC-16-KERMIT":      {"crc_bits": 16, "poly_hex": "0x1021",     "init_hex": "0x0000",     "xorout_hex": "0x0000",     "refin": True,  "refout": True},
+    "CRC-24-BLE":         {"crc_bits": 24, "poly_hex": "0x00065B",   "init_hex": "0x555555",   "xorout_hex": "0x000000",   "refin": True,  "refout": True},
+    "CRC-32-IEEE":        {"crc_bits": 32, "poly_hex": "0x04C11DB7", "init_hex": "0xFFFFFFFF", "xorout_hex": "0xFFFFFFFF", "refin": True,  "refout": True},
+    "CRC-32C":            {"crc_bits": 32, "poly_hex": "0x1EDC6F41", "init_hex": "0xFFFFFFFF", "xorout_hex": "0xFFFFFFFF", "refin": True,  "refout": True},
+}
+
 PLUGIN_PARAMS = {
     "preset": {
         "type": "choice",
@@ -95,6 +107,7 @@ PLUGIN_PARAMS = {
             "CRC-32C",
             "Custom",
         ],
+        "preset_values": CRC_PRESET_VALUES,
         "label": "Preset",
         "tooltip": "Standard CRC preset configuration or choose Custom to specify all fields.",
     },
