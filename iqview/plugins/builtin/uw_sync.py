@@ -88,6 +88,8 @@ def _hex_to_bits(hex_str: str) -> np.ndarray:
     """Convert hex string (e.g. '0x7E76' or 'D3 91') to 1D uint8 array."""
     s = str(hex_str).strip()
     s = re.sub(r"^0[xX]", "", s)
+    if re.search(r"[^0-9a-fA-F\s,._-]", s):
+        return np.empty(0, dtype=np.uint8)
     cleaned = re.sub(r"[^0-9a-fA-F]", "", s)
     if not cleaned:
         return np.empty(0, dtype=np.uint8)
@@ -150,6 +152,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
     ]
     if not target_overlays:
         result.log("No Rect overlays found in active scope.")
+        result.warning("No Rect overlays found in active scope.", title="Sync Word Slicer")
         return result
 
     uw_hex          = str(info.params.get("uw_hex", "0x7E76")).strip()
@@ -160,6 +163,11 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
     uw_bits = _hex_to_bits(uw_hex)
     if len(uw_bits) == 0:
         result.log(f"Invalid or empty sync word hex: {uw_hex!r}")
+        result.error(
+            f"Invalid or empty sync word hex: {uw_hex!r}.\n"
+            "Please specify a valid hexadecimal string (e.g. 0x7E76).",
+            title="Sync Word Slicer",
+        )
         return result
 
     L = len(uw_bits)
@@ -167,6 +175,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
     inv_uw_bits = 1 - uw_bits if allow_inverted else None
 
     synced_count = 0
+    bursts_with_bits = 0
     total = len(target_overlays)
 
     for idx, ov in enumerate(target_overlays):
@@ -178,6 +187,8 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
         meta = ov.metadata or {}
         raw_bits = meta.get("bits")
         bits = _parse_bits(raw_bits)
+        if bits is not None and len(bits) > 0:
+            bursts_with_bits += 1
         if bits is None or len(bits) < L:
             continue
 
@@ -262,5 +273,20 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
             result.update(ov.id, metadata=new_meta)
 
     result.log(f"Sync Word Slicer: Synchronized {synced_count}/{total} burst(s).")
+    if bursts_with_bits == 0 and total > 0:
+        result.warning(
+            "None of the candidate bursts contain demodulated 'bits' in metadata.\n\n"
+            "Run a demodulator plugin (such as FSK Demodulator) before Sync Word Slicer.",
+            title="Sync Word Slicer",
+        )
+    elif synced_count == 0 and total > 0:
+        result.warning(
+            f"Sync word {uw_hex} was not found in any of the {total} burst(s).\n\n"
+            "Possible causes:\n"
+            f"• Preceding demodulator produced bit errors.\n"
+            f"• Min Match Accuracy ({min_match_pct:.0f}%) is too high.\n"
+            f"• Max Search Depth ({max_search_bits} bits) did not cover the preamble.",
+            title="Sync Word Slicer",
+        )
     info.progress(100, "Done")
     return result

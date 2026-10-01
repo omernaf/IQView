@@ -162,6 +162,7 @@ class PluginContext:
         cancel_cb: Optional[Callable[[], bool]] = None,
         extract_iq_cb: Optional[Callable[[float, float], Optional[np.ndarray]]] = None,
         samples_ref: Optional[np.ndarray] = None,
+        alerts: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         self.sample_rate: float = float(sample_rate)
         self.center_freq: float = float(center_freq)
@@ -186,6 +187,7 @@ class PluginContext:
         self._cancel_cb = cancel_cb
         self._extract_iq_cb = extract_iq_cb
         self._samples_ref = samples_ref
+        self._alerts: List[Dict[str, Any]] = list(alerts) if alerts is not None else []
 
     # ------------------------------------------------------------------
     # Convenience properties & aliases
@@ -234,6 +236,51 @@ class PluginContext:
             except Exception:
                 return False
         return False
+
+    def alert(
+        self,
+        message: str,
+        title: Optional[str] = None,
+        level: str = "warning",
+    ) -> "PluginContext":
+        """
+        Queue a user notification pop-up dialog to be shown on completion.
+
+        Parameters
+        ----------
+        message : str
+            Message text to display in the pop-up dialog.
+        title : str, optional
+            Custom dialog window title. Defaults to plugin name.
+        level : {"warning", "error", "info"}, optional
+            Alert severity level. Defaults to "warning".
+        """
+        lvl = str(level).strip().lower()
+        if lvl not in ("info", "warning", "error"):
+            lvl = "warning"
+        self._alerts.append({
+            "message": str(message),
+            "title": str(title) if title else None,
+            "level": lvl,
+        })
+        return self
+
+    def info(self, message: str, title: Optional[str] = None) -> "PluginContext":
+        """Queue an informational pop-up dialog to be shown on completion."""
+        return self.alert(message, title=title, level="info")
+
+    def warning(self, message: str, title: Optional[str] = None) -> "PluginContext":
+        """Queue a warning pop-up dialog to be shown on completion."""
+        return self.alert(message, title=title, level="warning")
+
+    def error(self, message: str, title: Optional[str] = None) -> "PluginContext":
+        """Queue an error pop-up dialog to be shown on completion."""
+        return self.alert(message, title=title, level="error")
+
+    @property
+    def alerts(self) -> List[Dict[str, Any]]:
+        """List of queued UI pop-up alert dictionaries."""
+        return self._alerts
 
     def extract_iq(self, t0: float, t1: float) -> Optional[np.ndarray]:
         """
@@ -389,6 +436,7 @@ class PluginContext:
             "cancel_cb": self._cancel_cb,
             "extract_iq_cb": self._extract_iq_cb,
             "samples_ref": self._samples_ref,
+            "alerts": list(self._alerts),
         }
         kwargs.update(overrides)
         return PluginContext(**kwargs)
@@ -398,5 +446,6 @@ class PluginContext:
             f"PluginContext(fs={self.sample_rate:g}, fc={self.center_freq:g}, "
             f"t=[{self.t_start:.4f}, {self.t_end:.4f}], "
             f"f=[{self.f_start:g}, {self.f_end:g}], "
-            f"overlays={len(self.overlays)}, scope={self.scope!r})"
+            f"overlays={len(self.overlays)}, scope={self.scope!r}, "
+            f"alerts={len(self._alerts)})"
         )

@@ -119,6 +119,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
     ]
     if not target_overlays:
         result.log("No Rect overlays found in active scope.")
+        result.warning("No Rect overlays found in active scope.", title="Bit Reversal")
         return result
 
     chunk_size = max(1, int(info.params.get("chunk_size", 8)))
@@ -166,5 +167,11 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
         reversed_count += 1
 
     result.log(f"Bit Reversal: Processed {reversed_count}/{total} burst(s) (chunk_size={chunk_size}).")
+    if reversed_count == 0 and total > 0:
+        result.warning(
+            "None of the candidate bursts contain demodulated 'bits' in metadata.\n\n"
+            "Run a demodulator plugin before Bit Reversal.",
+            title="Bit Reversal",
+        )
     info.progress(100, "Done")
     return result

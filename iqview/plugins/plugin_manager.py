@@ -85,6 +85,7 @@ def _merge_plugin_results(target: PluginResult, part: PluginResult) -> None:
         target._plot_tab_title = part._plot_tab_title
     target._native_tabs.extend(part._native_tabs)
     target._logs.extend(part._logs)
+    target._alerts.extend(getattr(part, "_alerts", []))
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +160,10 @@ class _PluginWorker(QObject):
                         raise TypeError(
                             f"Plugin returned {type(part).__name__} instead of PluginResult."
                         )
+                    if hasattr(batch_info, "_alerts") and batch_info._alerts:
+                        for a in batch_info._alerts:
+                            if a not in part._alerts:
+                                part._alerts.append(a)
                     _merge_plugin_results(merged, part)
                 if self._check_cancelled():
                     self.cancelled.emit()
@@ -181,6 +186,10 @@ class _PluginWorker(QObject):
             if self._check_cancelled():
                 self.cancelled.emit()
                 return
+            if isinstance(result, PluginResult) and hasattr(self._info, "_alerts") and self._info._alerts:
+                for a in self._info._alerts:
+                    if a not in result._alerts:
+                        result._alerts.append(a)
             self.finished.emit(result)
         except Exception:
             self.error.emit(traceback.format_exc())
@@ -948,10 +957,18 @@ class PluginManagerMixin:
                     for b_samples, b_t0, b_t1 in context.iter_batches(float(batch_seconds), batch_overlap):
                         b_info = context.copy_with(t_start=b_t0, t_end=b_t1, samples_ref=b_samples)
                         part = exec_func(b_samples, b_info)
+                        if isinstance(part, PluginResult) and hasattr(b_info, "_alerts") and b_info._alerts:
+                            for a in b_info._alerts:
+                                if a not in part._alerts:
+                                    part._alerts.append(a)
                         _merge_plugin_results(merged, part)
                     result = merged
                 else:
                     result = exec_func(samples, context)
+                    if isinstance(result, PluginResult) and hasattr(context, "_alerts") and context._alerts:
+                        for a in context._alerts:
+                            if a not in result._alerts:
+                                result._alerts.append(a)
                 self._on_plugin_finished(name, result)
             except Exception:
                 self._on_plugin_error(name, traceback.format_exc())
@@ -1265,6 +1282,48 @@ class PluginManagerMixin:
 
         # Auto-persist params into the session
         self.save_plugin_params(name)
+
+        # 8. Pop-up Alerts / Fail-safe Notices
+        alerts = getattr(result, "_alerts", [])
+        if alerts:
+            if len(alerts) == 1:
+                alt = alerts[0]
+                lvl = alt.get("level", "warning").lower()
+                msg = str(alt.get("message", ""))
+                title = alt.get("title") or (
+                    f"Plugin Error — {name}" if lvl == "error"
+                    else (f"Plugin Info — {name}" if lvl == "info" else f"Plugin Warning — {name}")
+                )
+                if lvl == "error":
+                    QMessageBox.critical(self, title, msg)
+                elif lvl == "info":
+                    QMessageBox.information(self, title, msg)
+                else:
+                    QMessageBox.warning(self, title, msg)
+            else:
+                levels = [a.get("level", "warning").lower() for a in alerts]
+                if "error" in levels:
+                    top_lvl = "error"
+                    default_title = f"Plugin Error — {name}"
+                elif "warning" in levels:
+                    top_lvl = "warning"
+                    default_title = f"Plugin Warning — {name}"
+                else:
+                    top_lvl = "info"
+                    default_title = f"Plugin Info — {name}"
+
+                body_lines = []
+                for a in alerts:
+                    src = a.get("source") or a.get("title") or a.get("level", "warning").capitalize()
+                    body_lines.append(f"• [{src}]:\n  {str(a.get('message', '')).replace(chr(10), chr(10) + '  ')}")
+                combined_msg = f"Plugin '{name}' reported multiple notices:\n\n" + "\n\n".join(body_lines)
+
+                if top_lvl == "error":
+                    QMessageBox.critical(self, default_title, combined_msg)
+                elif top_lvl == "info":
+                    QMessageBox.information(self, default_title, combined_msg)
+                else:
+                    QMessageBox.warning(self, default_title, combined_msg)
 
     def _on_plugin_error(self, name: str, msg: str) -> None:
         self._plugin_launch_mode = None

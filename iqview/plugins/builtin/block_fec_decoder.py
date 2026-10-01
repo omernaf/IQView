@@ -441,6 +441,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
     ]
     if not target_overlays:
         result.log("No Rect overlays found in active scope.")
+        result.warning("No Rect overlays found in active scope.", title="Block FEC Decoder")
         return result
 
     code_param = str(info.params.get("code", "Hamming(7,4)")).strip()
@@ -468,6 +469,12 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
         g_mat = _parse_custom_g(custom_g_str)
         if g_mat is None:
             result.log(f"Block FEC: Invalid custom G matrix string: {custom_g_str!r}")
+            result.error(
+                f"Invalid Custom Generator Matrix string:\n{custom_g_str!r}\n\n"
+                "Expected rows of 0s and 1s separated by semicolons or newlines, e.g.:\n"
+                "1 0 0 0 1 1 0; 0 1 0 0 1 0 1; 0 0 1 0 0 1 1; 0 0 0 1 1 1 1",
+                title="Block FEC Decoder",
+            )
             return result
         H_cust, k_block, n_block, synd_table, G_R = _build_custom_syndrome_table(g_mat)
         code_name = f"Custom({n_block},{k_block})"
@@ -493,6 +500,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
         code_name = "Hamming(7,4)"
 
     fec_count = 0
+    bursts_with_bits = 0
     total = len(target_overlays)
 
     for idx, ov in enumerate(target_overlays):
@@ -504,6 +512,8 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
         meta = ov.metadata or {}
         raw_bits = meta.get("bits")
         bits = _parse_bits(raw_bits)
+        if bits is not None and len(bits) > 0:
+            bursts_with_bits += 1
         if bits is None or len(bits) == 0:
             continue
 
@@ -578,5 +588,11 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
         fec_count += 1
 
     result.log(f"Block FEC Decoder: Decoded {fec_count}/{total} burst(s) with {code_name}.")
+    if bursts_with_bits == 0 and total > 0:
+        result.warning(
+            "None of the candidate bursts contain demodulated 'bits' in metadata.\n\n"
+            "Run a demodulator plugin (such as FSK Demodulator) before Block FEC Decoder.",
+            title="Block FEC Decoder",
+        )
     info.progress(100, "Done")
     return result

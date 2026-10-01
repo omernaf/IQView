@@ -320,6 +320,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
     ]
     if not target_overlays:
         result.log("No Rect overlays found in active scope.")
+        result.warning("No Rect overlays found in active scope.", title="CRC Checker")
         return result
 
     # Resolve preset if specified
@@ -348,6 +349,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
 
     if width < 1 or width > 32:
         result.log(f"Invalid CRC width {width}. Must be between 1 and 32.")
+        result.error(f"Invalid CRC width {width}. Must be between 1 and 32 bits.", title="CRC Checker")
         return result
 
     hex_len = (width + 3) // 4
@@ -448,4 +450,10 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
         f"CRC Checker: evaluated {processed_count} bursts. "
         f"PASS: {pass_count}, FAIL: {fail_count} (poly=0x{poly:X}, width={width})."
     )
+    if processed_count == 0 and len(target_overlays) > 0:
+        result.warning(
+            "None of the candidate bursts contain demodulated 'bits' in metadata to check CRC.\n\n"
+            "Run a demodulator plugin (such as FSK Demodulator) before CRC Checker.",
+            title="CRC Checker",
+        )
     return result

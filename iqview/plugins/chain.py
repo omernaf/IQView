@@ -452,6 +452,12 @@ class PluginChain:
                     f"{type(step_res).__name__} instead of PluginResult."
                 )
 
+            # Merge any alerts queued directly on step_info into step_res
+            if hasattr(step_info, "_alerts") and step_info._alerts:
+                for a in step_info._alerts:
+                    if a not in step_res._alerts:
+                        step_res._alerts.append(a)
+
             # --- Apply step_res overlay operations to working_overlays in memory ---
 
             # 1. Removes
@@ -510,6 +516,13 @@ class PluginChain:
             final_result._native_tabs.extend(step_res._native_tabs)
             for msg in step_res._logs:
                 final_result.log(f"[{step_name}] {msg}")
+
+            # 6. Alerts
+            for alt in getattr(step_res, "_alerts", []):
+                alt_copy = dict(alt)
+                if num_to_run > 1 and not alt_copy.get("source"):
+                    alt_copy["source"] = step_name
+                final_result._alerts.append(alt_copy)
 
         # Emit all surviving chain-added overlays into final_result._adds
         for ov in working_overlays:

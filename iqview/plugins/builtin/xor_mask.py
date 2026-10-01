@@ -183,6 +183,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
     ]
     if not target_overlays:
         result.log("No Rect overlays found in active scope.")
+        result.warning("No Rect overlays found in active scope.", title="XOR Mask / De-Whitening")
         return result
 
     preset    = str(info.params.get("preset", "Custom Hex Mask"))
@@ -214,6 +215,11 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
 
     if len(mask_arr) == 0:
         result.log(f"Invalid mask: {mask_hex!r}")
+        result.error(
+            f"Invalid mask hex: {mask_hex!r}.\n"
+            "Please specify a valid hexadecimal string (e.g. 0xAA or 0x55).",
+            title="XOR Mask / De-Whitening",
+        )
         return result
 
     masked_count = 0
@@ -260,5 +266,11 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
         masked_count += 1
 
     result.log(f"XOR Mask: Applied mask '{mask_label}' to {masked_count}/{total} burst(s).")
+    if masked_count == 0 and total > 0:
+        result.warning(
+            "None of the candidate bursts contain demodulated 'bits' in metadata.\n\n"
+            "Run a demodulator plugin before XOR Mask.",
+            title="XOR Mask / De-Whitening",
+        )
     info.progress(100, "Done")
     return result

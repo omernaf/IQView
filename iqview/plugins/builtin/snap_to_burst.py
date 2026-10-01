@@ -325,6 +325,7 @@ def run(samples: np.ndarray, info) -> PluginResult:
 
     result = PluginResult()
     if not info.overlays:
+        result.warning("No overlays exist in the current session to snap.", title="Snap to Burst")
         return result
 
     params = info.params
@@ -353,6 +354,7 @@ def run(samples: np.ndarray, info) -> PluginResult:
     total = len(candidates)
     if total == 0:
         result.log("No Rect overlays found in active scope.")
+        result.warning("No Rect overlays found in active scope to snap.", title="Snap to Burst")
         return result
 
     n_snapped = 0
@@ -519,5 +521,11 @@ def run(samples: np.ndarray, info) -> PluginResult:
         n_snapped += 1
 
     result.log(f"Snapped {n_snapped}/{total} Rect overlay(s) to burst")
+    if n_snapped == 0 and total > 0:
+        result.warning(
+            f"Could not detect burst signals exceeding threshold ({threshold_db} dB) in any of the {total} candidate box(es).\n\n"
+            "Try lowering the Detection Threshold or checking overlay bounds.",
+            title="Snap to Burst",
+        )
     info.progress(100, "Done")
     return result

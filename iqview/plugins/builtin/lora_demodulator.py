@@ -366,6 +366,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
 
     if not target_overlays:
         result.log("No Rect overlays found in active scope.")
+        result.warning("No Rect overlays found in the active scope to demodulate.", title="LoRa Demodulator")
         return result
 
     sf_param          = int(float(info.params.get("sf", 0)))
@@ -471,5 +472,14 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
             )
 
     result.log(f"Demodulated {demod_count}/{total} LoRa burst(s).")
+    if demod_count == 0 and total > 0:
+        result.warning(
+            f"Could not synchronize or demodulate any LoRa bursts across {total} candidate burst(s).\n\n"
+            "Possible causes:\n"
+            "• Bursts are not LoRa modulated (e.g. FSK/GFSK or noise).\n"
+            "• Selected Spreading Factor (SF) does not match the signal.\n"
+            "• Signal-to-noise ratio is too low for chirp preamble synchronization.",
+            title="LoRa Demodulator",
+        )
     info.progress(100, "Done")
     return result

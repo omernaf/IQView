@@ -123,6 +123,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
     ]
     if not target_overlays:
         result.log("No Rect overlays found in active scope.")
+        result.warning("No Rect overlays found in active scope.", title="Differential Decoder")
         return result
 
     mode_param = str(info.params.get("mode", "NRZ-M (1 on bit change)"))
@@ -180,5 +181,11 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
         decoded_count += 1
 
     result.log(f"Differential Decoder: Decoded {decoded_count}/{total} burst(s) ({mode_label}).")
+    if decoded_count == 0 and total > 0:
+        result.warning(
+            "None of the candidate bursts contain demodulated 'bits' in metadata.\n\n"
+            "Run a demodulator plugin before Differential Decoder.",
+            title="Differential Decoder",
+        )
     info.progress(100, "Done")
     return result

@@ -63,6 +63,7 @@ class PluginResult:
         self._plot_tab_title: Optional[str]                = None
         self._native_tabs:    List[Dict[str, Any]]         = []
         self._logs:           List[str]                    = []
+        self._alerts:         List[Dict[str, Any]]         = []
 
     # ------------------------------------------------------------------
     # Builder methods (all return self for chaining)
@@ -289,6 +290,46 @@ class PluginResult:
         self._logs.append(str(message))
         return self
 
+    def alert(
+        self,
+        message: str,
+        title: Optional[str] = None,
+        level: str = "warning",
+    ) -> "PluginResult":
+        """
+        Queue a user notification pop-up dialog.
+
+        Parameters
+        ----------
+        message : str
+            Message text to display in the pop-up dialog.
+        title : str, optional
+            Custom dialog window title. Defaults to plugin name.
+        level : {"warning", "error", "info"}, optional
+            Alert severity level. Defaults to "warning".
+        """
+        lvl = str(level).strip().lower()
+        if lvl not in ("info", "warning", "error"):
+            lvl = "warning"
+        self._alerts.append({
+            "message": str(message),
+            "title": str(title) if title else None,
+            "level": lvl,
+        })
+        return self
+
+    def info(self, message: str, title: Optional[str] = None) -> "PluginResult":
+        """Queue an informational pop-up dialog."""
+        return self.alert(message, title=title, level="info")
+
+    def warning(self, message: str, title: Optional[str] = None) -> "PluginResult":
+        """Queue a warning pop-up dialog."""
+        return self.alert(message, title=title, level="warning")
+
+    def error(self, message: str, title: Optional[str] = None) -> "PluginResult":
+        """Queue an error pop-up dialog."""
+        return self.alert(message, title=title, level="error")
+
     # ------------------------------------------------------------------
     # Convenience & Inspection Properties
     # ------------------------------------------------------------------
@@ -328,6 +369,11 @@ class PluginResult:
         """List of queued status/console log messages."""
         return self._logs
 
+    @property
+    def alerts(self) -> List[Dict[str, Any]]:
+        """List of queued UI pop-up alert dictionaries."""
+        return self._alerts
+
     def __repr__(self) -> str:  # pragma: no cover
         return (
             f"PluginResult("
@@ -337,6 +383,7 @@ class PluginResult:
             f"replaces={len(self._replaces)}, "
             f"plots={len(self._plots)}, "
             f"native_tabs={len(self._native_tabs)}, "
-            f"logs={len(self._logs)})"
+            f"logs={len(self._logs)}, "
+            f"alerts={len(self._alerts)})"
         )
 

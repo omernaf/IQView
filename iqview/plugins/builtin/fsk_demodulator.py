@@ -285,6 +285,7 @@ def run(samples: np.ndarray, info) -> PluginResult:
 
     if not candidates:
         result.log("No Rect overlays found in active scope to demodulate.")
+        result.warning("No Rect overlays found in active scope to demodulate.", title="FSK Demodulator")
         return result
 
     MAX_DEBUG_PLOTS = 5
@@ -405,5 +406,14 @@ def run(samples: np.ndarray, info) -> PluginResult:
             )
 
     result.log(f"Demodulated {n_demod}/{len(candidates)} FSK burst(s)")
+    if n_demod == 0 and len(candidates) > 0:
+        result.warning(
+            f"Could not demodulate FSK signals in any of the {len(candidates)} candidate burst(s).\n\n"
+            "Possible causes:\n"
+            "• Bursts are not 2-FSK modulated or use a different modulation (e.g. LoRa or PSK).\n"
+            "• Configured Baud Rate does not match the burst transmission rate.\n"
+            "• Signal SNR is too low for frequency deviation slicing.",
+            title="FSK Demodulator",
+        )
     info.progress(100, "Done")
     return result
