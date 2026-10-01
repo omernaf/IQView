@@ -28,9 +28,9 @@ def main():
     # filename = "samples/mavic_long_50MHz.32fc"
     # filename = "samples/mavic_long.mat"
     # filename = "samples/burst_cw.32fc";
-    filename = "samples/QPSK_RC_10sps.32fc"
+    # filename = "samples/QPSK_RC_10sps.32fc"
     # filename = "samples/LoRa_401MHz_4MHz/lora_process_energy_1.bin"
-    # filename = "samples/fsk_fhss_low_coded_50MHz.32fc"
+    filename = "samples/fsk_fhss_low_coded_50MHz.32fc"
     # filename = "samples/gnss_fs_4MHz_fc_1575.42MHz.16tc"
 
     # filename = "iqview_testdata/bad.mat"
