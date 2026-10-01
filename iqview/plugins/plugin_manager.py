@@ -209,6 +209,7 @@ class PluginManagerMixin:
         self._plugins_menu = None  # set by component_setup after menu is built
         self._plugin_thread: Optional[QThread] = None
         self._plugin_worker: Optional[_PluginWorker] = None
+        self._plugin_launch_mode: Optional[str] = None
         # Load built-in plugins first, then restore custom plugins saved from previous session
         self._load_builtin_plugins()
         self._load_persisted_plugins()
@@ -868,6 +869,11 @@ class PluginManagerMixin:
         only_step: Optional[int] = None,
         from_step: int = 0,
     ) -> None:
+        launch_mode = getattr(self, "interaction_mode", "")
+        if hasattr(self, "marker_panel") and launch_mode in ("ZOOM", "MOVE"):
+            launch_mode = getattr(self.marker_panel, "last_marker_mode", launch_mode)
+        self._plugin_launch_mode = launch_mode
+
         info = self._hot_reload_if_modified(name)
         if info is None:
             return
@@ -1044,6 +1050,7 @@ class PluginManagerMixin:
         def _clear_thread():
             self._plugin_thread = None
             self._plugin_worker = None
+            self._plugin_launch_mode = None
 
         thread.finished.connect(_clear_thread)
         thread.finished.connect(worker.deleteLater)
@@ -1234,15 +1241,33 @@ class PluginManagerMixin:
             5000,
         )
 
-        # Switch to OVERLAY mode so the user immediately sees the results on the spectrogram
+        # Switch to OVERLAY mode only if the user was not already in PLUGINS mode (and is not currently in PLUGINS mode),
+        # so running a plugin from the Plugins tab keeps the user on the Plugins tab.
         any_change = n_added + n_updated + n_removed + n_replaced
-        if any_change > 0 and hasattr(self, 'set_interaction_mode'):
-            self.set_interaction_mode('OVERLAY')
+        curr_mode = getattr(self, "interaction_mode", "")
+        if hasattr(self, "marker_panel") and curr_mode in ("ZOOM", "MOVE"):
+            curr_mode = getattr(self.marker_panel, "last_marker_mode", curr_mode)
+
+        launch_mode = getattr(self, "_plugin_launch_mode", None)
+        in_plugins_tab = (
+            curr_mode == "PLUGINS"
+            or launch_mode == "PLUGINS"
+            or (
+                hasattr(self, "marker_panel")
+                and hasattr(self.marker_panel, "stack")
+                and self.marker_panel.stack.currentIndex() == 3
+            )
+        )
+        if any_change > 0 and not in_plugins_tab and hasattr(self, "set_interaction_mode"):
+            self.set_interaction_mode("OVERLAY")
+
+        self._plugin_launch_mode = None
 
         # Auto-persist params into the session
         self.save_plugin_params(name)
 
     def _on_plugin_error(self, name: str, msg: str) -> None:
+        self._plugin_launch_mode = None
         QMessageBox.critical(
             self, f"Plugin Error — {name}",
             f"The plugin raised an exception:\n\n{msg}"
