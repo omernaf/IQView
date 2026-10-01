@@ -231,11 +231,12 @@ class TestGNSSAcquisitionEndToEnd(unittest.TestCase):
         self.assertAlmostEqual(sat_map[11]["doppler_hz"], -2000.0, delta=300.0)
         self.assertGreater(sat_map[3]["c_n0_db_hz"], 35.0)
 
-        # Check 1D debug plots
-        self.assertEqual(len(result.plots), 2)
+        # Check 1D debug plots (3 sub-plots: Constellation, Doppler, Correlation Peak)
+        self.assertEqual(len(result.plots), 3)
         plot_titles = [p["title"] for p in result.plots]
         self.assertTrue(any("Constellation" in t for t in plot_titles))
-        self.assertTrue(any("Cross-Correlation Profile" in t for t in plot_titles))
+        self.assertTrue(any("Doppler & Motion" in t for t in plot_titles))
+        self.assertTrue(any("Correlation Profile" in t for t in plot_titles))
 
     def test_out_of_band_rejection(self):
         """A recording centered outside any GNSS band should gracefully log and alert."""

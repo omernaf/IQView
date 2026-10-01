@@ -678,21 +678,78 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
             f0 = band_fc - (band_bw / 2.0)
             f1 = band_fc + (band_bw / 2.0)
 
-            sat_tags = [f"PRN {d['prn']:02d} ({d['c_n0_db_hz']:.1f} dB)" for d in band_detections]
-            tag_summary = ", ".join(sat_tags[:4])
-            if len(sat_tags) > 4:
-                tag_summary += f" +{len(sat_tags) - 4} more"
+            # Sort detected satellites by C/N0 descending
+            sorted_dets = sorted(band_detections, key=lambda x: x["c_n0_db_hz"], reverse=True)
+            lo_bias_hz = float(np.median([d["doppler_hz"] for d in band_detections]))
+            lo_bias_ppm = float((lo_bias_hz / band_fc) * 1e6)
+            peak_cn0 = float(sorted_dets[0]["c_n0_db_hz"])
+            mean_cn0 = float(np.mean([d["c_n0_db_hz"] for d in band_detections]))
 
+            # Format clean, compact display string on the overlay rectangle
+            active_prn_nums = sorted([int(d["prn"]) for d in band_detections])
+            prn_str = ", ".join(str(p) for p in active_prn_nums)
+            display_str = (
+                f"{band_spec['short_name']}: {len(band_detections)} SVs (PRNs {prn_str}) | "
+                f"Peak {peak_cn0:.1f} dB-Hz | LO {lo_bias_hz/1e3:+.2f} kHz"
+            )
+
+            # Structured HTML hover dashboard with aligned monospace table
             hover_lines = [
-                f"<b>{band_spec['name']} Acquisition ({len(band_detections)} Satellites)</b>",
-                f"Carrier: {band_fc / 1e6:.2f} MHz | Bandwidth: {band_bw / 1e6:.2f} MHz",
-                "─────────────────────────────────────────",
+                f"<b><font size='+1'>🛰️ {band_spec['name']} — Satellite Constellation Fix</font></b>",
+                f"<b>RF Carrier:</b> {band_fc / 1e6:.2f} MHz &nbsp;|&nbsp; "
+                f"<b>Bandwidth:</b> {band_bw / 1e6:.2f} MHz &nbsp;|&nbsp; "
+                f"<b>SVs Acquired:</b> {len(band_detections)}",
+                f"<b>Est. SDR LO Clock Bias:</b> {lo_bias_hz:>+6.0f} Hz ({lo_bias_ppm:>+4.1f} ppm) &nbsp;|&nbsp; "
+                f"<b>Peak C/N₀:</b> {peak_cn0:.1f} dB-Hz &nbsp;|&nbsp; "
+                f"<b>Mean C/N₀:</b> {mean_cn0:.1f} dB-Hz",
+                "─────────────────────────────────────────────────────────────────────────────",
+                "<pre>",
+                f"{'PRN':<6} {'Quality':<12} {'C/N₀':<11} {'Observed':<13} {'Orbital (Est)':<17} {'Code Delay':<13} {'PNR':<6}",
+                "─" * 77,
             ]
-            for d in band_detections:
+
+            for d in sorted_dets:
+                cn0 = d["c_n0_db_hz"]
+                orb_d = d["doppler_hz"] - lo_bias_hz
+                pnr = d["pnr"]
+                delay = d["code_phase_chips"]
+                prn_num = int(d["prn"])
+
+                if cn0 >= 44.0:
+                    quality = "🟢 STRONG"
+                    status_str = "STRONG"
+                elif cn0 >= 40.0:
+                    quality = "🟡 NOMINAL"
+                    status_str = "NOMINAL"
+                else:
+                    quality = "🟠 LOW ELEV"
+                    status_str = "LOW_ELEVATION"
+
+                if abs(orb_d) < 600.0:
+                    motion = "Zenith"
+                    mot_str = "zenith"
+                elif orb_d > 0:
+                    motion = "App"
+                    mot_str = "approaching"
+                else:
+                    motion = "Rec"
+                    mot_str = "receding"
+
+                d["status"] = status_str
+                d["motion"] = mot_str
+                d["doppler_orbital_est_hz"] = round(orb_d, 1)
+
                 hover_lines.append(
-                    f"• PRN {d['prn']:02d}: Doppler {d['doppler_hz']:+6.0f} Hz | "
-                    f"C/N0: {d['c_n0_db_hz']:.1f} dB-Hz | PNR: {d['pnr']:.1f} | Delay: {d['code_phase_chips']:.1f} chips"
+                    f"PRN {prn_num:02d}  {quality:<12} {cn0:>4.1f} dB-Hz {d['doppler_hz']:>+7.0f} Hz   "
+                    f"{orb_d:>+6.0f} Hz ({motion:<3}) {delay:>6.1f} chips {pnr:>5.1f}x"
                 )
+
+            hover_lines.append("─" * 77)
+            hover_lines.append("</pre>")
+            hover_lines.append(
+                "<i>Tip: Switch to the <b>GNSS Acquisition Summary</b> plot tab to inspect constellation health, "
+                "Doppler motion, and correlation profiles.</i>"
+            )
 
             rect = Rect(
                 t_start=t0,
@@ -703,22 +760,35 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
                 alpha=0.18,
                 border_width=2,
                 border_color=band_spec["color"],
-                display_str=f"{band_spec['short_name']} ({len(band_detections)} SVs: {tag_summary})",
+                display_str=display_str,
                 hover_str="<br>".join(hover_lines),
                 metadata={
+                    "protocol": "GNSS",
+                    "constellation": "GPS" if "GPS" in band_key else "GLONASS",
                     "band": band_key,
+                    "band_name": band_spec["name"],
                     "carrier_hz": float(band_fc),
                     "bandwidth_hz": float(band_bw),
                     "num_satellites": len(band_detections),
+                    "active_prns": active_prn_nums,
+                    "strongest_prn": int(sorted_dets[0]["prn"]),
+                    "peak_cn0_db_hz": float(round(peak_cn0, 2)),
+                    "mean_cn0_db_hz": float(round(mean_cn0, 2)),
+                    "receiver_lo_offset_hz": float(round(lo_bias_hz, 1)),
+                    "receiver_lo_offset_ppm": float(round(lo_bias_ppm, 2)),
                     "satellites": [
                         {
                             "prn": int(d["prn"]),
-                            "doppler_hz": float(d["doppler_hz"]),
+                            "status": str(d.get("status", "NOMINAL")),
                             "c_n0_db_hz": float(d["c_n0_db_hz"]),
                             "pnr": float(d["pnr"]),
+                            "doppler_observed_hz": float(d["doppler_hz"]),
+                            "doppler_hz": float(d["doppler_hz"]),
+                            "doppler_orbital_est_hz": float(d.get("doppler_orbital_est_hz", 0.0)),
+                            "motion": str(d.get("motion", "unknown")),
                             "code_phase_chips": float(d["code_phase_chips"]),
                         }
-                        for d in band_detections
+                        for d in sorted_dets
                     ],
                 },
             )
@@ -744,43 +814,87 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
     if debug_plots:
         result.set_plot_tab_title("GNSS Acquisition Summary")
 
-        # Plot 1: Constellation C/N0 Bar / Stem Profile across PRNs 1..32
-        prn_axis = np.arange(1, 33, dtype=np.float64)
+        # --- SUB-PLOT 1: Constellation C/N0 Histogram Bars ---
+        # Generate rectangular bar coordinates [p-w, p-w, p+w, p+w] for clean pyqtgraph bar rendering
         traces_cn0: Dict[str, np.ndarray] = {}
+        bar_w = 0.38
+        x_bars: List[float] = []
+        for p in range(1, 33):
+            x_bars.extend([p - bar_w, p - bar_w, p + bar_w, p + bar_w])
+        x_bar_axis = np.array(x_bars, dtype=np.float64)
 
         for b_key, dets in all_detections.items():
             b_name = GNSS_BAND_CATALOG[b_key]["short_name"]
-            cn0_vals = np.zeros(32, dtype=np.float32)
-            for d in dets:
-                p = d.get("prn", 0)
-                if 1 <= p <= 32:
-                    cn0_vals[p - 1] = d["c_n0_db_hz"]
-            traces_cn0[f"{b_name} C/N0 (dB-Hz)"] = cn0_vals
+            cn0_map = {d["prn"]: d["c_n0_db_hz"] for d in dets}
+            y_bar_vals: List[float] = []
+            for p in range(1, 33):
+                val = cn0_map.get(p, 0.0)
+                y_bar_vals.extend([0.0, val, val, 0.0])
+            traces_cn0[f"{b_name} C/N₀ (dB-Hz)"] = np.array(y_bar_vals, dtype=np.float32)
 
-        # Add reference threshold line
-        traces_cn0["Nominal Lock (35 dB-Hz)"] = np.full(32, 35.0, dtype=np.float32)
+        # Baseline lock reference levels
+        traces_cn0["Nominal Lock (35 dB-Hz)"] = np.full(len(x_bar_axis), 35.0, dtype=np.float32)
+        traces_cn0["Strong Signal (42 dB-Hz)"] = np.full(len(x_bar_axis), 42.0, dtype=np.float32)
 
         result.add_plot(
-            title="Satellite Constellation C/N0 (dB-Hz)",
+            title="Constellation C/N₀",
             y=traces_cn0,
-            x=prn_axis,
+            x=x_bar_axis,
             x_label="Satellite PRN Number",
             x_units="",
-            y_label="C/N0 (dB-Hz)",
+            y_label="C/N₀ (dB-Hz)",
             primary_mode="TIME",
+            regions=[
+                {"x_start": 0.5, "x_end": 32.5, "color": "#00e676", "alpha": 0.06, "label": "ALL 32 PRNs"},
+            ],
         )
 
-        # Plot 2: 1D Matched-Filter Correlation Profile of the Strongest Satellite
+        # --- SUB-PLOT 2: Doppler Frequency & Orbital Motion ---
+        detected_all = []
+        for dets in all_detections.values():
+            detected_all.extend(dets)
+        detected_all = sorted(detected_all, key=lambda x: x["prn"])
+
+        if detected_all:
+            prn_pts = np.array([float(d["prn"]) for d in detected_all], dtype=np.float64)
+            obs_d = np.array([float(d["doppler_hz"]) for d in detected_all], dtype=np.float32)
+            orb_d = np.array([float(d.get("doppler_orbital_est_hz", 0.0)) for d in detected_all], dtype=np.float32)
+            lo_bias_line = np.full(len(prn_pts), float(np.median(obs_d)), dtype=np.float32)
+
+            result.add_plot(
+                title="Doppler & Motion",
+                y={
+                    "Observed Doppler (Hz)": obs_d,
+                    "Orbital Doppler (Hz)": orb_d,
+                    "Receiver LO Bias (Hz)": lo_bias_line,
+                },
+                x=prn_pts,
+                x_label="Satellite PRN",
+                x_units="",
+                y_label="Doppler Shift (Hz)",
+                primary_mode="TIME",
+                regions=[
+                    {
+                        "x_start": min(prn_pts) - 0.5,
+                        "x_end": max(prn_pts) + 0.5,
+                        "color": "#00b0ff",
+                        "alpha": 0.08,
+                        "label": "ACQUIRED SATELLITES",
+                    },
+                ],
+            )
+
+        # --- SUB-PLOT 3: Matched-Filter Correlation Profile of Strongest Satellite ---
         if strongest_detection is not None and "profile_1d" in strongest_detection:
             prof = strongest_detection["profile_1d"]
             n_pts = len(prof)
-            # Express x-axis in code phase chips
             chips_axis = np.linspace(0.0, float(strongest_band_spec["code_len"]), n_pts, endpoint=False)
             best_prn = strongest_detection["prn"]
             best_band = strongest_detection["band"]
+            peak_chip = float(strongest_detection.get("code_phase_chips", 0.0))
 
             result.add_plot(
-                title=f"Cross-Correlation Profile — {best_band} PRN {best_prn:02d} (PNR {strongest_detection['pnr']:.1f})",
+                title=f"Correlation Profile (PRN {best_prn:02d})",
                 y={
                     "Correlation Envelope": prof,
                     "Acquisition Threshold": np.full(n_pts, float(pnr_threshold) ** 2, dtype=np.float32),
@@ -790,6 +904,15 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
                 x_units="chips",
                 y_label="Normalized Power",
                 primary_mode="TIME",
+                regions=[
+                    {
+                        "x_start": max(0.0, peak_chip - 2.0),
+                        "x_end": min(float(strongest_band_spec["code_len"]), peak_chip + 2.0),
+                        "color": "#00e676",
+                        "alpha": 0.25,
+                        "label": f"PEAK: {strongest_detection['pnr']:.1f}x",
+                    }
+                ],
             )
 
     info.progress(100.0, "Acquisition complete.")
