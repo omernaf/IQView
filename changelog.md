@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.0] - 2026-09-28
 
 ### Added
 - **Normalization Factor in dB (`norm_db`)**:
@@ -10,10 +10,6 @@
   - Automatically shifts the colorbar level bounds in sync with normalization changes to preserve visual contrast.
   - Resets to 0 dB by default when loading a new file or session.
   - Added `--norm` / `--normalization` CLI flags to `iqview` and `norm_db` argument to `iqview.view(...)`.
-
-## [0.7.0] - 2026-09-28
-
-### Added
 - **Plugin System 2.0 & Plugin Studio**:
   - **Plugin Studio (`PluginStudioDialog`)**: Added a 3-tab visual suite for managing/running plugins, visually assembling `PluginChain` pipelines, and scaffolding new `.py` plugins from starter templates with a live real-time Markdown documentation preview.
   - **Multi-Step Plugin Pipelines (`PluginChain`)**: Added declarative and visual plugin chaining with in-memory overlay/IQ propagation, step-isolated parameter tuning, **Run Step Only**, and **Run From Here** execution.
