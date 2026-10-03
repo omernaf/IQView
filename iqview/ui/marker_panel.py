@@ -1225,7 +1225,7 @@ class MarkerPanel(QFrame):
     def update_plugins_list(self, loaded_plugins):
         """
         Populate the shared scroll area with plugin rows and sync the Quick-Run dropdown.
-        Each row: Pin btn | Name + Badge | Docs btn | Config btn | Run btn | Del btn
+        Each row: Pin btn | Name + Badge | Edit btn | Docs btn | Config btn | Run btn | Del btn
         """
         if not hasattr(self, '_plugin_rows'):
             self._plugin_rows = []
@@ -1301,7 +1301,13 @@ class MarkerPanel(QFrame):
 
             lbl_name = QLabel()
             lbl_name.setStyleSheet("font-weight: bold; color: #00aaff;")
-            
+
+            btn_edit = QPushButton("Edit")
+            btn_edit.setFixedHeight(28)
+            btn_edit.setMinimumWidth(60)
+            btn_edit.setStyleSheet("QPushButton { padding: 3px 8px; }")
+            btn_edit.setToolTip("Open this plugin's .py file in Plugin Studio")
+
             btn_docs = QPushButton("Docs")
             btn_docs.setFixedHeight(28)
             btn_docs.setMinimumWidth(60)
@@ -1337,6 +1343,7 @@ class MarkerPanel(QFrame):
 
             rl.addWidget(btn_pin)
             rl.addWidget(lbl_name, 1)
+            rl.addWidget(btn_edit)
             rl.addWidget(btn_docs)
             rl.addWidget(btn_config)
             rl.addWidget(btn_run)
@@ -1345,7 +1352,7 @@ class MarkerPanel(QFrame):
             self.plugins_scroll_layout.insertWidget(self.plugins_scroll_layout.count()-1, row)
             self._plugin_rows.append({
                 'widget': row, 'btn_pin': btn_pin, 'lbl_name': lbl_name,
-                'btn_docs': btn_docs,
+                'btn_edit': btn_edit, 'btn_docs': btn_docs,
                 'btn_config': btn_config, 'btn_run': btn_run, 'btn_del': btn_del,
             })
 
@@ -1368,6 +1375,13 @@ class MarkerPanel(QFrame):
                 rd['lbl_name'].setToolTip("No description provided.")
 
             has_params = bool(info.get("params_spec"))
+            file_path = str(info.get("path") or "")
+            has_file = bool(file_path) and os.path.isfile(file_path)
+            rd['btn_edit'].setEnabled(has_file)
+            rd['btn_edit'].setToolTip(
+                f"Edit {file_path} in Plugin Studio" if has_file
+                else "This plugin has no .py file on disk"
+            )
             rd['btn_config'].setEnabled(has_params)
             rd['btn_del'].setEnabled(not is_builtin)
             rd['btn_del'].setToolTip(
@@ -1375,6 +1389,8 @@ class MarkerPanel(QFrame):
             )
 
             try: rd['btn_pin'].clicked.disconnect()
+            except: pass
+            try: rd['btn_edit'].clicked.disconnect()
             except: pass
             try: rd['btn_docs'].clicked.disconnect()
             except: pass
@@ -1386,6 +1402,7 @@ class MarkerPanel(QFrame):
             except: pass
 
             rd['btn_pin'].clicked.connect(lambda _, n=name: self.parent_window.toggle_pinned_plugin(n))
+            rd['btn_edit'].clicked.connect(lambda _, n=name: self._on_plugin_edit(n))
             rd['btn_docs'].clicked.connect(lambda _, n=name: self._on_plugin_docs(n))
             rd['btn_config'].clicked.connect(lambda _, n=name: self._on_plugin_config(n))
             rd['btn_run'].clicked.connect(lambda _, n=name: self.parent_window.run_plugin(n))
@@ -1396,6 +1413,15 @@ class MarkerPanel(QFrame):
 
         if hasattr(self.parent_window, 'overlays'):
             self.update_plugin_overlay_pills(self.parent_window.overlays)
+
+    def _on_plugin_edit(self, name: str) -> None:
+        """Open Plugin Studio with this plugin's .py file in the source editor."""
+        if hasattr(self.parent_window, "open_plugin_studio"):
+            self.parent_window.open_plugin_studio(
+                initial_tab=0,
+                select_plugin=name,
+                edit_source=True,
+            )
 
     def _on_quick_run_clicked(self):
         if not hasattr(self, 'cb_quick_plugin'):

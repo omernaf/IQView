@@ -313,13 +313,19 @@ class PluginManagerMixin:
         self,
         initial_tab: int = 0,
         select_plugin: Optional[str] = None,
+        edit_source: bool = False,
     ) -> None:
-        """Open the 3-tab `PluginStudioDialog`."""
+        """Open the 3-tab `PluginStudioDialog`.
+
+        `edit_source` selects *select_plugin* and opens its `.py` file in the
+        studio source editor.
+        """
         from iqview.ui.plugin_studio import PluginStudioDialog
         dlg = PluginStudioDialog(
             self,
             initial_tab=initial_tab,
             select_plugin=select_plugin,
+            edit_source=edit_source,
             parent=self,
         )
         dlg.exec()

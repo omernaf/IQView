@@ -6,9 +6,11 @@ documenting, and scaffolding IQView plugins (Phase 4).
 Tabs
 ----
 1. Manage & Run      — Search/filter plugins, pin favorites, edit parameters
-                       inline (with per-step chain execution), and read rich
-                       plugin documentation. Parameters are auto-saved to the
-                       session so they persist across restarts.
+                       inline (with per-step chain execution), read rich
+                       plugin documentation, and edit the plugin `.py` file.
+                       The selected plugin's path is shown above the editor.
+                       Parameters are auto-saved to the session so they persist
+                       across restarts.
 2. Chain Builder     — Visually assemble multi-step PluginChain pipelines,
                        configure per-step default parameters, register in-session,
                        test-run, or export as a reference or standalone .py file.
@@ -69,6 +71,7 @@ class PluginStudioDialog(QDialog):
         parent_window,
         initial_tab: int = 0,
         select_plugin: Optional[str] = None,
+        edit_source: bool = False,
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent or parent_window)
@@ -96,11 +99,19 @@ class PluginStudioDialog(QDialog):
         self._chain_step_widgets: Dict[str, QWidget] = {}
         self._editing_chain_orig_name: Optional[str] = None
         self._editing_chain_path: Optional[str] = None
+        self._source_plugin_name: Optional[str] = None
+        self._source_path: Optional[str] = None
+        self._source_newline: str = "\n"
+        self._source_trailing_newline: bool = True
+        self._source_dirty: bool = False
+        self._source_loading: bool = False
 
         self._build_ui()
         self.refresh_all(select_plugin=select_plugin)
         if 0 <= int(initial_tab) < self.tabs.count():
             self.tabs.setCurrentIndex(int(initial_tab))
+        if edit_source:
+            self.manage_subtabs.setCurrentWidget(self.source_page)
 
     def changeEvent(self, event) -> None:
         if event.type() == QEvent.Type.WindowStateChange and self.isMinimized():
@@ -243,6 +254,11 @@ class PluginStudioDialog(QDialog):
         self.btn_open_doc_popup.clicked.connect(self._on_open_selected_doc_dialog)
         title_row.addWidget(self.btn_open_doc_popup)
 
+        self.btn_edit_py = QPushButton("Edit .py")
+        self.btn_edit_py.setToolTip("Open this plugin's .py file in the source editor")
+        self.btn_edit_py.clicked.connect(self._on_edit_selected_py)
+        title_row.addWidget(self.btn_edit_py)
+
         self.btn_edit_in_chain_builder = QPushButton("Edit Chain")
         self.btn_edit_in_chain_builder.setToolTip("Load this chain into the Chain Builder tab for editing")
         self.btn_edit_in_chain_builder.clicked.connect(self._on_edit_selected_chain)
@@ -255,6 +271,12 @@ class PluginStudioDialog(QDialog):
         self.lbl_manage_meta.setStyleSheet(f"color: {p.text_dim}; font-size: 11px; border: none;")
         self.lbl_manage_meta.setWordWrap(True)
         hdr_layout.addWidget(self.lbl_manage_meta)
+
+        self.ed_manage_path = QLineEdit()
+        self.ed_manage_path.setReadOnly(True)
+        self.ed_manage_path.setPlaceholderText("No .py file for this plugin")
+        self.ed_manage_path.setToolTip("Path of the selected plugin's .py file")
+        hdr_layout.addWidget(self.ed_manage_path)
 
         # Execution Row inside Header
         exec_row = QHBoxLayout()
@@ -332,6 +354,44 @@ class PluginStudioDialog(QDialog):
 
         self.manage_subtabs.addTab(self.params_page, "Parameters && Step Execution")
         self.manage_subtabs.addTab(self.doc_browser, "Documentation && Reference")
+
+        self.source_page = QWidget()
+        source_layout = QVBoxLayout(self.source_page)
+        source_layout.setContentsMargins(4, 4, 4, 4)
+        source_layout.setSpacing(6)
+        self.ed_source = QPlainTextEdit()
+        mono = QFont("Consolas", 10)
+        mono.setStyleHint(QFont.StyleHint.Monospace)
+        self.ed_source.setFont(mono)
+        self.ed_source.setPlaceholderText("Select a plugin that has a .py file on disk.")
+        self.ed_source.textChanged.connect(self._on_source_text_changed)
+        source_layout.addWidget(self.ed_source, 1)
+
+        source_btns = QHBoxLayout()
+        self.btn_reload_source = QPushButton("Reload from Disk")
+        self.btn_reload_source.setToolTip("Discard editor changes and read the .py file again")
+        self.btn_reload_source.clicked.connect(self._on_reload_source_clicked)
+        self.btn_open_external = QPushButton("Open in Editor")
+        self.btn_open_external.setToolTip(
+            "Open this .py file in the application registered for Python files. "
+            "If none is registered, or the registered application is the Python interpreter, "
+            "the system Open With dialog is shown."
+        )
+        self.btn_open_external.clicked.connect(self._on_open_source_external)
+        self.btn_save_source = QPushButton("Save .py")
+        self.btn_save_source.setToolTip("Write the editor contents back to the plugin file and reload it")
+        self.btn_save_source.setStyleSheet(
+            f"QPushButton {{ background-color: {p.accent_dim}; color: {p.text_header}; font-weight: bold; padding: 6px 14px; }}"
+            f"QPushButton:hover {{ border-color: {p.accent}; }}"
+        )
+        self.btn_save_source.clicked.connect(self._on_save_source_clicked)
+        source_btns.addWidget(self.btn_reload_source)
+        source_btns.addWidget(self.btn_open_external)
+        source_btns.addStretch(1)
+        source_btns.addWidget(self.btn_save_source)
+        source_layout.addLayout(source_btns)
+
+        self.manage_subtabs.addTab(self.source_page, "Source (.py)")
         right_layout.addWidget(self.manage_subtabs, 1)
 
         splitter.addWidget(right_widget)
@@ -686,8 +746,9 @@ class PluginStudioDialog(QDialog):
 
             item = QListWidgetItem(f"{pin_prefix}{name}  [{badge}]{cnt_suffix}")
             item.setData(Qt.ItemDataRole.UserRole, name)
-            if desc:
-                item.setToolTip(desc)
+            tip_parts = [part for part in (desc, str(info.get("path") or "")) if part]
+            if tip_parts:
+                item.setToolTip("\n".join(tip_parts))
             self.list_manage_plugins.addItem(item)
 
             if target_sel and name == target_sel:
@@ -700,9 +761,15 @@ class PluginStudioDialog(QDialog):
             self._on_manage_selection_changed(self.list_manage_plugins.currentItem(), None)
         else:
             self.list_manage_plugins.blockSignals(False)
+            if self._source_dirty and not self._confirm_discard_source():
+                self.lbl_manage_title.setText("No matching plugins")
+                return
             self._selected_manage_plugin = None
             self.lbl_manage_title.setText("No matching plugins")
             self.lbl_manage_meta.setText("")
+            self.ed_manage_path.clear()
+            self.btn_edit_py.setEnabled(False)
+            self._show_plugin_source("", "")
             self._rebuild_manage_params_form("", {})
             self._rebuild_manage_doc_html("", {})
 
@@ -712,8 +779,15 @@ class PluginStudioDialog(QDialog):
         name = current.data(Qt.ItemDataRole.UserRole)
         if not name:
             return
-        self._selected_manage_plugin = name
         info = self.parent_window._loaded_plugins.get(name, {})
+        file_path = self._plugin_file_path(info)
+        if name != self._source_plugin_name or file_path != (self._source_path or ""):
+            if not self._confirm_discard_source():
+                self._revert_manage_selection()
+                return
+            self._show_plugin_source(name, file_path)
+
+        self._selected_manage_plugin = name
 
         is_builtin = bool(info.get("builtin", False))
         is_chain = info.get("chain") is not None
@@ -729,10 +803,200 @@ class PluginStudioDialog(QDialog):
         iq_label = "Wideband IQ" if needs_wb else "Overlay Baseband IQ (o.iq)"
         self.lbl_manage_meta.setText(f"Category: {cat}  |  Type: {t_label}  |  IQ Mode: {iq_label}\n{desc}")
 
+        self.ed_manage_path.setText(file_path)
+        self.ed_manage_path.setToolTip(file_path or "This plugin has no .py file on disk")
+        self.btn_edit_py.setEnabled(bool(file_path))
+        self.btn_edit_py.setToolTip(
+            f"Open {file_path} in the source editor" if file_path
+            else "This plugin has no .py file on disk"
+        )
         self.btn_edit_in_chain_builder.setVisible(is_chain)
 
         self._rebuild_manage_params_form(name, info)
         self._rebuild_manage_doc_html(name, info)
+
+    def _plugin_file_path(self, info: dict) -> str:
+        """Return the plugin `.py` path when that file exists, otherwise `""`."""
+        raw = str((info or {}).get("path") or "").strip()
+        if not raw or not os.path.isfile(raw):
+            return ""
+        return os.path.normpath(os.path.abspath(raw))
+
+    def _on_edit_selected_py(self) -> None:
+        """Show the selected plugin's source in the studio."""
+        self.tabs.setCurrentIndex(0)
+        self.manage_subtabs.setCurrentWidget(self.source_page)
+        self.ed_source.setFocus()
+
+    def _on_source_text_changed(self) -> None:
+        if self._source_loading:
+            return
+        self._source_dirty = True
+        self.btn_save_source.setText("Save .py *")
+
+    def _set_source_clean(self) -> None:
+        self._source_dirty = False
+        self.btn_save_source.setText("Save .py")
+
+    def _confirm_discard_source(self) -> bool:
+        """Ask before throwing away unsaved source edits. True means it is safe to switch."""
+        if not self._source_dirty:
+            return True
+        answer = QMessageBox.question(
+            self,
+            "Unsaved Plugin Source",
+            f"Save changes to:\n{self._source_path}?",
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel,
+        )
+        if answer == QMessageBox.StandardButton.Cancel:
+            return False
+        if answer == QMessageBox.StandardButton.Save:
+            return self._save_plugin_source()
+        self._set_source_clean()
+        return True
+
+    def _revert_manage_selection(self) -> None:
+        prev = self._source_plugin_name
+        self.list_manage_plugins.blockSignals(True)
+        restored = False
+        for i in range(self.list_manage_plugins.count()):
+            item = self.list_manage_plugins.item(i)
+            if item is not None and item.data(Qt.ItemDataRole.UserRole) == prev:
+                self.list_manage_plugins.setCurrentRow(i)
+                restored = True
+                break
+        self.list_manage_plugins.blockSignals(False)
+        if restored:
+            self._selected_manage_plugin = prev
+
+    def _show_plugin_source(self, name: str, file_path: str) -> None:
+        """Load *file_path* into the source editor, or clear it when there is no file."""
+        self._source_plugin_name = name
+        self._source_path = file_path or None
+        self._source_loading = True
+        try:
+            if not file_path:
+                self.ed_source.setPlainText("")
+                self.ed_source.setPlaceholderText("This plugin has no .py file on disk.")
+                self.ed_source.setReadOnly(True)
+                self._set_source_file_actions(False)
+            else:
+                with open(file_path, "rb") as fh:
+                    raw = fh.read()
+                self._source_newline = "\r\n" if b"\r\n" in raw else "\n"
+                self._source_trailing_newline = raw.endswith(b"\n")
+                text = raw.decode("utf-8")
+                self.ed_source.setPlaceholderText("")
+                self.ed_source.setPlainText(text)
+                self.ed_source.setReadOnly(False)
+                self._set_source_file_actions(True)
+        except (OSError, UnicodeError) as exc:
+            self.ed_source.setPlainText("")
+            self.ed_source.setPlaceholderText(f"Could not read file:\n{exc}")
+            self.ed_source.setReadOnly(True)
+            self._set_source_file_actions(False)
+            self._source_path = None
+        finally:
+            self._set_source_clean()
+            self._source_loading = False
+
+    def _set_source_file_actions(self, enabled: bool) -> None:
+        self.btn_save_source.setEnabled(enabled)
+        self.btn_reload_source.setEnabled(enabled)
+        self.btn_open_external.setEnabled(enabled)
+
+    def _on_open_source_external(self) -> None:
+        """Open the plugin file in the user's editor, or the system Open With dialog."""
+        path = self._source_path
+        if not path:
+            return
+        if self._source_dirty:
+            answer = QMessageBox.question(
+                self,
+                "Unsaved Plugin Source",
+                "Save the editor changes before opening the file?",
+                QMessageBox.StandardButton.Save
+                | QMessageBox.StandardButton.Discard
+                | QMessageBox.StandardButton.Cancel,
+            )
+            if answer == QMessageBox.StandardButton.Cancel:
+                return
+            if answer == QMessageBox.StandardButton.Save and not self._save_plugin_source():
+                return
+            path = self._source_path or path
+        hwnd = 0
+        if os.name == "nt":
+            try:
+                hwnd = int(self.winId())
+            except (TypeError, ValueError):
+                hwnd = 0
+        from iqview.utils.open_py_file import open_py_file
+        result = open_py_file(path, parent_hwnd=hwnd)
+        if result.message and not result.cancelled:
+            QMessageBox.warning(self, "Open in Editor", result.message)
+
+    def _on_reload_source_clicked(self) -> None:
+        if not self._source_path:
+            return
+        if self._source_dirty:
+            answer = QMessageBox.question(
+                self,
+                "Reload Plugin Source",
+                "Discard unsaved edits and reload the file from disk?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        name = self._source_plugin_name or ""
+        self._set_source_clean()
+        self._show_plugin_source(name, self._source_path or "")
+
+    def _on_save_source_clicked(self) -> None:
+        if self._save_plugin_source():
+            name = self._source_plugin_name
+            self.refresh_all(select_plugin=name)
+
+    def _save_plugin_source(self) -> bool:
+        """Write the source editor to disk and reload that plugin. Returns True on success."""
+        path = self._source_path
+        name = self._source_plugin_name
+        if not path or not name:
+            return False
+        text = self.ed_source.toPlainText().replace("\r\n", "\n").replace("\n", self._source_newline)
+        if self._source_trailing_newline and text and not text.endswith(self._source_newline):
+            text += self._source_newline
+        try:
+            with open(path, "w", encoding="utf-8", newline="") as fh:
+                fh.write(text)
+        except OSError as exc:
+            QMessageBox.critical(
+                self,
+                "Save Failed",
+                f"Could not write:\n{path}\n\n{exc}",
+            )
+            return False
+
+        info = {}
+        if hasattr(self.parent_window, "_loaded_plugins"):
+            info = self.parent_window._loaded_plugins.get(name, {}) or {}
+        is_builtin = bool(info.get("builtin", False))
+        loaded_name = None
+        if hasattr(self.parent_window, "_load_plugin_from_path"):
+            loaded_name = self.parent_window._load_plugin_from_path(
+                path,
+                _persist=not is_builtin,
+                _silent=False,
+                _preserve_params=info.get("params"),
+                _builtin=is_builtin,
+            )
+        self._set_source_clean()
+        if loaded_name:
+            self._source_plugin_name = loaded_name
+        elif hasattr(self.parent_window, "_load_plugin_from_path"):
+            return False
+        return True
 
     def _create_param_editor_widget(self, key: str, spec: Any, val: Any) -> QWidget:
         if not isinstance(spec, dict):
@@ -1113,11 +1377,13 @@ class PluginStudioDialog(QDialog):
     def _update_editing_chain_status(self) -> None:
         p = self.palette_obj
         if self._editing_chain_orig_name:
-            path_str = (
-                f" ({os.path.basename(self._editing_chain_path)})"
-                if self._editing_chain_path
-                else " [In-Session]"
-            )
+            if self._editing_chain_path:
+                path_str = (
+                    f"<br><span style='font-weight:normal'>{_html.escape(self._editing_chain_path)}</span>"
+                )
+            else:
+                path_str = " [In-Session]"
+            self.lbl_editing_chain_status.setWordWrap(True)
             self.lbl_editing_chain_status.setText(
                 f"Editing: <b>{_html.escape(self._editing_chain_orig_name)}</b>{path_str}"
             )
