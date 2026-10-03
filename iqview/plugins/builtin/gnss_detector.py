@@ -19,7 +19,7 @@ import numpy as np
 from scipy import fft as sp_fft
 
 from iqview import PluginResult, PluginContext
-from iqview.overlays import Rect
+from iqview.overlays import FreqRegion
 
 
 PLUGIN_NAME              = "GNSS Satellite Detector"
@@ -75,6 +75,9 @@ Unlike terrestrial bursts (LoRa, FSK, Wi-Fi), GNSS signals operate via Direct Se
 
 7. **Multi-Band Cross-Validation**:
    When multiple bands are captured simultaneously, satellites detected on L1 have their orbital Doppler shifts scaled to predict and verify matching peaks on L2C ($0.779 \\times f_{d, L1}$) and L5 ($0.747 \\times f_{d, L1}$), eliminating false alarms.
+
+8. **Continuous Y-Region Overlay**:
+   GNSS emissions are present for the whole recording. Each acquired band is drawn as a Y-region spanning the full time axis across that band's nominal bandwidth. The matched-filter search still uses only the first `integration_ms` milliseconds.
 
 ---
 
@@ -671,10 +674,10 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
 
         all_detections[band_key] = band_detections
 
-        # 4. Generate Spectrogram Overlay for this band
+        # 4. Generate a full-duration frequency band for this acquisition.
+        # The search uses only the first integration window; the emission itself
+        # continues for the whole recording.
         if band_detections:
-            t0 = info.t_start
-            t1 = info.t_start + analysis_dur
             f0 = band_fc - (band_bw / 2.0)
             f1 = band_fc + (band_bw / 2.0)
 
@@ -685,7 +688,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
             peak_cn0 = float(sorted_dets[0]["c_n0_db_hz"])
             mean_cn0 = float(np.mean([d["c_n0_db_hz"] for d in band_detections]))
 
-            # Format clean, compact display string on the overlay rectangle
+            # Format clean, compact display string on the frequency band
             active_prn_nums = sorted([int(d["prn"]) for d in band_detections])
             prn_str = ", ".join(str(p) for p in active_prn_nums)
             display_str = (
@@ -748,10 +751,8 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
                 "Doppler motion, and correlation profiles.*"
             )
 
-            rect = Rect(
-                t_start=t0,
+            band = FreqRegion(
                 f_start=f0,
-                t_end=t1,
                 f_end=f1,
                 color=band_spec["color"],
                 alpha=0.18,
@@ -789,7 +790,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
                     ],
                 },
             )
-            result.add(rect)
+            result.add(band)
 
     # 5. Multi-Band Cross-Validation Analysis
     total_found = sum(len(dets) for dets in all_detections.values())
