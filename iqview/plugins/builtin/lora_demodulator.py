@@ -12,7 +12,7 @@ Performs LoRa Chirp Spread Spectrum (CSS) physical layer demodulation:
 - Extraction of the two Sync Word / NetID symbols preceding the SFD
 - Demodulation of all post-SFD payload symbols into raw integer values (0 .. 2^SF - 1)
 - Automatic EOB (End of Burst) energy-drop termination bounded by overlay time limits
-- Optional interactive debug plot tab displaying symbol sequences and dechirped transitions
+- Optional debug plot of the burst FM demod with NetID, SFD, and symbol regions
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ Demodulation focuses purely on the physical layer: extracting the raw integer va
 | **Bandwidth** (`bw`) | `float` | `0.0` | Bandwidth in Hz (e.g. 125000, 250000, 500000, 812500, 1000000). Set to `0` to snap to closest legal LoRa BW. |
 | **Trim Noise Edges** (`trim_edges`) | `bool` | `True` | Trim leading/trailing low-energy samples before symbol alignment. |
 | **Max Hover Symbols** (`max_hover_symbols`) | `int` | `32` | Maximum number of payload symbols shown in hover tooltip (full list in metadata). |
-| **Debug Plots** (`debug_plots`) | `bool` | `False` | Open an interactive plot tab showing payload symbols and dechirped profile. |
+| **Debug Plots** (`debug_plots`) | `bool` | `False` | Open an interactive plot of the burst FM demod, with shaded regions for the two NetID symbols, the SFD, and each payload symbol. |
 
 ### Output Metadata
 
@@ -122,8 +122,11 @@ PLUGIN_PARAMS = {
     "debug_plots": {
         "type": "bool",
         "default": False,
-        "label": "Debug Plots (Symbols & Profile)",
-        "tooltip": "Open an interactive 1D plot tab showing demodulated symbol values and dechirped profile.",
+        "label": "Debug Plots (FM Demod)",
+        "tooltip": (
+            "Open an interactive plot of the burst instantaneous frequency, "
+            "with shaded regions marking the NetID symbols, the SFD, and each payload symbol."
+        ),
     },
 }
 
@@ -350,7 +353,78 @@ def _demodulate_lora_iq(
         "payload_start_sample": payload_start,
         "best_tau": sfd_start,
         "N": N,
+        "fs_chip": float(fs_chip),
+        "f_demod": _fm_demod(iq_proc, fs_chip, cfo_hz),
     }
+
+
+def _fm_demod(iq: np.ndarray, fs: float, cfo_hz: float = 0.0) -> np.ndarray:
+    """Instantaneous frequency in Hz, with the recovered CFO removed."""
+    if iq is None or len(iq) < 2 or fs <= 0.0:
+        return np.zeros(0, dtype=np.float64)
+    prod = iq[1:] * np.conj(iq[:-1])
+    f_inst = np.angle(prod).astype(np.float64) * (float(fs) / (2.0 * np.pi))
+    return f_inst - float(cfo_hz)
+
+
+def _lora_fm_regions(
+    t0: float,
+    fs: float,
+    sfd_start: int,
+    payload_start: int,
+    n_sym: int,
+    netid: List[int],
+    symbols: List[int],
+) -> List[Dict[str, Any]]:
+    """Shaded time spans for the two NetID symbols, the SFD, and each payload symbol."""
+    if fs <= 0.0 or n_sym <= 0:
+        return []
+
+    def span(start: int, end: int) -> Tuple[float, float]:
+        return float(t0 + start / fs), float(t0 + end / fs)
+
+    regions: List[Dict[str, Any]] = []
+    for i, value in enumerate(netid[:2]):
+        start = int(sfd_start) - (2 - i) * n_sym
+        end = start + n_sym
+        if end <= start:
+            continue
+        x0, x1 = span(start, end)
+        regions.append({
+            "x_start": x0,
+            "x_end": x1,
+            "color": "#ffb020",
+            "alpha": 0.20,
+            "label": "NetID",
+            "text": str(int(value)),
+        })
+
+    if payload_start > sfd_start:
+        x0, x1 = span(int(sfd_start), int(payload_start))
+        regions.append({
+            "x_start": x0,
+            "x_end": x1,
+            "color": "#29b6f6",
+            "alpha": 0.22,
+            "label": "SFD",
+            "text": "SFD",
+        })
+
+    symbol_colors = ("#7e57c2", "#26a69a")
+    payload = int(payload_start)
+    for i, value in enumerate(symbols):
+        start = payload + i * n_sym
+        end = start + n_sym
+        x0, x1 = span(start, end)
+        regions.append({
+            "x_start": x0,
+            "x_end": x1,
+            "color": symbol_colors[i % 2],
+            "alpha": 0.16,
+            "label": "Symbol",
+            "text": str(int(value)),
+        })
+    return regions
 
 
 def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
@@ -455,20 +529,32 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
         )
         demod_count += 1
 
-        # 4. Optional interactive debug plot tab
-        if debug_plots and demod_count <= 5 and num_symbols > 0:
+        # 4. Optional FM-demod plot with NetID, SFD, and symbol spans
+        f_demod = res.get("f_demod")
+        if debug_plots and demod_count <= 5 and f_demod is not None and len(f_demod) > 1:
             result.set_plot_tab_title(f"LoRa — SF{sf} {bw_str}")
-            sym_arr = np.asarray(symbols, dtype=np.float64)
-            sym_idx = np.arange(len(symbols), dtype=np.float64)
-
+            fs_chip = float(res["fs_chip"])
+            t0 = float(ov.t_start)
+            t_axis = t0 + (np.arange(len(f_demod), dtype=np.float64) + 0.5) / fs_chip
+            regions = _lora_fm_regions(
+                t0=t0,
+                fs=fs_chip,
+                sfd_start=int(res["sfd_start_sample"]),
+                payload_start=int(res["payload_start_sample"]),
+                n_sym=int(res["N"]),
+                netid=netid,
+                symbols=symbols,
+            )
             result.add_plot(
-                title=f"Burst {idx + 1}: SF{sf} ({num_symbols} syms)",
-                y={"Symbol Value": sym_arr},
-                x=sym_idx,
-                x_label="Payload Symbol Index",
-                x_units="",
-                y_label=f"Value (0 .. {2**sf - 1})",
+                title=f"Burst {idx + 1}: SF{sf} FM ({num_symbols} syms)",
+                y={"FM Demod (Hz)": f_demod},
+                x=t_axis,
+                fs=fs_chip,
+                x_label="Time",
+                x_units="s",
+                y_label="Instantaneous Frequency (Hz)",
                 primary_mode="TIME",
+                regions=regions,
             )
 
     result.log(f"Demodulated {demod_count}/{total} LoRa burst(s).")

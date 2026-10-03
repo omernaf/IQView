@@ -408,6 +408,7 @@ class PluginPlotView(Base1DPlotView):
                     "color": str(reg.get("color", "#888888")),
                     "alpha": float(reg.get("alpha", 0.18)),
                     "label": str(reg.get("label", "")),
+                    "text": str(reg.get("text", "")),
                 })
 
         return {
@@ -642,6 +643,8 @@ class PluginPlotView(Base1DPlotView):
 
         # Render background X-regions (e.g. INIT=gray, IDLE=red, ACTIVE=green)
         seen_region_labels = set()
+        y_lo, y_hi = self._get_y_bounds()
+        y_mid = 0.5 * (y_lo + y_hi)
         for reg in active_regions:
             x0, x1 = float(reg["x_start"]), float(reg["x_end"])
             if x1 <= x0:
@@ -661,6 +664,19 @@ class PluginPlotView(Base1DPlotView):
             )
             lr.setZValue(-10)
             self.plot_item.addItem(lr, ignoreBounds=True)
+
+            r_text = str(reg.get("text") or "")
+            if r_text:
+                txt = pg.TextItem(
+                    r_text,
+                    color=c_hex,
+                    anchor=(0.5, 0.5),
+                    angle=90,
+                )
+                txt.setFont(QFont("Consolas", 8))
+                txt.setPos(0.5 * (x0 + x1), y_mid)
+                txt.setZValue(20)
+                self.plot_item.addItem(txt, ignoreBounds=True)
 
             r_label = reg.get("label", "")
             if r_label and r_label not in seen_region_labels and self.legend is not None:
