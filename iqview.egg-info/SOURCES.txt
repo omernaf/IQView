@@ -95,4 +95,5 @@ iqview/ui/time_domain/marker_panel.py
 iqview/ui/time_domain/view.py
 iqview/utils/desktop.py
 iqview/utils/helpers.py
+iqview/utils/open_py_file.py
 iqview/utils/settings_manager.py
