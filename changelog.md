@@ -4,6 +4,8 @@
 
 ### Added
 - **Snap to Burst Frequency Margin**: Added a **Frequency Margin (%)** parameter to **Snap to Burst** (default `10`). The snapped frequency box is widened by that percent of the measured occupied bandwidth, split equally above and below the center, and kept inside the original overlay. The reported occupied bandwidth is unchanged. The existing sample margin is now labeled **Time Margin (samples)**.
+- **Plugin Load Console Messages**: Every successful plugin load prints `[IQView] Loaded plugin: …` to the console, including built-in plugins, custom `.py` files, chains, and reloads. A failed load prints `[IQView] Failed to load plugin from …` with the traceback, or a short reason when the file has neither a callable `run()` nor a `PluginChain`. This includes loads that previously stayed silent (startup, the Load Plugin dialog, session restore, and hot reload).
+- **Unload Plugin in Plugin Studio**: Added an **Unload** button next to **Load .py…** on the Manage & Run tab. It removes the selected custom plugin or chain from the session. Built-in plugins stay loaded, and the button is disabled for them.
 
 ## [0.7.0] - 2026-09-28
 
