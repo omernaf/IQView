@@ -738,7 +738,10 @@ class SettingsDialog(QDialog):
             else:
                 try:
                     ov_val = float(ov_text.replace("%", "").strip())
-                    ov_val = float(np.clip(ov_val, 0.0, 100.0))
+                    if ov_val < 0.0:
+                        ov_val = 0.0
+                    elif ov_val > 100.0:
+                        ov_val = 100.0
                     self.mgr.set("core/overlap", ov_val)
                 except ValueError:
                     self.mgr.set("core/overlap", 100.0)
