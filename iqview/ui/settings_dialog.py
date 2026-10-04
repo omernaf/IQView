@@ -3,8 +3,8 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QStackedWidget,
                              QFormLayout, QDialogButtonBox, QKeySequenceEdit, QCheckBox,
                              QColorDialog, QSlider, QSpinBox, QDoubleSpinBox, QListWidget, QListWidgetItem,
                              QAbstractItemView, QTableWidget, QTableWidgetItem, QHeaderView,
-                             QScrollArea, QFrame)
-from PyQt6.QtCore import Qt, pyqtSignal, QSize
+                             QScrollArea, QFrame, QApplication)
+from PyQt6.QtCore import Qt, pyqtSignal, QSize, QEvent, QTimer
 from PyQt6.QtGui import QKeySequence, QIcon, QPixmap, QPainter, QLinearGradient, QColor, QPalette
 from .widgets import KeyBindEdit
 from .themes import get_palette
@@ -684,6 +684,10 @@ class SettingsDialog(QDialog):
         self.ext_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.ext_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.ext_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.ext_table.installEventFilter(self)
+        self.ext_table.viewport().installEventFilter(self)
+        self.ext_table.itemDelegate().commitData.connect(self._on_ext_editor_commit)
+        self.ext_table.itemDelegate().closeEditor.connect(self._on_ext_editor_closed)
         self.file_types_layout.addWidget(self.ext_table)
         
         btn_layout = QHBoxLayout()
@@ -698,9 +702,9 @@ class SettingsDialog(QDialog):
         
         self._load_extension_mappings()
         
-        add_btn.clicked.connect(self._add_ext_mapping_row)
-        remove_btn.clicked.connect(self._remove_ext_mapping_row)
-        reset_ft_btn.clicked.connect(self._reset_ext_mappings)
+        add_btn.clicked.connect(self._on_add_ext_clicked)
+        remove_btn.clicked.connect(self._on_remove_ext_clicked)
+        reset_ft_btn.clicked.connect(self._on_reset_ext_clicked)
 
         self.add_side_tab(self.file_types_tab, "File Types")
         if self.side_menu.count() > 0:
@@ -715,6 +719,15 @@ class SettingsDialog(QDialog):
         self.button_box.accepted.connect(self.save_and_close)
         self.button_box.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(self.apply_settings)
         self.button_box.rejected.connect(self.reject)
+        self.button_box.clicked.connect(self._on_settings_button_clicked)
+        for standard in (
+            QDialogButtonBox.StandardButton.Ok,
+            QDialogButtonBox.StandardButton.Apply,
+            QDialogButtonBox.StandardButton.Cancel,
+        ):
+            button = self.button_box.button(standard)
+            if button is not None:
+                button.installEventFilter(self)
         self.layout.addWidget(self.button_box)
 
     def apply_settings(self):
@@ -833,25 +846,40 @@ class SettingsDialog(QDialog):
             self.mgr.set("core/frequency_plots", active_freq_plots)
             
             # Save Extension Mappings
+            self._log_open_ext_editor()
             ext_map = {}
+            skipped = []
             for row in range(self.ext_table.rowCount()):
                 ext_item = self.ext_table.item(row, 0)
                 type_widget = self.ext_table.cellWidget(row, 1)
-                
-                if ext_item and type_widget:
-                    ext_text = ext_item.text().strip().lower()
-                    if ext_text and not ext_text.startswith('.'):
-                        ext_text = '.' + ext_text
-                    
-                    if ext_text:
-                        ext_map[ext_text] = type_widget.currentText()
+
+                if ext_item is None or type_widget is None:
+                    skipped.append(
+                        f"row {row} missing item={ext_item is not None} type={type_widget is not None}"
+                    )
+                    continue
+                ext_text = ext_item.text().strip().lower()
+                if ext_text and not ext_text.startswith('.'):
+                    ext_text = '.' + ext_text
+                if not ext_text:
+                    skipped.append(f"row {row} empty {ext_item.text()!r}")
+                    continue
+                ext_map[ext_text] = type_widget.currentText()
             self.mgr.set("core/extension_mapping", ext_map)
-            
+            self._log_file_types(
+                f"wrote {ext_map}"
+                + (f" skipped: {', '.join(skipped)}" if skipped else "")
+            )
+
             return True
         except ValueError as e:
+            self._log_file_types(f"save aborted: ValueError: {e}")
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Invalid Value", f"Please check your inputs.\nError: {str(e)}")
             return False
+        except Exception as e:
+            self._log_file_types(f"save aborted: {type(e).__name__}: {e}")
+            raise
 
     def _on_theme_changed(self, theme_text):
         self._load_theme_specific_settings(theme_text)
@@ -960,6 +988,128 @@ class SettingsDialog(QDialog):
         self.filter_form.setRowVisible(4, is_fir)
         self.filter_form.setRowVisible(5, is_fir)
         self.filter_form.setRowVisible(6, is_bessel)
+
+    def _log_file_types(self, message):
+        print(f"[IQView] File types: {message}")
+
+    def _file_types_snapshot(self):
+        table = self.ext_table
+        editing = table.state() == QAbstractItemView.State.EditingState
+        selected = sorted({index.row() for index in table.selectedIndexes()})
+        rows = []
+        for row in range(table.rowCount()):
+            item = table.item(row, 0)
+            type_widget = table.cellWidget(row, 1)
+            ext = None if item is None else item.text()
+            dtype = None if type_widget is None else type_widget.currentText()
+            rows.append(f"{row}:{ext!r}->{dtype}")
+        return (
+            f"rows={table.rowCount()} current={table.currentRow()} "
+            f"selected={selected} editing={editing} " + " ".join(rows)
+        )
+
+    def _watch_ext_editors(self):
+        self._ext_watch_pending = False
+        editors = self.ext_table.viewport().findChildren(
+            QLineEdit, options=Qt.FindChildOption.FindDirectChildrenOnly
+        )
+        for child in editors:
+            if getattr(child, "_iqview_ext_filter", False):
+                continue
+            child._iqview_ext_filter = True
+            child.installEventFilter(self)
+            self._log_file_types(
+                f"editor opened text={child.text()!r} row={self.ext_table.currentRow()}"
+            )
+
+    def _log_open_ext_editor(self):
+        focus = QApplication.focusWidget()
+        if not isinstance(focus, QLineEdit) or not self.ext_table.isAncestorOf(focus):
+            return
+        index = self.ext_table.currentIndex()
+        item = self.ext_table.item(index.row(), index.column()) if index.isValid() else None
+        item_text = None if item is None else item.text()
+        if focus.text() == (item_text or ""):
+            return
+        row = index.row() if index.isValid() else -1
+        col = index.column() if index.isValid() else -1
+        self._log_file_types(
+            f"open editor text={focus.text()!r} item={item_text!r} row={row} col={col}"
+        )
+
+    def eventFilter(self, obj, event):
+        event_type = event.type()
+        if event_type == QEvent.Type.ChildAdded and obj is self.ext_table.viewport():
+            # ChildAdded's child is a temporary wrapper that is deleted before the
+            # line editor can be identified. Look the editor up on the next turn.
+            if not getattr(self, "_ext_watch_pending", False):
+                self._ext_watch_pending = True
+                QTimer.singleShot(0, self._watch_ext_editors)
+        elif event_type == QEvent.Type.KeyPress and event.key() in (
+            Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Escape
+        ):
+            if obj is self.ext_table or isinstance(obj, QLineEdit):
+                key_name = "Escape" if event.key() == Qt.Key.Key_Escape else "Enter"
+                editing = self.ext_table.state() == QAbstractItemView.State.EditingState
+                self._log_file_types(
+                    f"{key_name} in {type(obj).__name__} row={self.ext_table.currentRow()} "
+                    f"editing={editing}"
+                )
+        elif event_type == QEvent.Type.MouseButtonPress and hasattr(self, "button_box"):
+            for standard in (
+                QDialogButtonBox.StandardButton.Ok,
+                QDialogButtonBox.StandardButton.Apply,
+                QDialogButtonBox.StandardButton.Cancel,
+            ):
+                if obj is self.button_box.button(standard):
+                    name = standard.name if hasattr(standard, "name") else str(standard)
+                    self._log_file_types(f"mouse press on {name}")
+                    break
+        return super().eventFilter(obj, event)
+
+    def _on_settings_button_clicked(self, button):
+        standard = self.button_box.standardButton(button)
+        if standard == QDialogButtonBox.StandardButton.NoButton:
+            name = button.text().replace("&", "")
+        else:
+            name = standard.name if hasattr(standard, "name") else str(standard)
+        self._log_file_types(f"clicked {name}; {self._file_types_snapshot()}")
+
+    def _on_ext_editor_commit(self, editor):
+        text = editor.text() if hasattr(editor, "text") else repr(editor)
+        index = self.ext_table.currentIndex()
+        row = index.row() if index.isValid() else -1
+        col = index.column() if index.isValid() else -1
+        self._log_file_types(f"commit row={row} col={col} text={text!r}")
+
+    def _on_ext_editor_closed(self, editor, hint):
+        text = editor.text() if hasattr(editor, "text") else repr(editor)
+        hint_name = hint.name if hasattr(hint, "name") else str(hint)
+        index = self.ext_table.currentIndex()
+        item = self.ext_table.item(index.row(), index.column()) if index.isValid() else None
+        item_text = None if item is None else item.text()
+        row = index.row() if index.isValid() else -1
+        col = index.column() if index.isValid() else -1
+        self._log_file_types(
+            f"editor closed hint={hint_name} editor={text!r} item={item_text!r} "
+            f"row={row} col={col}"
+        )
+
+    def _on_add_ext_clicked(self):
+        row = self.ext_table.rowCount()
+        self._add_ext_mapping_row()
+        self._log_file_types(f"add row {row}; {self._file_types_snapshot()}")
+
+    def _on_remove_ext_clicked(self):
+        selected = sorted({index.row() for index in self.ext_table.selectedIndexes()})
+        self._log_file_types(f"remove clicked rows={selected}")
+        self._remove_ext_mapping_row()
+        self._log_file_types(f"remove done; {self._file_types_snapshot()}")
+
+    def _on_reset_ext_clicked(self):
+        self._log_file_types("reset clicked")
+        self._reset_ext_mappings()
+        self._log_file_types(f"reset done; {self._file_types_snapshot()}")
 
     def _load_extension_mappings(self):
         self.ext_table.setRowCount(0)
