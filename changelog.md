@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.1] - 2026-10-04
+
+### Added
+- **Snap to Burst Frequency Margin**: Added a **Frequency Margin (%)** parameter to **Snap to Burst** (default `10`). The snapped frequency box is widened by that percent of the measured occupied bandwidth, split equally above and below the center, and kept inside the original overlay. The reported occupied bandwidth is unchanged. The existing sample margin is now labeled **Time Margin (samples)**.
+
 ## [0.7.0] - 2026-09-28
 
 ### Added

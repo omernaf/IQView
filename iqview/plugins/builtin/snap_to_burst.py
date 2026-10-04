@@ -4,8 +4,8 @@ Built-in IQView Plugin: Snap to Burst.
 
 For every Rect overlay in the active scope, searches for a signal burst inside
 its time/frequency bounds. If a burst is found, reshapes the Rect to fit
-tightly around the burst in both time and frequency (with optional safeguard
-margin), updates the overlay's cached baseband IQ (`o.iq`, `o.fs`), and
+tightly around the burst in both time and frequency (with optional time and
+frequency margins), updates the overlay's cached baseband IQ (`o.iq`, `o.fs`), and
 populates all extracted burst parameters as metadata.
 """
 
@@ -40,7 +40,7 @@ Inspects every `Rect` overlay in the active scope, searches for a signal burst i
    - Finds contiguous active intervals, merges gaps shorter than `min_gap_ms`, selects the highest-energy burst inside the box, and expands both ends by `margin` samples.
 3. **Frequency-Domain Tight Fitting (OBW)**:
    - Computes the windowed FFT power spectral density of the time-cropped burst and subtracts the spectral noise floor.
-   - Locates the lower and upper frequency edges containing `obw_percent`% of the burst's spectral power, determining the tight frequency span `[new_f0, new_f1]` and center frequency `fc_hz`.
+   - Locates the lower and upper frequency edges containing `obw_percent`% of the burst's spectral power, then widens that span by `freq_margin_percent`% of the measured bandwidth (default 10%), split equally above and below the center. The result is clamped to the original overlay.
 4. **Baseband IQ Refinement & Parameter Extraction**:
    - Down-converts, filters, and resamples the cropped burst to the new tight frequency bounds so `o.iq` and `o.fs` match the reshaped `Rect`.
    - Extracts and stores `fc_hz`, `bw_hz`, `obw_hz`, `cfo_hz`, `t_start_s`, `t_end_s`, `duration_ms`, `snr_db`, `peak_snr_db`, `papr_db`, `rms_dbfs`, `num_samples`, and `sample_rate_hz` in `o.metadata`.
@@ -75,10 +75,21 @@ PLUGIN_PARAMS = {
     "margin": {
         "type": "int",
         "default": 0,
-        "label": "Margin (samples)",
+        "label": "Time Margin (samples)",
         "tooltip": (
             "Extra safeguard samples kept on each side of the snapped burst "
             "([max(0, start - margin), min(N, end + margin)])."
+        ),
+    },
+    "freq_margin_percent": {
+        "type": "float",
+        "default": 10.0,
+        "min": 0.0,
+        "label": "Frequency Margin (%)",
+        "tooltip": (
+            "Extra bandwidth around the fitted burst, as a percent of its occupied "
+            "bandwidth. 10% makes the box 1.1× the measured BW, split equally above "
+            "and below. The box stays inside the original overlay."
         ),
     },
     "update_tag": {
@@ -200,6 +211,7 @@ def _fit_tight_burst_freq(
     orig_f1: float,
     obw_fraction: float,
     threshold_db: float = 6.0,
+    freq_margin_fraction: float = 0.10,
 ):
     """
     Estimate tight `[new_f0, new_f1]`, `obw_hz`, `cfo_hz`, and `est_time_noise_floor`
@@ -270,7 +282,9 @@ def _fit_tight_burst_freq(
     cfo_hz = float(np.sum(rel_freqs * sig_spec) / total_spec_pwr)
 
     f_center_est = orig_fc + 0.5 * float(rel_freqs[idx_lo] + rel_freqs[idx_hi])
-    bw_fit = max(obw_hz * 1.05, df * 2.0)
+    # Widen the measured occupied bandwidth by freq_margin_fraction (0.10 = 10% extra).
+    pad = max(0.0, float(freq_margin_fraction))
+    bw_fit = max(obw_hz * (1.0 + pad), df * 2.0)
 
     new_f0 = max(orig_f0, f_center_est - 0.5 * bw_fit)
     new_f1 = min(orig_f1, f_center_est + 0.5 * bw_fit)
@@ -334,9 +348,11 @@ def run(samples: np.ndarray, info) -> PluginResult:
     smooth_window_us = max(1.0, float(params.get("smooth_window_us", 25.0)))
     min_gap_ms       = max(0.0, float(params.get("min_gap_ms", 0.1)))
     margin           = max(0, int(params.get("margin", 0)))
+    freq_margin_percent = max(0.0, float(params.get("freq_margin_percent", 10.0)))
     update_tag       = bool(params.get("update_tag", True))
 
     obw_fraction = obw_percent / 100.0
+    freq_margin_fraction = freq_margin_percent / 100.0
 
     t_start_scope = float(info.t_start)
     t_end_scope   = float(info.t_end)
@@ -385,6 +401,7 @@ def run(samples: np.ndarray, info) -> PluginResult:
             orig_f1=orig_f1,
             obw_fraction=obw_fraction,
             threshold_db=threshold_db,
+            freq_margin_fraction=freq_margin_fraction,
         )
         time_fit = _find_tight_burst_time(
             seg,
@@ -411,6 +428,7 @@ def run(samples: np.ndarray, info) -> PluginResult:
             orig_f1=orig_f1,
             obw_fraction=obw_fraction,
             threshold_db=threshold_db,
+            freq_margin_fraction=freq_margin_fraction,
         )
 
         # Pass 3: Refine time edges on the subband-filtered IQ if frequency narrowed significantly
@@ -492,6 +510,7 @@ def run(samples: np.ndarray, info) -> PluginResult:
             "papr_db": round(float(papr_db), 2),
             "rms_dbfs": round(float(rms_dbfs), 2),
             "margin_samples": int(margin),
+            "freq_margin_percent": round(float(freq_margin_percent), 2),
             "num_samples": int(len(tight_iq)),
             "sample_rate_hz": round(float(tight_fs), 2),
         })
