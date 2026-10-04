@@ -5,7 +5,7 @@ documenting, and scaffolding IQView plugins (Phase 4).
 
 Tabs
 ----
-1. Manage & Run      — Search/filter plugins, pin favorites, edit parameters
+1. Manage & Run      — Search/filter plugins, pin favorites, load and unload, edit parameters
                        inline (with per-step chain execution), read rich
                        plugin documentation, and edit the plugin `.py` file.
                        The selected plugin's path is shown above the editor.
@@ -213,11 +213,17 @@ class PluginStudioDialog(QDialog):
         btn_load.setToolTip("Load one or more Python plugin files (.py)")
         btn_load.clicked.connect(self._on_studio_load_plugin)
 
+        self.btn_unload_plugin = QPushButton("Unload")
+        self.btn_unload_plugin.setToolTip("Unload the selected plugin. Built-in plugins stay loaded.")
+        self.btn_unload_plugin.setEnabled(False)
+        self.btn_unload_plugin.clicked.connect(self._on_studio_unload_plugin)
+
         btn_new_chain = QPushButton("New Chain…")
         btn_new_chain.setToolTip("Switch to the Chain Builder tab")
         btn_new_chain.clicked.connect(lambda: self.tabs.setCurrentIndex(1))
 
         left_btns.addWidget(btn_load)
+        left_btns.addWidget(self.btn_unload_plugin)
         left_btns.addWidget(btn_new_chain)
         left_layout.addLayout(left_btns)
 
@@ -769,6 +775,7 @@ class PluginStudioDialog(QDialog):
             self.lbl_manage_meta.setText("")
             self.ed_manage_path.clear()
             self.btn_edit_py.setEnabled(False)
+            self._update_unload_button()
             self._show_plugin_source("", "")
             self._rebuild_manage_params_form("", {})
             self._rebuild_manage_doc_html("", {})
@@ -811,6 +818,7 @@ class PluginStudioDialog(QDialog):
             else "This plugin has no .py file on disk"
         )
         self.btn_edit_in_chain_builder.setVisible(is_chain)
+        self._update_unload_button()
 
         self._rebuild_manage_params_form(name, info)
         self._rebuild_manage_doc_html(name, info)
@@ -1333,6 +1341,38 @@ class PluginStudioDialog(QDialog):
         src = f"plugin:{self._selected_manage_plugin}"
         self.parent_window.clear_overlays(source=src)
         self._populate_manage_list(select_plugin=self._selected_manage_plugin)
+
+    def _update_unload_button(self) -> None:
+        if not hasattr(self, "btn_unload_plugin"):
+            return
+        name = self._selected_manage_plugin
+        loaded = getattr(self.parent_window, "_loaded_plugins", {})
+        info = loaded.get(name) if name else None
+        is_builtin = bool((info or {}).get("builtin", False))
+        can_unload = bool(info) and not is_builtin
+        self.btn_unload_plugin.setEnabled(can_unload)
+        if not name:
+            tip = "Select a plugin to unload"
+        elif is_builtin:
+            tip = "Built-in plugins stay loaded"
+        else:
+            tip = f"Unload '{name}'"
+        self.btn_unload_plugin.setToolTip(tip)
+
+    def _on_studio_unload_plugin(self) -> None:
+        name = self._selected_manage_plugin
+        if not name or not hasattr(self.parent_window, "unload_plugin"):
+            return
+        info = self.parent_window._loaded_plugins.get(name) or {}
+        if info.get("builtin"):
+            return
+        if not self._confirm_discard_source():
+            return
+        self.parent_window.unload_plugin(name)
+        self._selected_manage_plugin = None
+        self._set_source_clean()
+        self._show_plugin_source("", "")
+        self.refresh_all()
 
     def _on_studio_load_plugin(self) -> None:
         self.parent_window.load_plugin()

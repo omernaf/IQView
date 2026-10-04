@@ -466,6 +466,8 @@ class PluginManagerMixin:
             "params_spec":           params_spec,
             "params":                active_params,
         }
+        where = f" from {path}" if path else ""
+        print(f"[IQView] Loaded plugin: {name} [chain]{where}")
         if path and os.path.isfile(path):
             self._save_plugin_paths()
         self._rebuild_plugins_menu()
@@ -521,6 +523,8 @@ class PluginManagerMixin:
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
         except Exception as exc:
+            print(f"[IQView] Failed to load plugin from {path}")
+            traceback.print_exc()
             if not _silent:
                 QMessageBox.critical(
                     self, "Plugin Load Error",
@@ -547,6 +551,10 @@ class PluginManagerMixin:
             )
 
         if not hasattr(module, "run") or not callable(module.run):
+            print(
+                f"[IQView] Failed to load plugin from {path}: "
+                "no callable run() and no PluginChain"
+            )
             if not _silent:
                 QMessageBox.critical(
                     self, "Plugin Load Error",
@@ -624,6 +632,8 @@ class PluginManagerMixin:
             "params_spec":           params_spec,
             "params":                active_params,
         }
+        kind = "built-in" if is_builtin else ("chain" if chain_obj is not None else "custom")
+        print(f"[IQView] Loaded plugin: {name} [{kind}] from {path}")
 
         if _persist:
             self._save_plugin_paths()
