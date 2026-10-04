@@ -3,7 +3,7 @@
 Built-in IQView Plugin: GNSS Multi-Band Satellite Detector.
 
 Scans raw IQ samples from the L-band to acquire and identify visible GNSS
-satellites (GPS L1 C/A, GLONASS L1, GPS L2C, GPS L5). Dynamically inspects
+satellites (GPS L1 C/A, GPS L5, GLONASS L1/L2, BeiDou B1I). Dynamically inspects
 the recording's center frequency (fc) and sample rate (fs), isolates active
 GNSS carrier bands via high-speed software Digital Down-Conversion (DDC),
 performs 2D Parallel Code Phase Search (PCPS) matched-filter acquisition,
@@ -24,8 +24,8 @@ from iqview.overlays import FreqRegion
 
 PLUGIN_NAME              = "GNSS Satellite Detector"
 PLUGIN_DESCRIPTION       = (
-    "Multi-band GNSS satellite acquisition engine (GPS L1 C/A, GLONASS L1, "
-    "GPS L2C, GPS L5) detecting visible satellites, Doppler shifts, code phases, and C/N0."
+    "Multi-band GNSS satellite acquisition (GPS L1 C/A, GPS L5, GLONASS L1/L2, "
+    "BeiDou B1I) detecting visible satellites, Doppler shifts, code phases, and C/N0."
 )
 PLUGIN_CATEGORY          = "Detection"
 PLUGIN_NEEDS_WIDEBAND_IQ = True
@@ -44,16 +44,18 @@ Unlike terrestrial bursts (LoRa, FSK, Wi-Fi), GNSS signals operate via Direct Se
 | Band | Carrier Frequency ($f_c$) | Chipping Rate | Code Length & Period | Modulation / Standard |
 | :--- | :--- | :--- | :--- | :--- |
 | **GPS L1 C/A** | **1575.42 MHz** | 1.023 Mchips/s | 1023 chips (1.0 ms) | BPSK(1), Gold Codes (IS-GPS-200) |
-| **GLONASS L1** | **1598.06 – 1605.38 MHz** | 0.511 Mchips/s | 511 chips (1.0 ms) | BPSK(0.5), FDMA 14 Channels, m-sequence |
-| **GPS L2C** | **1227.60 MHz** | 0.5115 Mchips/s | 10,230 chips (20.0 ms) | BPSK, Civil Moderate (CM) Code |
-| **GPS L5** | **1176.45 MHz** | 10.230 Mchips/s | 10,230 chips (1.0 ms) | QPSK, Aviation Safety-of-Life (IS-GPS-705) |
+| **GPS L5** | **1176.45 MHz** | 10.230 Mchips/s | 10,230 chips (1.0 ms) | QPSK I5, IS-GPS-705 |
+| **GLONASS L1 OF** | **1598.0625 – 1605.375 MHz** | 0.511 Mchips/s | 511 chips (1.0 ms) | BPSK(0.5), FDMA k = −7…+6 |
+| **GLONASS L2 OF** | **1242.9375 – 1248.625 MHz** | 0.511 Mchips/s | 511 chips (1.0 ms) | BPSK(0.5), same code, k = −7…+6 |
+| **BeiDou B1I** | **1561.098 MHz** | 2.046 Mchips/s | 2046 chips (1.0 ms) | BPSK, truncated Gold (BDS-SIS-ICD) |
+| **GPS L2C** | **1227.60 MHz** | 0.5115 Mchips/s | 10,230 chips (20.0 ms) | Recognized when the carrier is in the recording. The 20 ms CM code is not despread. |
 
 ---
 
 ### Algorithm & Architecture
 
 1. **Dynamic Spectrum Auto-Discovery**:
-   The plugin inspects the recording's coverage $[f_{\\min}, f_{\\max}] = [f_c - f_s/2, f_c + f_s/2]$. It automatically identifies which GNSS bands are contained within the capture—supporting both narrowband SDR recordings (e.g. 2–10 MHz centered on L1) and ultra-wideband captures (e.g. 50–500 MSPS spanning L5, L2, and L1).
+   The plugin inspects the recording's coverage $[f_{\\min}, f_{\\max}] = [f_c - f_s/2, f_c + f_s/2]$. A signal is searched when its carrier (or, for GLONASS, an FDMA channel) lies inside that span. A capture does not have to contain the whole constellation allocation.
 
 2. **Zero-Copy Software DDC & Channel Decimation**:
    To avoid multi-gigabyte FFT memory bottlenecks on wideband captures, the plugin extracts a small coherent slice ($5\\text{–}20\\text{ ms}$) and executes an in-memory FFT-slice Digital Down-Converter (DDC). This mixes each target carrier down to DC ($0\\text{ Hz}$) and decimates the signal to an efficient baseband rate ($f_s \\approx 2.048\\text{ MSPS}$ for L1), completing in under 50 ms.
@@ -73,8 +75,8 @@ Unlike terrestrial bursts (LoRa, FSK, Wi-Fi), GNSS signals operate via Direct Se
    Computes the post-acquisition $C/N_0$ in dB-Hz based on the coherent peak-to-noise ratio:
    $$C/N_0 \\approx 10 \\log_{10}\\left(\\frac{P_1 - \\mu_{\\text{noise}}}{\\mu_{\\text{noise}} \\cdot T_{\\text{coh}}}\\right)$$
 
-7. **Multi-Band Cross-Validation**:
-   When multiple bands are captured simultaneously, satellites detected on L1 have their orbital Doppler shifts scaled to predict and verify matching peaks on L2C ($0.779 \\times f_{d, L1}$) and L5 ($0.747 \\times f_{d, L1}$), eliminating false alarms.
+7. **Multi-Band Search**:
+   Each in-band carrier is despread on its own. GLONASS L1 and L2 share the standard-accuracy code and the same channel number k. GPS L5 is the I5 code. BeiDou is the B1I code.
 
 8. **Continuous Y-Region Overlay**:
    GNSS emissions are present for the whole recording. Each acquired band is drawn as a Y-region spanning the full time axis across that band's nominal bandwidth. The matched-filter search still uses only the first `integration_ms` milliseconds.
@@ -90,7 +92,7 @@ Unlike terrestrial bursts (LoRa, FSK, Wi-Fi), GNSS signals operate via Direct Se
 | **Doppler Step** (`doppler_step_hz`) | `float` | `500.0` | Doppler grid resolution in Hz (250 to 500 Hz for 1 ms coherent integration). |
 | **Non-Coherent Steps** (`integration_ms`) | `int` | `8` | Number of 1 ms intervals averaged non-coherently (4 to 20 ms). |
 | **Acquisition Threshold** (`pnr_threshold`) | `float` | `1.8` | Peak-to-Next-Peak ratio required to declare satellite acquisition. |
-| **PRN Selection** (`prn_selection`) | `str` | `1-32` | Target satellite PRNs to search (e.g. `'1-32'` or `'1,3,11,14,22'`). |
+| **PRN Selection** (`prn_selection`) | `str` | `1-32` | CDMA satellites to search. GPS uses 1–32. BeiDou B1I uses 1–63. GLONASS ignores this and scans every in-band FDMA channel. |
 | **Open Plot Tab** (`debug_plots`) | `bool` | `True` | Launch an interactive 1D Plot tab showing the $C/N_0$ constellation bar chart and correlation peak profile. |
 """
 
@@ -102,9 +104,11 @@ PLUGIN_PARAMS = {
         "choices": [
             "Auto (Detect from Spectrum)",
             "GPS L1 C/A (1575.42 MHz)",
-            "GLONASS L1 (1602.00 MHz)",
-            "GPS L2C (1227.60 MHz)",
             "GPS L5 (1176.45 MHz)",
+            "GPS L2C (1227.60 MHz)",
+            "GLONASS L1 (1602.00 MHz)",
+            "GLONASS L2 (1246.00 MHz)",
+            "BeiDou B1I (1561.098 MHz)",
             "All Supported Bands",
         ],
         "label": "GNSS Band Selection",
@@ -144,7 +148,11 @@ PLUGIN_PARAMS = {
         "type": "str",
         "default": "1-32",
         "label": "PRN Selection",
-        "tooltip": "Target satellite PRNs to search (e.g. '1-32' or '1,3,11,14,22').",
+        "tooltip": (
+            "CDMA satellites to search (e.g. '1-32' or '1,3,11'). "
+            "GPS uses 1-32, BeiDou B1I uses 1-63. "
+            "GLONASS scans every FDMA channel whose carrier is inside the recording."
+        ),
     },
     "debug_plots": {
         "type": "bool",
@@ -163,6 +171,9 @@ GNSS_BAND_CATALOG: Dict[str, Dict[str, Any]] = {
     "GPS_L1_CA": {
         "name": "GPS L1 C/A",
         "short_name": "GPS L1",
+        "constellation": "GPS",
+        "family": "gps_l1_ca",
+        "max_prn": 32,
         "carrier": 1575.42e6,
         "nominal_bw": 2.046e6,
         "chip_rate": 1.023e6,
@@ -171,31 +182,12 @@ GNSS_BAND_CATALOG: Dict[str, Dict[str, Any]] = {
         "color": "#00e676",  # Neon Green
         "target_fs": 2048000.0,
     },
-    "GLONASS_L1": {
-        "name": "GLONASS L1",
-        "short_name": "GLO L1",
-        "carrier": 1602.00e6,
-        "nominal_bw": 8.0e6,
-        "chip_rate": 0.511e6,
-        "code_len": 511,
-        "period_ms": 1.0,
-        "color": "#b388ff",  # Soft Purple
-        "target_fs": 2048000.0,
-    },
-    "GPS_L2C": {
-        "name": "GPS L2C (CM)",
-        "short_name": "GPS L2C",
-        "carrier": 1227.60e6,
-        "nominal_bw": 2.046e6,
-        "chip_rate": 0.5115e6,
-        "code_len": 10230,
-        "period_ms": 20.0,
-        "color": "#00b0ff",  # Vibrant Blue
-        "target_fs": 2048000.0,
-    },
     "GPS_L5": {
         "name": "GPS L5",
         "short_name": "GPS L5",
+        "constellation": "GPS",
+        "family": "gps_l5i",
+        "max_prn": 32,
         "carrier": 1176.45e6,
         "nominal_bw": 20.46e6,
         "chip_rate": 10.230e6,
@@ -204,7 +196,68 @@ GNSS_BAND_CATALOG: Dict[str, Dict[str, Any]] = {
         "color": "#ffd600",  # Amber Gold
         "target_fs": 24576000.0,
     },
+    "GPS_L2C": {
+        "name": "GPS L2C (CM)",
+        "short_name": "GPS L2C",
+        "constellation": "GPS",
+        "family": "gps_l2c",
+        "max_prn": 32,
+        "carrier": 1227.60e6,
+        "nominal_bw": 2.046e6,
+        "chip_rate": 0.5115e6,
+        "code_len": 10230,
+        "period_ms": 20.0,
+        "color": "#00b0ff",  # Vibrant Blue
+        "target_fs": 2048000.0,
+    },
+    "GLONASS_L1": {
+        "name": "GLONASS L1",
+        "short_name": "GLO L1",
+        "constellation": "GLONASS",
+        "family": "glonass_of",
+        "max_prn": 32,
+        "carrier": 1602.00e6,
+        "nominal_bw": 8.0e6,
+        "channel_bw": 1.022e6,
+        "chip_rate": 0.511e6,
+        "code_len": 511,
+        "period_ms": 1.0,
+        "color": "#b388ff",  # Soft Purple
+        "target_fs": 2048000.0,
+    },
+    "GLONASS_L2": {
+        "name": "GLONASS L2",
+        "short_name": "GLO L2",
+        "constellation": "GLONASS",
+        "family": "glonass_of",
+        "max_prn": 32,
+        "carrier": 1246.00e6,
+        "nominal_bw": 7.0e6,
+        "channel_bw": 1.022e6,
+        "chip_rate": 0.511e6,
+        "code_len": 511,
+        "period_ms": 1.0,
+        "color": "#ff6d00",
+        "target_fs": 2048000.0,
+    },
+    "BEIDOU_B1I": {
+        "name": "BeiDou B1I",
+        "short_name": "BDS B1I",
+        "constellation": "BeiDou",
+        "family": "beidou_b1i",
+        "max_prn": 63,
+        "carrier": 1561.098e6,
+        "nominal_bw": 4.092e6,
+        "chip_rate": 2.046e6,
+        "code_len": 2046,
+        "period_ms": 1.0,
+        "color": "#ff1744",
+        "target_fs": 4092000.0,
+    },
 }
+
+# Families that have a 1 ms spreading code and are actually despread.
+ACQUIRED_FAMILIES = {"gps_l1_ca", "gps_l5i", "glonass_of", "beidou_b1i"}
 
 # GPS L1 C/A G2 LFSR feedback tap assignments for PRNs 1..32 (IS-GPS-200 Table 3-I)
 GPS_L1_TAPS: Dict[int, Tuple[int, int]] = {
@@ -217,10 +270,18 @@ GPS_L1_TAPS: Dict[int, Tuple[int, int]] = {
     31: (3, 8),  32: (4, 9),
 }
 
-# GLONASS L1 standard 14 FDMA channel frequency offsets (k = -7 .. +6)
+# GLONASS FDMA channel numbers k = -7 .. +6 (ICD). L1 and L2 share the same k.
 GLONASS_L1_CHANNELS: Dict[int, float] = {
     k: 1602.0e6 + (k * 0.5625e6) for k in range(-7, 7)
 }
+GLONASS_L2_CHANNELS: Dict[int, float] = {
+    k: 1246.0e6 + (k * 0.4375e6) for k in range(-7, 7)
+}
+GNSS_BAND_CATALOG["GLONASS_L1"]["channels"] = list(GLONASS_L1_CHANNELS.items())
+GNSS_BAND_CATALOG["GLONASS_L2"]["channels"] = list(GLONASS_L2_CHANNELS.items())
+for _spec in GNSS_BAND_CATALOG.values():
+    _spec.setdefault("channels", [(0, _spec["carrier"])])
+    _spec.setdefault("channel_bw", _spec["nominal_bw"])
 
 
 # =====================================================================
@@ -287,6 +348,132 @@ def generate_glonass_l1_code() -> np.ndarray:
         reg = [f] + reg[:8]
 
     return code
+
+
+def generate_glonass_ca_code() -> np.ndarray:
+    """GLONASS L1 OF and L2 OF share this 511-chip standard-accuracy code."""
+    return generate_glonass_l1_code()
+
+
+# IS-GPS-705 I5 XB code advance for PRN 1..32.
+GPS_L5I_XB_ADVANCE: Tuple[int, ...] = (
+    266, 365, 804, 1138, 1509, 1559, 1756, 2084,
+    2170, 2303, 2527, 2687, 2930, 3471, 3940, 4132,
+    4332, 4924, 5343, 5443, 5641, 5816, 5898, 5918,
+    5955, 6243, 6345, 6477, 6518, 6875, 7168, 7187,
+)
+
+# BeiDou B1I G2 phase taps (1-based stage numbers). A 0 third tap means two taps.
+# PRN 1..37 are the two-tap ICD assignments; 38..63 add the third tap.
+BEIDOU_B1I_TAPS: Tuple[Tuple[int, int, int], ...] = (
+    (1, 3, 0), (1, 4, 0), (1, 5, 0), (1, 6, 0), (1, 8, 0), (1, 9, 0), (1, 10, 0), (1, 11, 0),
+    (2, 7, 0), (3, 4, 0), (3, 5, 0), (3, 6, 0), (3, 8, 0), (3, 9, 0), (3, 10, 0), (3, 11, 0),
+    (4, 5, 0), (4, 6, 0), (4, 8, 0), (4, 9, 0), (4, 10, 0), (4, 11, 0), (5, 6, 0), (5, 8, 0),
+    (5, 9, 0), (5, 10, 0), (5, 11, 0), (6, 8, 0), (6, 9, 0), (6, 10, 0), (6, 11, 0), (8, 9, 0),
+    (8, 10, 0), (8, 11, 0), (9, 10, 0), (9, 11, 0), (10, 11, 0),
+    (2, 7, 1), (3, 4, 1), (3, 6, 1), (3, 8, 1), (3, 10, 1), (3, 11, 1), (4, 5, 1), (4, 9, 1),
+    (5, 6, 1), (5, 8, 1), (5, 10, 1), (5, 11, 1), (6, 9, 1), (8, 9, 1), (9, 10, 1), (9, 11, 1),
+    (3, 7, 2), (5, 7, 2), (7, 9, 2),
+    (4, 5, 3), (4, 9, 3), (5, 6, 3), (5, 8, 3), (5, 10, 3), (5, 11, 3), (6, 9, 3),
+)
+
+
+def _l5_shift(reg: List[int], feedback_idx: Tuple[int, ...], reset_state: Optional[List[int]] = None) -> List[int]:
+    if reset_state is not None and reg == reset_state:
+        return [1] * 13
+    feedback = 0
+    for idx in feedback_idx:
+        feedback ^= reg[idx]
+    return [feedback] + reg[:-1]
+
+
+def generate_gps_l5i(prn: int) -> np.ndarray:
+    """GPS L5 I5 primary code, 10230 chips, IS-GPS-705."""
+    if not 1 <= prn <= len(GPS_L5I_XB_ADVANCE):
+        raise ValueError(f"Unsupported GPS L5 PRN {prn}. Valid PRNs are 1..{len(GPS_L5I_XB_ADVANCE)}.")
+
+    xa = [1] * 13
+    xb = [1] * 13
+    xa_seq = np.empty(10230, dtype=np.int8)
+    xb_seq = np.empty(10230, dtype=np.int8)
+    xa_reset = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1]
+    for i in range(10230):
+        xa_seq[i] = xa[12]
+        xb_seq[i] = xb[12]
+        xa = _l5_shift(xa, (12, 11, 9, 8), xa_reset)
+        xb = _l5_shift(xb, (12, 11, 7, 6, 5, 3, 2, 0))
+
+    advance = GPS_L5I_XB_ADVANCE[prn - 1]
+    shifted = np.concatenate((xb_seq[advance:], xb_seq[:advance]))
+    bits = np.bitwise_xor(xa_seq, shifted)
+    return (1.0 - 2.0 * bits).astype(np.float32)
+
+
+def generate_beidou_b1i(prn: int) -> np.ndarray:
+    """BeiDou B1I ranging code, 2046 chips, BDS-SIS-ICD."""
+    if not 1 <= prn <= len(BEIDOU_B1I_TAPS):
+        raise ValueError(f"Unsupported BeiDou B1I PRN {prn}. Valid PRNs are 1..{len(BEIDOU_B1I_TAPS)}.")
+
+    tap1, tap2, tap3 = BEIDOU_B1I_TAPS[prn - 1]
+    g1 = [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0]
+    g2 = [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0]
+    code = np.empty(2046, dtype=np.float32)
+    for i in range(2046):
+        mix = g2[tap1 - 1] ^ g2[tap2 - 1]
+        if tap3:
+            mix ^= g2[tap3 - 1]
+        code[i] = 1.0 - 2.0 * float(g1[10] ^ mix)
+        f1 = g1[0] ^ g1[6] ^ g1[7] ^ g1[8] ^ g1[9] ^ g1[10]
+        f2 = g2[0] ^ g2[1] ^ g2[2] ^ g2[3] ^ g2[4] ^ g2[7] ^ g2[8] ^ g2[10]
+        g1 = [f1] + g1[:10]
+        g2 = [f2] + g2[:10]
+    return code
+
+
+def code_for_family(family: str, prn: int) -> np.ndarray:
+    if family == "gps_l1_ca":
+        return generate_gps_l1_ca(prn)
+    if family == "gps_l5i":
+        return generate_gps_l5i(prn)
+    if family == "beidou_b1i":
+        return generate_beidou_b1i(prn)
+    if family == "glonass_of":
+        return generate_glonass_ca_code()
+    raise ValueError(f"No spreading code for {family}")
+
+
+def select_gnss_bands(
+    band_mode: str,
+    f_min: float,
+    f_max: float,
+) -> Tuple[List[Tuple[str, Dict[str, Any], List[Tuple[int, float]]]], List[str]]:
+    """
+    Return (band key, spec, in-band channels) for every signal this recording can host.
+
+    A GLONASS channel or a CDMA carrier is in band when its frequency sits strictly
+    inside [f_min, f_max]. The whole allocation does not have to fit.
+    """
+    mode = str(band_mode)
+    auto = mode.startswith("Auto") or mode == "All Supported Bands"
+    selected: List[Tuple[str, Dict[str, Any], List[Tuple[int, float]]]] = []
+    notes: List[str] = []
+
+    for key, spec in GNSS_BAND_CATALOG.items():
+        requested = auto or spec["name"] in mode or spec["short_name"] in mode
+        if not requested:
+            continue
+        channels = [(int(ch_id), float(freq)) for ch_id, freq in spec["channels"] if f_min < freq < f_max]
+        if spec.get("family") not in ACQUIRED_FAMILIES:
+            if channels:
+                notes.append(
+                    f"{spec['name']} is inside this recording, but its spreading code is not acquired."
+                )
+            continue
+        if channels:
+            selected.append((key, spec, channels))
+        elif not auto:
+            notes.append(f"{spec['name']} is outside this recording.")
+    return selected, notes
 
 
 def resample_code_to_fs(
@@ -526,32 +713,23 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
     prn_selection_str = str(info.params.get("prn_selection", "1-32"))
     debug_plots = bool(info.params.get("debug_plots", True))
 
-    target_prns = parse_prn_selection(prn_selection_str, max_prn=32)
+    target_prns = parse_prn_selection(prn_selection_str, max_prn=63)
     doppler_bins = np.arange(-doppler_max, doppler_max + (doppler_step * 0.5), doppler_step)
 
-    # 2. Determine target bands based on mode and spectrum overlap
-    active_bands: List[Tuple[str, Dict[str, Any]]] = []
-
-    for b_key, b_spec in GNSS_BAND_CATALOG.items():
-        b_fc = b_spec["carrier"]
-        b_bw = b_spec["nominal_bw"]
-
-        # Check coverage
-        overlaps = (b_fc - b_bw * 0.45 >= f_min) and (b_fc + b_bw * 0.45 <= f_max)
-
-        if band_mode == "Auto (Detect from Spectrum)":
-            if overlaps:
-                active_bands.append((b_key, b_spec))
-        elif band_mode == "All Supported Bands":
-            active_bands.append((b_key, b_spec))
-        elif b_spec["name"] in band_mode or b_key in band_mode:
-            active_bands.append((b_key, b_spec))
+    # 2. Keep every carrier that actually sits inside the recording.
+    active_bands, band_notes = select_gnss_bands(band_mode, f_min, f_max)
+    for note in band_notes:
+        result.log(f"GNSS Detector: {note}")
 
     if not active_bands:
+        targets = ", ".join(
+            f"{spec['short_name']} ({spec['carrier'] / 1e6:.3f} MHz)"
+            for spec in GNSS_BAND_CATALOG.values()
+        )
         msg = (
-            f"No supported GNSS bands overlap with the current recording spectrum "
+            f"No supported GNSS carriers fall inside the current recording "
             f"({fc / 1e6:.2f} ± {fs / 2e6:.2f} MHz). "
-            f"Target bands: GPS L1 (1575.42 MHz), GLONASS L1 (1602 MHz), GPS L2 (1227.60 MHz), GPS L5 (1176.45 MHz)."
+            f"Carriers: {targets}."
         )
         result.log(f"GNSS Detector: {msg}")
         info.alert(msg, title="GNSS Detector — Out of Band", level="warning")
@@ -559,97 +737,69 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
 
     # 3. Coherent acquisition loop across active bands
     all_detections: Dict[str, List[Dict[str, Any]]] = {}
-    total_steps = len(active_bands) * len(target_prns)
+
+    def _prns_for(spec: Dict[str, Any]) -> List[int]:
+        return [p for p in target_prns if 1 <= p <= int(spec["max_prn"])]
+
+    total_steps = 0
+    for _key, _spec, _channels in active_bands:
+        if _spec["family"] == "glonass_of":
+            total_steps += len(_channels)
+        else:
+            total_steps += len(_prns_for(_spec))
     current_step = 0
 
     analysis_dur = float(integration_ms) * 1e-3
     strongest_detection: Optional[Dict[str, Any]] = None
     strongest_band_spec: Optional[Dict[str, Any]] = None
 
-    for band_key, band_spec in active_bands:
+    for band_key, band_spec, band_channels in active_bands:
         if info.is_cancelled():
             break
 
         band_fc = band_spec["carrier"]
         band_bw = band_spec["nominal_bw"]
-        target_fs = band_spec["target_fs"]
         chip_rate = band_spec["chip_rate"]
-
-        info.progress(
-            (current_step / max(1, total_steps)) * 100.0,
-            f"DDC channelization: {band_spec['name']} ({band_fc/1e6:.2f} MHz)…",
-        )
-
-        # Software DDC and decimation
-        baseband_iq, actual_fs = extract_and_ddc(
-            samples,
-            fs_in=fs,
-            fc_in=fc,
-            target_fc=band_fc,
-            target_bw=band_bw,
-            target_fs=target_fs,
-            duration_s=analysis_dur,
-        )
-
-        if len(baseband_iq) < int(round(analysis_dur * actual_fs * 0.9)):
-            continue
-
+        family = band_spec["family"]
+        use_fs = min(float(band_spec["target_fs"]), fs)
         band_detections: List[Dict[str, Any]] = []
 
-        if band_key == "GPS_L1_CA":
-            for prn in target_prns:
+        def _keep(det: Optional[Dict[str, Any]], prn: int, carrier_hz: float, channel_k: Optional[int] = None) -> None:
+            nonlocal strongest_detection, strongest_band_spec
+            if det is None:
+                return
+            det["prn"] = prn
+            det["band"] = band_spec["short_name"]
+            det["carrier_hz"] = carrier_hz
+            if channel_k is not None:
+                det["channel_k"] = channel_k
+            band_detections.append(det)
+            if strongest_detection is None or det["c_n0_db_hz"] > strongest_detection["c_n0_db_hz"]:
+                strongest_detection = det
+                strongest_band_spec = band_spec
+
+        if family == "glonass_of":
+            glo_code = generate_glonass_ca_code()
+            for ch_k, ch_freq in band_channels:
                 if info.is_cancelled():
                     break
                 current_step += 1
                 info.progress(
                     (current_step / max(1, total_steps)) * 100.0,
-                    f"Searching GPS L1: PRN {prn:02d}…",
+                    f"Searching {band_spec['short_name']}: Ch {ch_k:+d} ({ch_freq / 1e6:.3f} MHz)…",
                 )
-
-                # Precompute sampled 1 ms code and run PCPS
-                code_chips = generate_gps_l1_ca(prn)
-                sampled_code = resample_code_to_fs(code_chips, chip_rate, actual_fs, duration_s=1e-3)
-                det = pcps_search_channel(
-                    baseband_iq,
-                    fs_channel=actual_fs,
-                    sampled_code_1ms=sampled_code,
-                    chip_rate=chip_rate,
-                    doppler_bins=doppler_bins,
-                    num_blocks=integration_ms,
-                    pnr_threshold=pnr_threshold,
-                )
-
-                if det is not None:
-                    det["prn"] = prn
-                    det["band"] = band_spec["short_name"]
-                    det["carrier_hz"] = band_fc
-                    band_detections.append(det)
-
-                    if strongest_detection is None or det["c_n0_db_hz"] > strongest_detection["c_n0_db_hz"]:
-                        strongest_detection = det
-                        strongest_band_spec = band_spec
-
-        elif band_key == "GLONASS_L1":
-            # GLONASS L1: Scan standard FDMA channels k = -7..+6
-            glo_code = generate_glonass_l1_code()
-            for ch_k, ch_freq in list(GLONASS_L1_CHANNELS.items())[:14]:
-                if info.is_cancelled():
-                    break
-                current_step += 1
-                info.progress(
-                    (current_step / max(1, total_steps)) * 100.0,
-                    f"Searching GLONASS L1: Ch {ch_k:+02d} ({ch_freq/1e6:.2f} MHz)…",
-                )
-
+                ch_bw = min(float(band_spec["channel_bw"]), fs * 0.95)
                 ch_iq, ch_fs = extract_and_ddc(
                     samples,
                     fs_in=fs,
                     fc_in=fc,
                     target_fc=ch_freq,
-                    target_bw=1.0e6,
-                    target_fs=actual_fs,
+                    target_bw=ch_bw,
+                    target_fs=use_fs,
                     duration_s=analysis_dur,
                 )
+                if len(ch_iq) < int(round(analysis_dur * ch_fs * 0.9)):
+                    continue
                 sampled_code = resample_code_to_fs(glo_code, chip_rate, ch_fs, duration_s=1e-3)
                 det = pcps_search_channel(
                     ch_iq,
@@ -660,17 +810,45 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
                     num_blocks=integration_ms,
                     pnr_threshold=pnr_threshold,
                 )
-
-                if det is not None:
-                    det["channel_k"] = ch_k
-                    det["prn"] = ch_k  # Index by channel number
-                    det["band"] = band_spec["short_name"]
-                    det["carrier_hz"] = ch_freq
-                    band_detections.append(det)
-
-                    if strongest_detection is None or det["c_n0_db_hz"] > strongest_detection["c_n0_db_hz"]:
-                        strongest_detection = det
-                        strongest_band_spec = band_spec
+                _keep(det, ch_k, ch_freq, channel_k=ch_k)
+        else:
+            info.progress(
+                (current_step / max(1, total_steps)) * 100.0,
+                f"DDC channelization: {band_spec['name']} ({band_fc / 1e6:.2f} MHz)…",
+            )
+            ddc_bw = min(float(band_bw), fs * 0.95)
+            baseband_iq, actual_fs = extract_and_ddc(
+                samples,
+                fs_in=fs,
+                fc_in=fc,
+                target_fc=band_fc,
+                target_bw=ddc_bw,
+                target_fs=use_fs,
+                duration_s=analysis_dur,
+            )
+            if len(baseband_iq) < int(round(analysis_dur * actual_fs * 0.9)):
+                all_detections[band_key] = band_detections
+                continue
+            for prn in _prns_for(band_spec):
+                if info.is_cancelled():
+                    break
+                current_step += 1
+                info.progress(
+                    (current_step / max(1, total_steps)) * 100.0,
+                    f"Searching {band_spec['short_name']}: PRN {prn:02d}…",
+                )
+                code_chips = code_for_family(family, prn)
+                sampled_code = resample_code_to_fs(code_chips, chip_rate, actual_fs, duration_s=1e-3)
+                det = pcps_search_channel(
+                    baseband_iq,
+                    fs_channel=actual_fs,
+                    sampled_code_1ms=sampled_code,
+                    chip_rate=chip_rate,
+                    doppler_bins=doppler_bins,
+                    num_blocks=integration_ms,
+                    pnr_threshold=pnr_threshold,
+                )
+                _keep(det, prn, band_fc)
 
         all_detections[band_key] = band_detections
 
@@ -690,9 +868,14 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
 
             # Format clean, compact display string on the frequency band
             active_prn_nums = sorted([int(d["prn"]) for d in band_detections])
-            prn_str = ", ".join(str(p) for p in active_prn_nums)
+            if family == "glonass_of":
+                id_str = ", ".join(f"{p:+d}" for p in active_prn_nums)
+                id_label = f"Ch {id_str}"
+            else:
+                id_str = ", ".join(str(p) for p in active_prn_nums)
+                id_label = f"PRNs {id_str}"
             display_str = (
-                f"{band_spec['short_name']}: {len(band_detections)} SVs (PRNs {prn_str}) | "
+                f"{band_spec['short_name']}: {len(band_detections)} SVs ({id_label}) | "
                 f"Peak {peak_cn0:.1f} dB-Hz | LO {lo_bias_hz/1e3:+.2f} kHz"
             )
 
@@ -704,7 +887,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
                 f"- **Est. SDR LO Clock Bias:** {lo_bias_hz:>+6.0f} Hz ({lo_bias_ppm:>+4.1f} ppm)",
                 f"- **Signal Quality:** Peak C/N0 {peak_cn0:.1f} dB-Hz | Mean C/N0 {mean_cn0:.1f} dB-Hz",
                 "",
-                "| PRN | Quality | C/N0 | Doppler (Obs) | Orbital (Est) | Code Delay | PNR |",
+                "| SV | Quality | C/N0 | Doppler (Obs) | Orbital (Est) | Code Delay | PNR |",
                 "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
             ]
 
@@ -739,8 +922,9 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
                 d["motion"] = mot_str
                 d["doppler_orbital_est_hz"] = round(orb_d, 1)
 
+                sv_label = f"Ch {prn_num:+d}" if family == "glonass_of" else f"PRN {prn_num:02d}"
                 hover_lines.append(
-                    f"| PRN {prn_num:02d} | {quality} | {cn0:.1f} dB-Hz | "
+                    f"| {sv_label} | {quality} | {cn0:.1f} dB-Hz | "
                     f"{d['doppler_hz']:>+6.0f} Hz | {orb_d:>+5.0f} Hz ({motion}) | "
                     f"{delay:.1f} chips | {pnr:.1f}x |"
                 )
@@ -762,7 +946,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
                 hover_str="\n".join(hover_lines),
                 metadata={
                     "protocol": "GNSS",
-                    "constellation": "GPS" if "GPS" in band_key else "GLONASS",
+                    "constellation": band_spec["constellation"],
                     "band": band_key,
                     "band_name": band_spec["name"],
                     "carrier_hz": float(band_fc),
@@ -816,8 +1000,15 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
         # Generate rectangular bar coordinates [p-w, p-w, p+w, p+w] for clean pyqtgraph bar rendering
         traces_cn0: Dict[str, np.ndarray] = {}
         bar_w = 0.38
+        extra_ids = sorted({
+            int(d["prn"])
+            for dets in all_detections.values()
+            for d in dets
+            if not 1 <= int(d["prn"]) <= 32
+        })
+        plot_ids = list(range(1, 33)) + extra_ids
         x_bars: List[float] = []
-        for p in range(1, 33):
+        for p in plot_ids:
             x_bars.extend([p - bar_w, p - bar_w, p + bar_w, p + bar_w])
         x_bar_axis = np.array(x_bars, dtype=np.float64)
 
@@ -825,7 +1016,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
             b_name = GNSS_BAND_CATALOG[b_key]["short_name"]
             cn0_map = {d["prn"]: d["c_n0_db_hz"] for d in dets}
             y_bar_vals: List[float] = []
-            for p in range(1, 33):
+            for p in plot_ids:
                 val = cn0_map.get(p, 0.0)
                 y_bar_vals.extend([0.0, val, val, 0.0])
             traces_cn0[f"{b_name} C/N₀ (dB-Hz)"] = np.array(y_bar_vals, dtype=np.float32)
@@ -843,7 +1034,13 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
             y_label="C/N₀ (dB-Hz)",
             primary_mode="TIME",
             regions=[
-                {"x_start": 0.5, "x_end": 32.5, "color": "#00e676", "alpha": 0.06, "label": "ALL 32 PRNs"},
+                {
+                    "x_start": min(plot_ids) - 0.5,
+                    "x_end": max(plot_ids) + 0.5,
+                    "color": "#00e676",
+                    "alpha": 0.06,
+                    "label": "SEARCHED SATELLITES",
+                },
             ],
         )
 
