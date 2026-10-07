@@ -13,6 +13,7 @@ def main():
     parser = argparse.ArgumentParser(description="IQView Test Runner")
     parser.add_argument('--profile', action='store_true', default=PROFILE_ENABLED, help='Enable summary profiling')
     parser.add_argument('--line-profile', action='store_true', default=LINE_PROFILE_ENABLED, help='Run deep line-profiler')
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
     args, unknown = parser.parse_known_args()
 
     # filename = "samples/temp_10Msps_433MHz.32fc"
@@ -61,6 +62,8 @@ def main():
     
     if args.profile:
         cmd.append("--profile")
+    if args.debug:
+        cmd.append("--debug")
     
     try:
         # Run the main IQView app natively

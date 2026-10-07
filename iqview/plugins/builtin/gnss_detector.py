@@ -1006,7 +1006,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
             for d in dets
             if not 1 <= int(d["prn"]) <= 32
         })
-        plot_ids = list(range(1, 33)) + extra_ids
+        plot_ids = sorted(set(range(1, 33)) | set(extra_ids))
         x_bars: List[float] = []
         for p in plot_ids:
             x_bars.extend([p - bar_w, p - bar_w, p + bar_w, p + bar_w])
@@ -1088,8 +1088,13 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
             best_band = strongest_detection["band"]
             peak_chip = float(strongest_detection.get("code_phase_chips", 0.0))
 
+            if strongest_band_spec and strongest_band_spec.get("family") == "glonass_of":
+                prn_title = f"Ch {int(best_prn):+d}"
+            else:
+                prn_title = f"PRN {int(best_prn):02d}"
+
             result.add_plot(
-                title=f"Correlation Profile (PRN {best_prn:02d})",
+                title=f"Correlation Profile ({prn_title})",
                 y={
                     "Correlation Envelope": prof,
                     "Acquisition Threshold": np.full(n_pts, float(pnr_threshold) ** 2, dtype=np.float32),

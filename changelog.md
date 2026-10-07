@@ -1,13 +1,25 @@
 # Changelog
 
+## [0.7.2] - 2026-10-07
+
+### Added
+- **CLI `--debug` Flag**: Added `--debug` CLI flag, `iqview.view(..., debug=True)`, and `IQVIEW_DEBUG` environment variable to gate diagnostic and debug messages. Plugin loading messages and settings file-types debugging output now only log when `--debug` is specified.
+
+### Fixed
+- **Settings File Types In-Place Edit**: Saving settings now commits any in-flight extension table cell editor before saving, ensuring newly typed extensions are not skipped or lost.
+- **GNSS Constellation Plot Sorting**: Satellite PRN/Channel IDs are now strictly sorted so negative GLONASS channel numbers do not produce non-monotonic coordinates or render streaks across the PyQtGraph plot.
+- **GNSS Correlation Profile Title**: Correctly labels GLONASS channels as `Ch {channel}` rather than `PRN {channel}` in the matched-filter correlation profile plot title.
+- **Plugin Studio Save State**: Saving a plugin file that fails to reload no longer falsely marks the editor as clean.
+- **Linux Editor Opener Fallback**: Added fallback to `xdg-open` / `gio open` if the GTK application chooser dialog cannot be opened on Linux.
+- **Marker Panel Button Sizing**: Compacted plugin action button widths in the sidebar to prevent horizontal crowding.
+
 ## [0.7.1] - 2026-10-04
 
 ### Added
 - **Snap to Burst Frequency Margin**: Added a **Frequency Margin (%)** parameter to **Snap to Burst** (default `10`). The snapped frequency box is widened by that percent of the measured occupied bandwidth, split equally above and below the center, and kept inside the original overlay. The reported occupied bandwidth is unchanged. The existing sample margin is now labeled **Time Margin (samples)**.
-- **Plugin Load Console Messages**: Every successful plugin load prints `[IQView] Loaded plugin: …` to the console, including built-in plugins, custom `.py` files, chains, and reloads. A failed load prints `[IQView] Failed to load plugin from …` with the traceback, or a short reason when the file has neither a callable `run()` nor a `PluginChain`. This includes loads that previously stayed silent (startup, the Load Plugin dialog, session restore, and hot reload).
+- **Plugin Load Console Messages**: Every successful plugin load prints `[IQView] Loaded plugin: …` to the console, including built-in plugins, custom `.py` files, chains, and reloads. A failed load prints `[IQView] Failed to load plugin from …` with the traceback, or a short reason when the file has neither a callable `run()` nor a `PluginChain`.
 - **Unload Plugin in Plugin Studio**: Added an **Unload** button next to **Load .py…** on the Manage & Run tab. It removes the selected custom plugin or chain from the session. Built-in plugins stay loaded, and the button is disabled for them.
 - **GNSS Detector Bands**: The GNSS detector now searches a signal when its carrier is inside the recording. GLONASS no longer has to fit its whole FDMA allocation in the file, and only the channels that are actually in the capture are scanned. Added **GLONASS L2 OF** (1242.9375–1248.625 MHz, same code and channel numbers as L1), **GPS L5** I5 acquisition, and **BeiDou B1I** (1561.098 MHz, PRNs 1–63). **GPS L2C** is recognized when 1227.60 MHz is in the file; its 20 ms code is not despread.
-- **File Types Save Debug**: The Settings file-types table prints `[IQView] File types:` lines while it is edited and saved. The log covers Add, Remove, and Reset, the cell editor opening, Enter/Escape, commit and close, mouse presses and clicks on OK, Apply, and Cancel, and the extension map that was written, including rows that were skipped or still sitting in an open editor.
 
 ### Fixed
 - **Settings Save With Overlap**: Saving settings no longer fails when Default Overlap is anything other than `100` or `MAX`. The overlap value is clamped in plain Python. The old path called `np.clip` without importing NumPy, which aborted Save. On Linux that showed up once a saved overlap was not `100`, because the config file keeps numbers as text and the box no longer reads `MAX`.

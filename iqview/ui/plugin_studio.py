@@ -999,11 +999,13 @@ class PluginStudioDialog(QDialog):
                 _preserve_params=info.get("params"),
                 _builtin=is_builtin,
             )
-        self._set_source_clean()
         if loaded_name:
+            self._set_source_clean()
             self._source_plugin_name = loaded_name
+            return True
         elif hasattr(self.parent_window, "_load_plugin_from_path"):
             return False
+        self._set_source_clean()
         return True
 
     def _create_param_editor_widget(self, key: str, spec: Any, val: Any) -> QWidget:

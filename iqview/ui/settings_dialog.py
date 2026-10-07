@@ -8,6 +8,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QSize, QEvent, QTimer
 from PyQt6.QtGui import QKeySequence, QIcon, QPixmap, QPainter, QLinearGradient, QColor, QPalette
 from .widgets import KeyBindEdit
 from .themes import get_palette
+from iqview.utils.helpers import debug_print
 
 class ColorButton(QPushButton):
     colorChanged = pyqtSignal(str)
@@ -846,6 +847,15 @@ class SettingsDialog(QDialog):
             self.mgr.set("core/frequency_plots", active_freq_plots)
             
             # Save Extension Mappings
+            focus = QApplication.focusWidget()
+            if isinstance(focus, QLineEdit) and self.ext_table.isAncestorOf(focus):
+                index = self.ext_table.currentIndex()
+                if index.isValid():
+                    item = self.ext_table.item(index.row(), index.column())
+                    if item is not None:
+                        item.setText(focus.text())
+            self.ext_table.clearFocus()
+
             self._log_open_ext_editor()
             ext_map = {}
             skipped = []
@@ -990,7 +1000,7 @@ class SettingsDialog(QDialog):
         self.filter_form.setRowVisible(6, is_bessel)
 
     def _log_file_types(self, message):
-        print(f"[IQView] File types: {message}")
+        debug_print(f"[IQView] File types: {message}")
 
     def _file_types_snapshot(self):
         table = self.ext_table

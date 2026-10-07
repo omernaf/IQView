@@ -1,5 +1,26 @@
 import os
+import sys
 import numpy as np
+
+_DEBUG_ENABLED: bool = os.environ.get("IQVIEW_DEBUG", "").lower() in ("1", "true", "yes")
+
+
+def set_debug(enabled: bool = True) -> None:
+    """Enable or disable global debug mode."""
+    global _DEBUG_ENABLED
+    _DEBUG_ENABLED = bool(enabled)
+
+
+def is_debug() -> bool:
+    """Return True if debug mode is active via CLI flag, API call, or environment variable."""
+    return _DEBUG_ENABLED or ("--debug" in sys.argv)
+
+
+def debug_print(*args, **kwargs) -> None:
+    """Print to stdout only when debug mode is enabled."""
+    if is_debug():
+        print(*args, **kwargs)
+
 
 DTYPE_MAP = {
     'int16': np.int16,

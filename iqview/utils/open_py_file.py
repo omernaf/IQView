@@ -142,7 +142,13 @@ def _open_linux(path: str) -> OpenPyResult:
         opened = _spawn_or_error(_linux_open_argv(path), "Could not open the file.")
         if opened.ok:
             return opened
-    return _linux_open_with_dialog(path)
+    res = _linux_open_with_dialog(path)
+    if res.ok or res.cancelled:
+        return res
+    fallback = _spawn_or_error(_linux_open_argv(path), res.message or "Could not open the file.")
+    if fallback.ok:
+        return fallback
+    return res
 
 
 def _linux_open_argv(path: str) -> List[str]:

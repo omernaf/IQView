@@ -5,7 +5,7 @@ from iqview.plugins.context import PluginContext, PluginParams
 from iqview.plugins.chain import PluginChain
 from iqview.plugins.format_utils import format_hover_bits
 
-__version__ = "0.7.1"
+__version__ = "0.7.2"
 __all__ = [
     "view",
     "PluginResult",
@@ -26,6 +26,7 @@ def view(
     name: str = None,
     lazy: bool = None,
     norm_db: float = 0.0,
+    debug: bool = False,
 ):
     """
     Open the IQView Spectrogram Viewer directly from Python.
@@ -102,7 +103,10 @@ def view(
     import pyqtgraph as pg
     from PyQt6.QtWidgets import QApplication
     from iqview.ui import SpectrogramWindow
-    from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext, detect_params_from_filename
+    from iqview.utils.helpers import DTYPE_MAP, detect_type_from_ext, detect_params_from_filename, set_debug
+
+    if debug:
+        set_debug(True)
 
     pg.setConfigOptions(useOpenGL=True, enableExperimental=True, imageAxisOrder="row-major")
     app = QApplication.instance() or QApplication(sys.argv)

@@ -21,7 +21,7 @@ from iqview.utils.helpers import (
 )
 
 # Canonical AppUserModelID — must match exactly across main.py, main_window, and any .lnk shortcut
-APP_USER_MODEL_ID = "OmerNaf.IQView.0.7.1"
+APP_USER_MODEL_ID = "OmerNaf.IQView.0.7.2"
 
 # Fix taskbar grouping on Windows (must be done before creating QApplication)
 if sys.platform == "win32":
@@ -66,6 +66,7 @@ def parse_args():
     parser.add_argument('-c', '--fc', type=float, default=float(sm.get("core/fc", 0.0)), help='Center frequency in Hz')
     parser.add_argument('-s', '--fft', type=int, default=int(sm.get("core/fft_size", 1024)), help='FFT bin size')
     parser.add_argument('--norm', '--normalization', dest='norm_db', type=float, default=0.0, help='Normalization factor in dB (default: 0.0)')
+    parser.add_argument('--debug', action='store_true', help='Enable verbose debug logging')
     parser.add_argument('--profile', action='store_true', help='Enable cProfile profiling')
     parser.add_argument('-n', '--name', type=str, default=None, help='Custom window name')
 
@@ -107,6 +108,10 @@ def parse_args():
 
 def main():
     args = parse_args()
+
+    if getattr(args, "debug", False):
+        from iqview.utils.helpers import set_debug
+        set_debug(True)
     
     if args.install_desktop:
         from iqview.utils.desktop import install_desktop_integration

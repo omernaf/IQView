@@ -50,6 +50,7 @@ from iqview.plugins.chain import PluginChain
 from iqview.plugins.context import PluginContext, PluginParams
 from iqview.plugins.plugin_result import PluginResult
 from iqview.plugins.format_utils import format_hover_bits
+from iqview.utils.helpers import debug_print, is_debug
 
 
 def _snapshot_overlay_for_thread(o) -> Any:
@@ -467,7 +468,7 @@ class PluginManagerMixin:
             "params":                active_params,
         }
         where = f" from {path}" if path else ""
-        print(f"[IQView] Loaded plugin: {name} [chain]{where}")
+        debug_print(f"[IQView] Loaded plugin: {name} [chain]{where}")
         if path and os.path.isfile(path):
             self._save_plugin_paths()
         self._rebuild_plugins_menu()
@@ -523,8 +524,9 @@ class PluginManagerMixin:
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
         except Exception as exc:
-            print(f"[IQView] Failed to load plugin from {path}")
-            traceback.print_exc()
+            debug_print(f"[IQView] Failed to load plugin from {path}")
+            if is_debug():
+                traceback.print_exc()
             if not _silent:
                 QMessageBox.critical(
                     self, "Plugin Load Error",
@@ -551,7 +553,7 @@ class PluginManagerMixin:
             )
 
         if not hasattr(module, "run") or not callable(module.run):
-            print(
+            debug_print(
                 f"[IQView] Failed to load plugin from {path}: "
                 "no callable run() and no PluginChain"
             )
@@ -633,7 +635,7 @@ class PluginManagerMixin:
             "params":                active_params,
         }
         kind = "built-in" if is_builtin else ("chain" if chain_obj is not None else "custom")
-        print(f"[IQView] Loaded plugin: {name} [{kind}] from {path}")
+        debug_print(f"[IQView] Loaded plugin: {name} [{kind}] from {path}")
 
         if _persist:
             self._save_plugin_paths()

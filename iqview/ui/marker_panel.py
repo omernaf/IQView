@@ -1304,39 +1304,39 @@ class MarkerPanel(QFrame):
 
             btn_edit = QPushButton("Edit")
             btn_edit.setFixedHeight(28)
-            btn_edit.setMinimumWidth(60)
-            btn_edit.setStyleSheet("QPushButton { padding: 3px 8px; }")
+            btn_edit.setMinimumWidth(48)
+            btn_edit.setStyleSheet("QPushButton { padding: 3px 6px; }")
             btn_edit.setToolTip("Open this plugin's .py file in Plugin Studio")
 
             btn_docs = QPushButton("Docs")
             btn_docs.setFixedHeight(28)
-            btn_docs.setMinimumWidth(60)
-            btn_docs.setStyleSheet("QPushButton { padding: 3px 8px; }")
+            btn_docs.setMinimumWidth(48)
+            btn_docs.setStyleSheet("QPushButton { padding: 3px 6px; }")
             btn_docs.setToolTip("View detailed plugin documentation, operation, and parameters")
 
             btn_config = QPushButton("Config")
             btn_config.setFixedHeight(28)
-            btn_config.setMinimumWidth(75)
-            btn_config.setStyleSheet("QPushButton { padding: 3px 8px; }")
+            btn_config.setMinimumWidth(56)
+            btn_config.setStyleSheet("QPushButton { padding: 3px 6px; }")
             btn_config.setToolTip("Configure plugin parameters")
             
             btn_run = QPushButton("▶ Run")
             btn_run.setFixedHeight(28)
-            btn_run.setMinimumWidth(75)
+            btn_run.setMinimumWidth(56)
             btn_run.setToolTip("Run this plugin")
             btn_run.setStyleSheet("""
                 QPushButton { background: none; color: #00cc66; font-weight: bold;
-                              border-radius: 4px; border: 1px solid #00cc66; padding: 3px 8px; }
+                              border-radius: 4px; border: 1px solid #00cc66; padding: 3px 6px; }
                 QPushButton:hover { background: rgba(0,204,102,0.2); }
             """)
 
             btn_del = QPushButton("Del")
             btn_del.setFixedHeight(28)
-            btn_del.setMinimumWidth(60)
+            btn_del.setMinimumWidth(42)
             btn_del.setToolTip("Unload this plugin")
             btn_del.setStyleSheet("""
                 QPushButton { background: none; color: #ff4444; font-weight: bold;
-                              border-radius: 4px; border: 1px solid #ff4444; padding: 3px 8px; }
+                              border-radius: 4px; border: 1px solid #ff4444; padding: 3px 4px; }
                 QPushButton:hover { background: rgba(255,68,68,0.2); }
                 QPushButton:disabled { color: #666666; border-color: #444444; }
             """)
