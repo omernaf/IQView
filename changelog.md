@@ -4,6 +4,7 @@
 
 ### Added
 - **CLI `--debug` Flag**: Added `--debug` CLI flag, `iqview.view(..., debug=True)`, and `IQVIEW_DEBUG` environment variable to gate diagnostic and debug messages. Plugin loading messages and settings file-types debugging output now only log when `--debug` is specified.
+- **Direct Module Execution (`python -m iqview`)**: Added `iqview/__main__.py` allowing execution via `python -m iqview` and `pythonw -m iqview`.
 
 ### Fixed
 - **Settings File Types In-Place Edit**: Saving settings now commits any in-flight extension table cell editor before saving, ensuring newly typed extensions are not skipped or lost.
@@ -13,6 +14,7 @@
 - **Linux Editor Opener Fallback**: Added fallback to `xdg-open` / `gio open` if the GTK application chooser dialog cannot be opened on Linux.
 - **Marker Panel Button Sizing**: Compacted plugin action button widths in the sidebar to prevent horizontal crowding.
 - **Debian Package Installation Fix**: Fixed a critical bug in `scripts/make_deb.py` where string length (character count) instead of byte length was assigned to `TarInfo.size`, causing multi-byte UTF-8 characters to truncate `postinst` during extraction. The truncated script previously cut off at `--install`, failing package configuration and blocking `apt`. Also removed the redundant Linux `--install-mat` call, and configured online package installation to install the latest `iqview` release from PyPI (`pip install --upgrade iqview`) rather than pinning the exact version in the `.deb`.
+- **All-Users Python Desktop Integration & Script Location**: Enhanced `desktop.py` to resolve executables across user site directories, base prefixes, and system paths when Python is installed for all users. Automatically adds user scripts folder to User `PATH` (on Windows), installs launcher scripts to system `Scripts` when writable, and supports all-users Start Menu shortcuts (`ProgramData`) and system file associations (`HKLM`) when run elevated.
 
 ## [0.7.1] - 2026-10-04
 
