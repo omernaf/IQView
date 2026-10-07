@@ -20,7 +20,7 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 import numpy as np
 
 
-class PluginCancelledError(Exception):
+class PluginCancelledError(BaseException):
     """Raised when a plugin execution is cancelled by the user."""
     pass
 
@@ -222,9 +222,13 @@ class PluginContext:
         Report execution progress (0.0 to 100.0) and an optional status message
         to the IQView UI progress dialog.
         """
+        if self.is_cancelled():
+            raise PluginCancelledError("Plugin execution cancelled by user.")
         if self._progress_cb is not None:
             try:
                 self._progress_cb(float(np.clip(pct, 0.0, 100.0)), str(message))
+            except PluginCancelledError:
+                raise
             except Exception:
                 pass
 
@@ -291,6 +295,8 @@ class PluginContext:
         reads directly from the underlying file/buffer on demand.
         """
         t_lo, t_hi = min(float(t0), float(t1)), max(float(t0), float(t1))
+        if self.is_cancelled():
+            raise PluginCancelledError("Plugin execution cancelled by user.")
         if t_hi <= t_lo:
             return np.empty(0, dtype=np.complex64)
 

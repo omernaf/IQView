@@ -755,7 +755,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
 
     for band_key, band_spec, band_channels in active_bands:
         if info.is_cancelled():
-            break
+            return result
 
         band_fc = band_spec["carrier"]
         band_bw = band_spec["nominal_bw"]
@@ -782,7 +782,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
             glo_code = generate_glonass_ca_code()
             for ch_k, ch_freq in band_channels:
                 if info.is_cancelled():
-                    break
+                    return result
                 current_step += 1
                 info.progress(
                     (current_step / max(1, total_steps)) * 100.0,
@@ -831,7 +831,7 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
                 continue
             for prn in _prns_for(band_spec):
                 if info.is_cancelled():
-                    break
+                    return result
                 current_step += 1
                 info.progress(
                     (current_step / max(1, total_steps)) * 100.0,

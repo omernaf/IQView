@@ -47,7 +47,7 @@ from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
 
 from iqview.plugins.chain import PluginChain
-from iqview.plugins.context import PluginContext, PluginParams
+from iqview.plugins.context import PluginCancelledError, PluginContext, PluginParams
 from iqview.plugins.plugin_result import PluginResult
 from iqview.plugins.format_utils import format_hover_bits
 from iqview.utils.helpers import debug_print, is_debug
@@ -134,6 +134,8 @@ class _PluginWorker(QObject):
         return False
 
     def _emit_progress(self, pct: int, msg: str = "") -> None:
+        if self._check_cancelled():
+            raise PluginCancelledError("Plugin execution cancelled by user.")
         self.progress.emit(max(0, min(100, int(pct))), str(msg or ""))
 
     def run(self) -> None:
@@ -158,6 +160,9 @@ class _PluginWorker(QObject):
                         t_start=b_t0, t_end=b_t1, samples_ref=batch_samples
                     )
                     part = self._func(batch_samples, batch_info)
+                    if self._check_cancelled():
+                        self.cancelled.emit()
+                        return
                     if not isinstance(part, PluginResult):
                         raise TypeError(
                             f"Plugin returned {type(part).__name__} instead of PluginResult."
@@ -193,8 +198,18 @@ class _PluginWorker(QObject):
                     if a not in result._alerts:
                         result._alerts.append(a)
             self.finished.emit(result)
+        except PluginCancelledError:
+            self.cancelled.emit()
         except Exception:
-            self.error.emit(traceback.format_exc())
+            if self._check_cancelled():
+                self.cancelled.emit()
+            else:
+                self.error.emit(traceback.format_exc())
+        except BaseException as be:
+            if self._check_cancelled():
+                self.cancelled.emit()
+            else:
+                self.error.emit(str(be))
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +235,7 @@ class PluginManagerMixin:
         self._plugins_menu = None  # set by component_setup after menu is built
         self._plugin_thread: Optional[QThread] = None
         self._plugin_worker: Optional[_PluginWorker] = None
+        self._plugin_progress: Optional[QProgressDialog] = None
         self._plugin_launch_mode: Optional[str] = None
         # Load built-in plugins first, then restore custom plugins saved from previous session
         self._load_builtin_plugins()
@@ -1036,19 +1052,40 @@ class PluginManagerMixin:
             except RuntimeError:
                 running = False
                 self._plugin_thread = None
-            if running:
-                QMessageBox.information(
-                    self, "Plugin Busy",
-                    "A plugin is already running. Please wait for it to finish."
-                )
-                return
 
-        self._plugin_progress = QProgressDialog(
+            # If the previous thread was cancelled, wait briefly or detach it so user is not blocked
+            if running and getattr(self._plugin_worker, "_cancelled", False):
+                self._plugin_thread.wait(500)
+                try:
+                    running = self._plugin_thread.isRunning()
+                except RuntimeError:
+                    running = False
+                if not running:
+                    self._plugin_thread = None
+                    self._plugin_worker = None
+
+            if running:
+                if getattr(self._plugin_worker, "_cancelled", False):
+                    # Discard lingering cancelled thread so user is never locked out
+                    self._plugin_thread = None
+                    self._plugin_worker = None
+                    running = False
+                else:
+                    QMessageBox.information(
+                        self, "Plugin Busy",
+                        "A plugin is already running. Please wait for it to finish."
+                    )
+                    return
+
+        progress_dialog = QProgressDialog(
             f"Running plugin: {name}…", "Cancel", 0, 0, self
         )
-        self._plugin_progress.setWindowTitle(f"Plugin — {name}")
-        self._plugin_progress.setMinimumDuration(250)
-        self._plugin_progress.setModal(True)
+        progress_dialog.setWindowTitle(f"Plugin — {name}")
+        progress_dialog.setMinimumDuration(250)
+        progress_dialog.setModal(True)
+        progress_dialog.setAutoReset(False)
+        progress_dialog.setAutoClose(False)
+        self._plugin_progress = progress_dialog
 
         worker = _PluginWorker(
             func=func,
@@ -1062,7 +1099,7 @@ class PluginManagerMixin:
         worker.moveToThread(thread)
 
         def _on_progress(pct: int, msg: str) -> None:
-            if self._plugin_progress is None:
+            if self._plugin_progress is None or getattr(worker, "_cancelled", False):
                 return
             if self._plugin_progress.maximum() == 0:
                 self._plugin_progress.setRange(0, 100)
@@ -1073,27 +1110,59 @@ class PluginManagerMixin:
         def _on_cancel_clicked() -> None:
             worker.request_cancel()
             thread.requestInterruption()
+            if self._plugin_progress is not None:
+                try:
+                    self._plugin_progress.setLabelText(f"Cancelling {name}…")
+                except Exception:
+                    pass
+            # Wait briefly for thread to exit cleanly
+            if not thread.wait(300):
+                if self._plugin_progress is not None:
+                    try:
+                        self._plugin_progress.close()
+                    except Exception:
+                        pass
+
+        def _on_finished(result: object) -> None:
+            if getattr(worker, "_cancelled", False) or thread.isInterruptionRequested():
+                return
+            self._on_plugin_finished(name, result)
+
+        def _on_cancelled() -> None:
+            self.statusBar().showMessage(f"Plugin '{name}' cancelled.", 3000)
+
+        def _on_error(msg: str) -> None:
+            if getattr(worker, "_cancelled", False) or thread.isInterruptionRequested():
+                return
+            self._on_plugin_error(name, msg)
 
         thread.started.connect(worker.run)
         worker.progress.connect(_on_progress)
-        worker.finished.connect(lambda result, n=name: self._on_plugin_finished(n, result))
-        worker.cancelled.connect(lambda n=name: self.statusBar().showMessage(f"Plugin '{n}' cancelled.", 3000))
-        worker.error.connect(lambda msg, n=name: self._on_plugin_error(n, msg))
+        worker.finished.connect(_on_finished)
+        worker.cancelled.connect(_on_cancelled)
+        worker.error.connect(_on_error)
+
         worker.finished.connect(thread.quit)
         worker.cancelled.connect(thread.quit)
         worker.error.connect(thread.quit)
 
-        def _clear_thread():
-            self._plugin_thread = None
-            self._plugin_worker = None
-            self._plugin_launch_mode = None
+        def _clear_thread() -> None:
+            if self._plugin_thread is thread:
+                self._plugin_thread = None
+                self._plugin_worker = None
+                self._plugin_launch_mode = None
+            if self._plugin_progress is progress_dialog:
+                try:
+                    progress_dialog.close()
+                except Exception:
+                    pass
+                self._plugin_progress = None
 
         thread.finished.connect(_clear_thread)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(self._plugin_progress.close)
-
-        self._plugin_progress.canceled.connect(_on_cancel_clicked)
+        thread.finished.connect(progress_dialog.close)
+        progress_dialog.canceled.connect(_on_cancel_clicked)
 
         self._plugin_thread = thread
         self._plugin_worker = worker
