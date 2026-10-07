@@ -12,6 +12,7 @@
 - **Plugin Studio Save State**: Saving a plugin file that fails to reload no longer falsely marks the editor as clean.
 - **Linux Editor Opener Fallback**: Added fallback to `xdg-open` / `gio open` if the GTK application chooser dialog cannot be opened on Linux.
 - **Marker Panel Button Sizing**: Compacted plugin action button widths in the sidebar to prevent horizontal crowding.
+- **Debian Package Installation Fix**: Fixed a critical bug in `scripts/make_deb.py` where string length (character count) instead of byte length was assigned to `TarInfo.size`, causing multi-byte UTF-8 characters to truncate `postinst` during extraction. The truncated script previously cut off at `--install`, failing package configuration and blocking `apt`. Also removed the redundant Linux `--install-mat` call, and configured online package installation to install the latest `iqview` release from PyPI (`pip install --upgrade iqview`) rather than pinning the exact version in the `.deb`.
 
 ## [0.7.1] - 2026-10-04
 

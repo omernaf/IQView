@@ -90,10 +90,11 @@ Maintainer: {MAINTAINER}
 Description: {DESCRIPTION}
 Depends: python3, python3-pip, python3-venv, libgl1, libxcb-cursor0
 """
+        control_bytes = control_content.encode('utf-8')
         c_info = tarfile.TarInfo("control")
-        c_info.size = len(control_content)
+        c_info.size = len(control_bytes)
         c_info.mtime = time.time()
-        tar.addfile(c_info, io.BytesIO(control_content.encode('utf-8')))
+        tar.addfile(c_info, io.BytesIO(control_bytes))
         
         # postinst script
         if offline_wheels:
@@ -125,7 +126,6 @@ chmod +x /usr/bin/iqview
 # Trigger desktop integration to set up associations
 echo "Configuring desktop integration and file associations..."
 /usr/bin/iqview --install-desktop
-/usr/bin/iqview --install-mat
 
 echo "IQView installation complete."
 exit 0
@@ -142,7 +142,7 @@ echo "Setting up IQView virtual environment in $VENV_DIR..."
 mkdir -p "$APP_DIR"
 python3 -m venv "$VENV_DIR"
 
-# ── Locate the invoking user's pip configuration ─────────────────────
+# -- Locate the invoking user's pip configuration ---------------------
 # On private networks the pip.conf with the internal PyPI index-url
 # lives in the *invoking user's* home, not root's.  When the package is
 # installed via `sudo dpkg -i`, sudo sets SUDO_USER to the real user
@@ -163,7 +163,7 @@ PIP_CONF_FOUND=""
 # Build the candidate list
 CANDIDATES=""
 
-# 1–2: Invoking user's config (only if SUDO_USER is set and isn't root)
+# 1-2: Invoking user's config (only if SUDO_USER is set and isn't root)
 if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
     INVOKER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
     if [ -n "$INVOKER_HOME" ]; then
@@ -171,7 +171,7 @@ if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
     fi
 fi
 
-# 3–4: Root's config
+# 3-4: Root's config
 CANDIDATES="$CANDIDATES /root/.config/pip/pip.conf /root/.pip/pip.conf"
 
 # 5: System-wide
@@ -190,8 +190,8 @@ if [ -z "$PIP_CONF_FOUND" ]; then
     echo "No pip configuration found; using default PyPI index."
 fi
 
-echo "Installing IQView {version}..."
-"$VENV_DIR/bin/pip" install "iqview=={version}"
+echo "Installing latest IQView from PyPI..."
+"$VENV_DIR/bin/pip" install --upgrade iqview
 
 echo "Creating launcher script..."
 cat << 'EOF' > /usr/bin/iqview
@@ -206,17 +206,17 @@ chmod +x /usr/bin/iqview
 # Trigger desktop integration to set up associations
 echo "Configuring desktop integration and file associations..."
 /usr/bin/iqview --install-desktop
-/usr/bin/iqview --install-mat
 
 echo "IQView installation complete."
 exit 0
 """
 
+        postinst_bytes = postinst_content.encode('utf-8')
         p_info = tarfile.TarInfo("postinst")
-        p_info.size = len(postinst_content)
+        p_info.size = len(postinst_bytes)
         p_info.mtime = time.time()
         p_info.mode = 0o755
-        tar.addfile(p_info, io.BytesIO(postinst_content.encode('utf-8')))
+        tar.addfile(p_info, io.BytesIO(postinst_bytes))
         
         # prerm script
         prerm_content = f"""#!/bin/bash
@@ -233,11 +233,12 @@ rm -rf /opt/iqview
 
 exit 0
 """
+        prerm_bytes = prerm_content.encode('utf-8')
         pr_info = tarfile.TarInfo("prerm")
-        pr_info.size = len(prerm_content)
+        pr_info.size = len(prerm_bytes)
         pr_info.mtime = time.time()
         pr_info.mode = 0o755
-        tar.addfile(pr_info, io.BytesIO(prerm_content.encode('utf-8')))
+        tar.addfile(pr_info, io.BytesIO(prerm_bytes))
 
     # 2. Create Data Tarball
     data_buf = io.BytesIO()
