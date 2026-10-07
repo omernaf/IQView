@@ -198,13 +198,14 @@ IQView saves its state in the system registry or config files via `QSettings`. Y
 
 For a deep dive into the specific features and mathematical foundations of each analysis view, please refer to the dedicated documentation files:
 
-- [🌌 **Spectrogram View**](docs/spectrogram.md): STFT, windowing, colormaps, and OpenGL rendering.
-- [⏳ **Time Domain View**](docs/time_domain.md): Plot modes, marker locking logic, and statistics.
-- [📶 **Frequency Domain View**](docs/frequency_domain.md): FFT analysis, PSD estimation, preprocessing operators, and integrated power.
-- [👁️ **Eye Diagram View**](docs/eye_diagram.md): Symbol timing visualization, fractional Nsps, and phase alignment.
-- [✨ **Scatter Plot View**](docs/scatter_plot.md): IQ constellation visualization, integer downsampling, carrier phase, and 3-tier frequency offset tuning.
+- [🌌 **Spectrogram View**](https://github.com/omernaf/IQView/blob/master/docs/spectrogram.md): STFT, windowing, colormaps, and OpenGL rendering.
+- [⏳ **Time Domain View**](https://github.com/omernaf/IQView/blob/master/docs/time_domain.md): Plot modes, marker locking logic, and statistics.
+- [📶 **Frequency Domain View**](https://github.com/omernaf/IQView/blob/master/docs/frequency_domain.md): FFT analysis, PSD estimation, preprocessing operators, and integrated power.
+- [👁️ **Eye Diagram View**](https://github.com/omernaf/IQView/blob/master/docs/eye_diagram.md): Symbol timing visualization, fractional Nsps, and phase alignment.
+- [✨ **Scatter Plot View**](https://github.com/omernaf/IQView/blob/master/docs/scatter_plot.md): IQ constellation visualization, integer downsampling, carrier phase, and 3-tier frequency offset tuning.
+- [🔌 **Plugin Developer Guide**](https://github.com/omernaf/IQView/blob/master/docs/plugin_guide.md): Guide for creating and testing custom DSP plugins.
 
 ---
 
 ## 📄 License
-IQView is open-source software. Original author: Omer Naf (omernaf).
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/omernaf/IQView/blob/master/LICENSE) file for details. Original author: Omer Naftali (omernaf).

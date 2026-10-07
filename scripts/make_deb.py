@@ -9,7 +9,7 @@ from pathlib import Path
 
 # Metadata
 PACKAGE_NAME = "iqview"
-MAINTAINER = "Omer Naf <omernaf@gmail.com>"
+MAINTAINER = "Omer Naftali <omernaftali1@gmail.com>"
 DESCRIPTION = "High-performance Static RF Spectrogram Viewer"
 SECTION = "science"
 PRIORITY = "optional"

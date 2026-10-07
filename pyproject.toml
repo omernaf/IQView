@@ -8,14 +8,41 @@ version = "0.7.1"
 description = "High-performance Static RF Spectrogram Viewer"
 readme = "README.md"
 requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Omer Naftali", email = "omernaftali1@gmail.com"}
+]
+keywords = ["rf", "iq", "spectrogram", "dsp", "pyqt", "signal-processing"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Telecommunications Industry",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
 dependencies = [
     "numpy",
     "PyQt6",
-    "pyqtgraph >= 0.14.0",
+    "pyqtgraph>=0.14.0",
     "PyOpenGL",
     "scipy",
-    "soundfile"
+    "soundfile",
 ]
+
+[project.urls]
+Homepage = "https://github.com/omernaf/IQView"
+Documentation = "https://github.com/omernaf/IQView#readme"
+Repository = "https://github.com/omernaf/IQView"
+Issues = "https://github.com/omernaf/IQView/issues"
+Changelog = "https://github.com/omernaf/IQView/blob/master/changelog.md"
 
 [project.scripts]
 iqview = "iqview.main:main"
