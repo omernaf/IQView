@@ -82,3 +82,4 @@ Specialized procedures and runbooks are available in `.agents/skills/`:
 - `iqview-io-formats`: Formats, hardware parsers (`.r3f`, `.mat`), audio, streaming, and byte slicing.
 - `iqview-testing-qa`: Synthetic signal generation, headless verification, and the 18-step testing walkthrough.
 - `iqview-packaging-release`: Release synchronization, `.deb` packaging, and offline distribution kits.
+- `code-cartography`: Generating and maintaining the Obsidian knowledge graph vault for codebase topology and visual exploration.
