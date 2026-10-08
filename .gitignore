@@ -20,3 +20,9 @@ offline_dist/
 profiler/*.txt
 profiler/*.prof
 profile_results.prof
+
+# Obsidian volatile session state & cache
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/cache/
+.obsidian/indexeddb/
