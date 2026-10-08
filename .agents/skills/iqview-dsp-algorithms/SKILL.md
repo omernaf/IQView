@@ -1,9 +1,9 @@
 ---
 name: iqview-dsp-algorithms
 description: >-
-  Digital Signal Processing (DSP) algorithms, spectral analysis, zero-phase filtering,
-  PSD normalization, and domain transformations in IQView. Use when modifying or adding
-  DSP routines, filters, decibel calculations, or modulation math.
+  ALWAYS load and read this skill before modifying or adding Digital Signal Processing (DSP)
+  algorithms, spectral analysis, zero-phase forward-backward filtering, PSD normalization offsets,
+  calibrated power scaling (norm_db), decibel conversions, or modulation math.
 ---
 
 # IQView DSP Algorithms & Mathematical Foundations

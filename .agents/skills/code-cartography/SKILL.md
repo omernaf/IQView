@@ -1,11 +1,8 @@
 ---
 name: code-cartography
 description: >-
-  Generates, updates, and maintains an interconnected Obsidian-compatible Markdown
-  knowledge graph of the codebase (Code Cartography). Uses [[wikilinks]], tags,
-  Maps of Content (MOC), and flowcharts for visual exploration in Obsidian's Graph View.
-  Use when mapping code architecture, updating codebase documentation for Obsidian,
-  or visualizing module dependencies.
+  ALWAYS load and read this skill before creating, updating, or maintaining the Obsidian knowledge
+  graph in cartography/, mapping code architecture, updating wikilinks, tags, MOCs, or flowcharts.
 ---
 
 # Code Cartography Skill (Obsidian Knowledge Graph)

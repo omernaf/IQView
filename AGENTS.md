@@ -6,6 +6,23 @@ When modifying or extending this codebase, adhere strictly to the following arch
 
 ---
 
+## 0. Mandatory Skill Activation Protocol (Pre-Flight Gate)
+
+Before modifying code, running commands, or implementing features for any non-trivial task:
+1. **Identify Applicable Skills**: Check the task domain against the 8 specialized skills in `.agents/skills/`:
+   - `iqview-plugin-development`: Any work touching plugins, `PluginManagerMixin`, Plugin Studio, plugin chains, Quick Run, or overlay attachments.
+   - `iqview-views-architecture`: Any work touching analysis views, 1D/2D plots, spectrograms, tabs, markers, or detached windows.
+   - `iqview-ui-pyqtgraph`: Low-level PyQt6/pyqtgraph widgets, `CustomViewBox`, marker dragging/clamping, themes, signal loops (`blockSignals`), and dialogs.
+   - `iqview-dsp-algorithms`: DSP filters, PSD normalization, mathematical calculations, and demodulation math.
+   - `iqview-io-formats`: File loading/saving, formats (`.r3f`, `.mat`, audio), byte slicing, and streaming.
+   - `iqview-testing-qa`: Headless tests, synthetic datasets, smoke tests, and regression checklists.
+   - `iqview-packaging-release`: Packaging, PyPI wheels, Debian packaging (`scripts/make_deb.py`), and release checklists.
+   - `code-cartography`: Codebase mapping and updating the Obsidian knowledge graph in `cartography/`.
+2. **Mandatory `view_file` Execution**: You **MUST call `view_file` on the relevant `SKILL.md` file(s)** as your very first step before editing code or proceeding with implementation.
+3. **No Direct Bypassing**: Never skip consulting the skill guide when a specialized skill exists for that domain.
+
+---
+
 ## 1. Digital Signal Processing (DSP) Invariants
 
 1. **Zero-Phase Filtering Mandate**:
@@ -72,9 +89,9 @@ When modifying or extending this codebase, adhere strictly to the following arch
 
 ---
 
-## 5. Skills Reference
+## 5. Skills Reference & Mandatory Runbooks
 
-Specialized procedures and runbooks are available in `.agents/skills/`:
+Specialized procedures and runbooks are available in `.agents/skills/`. Per Section 0, you **MUST call `view_file` on the corresponding `SKILL.md` before starting work**:
 - `iqview-views-architecture`: In-depth guide to all analysis views (Spectrogram, Time Domain, Frequency Domain, Eye Diagram, Scatter Plot, Multi-Row, Detached Windows).
 - `iqview-ui-pyqtgraph`: pyqtgraph event pipelines, marker locks, themes, and dialog mechanics.
 - `iqview-dsp-algorithms`: Pure DSP routines, zero-phase filtering, PSD normalization, and modulation models.

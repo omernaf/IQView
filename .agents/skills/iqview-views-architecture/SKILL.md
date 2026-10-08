@@ -1,10 +1,10 @@
 ---
 name: iqview-views-architecture
 description: >-
-  Architecture, lifecycle, and data flow for all signal analysis views in IQView:
-  2D Spectrogram, Multi-Row Spectrogram, Time Domain, Frequency Domain, Eye Diagram,
-  Constellation/Scatter Plot, Plugin Plot tabs, and Detached Windows. Use when creating,
-  modifying, or debugging any analysis view, tab, or window in IQView.
+  ALWAYS load and read this skill before creating, modifying, or debugging any signal analysis
+  view, tab, toolbar, marker panel, or window in IQView: 2D Spectrogram, Multi-Row Spectrogram,
+  Base1DPlotView, Time Domain, Frequency Domain, Eye Diagram, Constellation/Scatter Plot,
+  Plugin Plot tabs, MarkerPanel, and Detached Windows.
 ---
 
 # IQView Views Architecture Guide

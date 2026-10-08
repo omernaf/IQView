@@ -1,10 +1,10 @@
 ---
 name: iqview-plugin-development
 description: >-
-  Developing, debugging, testing, and chaining plugins in IQView. Covers PluginContext,
-  PluginResult, dynamic PLUGIN_PARAMS, in-app Markdown PLUGIN_DOC, overlay creation,
-  baseband IQ caching (o.iq), cooperative thread cancellation, and batch iteration.
-  Use when writing or modifying plugins, PluginChain pipelines, or Plugin Studio features.
+  ALWAYS load and read this skill before writing, modifying, debugging, or testing any
+  plugin code, PluginManagerMixin, Plugin Studio, toolbar Quick Run, PluginChain pipelines,
+  PluginContext, PluginResult, parameter schemas (PLUGIN_PARAMS), in-app Markdown (PLUGIN_DOC),
+  overlay creation, baseband IQ caching (o.iq), cooperative thread cancellation, or batch iteration.
 ---
 
 # IQView Plugin Development Skill

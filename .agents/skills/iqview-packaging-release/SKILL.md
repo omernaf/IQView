@@ -1,9 +1,8 @@
 ---
 name: iqview-packaging-release
 description: >-
-  Release management, version bumping, changelog maintenance, PyPI wheel building,
-  Debian packaging (.deb), and offline distribution kits for IQView. Use when preparing
-  releases, building packages, or debugging installation scripts.
+  ALWAYS load and read this skill before preparing releases, version bumping, changelog maintenance,
+  building PyPI wheels, Debian packaging (scripts/make_deb.py), or distribution kits for IQView.
 ---
 
 # IQView Packaging & Release Skill

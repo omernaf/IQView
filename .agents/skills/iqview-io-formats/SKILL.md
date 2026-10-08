@@ -1,9 +1,9 @@
 ---
 name: iqview-io-formats
 description: >-
-  File formats, binary IQ loaders, audio decoding, Tektronix .r3f, Keysight .mat,
-  stdin streaming, byte range slicing, and export routines in IQView. Use when adding
-  or debugging file ingestion, hardware formats, or export pipelines.
+  ALWAYS load and read this skill before adding, modifying, or debugging file ingestion,
+  binary IQ loaders, audio decoding, Tektronix .r3f, Keysight .mat, stdin streaming,
+  byte range slicing, file export, or metadata detection routines in IQView.
 ---
 
 # IQView File Formats, I/O & Streaming Skill

@@ -1,9 +1,9 @@
 ---
 name: iqview-ui-pyqtgraph
 description: >-
-  Low-level PyQt6 and pyqtgraph patterns, CustomViewBox event mechanics,
-  marker dragging and adaptive boundary clamping, themes, tooltips, and dialogs.
-  Use when modifying UI controls, CustomViewBox, marker logic, themes, or settings/export dialogs.
+  ALWAYS load and read this skill before modifying or debugging low-level PyQt6 and pyqtgraph
+  patterns, CustomViewBox event mechanics, marker dragging, adaptive boundary clamping,
+  themes, stylesheets, tooltips, dialogs, or signal loops (blockSignals).
 ---
 
 # IQView UI & PyQtGraph Integration Skill

@@ -1,9 +1,9 @@
 ---
 name: iqview-testing-qa
 description: >-
-  Generating synthetic test datasets, running automated test suites, regression checking,
-  and executing the 18-step manual testing walkthrough for IQView. Use when writing tests,
-  generating testdata in iqview_testdata, or performing pre-release quality assurance.
+  ALWAYS load and read this skill before writing tests, generating synthetic test datasets in
+  iqview_testdata, running automated headless test suites, regression checking, or executing the
+  18-step manual testing walkthrough for IQView.
 ---
 
 # IQView Testing & Quality Assurance Skill
