@@ -270,6 +270,9 @@ class PluginManagerMixin:
 
     def _rebuild_plugins_menu(self) -> None:
         """Rebuild the dynamic portion of the Plugins menu."""
+        if hasattr(self, 'marker_panel') and hasattr(self.marker_panel, 'update_plugins_list'):
+            self.marker_panel.update_plugins_list(self._loaded_plugins)
+
         menu = self._plugins_menu
         if menu is None:
             return
@@ -371,6 +374,59 @@ class PluginManagerMixin:
         return now_pinned
 
     # ------------------------------------------------------------------
+    # Plugin Run History Management
+    # ------------------------------------------------------------------
+
+    def get_plugin_history(self) -> List[str]:
+        """Return list of recently run plugin names in MRU order (most recent first)."""
+        if not hasattr(self, "settings_mgr") or self.settings_mgr is None:
+            raw_list = getattr(self, "_plugin_history_mem", [])
+        else:
+            raw = str(self.settings_mgr.get("plugins/history", "") or "")
+            raw_list = [p.strip() for p in raw.split(";;") if p.strip()]
+        seen = set()
+        result = []
+        for p in raw_list:
+            if p and p not in seen:
+                seen.add(p)
+                result.append(p)
+        return result
+
+    def record_plugin_use(self, name: str) -> None:
+        """Record plugin *name* as most recently used in history and refresh Quick Run."""
+        if not name:
+            return
+        history = self.get_plugin_history()
+        if name in history:
+            history.remove(name)
+        history.insert(0, name)
+        history = history[:20]
+        if hasattr(self, "settings_mgr") and self.settings_mgr is not None:
+            self.settings_mgr.set("plugins/history", ";;".join(history))
+        else:
+            self._plugin_history_mem = history
+        if hasattr(self, "marker_panel") and hasattr(self.marker_panel, "update_plugins_list"):
+            self.marker_panel.update_plugins_list(self._loaded_plugins)
+
+    def clear_plugin_history(self) -> None:
+        """Clear all plugin use history."""
+        if hasattr(self, "settings_mgr") and self.settings_mgr is not None:
+            self.settings_mgr.set("plugins/history", "")
+        self._plugin_history_mem = []
+        if hasattr(self, "marker_panel") and hasattr(self.marker_panel, "update_plugins_list"):
+            self.marker_panel.update_plugins_list(self._loaded_plugins)
+
+    def _remove_plugin_from_history(self, name: str) -> None:
+        """Remove a specific plugin name from history (e.g. on unload)."""
+        history = self.get_plugin_history()
+        if name in history:
+            history.remove(name)
+            if hasattr(self, "settings_mgr") and self.settings_mgr is not None:
+                self.settings_mgr.set("plugins/history", ";;".join(history))
+            else:
+                self._plugin_history_mem = history
+
+    # ------------------------------------------------------------------
     # Parameter Session Persistence
     # ------------------------------------------------------------------
 
@@ -455,6 +511,13 @@ class PluginManagerMixin:
                     self.settings_mgr.set("plugins/pinned", ";;".join(pinned))
                 else:
                     self._pinned_plugins_mem = pinned
+            history = self.get_plugin_history()
+            if replace_name in history:
+                history = [name if p == replace_name else p for p in history]
+                if hasattr(self, "settings_mgr") and self.settings_mgr is not None:
+                    self.settings_mgr.set("plugins/history", ";;".join(history))
+                else:
+                    self._plugin_history_mem = history
 
         params_spec = chain.get_combined_params_spec()
         active_params = {
@@ -694,6 +757,7 @@ class PluginManagerMixin:
         if name in self._loaded_plugins:
             del self._loaded_plugins[name]
             self._save_plugin_paths()
+            self._remove_plugin_from_history(name)
             self._rebuild_plugins_menu()
             self.statusBar().showMessage(f"Plugin unloaded: {name}", 3000)
 
@@ -708,6 +772,12 @@ class PluginManagerMixin:
         else:
             self._loaded_plugins.clear()
         self._save_plugin_paths()
+        loaded_set = set(self._loaded_plugins.keys())
+        history = [p for p in self.get_plugin_history() if p in loaded_set]
+        if hasattr(self, "settings_mgr") and self.settings_mgr is not None:
+            self.settings_mgr.set("plugins/history", ";;".join(history))
+        else:
+            self._plugin_history_mem = history
         self._rebuild_plugins_menu()
         self.statusBar().showMessage("Custom plugins unloaded.", 3000)
 
@@ -986,6 +1056,7 @@ class PluginManagerMixin:
 
         # Run synchronously on main thread if requested (for GUI/matplotlib debugging)
         if info.get("run_on_main", False):
+            self.record_plugin_use(name)
             try:
                 if will_batch:
                     merged = PluginResult()
@@ -1076,6 +1147,8 @@ class PluginManagerMixin:
                         "A plugin is already running. Please wait for it to finish."
                     )
                     return
+
+        self.record_plugin_use(name)
 
         progress_dialog = QProgressDialog(
             f"Running plugin: {name}…", "Cancel", 0, 0, self

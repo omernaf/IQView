@@ -375,6 +375,7 @@ class MarkerPanel(QFrame):
         self.cb_quick_plugin.setFixedHeight(28)
         self.cb_quick_plugin.setMinimumWidth(180)
         self.cb_quick_plugin.setToolTip("Quick-select a plugin or chain to run/configure")
+        self.cb_quick_plugin.currentIndexChanged.connect(self._on_quick_plugin_changed)
 
         self.btn_quick_run = QPushButton("▶ Run")
         self.btn_quick_run.setFixedHeight(28)
@@ -1235,31 +1236,62 @@ class MarkerPanel(QFrame):
             if hasattr(self.parent_window, 'get_pinned_plugins')
             else []
         )
+        pinned_list = (
+            self.parent_window.get_pinned_plugins()
+            if hasattr(self.parent_window, 'get_pinned_plugins')
+            else []
+        )
+        history_list = (
+            self.parent_window.get_plugin_history()
+            if hasattr(self.parent_window, 'get_plugin_history')
+            else []
+        )
 
         # Show only favorite (pinned) plugins on the main Plugins tab
         all_items = list(loaded_plugins.items())
         plugins_data = [(n, inf) for n, inf in all_items if n in pinned_set]
 
-        # Sync Quick-Run dropdown with favorite plugins
+        # Sync Quick-Run dropdown with plugin use history followed by remaining favorites
         if hasattr(self, 'cb_quick_plugin'):
-            prev_sel = self.cb_quick_plugin.currentData()
+            valid_history = [name for name in history_list if name in loaded_plugins]
+            remaining_favorites = [
+                name for name in pinned_list
+                if name in loaded_plugins and name not in valid_history
+            ]
+            for n, _ in all_items:
+                if n in pinned_set and n not in valid_history and n not in remaining_favorites:
+                    remaining_favorites.append(n)
+
+            quick_plugin_names = valid_history + remaining_favorites
+
             self.cb_quick_plugin.blockSignals(True)
             self.cb_quick_plugin.clear()
-            for name, info in plugins_data:
-                self.cb_quick_plugin.addItem(f"★ {name}", userData=name)
-            if prev_sel:
-                idx = self.cb_quick_plugin.findData(prev_sel)
-                if idx >= 0:
-                    self.cb_quick_plugin.setCurrentIndex(idx)
+            for name in quick_plugin_names:
+                is_fav = name in pinned_set
+                display_name = f"★ {name}" if is_fav else name
+                self.cb_quick_plugin.addItem(display_name, userData=name)
+                idx = self.cb_quick_plugin.count() - 1
+                if name in valid_history and is_fav:
+                    tip = f"{name} (Favorite • Recently used)"
+                elif name in valid_history:
+                    tip = f"{name} (Recently used)"
+                else:
+                    tip = f"{name} (Favorite)"
+                self.cb_quick_plugin.setItemData(idx, tip, Qt.ItemDataRole.ToolTipRole)
+
+            if len(quick_plugin_names) > 0:
+                self.cb_quick_plugin.setCurrentIndex(0)
+
             self.cb_quick_plugin.blockSignals(False)
-            has_favs = len(plugins_data) > 0
-            self.cb_quick_plugin.setEnabled(has_favs)
+            has_options = len(quick_plugin_names) > 0
+            self.cb_quick_plugin.setEnabled(has_options)
             if hasattr(self, 'btn_quick_run'):
-                self.btn_quick_run.setEnabled(has_favs)
+                self.btn_quick_run.setEnabled(has_options)
             if hasattr(self, 'btn_quick_config'):
-                self.btn_quick_config.setEnabled(has_favs)
+                self.btn_quick_config.setEnabled(has_options)
             if hasattr(self, 'btn_quick_docs'):
-                self.btn_quick_docs.setEnabled(has_favs)
+                self.btn_quick_docs.setEnabled(has_options)
+            self._on_quick_plugin_changed()
 
         # Build / rebuild header once
         if not hasattr(self, '_plugin_header_widget'):
@@ -1422,6 +1454,19 @@ class MarkerPanel(QFrame):
                 select_plugin=name,
                 edit_source=True,
             )
+
+    def _on_quick_plugin_changed(self, index=None):
+        if not hasattr(self, 'cb_quick_plugin'):
+            return
+        name = self.cb_quick_plugin.currentData()
+        info = (
+            self.parent_window._loaded_plugins.get(name)
+            if (hasattr(self, 'parent_window') and hasattr(self.parent_window, '_loaded_plugins') and name)
+            else None
+        )
+        has_params = bool(info and info.get("params_spec"))
+        if hasattr(self, 'btn_quick_config'):
+            self.btn_quick_config.setEnabled(bool(name and has_params))
 
     def _on_quick_run_clicked(self):
         if not hasattr(self, 'cb_quick_plugin'):

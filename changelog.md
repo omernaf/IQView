@@ -3,6 +3,7 @@
 ## [0.7.2] - 2026-10-07
 
 ### Added
+- **Quick Run Plugin Use History & Favorites Ordering**: The Quick Run dropdown on the Plugins toolbar now displays the plugin use history followed by remaining starred favorites. The most recently used plugin is always selected at the top (index 0), followed in order by 2nd latest, 3rd latest, and then any remaining favorite plugins. Unloaded plugins are cleanly filtered out, and only use history and favorites are shown.
 - **CLI `--debug` Flag**: Added `--debug` CLI flag, `iqview.view(..., debug=True)`, and `IQVIEW_DEBUG` environment variable to gate diagnostic and debug messages. Plugin loading messages and settings file-types debugging output now only log when `--debug` is specified.
 - **Direct Module Execution (`python -m iqview`)**: Added `iqview/__main__.py` allowing execution via `python -m iqview` and `pythonw -m iqview`.
 
