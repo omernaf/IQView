@@ -10,6 +10,10 @@ description: >-
 
 This skill defines the testing procedures, synthetic signal generation, test corpus roles, and verification protocols for IQView.
 
+For pre-commit checkpoints and automated verification:
+- [Historical Regression Checklist](./references/regression_checklist.md)
+- Automated Smoke Test: `python .agents/skills/iqview-testing-qa/scripts/run_quick_smoke.py`
+
 ---
 
 ## 1. Generating the Synthetic Test Corpus

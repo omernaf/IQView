@@ -10,6 +10,9 @@ description: >-
 
 This skill documents file loaders, hardware formats, audio decoding, stdin streaming, byte slicing, and export routines in IQView.
 
+For detailed header layouts, regex patterns, and format derivations:
+- [File Format & Ingestion Specifications](./references/format_specifications.md)
+
 ---
 
 ## 1. Supported Formats Matrix

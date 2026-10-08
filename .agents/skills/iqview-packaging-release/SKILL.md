@@ -10,6 +10,9 @@ description: >-
 
 This skill documents release procedures, version synchronization, Debian `.deb` packaging, and offline distribution.
 
+For complete Debian package internals, TarInfo byte rules, and pip resolution:
+- [Packaging & Distribution Internals Reference](./references/packaging_internals.md)
+
 ---
 
 ## 1. Synchronized Version Bump Checklist

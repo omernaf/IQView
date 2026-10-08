@@ -10,6 +10,9 @@ description: >-
 
 This skill documents the low-level UI patterns, event handling, marker mathematics, and PyQt6/pyqtgraph conventions used across IQView.
 
+For complete algorithmic implementations and widget patterns, consult:
+- [Event & Marker Mechanics Reference](./references/event_and_marker_mechanics.md)
+
 ---
 
 ## 1. PyQtGraph & CustomViewBox Event Mechanics

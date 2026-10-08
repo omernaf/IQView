@@ -10,6 +10,10 @@ description: >-
 
 This skill details the signal processing mathematics, spectral representations, filtering pipelines, and numerical safeguards implemented in IQView.
 
+For deep mathematical derivations and automated verification:
+- [DSP Mathematics & Formulations Reference](./references/dsp_mathematics.md)
+- Helper Script: `python .agents/skills/iqview-dsp-algorithms/scripts/verify_dsp_invariants.py`
+
 ---
 
 ## 1. Decoupled DSP Architecture

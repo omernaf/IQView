@@ -13,6 +13,9 @@ IQView features a multi-domain visualization architecture designed to analyze RF
 
 This skill explains the anatomy, data flow, extraction mechanics, coordinate systems, and tab lifecycle for every view in the application.
 
+For complete class signatures, attributes, and method tables, consult:
+- [Views API Reference](./references/views_reference.md)
+
 ---
 
 ## 1. View Architecture Overview

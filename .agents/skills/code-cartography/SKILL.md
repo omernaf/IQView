@@ -14,6 +14,9 @@ This skill provides the methodology and standards for mapping IQView's codebase 
 
 Opening the generated `cartography/` directory in [Obsidian](https://obsidian.md) enables an interactive, visual topology map via Obsidian's **Graph View** and **Canvas**.
 
+For detailed Graph View query settings, forces, and color groups:
+- [Obsidian Graph View & Canvas Guide](./references/obsidian_graph_guide.md)
+
 ---
 
 ## 1. Cartography Vault Directory Structure

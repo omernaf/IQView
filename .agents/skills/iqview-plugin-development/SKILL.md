@@ -11,6 +11,10 @@ description: >-
 
 This skill guides the design, implementation, debugging, and testing of IQView plugins and `PluginChain` pipelines.
 
+For complete parameter schema definitions and API details:
+- [Plugin API & Parameter Schema Reference](./references/plugin_api_reference.md)
+- [Starter Plugin Template](./examples/template_energy_detector.py)
+
 ---
 
 ## 1. Plugin Anatomy & Lifecycle
