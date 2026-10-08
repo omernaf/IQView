@@ -73,6 +73,12 @@ Run from repository root to download standalone wheel kits for Python 3.9 throug
 python prepare_offline.py
 ```
 
+### 2.4 Automated PyPI Publishing (GitHub Actions CI/CD)
+Publishes to PyPI automatically without manual uploads using PyPI Trusted Publishing (OIDC):
+- Workflow file: `.github/workflows/publish.yml`
+- Trigger: Tag push (`git push origin v*.*.*`), GitHub Release creation, or manual workflow dispatch.
+- PyPI configuration: Settings $\rightarrow$ Publishing $\rightarrow$ Add GitHub publisher (`omernaf/IQView`, workflow `publish.yml`, environment `pypi`).
+
 ---
 
 ## 3. Packaging Architecture & Critical Gotchas
