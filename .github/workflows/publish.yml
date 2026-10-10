@@ -35,11 +35,13 @@ jobs:
 
       - name: Build Python sdist and wheel
         run: |
-          rm -rf dist/
-          python -m build
+          python -m build --outdir dist_pypi/
+          cp -f dist_pypi/* dist/
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist_pypi/
 
       - name: Build Debian package (.deb)
         run: python scripts/make_deb.py

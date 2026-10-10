@@ -9,7 +9,6 @@ iqview_testdata/
 build/
 dist/*.whl
 !dist/iqview-*.whl
-dist/*.deb
 *.egg-info/
 *.pyc
 __pycache__/
