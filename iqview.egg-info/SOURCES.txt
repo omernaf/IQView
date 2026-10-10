@@ -2,6 +2,7 @@ LICENSE
 README.md
 pyproject.toml
 iqview/__init__.py
+iqview/__main__.py
 iqview/main.py
 iqview.egg-info/PKG-INFO
 iqview.egg-info/SOURCES.txt
@@ -33,6 +34,7 @@ iqview/plugins/builtin/fsk_demodulator.py
 iqview/plugins/builtin/gnss_detector.py
 iqview/plugins/builtin/lora_demodulator.py
 iqview/plugins/builtin/occupied_bandwidth.py
+iqview/plugins/builtin/signal_comparator.py
 iqview/plugins/builtin/snap_merge_overlays.py
 iqview/plugins/builtin/snap_to_burst.py
 iqview/plugins/builtin/uw_sync.py
