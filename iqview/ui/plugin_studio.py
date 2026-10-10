@@ -719,10 +719,15 @@ class PluginStudioDialog(QDialog):
         self.list_manage_plugins.clear()
 
         loaded = getattr(self.parent_window, "_loaded_plugins", {})
+        # Sort: Favorites on top (alphabetical), followed by remaining plugins (alphabetical)
+        sorted_plugins = sorted(
+            loaded.items(),
+            key=lambda item: (0 if item[0] in pinned else 1, item[0].lower()),
+        )
         selected_row = 0
         row_idx = 0
 
-        for name, info in loaded.items():
+        for name, info in sorted_plugins:
             is_builtin = bool(info.get("builtin", False))
             is_chain = info.get("chain") is not None
             is_pin = name in pinned
@@ -1420,9 +1425,17 @@ class PluginStudioDialog(QDialog):
         self.cb_load_existing_chain.addItem("— New Blank Chain —", userData="")
 
         loaded = getattr(self.parent_window, "_loaded_plugins", {})
+        pinned = self._get_pinned_set()
+
+        # Sort: Favorites on top (alphabetical), followed by remaining plugins (alphabetical)
+        sorted_plugins = sorted(
+            loaded.items(),
+            key=lambda item: (0 if item[0] in pinned else 1, item[0].lower()),
+        )
+
         selected_idx = 0
         c_idx = 1
-        for name, info in loaded.items():
+        for name, info in sorted_plugins:
             if info.get("chain") is not None:
                 self.cb_load_existing_chain.addItem(f"{name} [Chain]", userData=name)
                 if self._editing_chain_orig_name and name == self._editing_chain_orig_name:
@@ -1430,7 +1443,8 @@ class PluginStudioDialog(QDialog):
                 c_idx += 1
                 continue
             cat = info.get("category", "General")
-            item = QListWidgetItem(f"{name}  [{cat}]")
+            pin_prefix = "★ " if name in pinned else ""
+            item = QListWidgetItem(f"{pin_prefix}{name}  [{cat}]")
             item.setData(Qt.ItemDataRole.UserRole, name)
             if info.get("description"):
                 item.setToolTip(str(info["description"]))
