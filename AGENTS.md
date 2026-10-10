@@ -86,6 +86,10 @@ Before modifying code, running commands, or implementing features for any non-tr
 3. **Debian Packaging (`scripts/make_deb.py`)**:
    - Always calculate `TarInfo.size` using the UTF-8 byte length (`len(content.encode('utf-8'))`), not character count `len(content)`.
    - Linux launcher scripts must strip host Qt theme overrides (`QT_QPA_PLATFORMTHEME=""`, `QT_STYLE_OVERRIDE=""`).
+4. **Ephemeral Testing Invariant (Zero Clutter)**:
+   - **Never** leave or commit one-off test scripts in `testing/` or anywhere in the repository for every feature.
+   - When verifying features or bugfixes, agents must create temporary scratch test scripts, execute them to validate behavior, and **immediately delete them**.
+   - Permanent test scripts are strictly reserved for core established suites (`testing.py`, `testing2.py`, `test_quick_run_history.py`, `make_iqview_testdata.py`). Never clutter the app with ad-hoc test files.
 
 ---
 

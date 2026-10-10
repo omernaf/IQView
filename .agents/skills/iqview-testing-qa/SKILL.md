@@ -62,6 +62,14 @@ pytest testing/
 ### 2.3 Large Segment Safety Check
 Any action opening $>10,000,000$ samples in an analysis tab must prompt a confirmation dialog to protect against out-of-memory crashes.
 
+### 2.4 Ephemeral Scratch Verification Mandate (Zero Clutter)
+> [!IMPORTANT]
+> **Do NOT leave or commit standalone test scripts for every feature in `testing/` or anywhere in the repository.**
+> 1. When implementing a feature or bugfix, write a temporary scratch test script to verify functionality and assert correctness.
+> 2. Execute the script to validate the implementation.
+> 3. **Immediately delete the scratch test script** upon successful verification.
+> 4. Keep the repository clean: permanent test scripts are strictly limited to established core test suites (`testing/testing.py`, `testing/testing2.py`, `testing/test_quick_run_history.py`, and `testing/make_iqview_testdata.py`). Never clutter the app with one-off test scripts.
+
 ---
 
 ## 3. The 18-Step Manual Test Protocol
