@@ -1042,6 +1042,25 @@ class PluginStudioDialog(QDialog):
                 w.setCurrentText(str(val))
             elif choices:
                 w.setCurrentIndex(0)
+        elif ptype in ("file", "filepath", "path"):
+            container = QWidget()
+            h_lay = QHBoxLayout(container)
+            h_lay.setContentsMargins(0, 0, 0, 0)
+            h_lay.setSpacing(4)
+            line_edit = QLineEdit()
+            line_edit.setText(str(val if val is not None else ""))
+            btn_browse = QPushButton("Browse...")
+            btn_browse.setCursor(Qt.CursorShape.PointingHandCursor)
+            def _on_browse(_=False, le=line_edit, label=spec.get("label", "File")):
+                from PyQt6.QtWidgets import QFileDialog
+                fn, _ = QFileDialog.getOpenFileName(self, f"Select {label}")
+                if fn:
+                    le.setText(fn)
+            btn_browse.clicked.connect(_on_browse)
+            h_lay.addWidget(line_edit, 1)
+            h_lay.addWidget(btn_browse)
+            container._inner_line_edit = line_edit
+            w = container
         else:
             w = QLineEdit()
             w.setText(str(val if val is not None else ""))
@@ -1051,6 +1070,8 @@ class PluginStudioDialog(QDialog):
         return w
 
     def _read_param_widget_value(self, w: QWidget) -> Any:
+        if hasattr(w, "_inner_line_edit"):
+            return w._inner_line_edit.text()
         if isinstance(w, ScientificNumberEdit):
             return w.value()
         if isinstance(w, QSpinBox):
@@ -1066,7 +1087,9 @@ class PluginStudioDialog(QDialog):
     def _set_param_widget_value(self, w: QWidget, val: Any) -> None:
         if val is None:
             return
-        if isinstance(w, ScientificNumberEdit):
+        if hasattr(w, "_inner_line_edit"):
+            w._inner_line_edit.setText(str(val))
+        elif isinstance(w, ScientificNumberEdit):
             w.setValue(val)
         elif isinstance(w, QCheckBox):
             w.setChecked(bool(val))

@@ -2025,6 +2025,30 @@ class PluginConfigDialog(QDialog):
                     widget.setCurrentText(str(curr_val))
                 elif choices:
                     widget.setCurrentIndex(0)
+            elif param_type in ("file", "filepath", "path"):
+                container = QWidget()
+                h_lay = QHBoxLayout(container)
+                h_lay.setContentsMargins(0, 0, 0, 0)
+                h_lay.setSpacing(4)
+                line_edit = QLineEdit()
+                if curr_val is not None:
+                    line_edit.setText(str(curr_val))
+                btn_browse = QPushButton("Browse...")
+                btn_browse.setCursor(Qt.CursorShape.PointingHandCursor)
+                def _on_browse(_=False, le=line_edit, label=label_text):
+                    from PyQt6.QtWidgets import QFileDialog
+                    fn, _ = QFileDialog.getOpenFileName(self, f"Select {label}")
+                    if fn:
+                        le.setText(fn)
+                btn_browse.clicked.connect(_on_browse)
+                h_lay.addWidget(line_edit, 1)
+                h_lay.addWidget(btn_browse)
+                widget = container
+                if tooltip:
+                    line_edit.setToolTip(tooltip)
+                form_layout.addRow(QLabel(label_text), widget)
+                self.widgets[key] = (line_edit, param_type)
+                continue
             else:
                 widget = QLineEdit()
                 if curr_val is not None:

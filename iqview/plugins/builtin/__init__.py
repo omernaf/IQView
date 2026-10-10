@@ -25,6 +25,7 @@ from . import (
     lora_demodulator,
     snap_merge_overlays,
     snap_to_burst,
+    signal_comparator,
     uw_sync,
     xor_mask,
 )
@@ -46,6 +47,7 @@ BUILTIN_MODULES: List[ModuleType] = [
     burst_metrics,
     occupied_bandwidth,
     snap_merge_overlays,
+    signal_comparator,
 ]
 
 # Lookup table by PLUGIN_NAME (and lowercase/stem aliases)
