@@ -1,7 +1,7 @@
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 import numpy as np
-from scipy.signal import hilbert, butter, sosfiltfilt, medfilt
+from scipy.signal import hilbert, butter, sosfiltfilt, medfilt, fftconvolve
 
 
 @dataclass
@@ -332,3 +332,89 @@ def compute_region_statistics(
         is_psd=is_psd,
         is_db=is_db,
     )
+
+
+def normalized_correlation(
+    A: np.ndarray,
+    B: np.ndarray,
+    m: Optional[np.ndarray] = None,
+    return_swapped: bool = False,
+) -> Union[Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray, bool]]:
+    """Compute normalized cross-correlation between vectors A and B.
+
+    If B appears completely in A (or vice versa), the correlation value in the
+    beginning of the overlapping range is normalized to 1.0 (with phase matching
+    carrier phase offset for complex signals).
+
+    Matches the MATLAB implementation:
+        function [r, lags] = normalized_correlation(A, B, m)
+
+    Parameters:
+        A: 1D array (real or complex).
+        B: 1D array (real or complex).
+        m: Optional weighting vector (defaults to ones of length of shorter vector).
+        return_swapped: If True, also returns a boolean indicating whether inputs
+            were swapped so B is the shorter vector.
+
+    Returns:
+        r: Normalized correlation values (complex if inputs are complex).
+        lags: Integer lag index vector (-(len(B_shorter) - 1) to len(A_longer) - 1).
+        swapped: (optional) True if B was longer than A and vectors were swapped.
+    """
+    A_vec = np.asarray(A).ravel()
+    B_vec = np.asarray(B).ravel()
+
+    if len(A_vec) == 0 or len(B_vec) == 0:
+        empty = np.array([], dtype=np.complex128 if np.iscomplexobj(A_vec) or np.iscomplexobj(B_vec) else np.float64)
+        lags_empty = np.array([], dtype=int)
+        return (empty, lags_empty, False) if return_swapped else (empty, lags_empty)
+
+    # make sure B is the shorter vector
+    swapped = False
+    if len(B_vec) > len(A_vec):
+        A_vec, B_vec = B_vec, A_vec
+        swapped = True
+
+    n_a = len(A_vec)
+    n_b = len(B_vec)
+
+    if m is None:
+        m_vec = np.ones(n_b, dtype=np.float64)
+    else:
+        m_vec = np.asarray(m).ravel()
+        if len(m_vec) != n_b:
+            raise ValueError(f"Weight vector m length ({len(m_vec)}) must match shorter vector ({n_b})")
+
+    # compute regular cross-correlation: [r, lags] = xcorr(A, B.*m)
+    b_weighted = B_vec * m_vec
+    r = fftconvolve(A_vec, b_weighted[::-1].conj(), mode="full")
+    lags = np.arange(-(n_b - 1), n_a)
+
+    # compute energy of shorter vector B: E_B = sum(abs(B).^2 .* m)
+    e_b = float(np.sum(np.abs(B_vec) ** 2 * m_vec))
+
+    # compute partial energy of longer vector A: E_A = xcorr(abs(A).^2, m)
+    # Since xcorr(X, Y) = fftconvolve(X, Y[::-1].conj()), with X = |A|^2 and Y = m:
+    e_a = fftconvolve(np.abs(A_vec) ** 2, m_vec[::-1].conj(), mode="full")
+    e_a = np.real(e_a)
+
+    # divide values by square-root of energies multiplication: r = r ./ sqrt(E_A .* E_B)
+    denom = np.sqrt(np.maximum(e_a * e_b, 0.0))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        r = r / denom
+
+    # make sure irrelevant indices are set to zero
+    r[np.isinf(r)] = 0.0
+    r[np.isnan(r)] = 0.0
+    r[e_a < 0.0] = 0.0
+    if e_b <= 0.0:
+        r[:] = 0.0
+
+    mag_r = np.abs(r)
+    locs_to_fix = (mag_r > 1.0) & (mag_r < (1.0 + 1e-6))
+    r[locs_to_fix] = r[locs_to_fix] / mag_r[locs_to_fix]
+    r[np.abs(r) > 1.0] = 0.0
+
+    if return_swapped:
+        return r, lags, swapped
+    return r, lags

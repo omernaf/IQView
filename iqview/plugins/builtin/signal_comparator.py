@@ -21,7 +21,10 @@ from scipy.signal.windows import hann
 
 from iqview import PluginResult, PluginContext
 from iqview.overlays import Rect
-from iqview.dsp.domain_transforms import compute_instantaneous_frequency
+from iqview.dsp.domain_transforms import (
+    compute_instantaneous_frequency,
+    normalized_correlation,
+)
 from iqview.utils.helpers import (
     load_mat_file,
     load_audio_file,
@@ -49,8 +52,10 @@ Performs comprehensive dual-signal comparison between the active workspace signa
 
 1. **Normalized Complex Cross-Correlation ($|\\rho_{\\text{IQ}}|$)**:
    Measures full waveform similarity (phase + envelope coherence). Locates best-match time lag $\\tau^*$ and carrier phase difference $\\Delta\\phi$.
+   Normalized such that if Signal 2 appears completely in Signal 1 (or vice versa), the peak correlation value is mathematically normalized to 1.0 using the exact running-energy normalization:
+   $$r = \\frac{\\text{xcorr}(A, B \\cdot m)}{\\sqrt{\\text{xcorr}(|A|^2, m) \\cdot \\sum (|B|^2 \\cdot m)}}$$
 2. **Differential Correlation ($|\\rho_{\\text{diff}}|$)**:
-   Correlates conjugate delay products $d[n] = s[n] \\cdot s^*[n-D]$. Highly robust against Carrier Frequency Offset (CFO), oscillator mismatch, and Doppler drift.
+   Correlates conjugate delay products $d[n] = s[n] \\cdot s^*[n-D]$ with identical running-energy normalization. Highly robust against Carrier Frequency Offset (CFO), oscillator mismatch, and Doppler drift.
 3. **Normalized FM Demodulation Correlation ($\\rho_{\\text{FM}}$)**:
    Correlates instantaneous frequency deviation trajectories. Immune to amplitude fluctuations, AGC steps, and RF carrier phase.
 4. **Subtraction Residual Magnitude ($|e[n]|$)**:
@@ -299,22 +304,16 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
 
     # --- Step 2: Complex IQ Normalized Cross-Correlation ---
     info.progress(25.0, "Computing complex IQ normalized correlation...")
-    # Cross-correlation via FFT convolution
-    r_iq = signal.fftconvolve(s1, s2[::-1].conj(), mode="full")
-    lags = np.arange(-(n2 - 1), n1)
+    # Exact MATLAB normalized correlation: [r, lags] = normalized_correlation(A, B, m)
+    r_iq, lags, swapped_iq = normalized_correlation(s1, s2, return_swapped=True)
     lags_s = lags / fs
+    rho_iq = np.abs(r_iq)
 
-    # Running energy normalization
-    e2_total = float(np.sum(np.abs(s2) ** 2))
-    e1_sliding = signal.fftconvolve(np.abs(s1) ** 2, np.ones(n2, dtype=np.float64), mode="full")
-    denom_iq = np.sqrt(np.maximum(e1_sliding * e2_total, 1e-24))
-    rho_iq = np.clip(np.abs(r_iq) / denom_iq, 0.0, 1.0)
-
-    idx_pk_iq = int(np.argmax(rho_iq))
-    val_pk_iq = float(rho_iq[idx_pk_iq])
-    lag_samples_iq = int(lags[idx_pk_iq])
-    lag_s_iq = float(lags_s[idx_pk_iq])
-    phase_pk_iq = float(np.angle(r_iq[idx_pk_iq]))  # Carrier phase offset in radians
+    idx_pk_iq = int(np.argmax(rho_iq)) if len(rho_iq) > 0 else 0
+    val_pk_iq = float(rho_iq[idx_pk_iq]) if len(rho_iq) > 0 else 0.0
+    lag_samples_iq = int(lags[idx_pk_iq]) if len(lags) > 0 else 0
+    lag_s_iq = float(lags_s[idx_pk_iq]) if len(lags_s) > 0 else 0.0
+    phase_pk_iq = float(np.angle(r_iq[idx_pk_iq])) if len(r_iq) > 0 else 0.0  # Carrier phase offset in radians
 
     if info.is_cancelled():
         return result
@@ -325,25 +324,21 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
         d1 = s1[diff_delay:] * np.conj(s1[:-diff_delay])
         d2 = s2[diff_delay:] * np.conj(s2[:-diff_delay])
 
-        r_diff = signal.fftconvolve(d1, d2[::-1].conj(), mode="full")
-        lags_diff = np.arange(-(len(d2) - 1), len(d1))
+        r_diff, lags_diff, swapped_diff = normalized_correlation(d1, d2, return_swapped=True)
         lags_diff_s = lags_diff / fs
+        rho_diff = np.abs(r_diff)
 
-        e2_diff = float(np.sum(np.abs(d2) ** 2))
-        e1_diff_sliding = signal.fftconvolve(np.abs(d1) ** 2, np.ones(len(d2), dtype=np.float64), mode="full")
-        denom_diff = np.sqrt(np.maximum(e1_diff_sliding * e2_diff, 1e-24))
-        rho_diff = np.clip(np.abs(r_diff) / denom_diff, 0.0, 1.0)
-
-        idx_pk_diff = int(np.argmax(rho_diff))
-        val_pk_diff = float(rho_diff[idx_pk_diff])
-        lag_samples_diff = int(lags_diff[idx_pk_diff])
-        lag_s_diff = float(lags_diff_s[idx_pk_diff])
+        idx_pk_diff = int(np.argmax(rho_diff)) if len(rho_diff) > 0 else 0
+        val_pk_diff = float(rho_diff[idx_pk_diff]) if len(rho_diff) > 0 else 0.0
+        lag_samples_diff = int(lags_diff[idx_pk_diff]) if len(lags_diff) > 0 else 0
+        lag_s_diff = float(lags_diff_s[idx_pk_diff]) if len(lags_diff_s) > 0 else 0.0
     else:
         lags_diff_s = lags_s
         rho_diff = np.zeros_like(lags_diff_s)
         val_pk_diff = 0.0
         lag_samples_diff = 0
         lag_s_diff = 0.0
+        swapped_diff = False
 
     if info.is_cancelled():
         return result
@@ -356,19 +351,14 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
     f1_zero = f1_inst - float(np.mean(f1_inst))
     f2_zero = f2_inst - float(np.mean(f2_inst))
 
-    r_fm = signal.fftconvolve(f1_zero, f2_zero[::-1], mode="full")
-    lags_fm = np.arange(-(len(f2_zero) - 1), len(f1_zero))
+    r_fm, lags_fm, swapped_fm = normalized_correlation(f1_zero, f2_zero, return_swapped=True)
     lags_fm_s = lags_fm / fs
+    rho_fm = np.real(r_fm)
 
-    e2_fm = float(np.sum(f2_zero ** 2))
-    e1_fm_sliding = signal.fftconvolve(f1_zero ** 2, np.ones(len(f2_zero), dtype=np.float64), mode="full")
-    denom_fm = np.sqrt(np.maximum(e1_fm_sliding * e2_fm, 1e-24))
-    rho_fm = np.clip(r_fm / denom_fm, -1.0, 1.0)
-
-    idx_pk_fm = int(np.argmax(rho_fm))
-    val_pk_fm = float(rho_fm[idx_pk_fm])
-    lag_samples_fm = int(lags_fm[idx_pk_fm])
-    lag_s_fm = float(lags_fm_s[idx_pk_fm])
+    idx_pk_fm = int(np.argmax(rho_fm)) if len(rho_fm) > 0 else 0
+    val_pk_fm = float(rho_fm[idx_pk_fm]) if len(rho_fm) > 0 else 0.0
+    lag_samples_fm = int(lags_fm[idx_pk_fm]) if len(lags_fm) > 0 else 0
+    lag_s_fm = float(lags_fm_s[idx_pk_fm]) if len(lags_fm_s) > 0 else 0.0
 
     if info.is_cancelled():
         return result
@@ -380,23 +370,34 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
     if sub_mode.startswith("Aligned"):
         # Shift Signal 2 by peak lag and align phase/amplitude
         tau = lag_samples_iq
-        if tau >= 0:
-            s1_sub = s1[tau : tau + n2]
-            s2_sub = s2[: len(s1_sub)]
+        if not swapped_iq:
+            if tau >= 0:
+                s1_sub = s1[tau : tau + n2]
+                s2_sub = s2[: len(s1_sub)]
+            else:
+                s1_sub = s1[: max(0, n2 + tau)]
+                s2_sub = s2[-tau : -tau + len(s1_sub)]
+            phase_rot = phase_pk_iq
+            t_sub = (np.arange(len(s1_sub)) + max(0, tau)) / fs + t0_scope
         else:
-            s1_sub = s1[: max(0, n2 + tau)]
-            s2_sub = s2[-tau : -tau + len(s1_sub)]
+            if tau >= 0:
+                s2_sub = s2[tau : tau + n1]
+                s1_sub = s1[: len(s2_sub)]
+            else:
+                s2_sub = s2[: max(0, n1 + tau)]
+                s1_sub = s1[-tau : -tau + len(s2_sub)]
+            phase_rot = -phase_pk_iq
+            t_sub = np.arange(len(s1_sub)) / fs + t0_scope
 
         if len(s1_sub) > 0 and len(s2_sub) > 0:
             # Optimal gain scaling & carrier phase rotation
             scale_alpha = float(np.abs(np.sum(s1_sub * np.conj(s2_sub))) / max(float(np.sum(np.abs(s2_sub) ** 2)), 1e-24))
-            s2_aligned = s2_sub * (scale_alpha * np.exp(1j * phase_pk_iq))
+            s2_aligned = s2_sub * (scale_alpha * np.exp(1j * phase_rot))
             err_sig = s1_sub - s2_aligned
             sub_mag = np.abs(err_sig)
 
             # Phase difference in radians wrapped to [-pi, pi]
             sub_phase = np.angle(s1_sub * np.conj(s2_aligned))
-            t_sub = (np.arange(len(err_sig)) + max(0, tau)) / fs + t0_scope
         else:
             sub_mag = np.zeros(16, dtype=np.float64)
             sub_phase = np.zeros(16, dtype=np.float64)
@@ -440,14 +441,24 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
 
     # --- Step 7: Aligned FM Demodulation Tracks ---
     # Construct overlaid frequency trajectories
-    if lag_samples_iq >= 0:
-        f1_track = f1_inst[lag_samples_iq : lag_samples_iq + len(f2_inst)]
-        f2_track = f2_inst[: len(f1_track)]
-        t_track = (np.arange(len(f1_track)) + lag_samples_iq) / fs + t0_scope
+    if not swapped_iq:
+        if lag_samples_iq >= 0:
+            f1_track = f1_inst[lag_samples_iq : lag_samples_iq + len(f2_inst)]
+            f2_track = f2_inst[: len(f1_track)]
+            t_track = (np.arange(len(f1_track)) + lag_samples_iq) / fs + t0_scope
+        else:
+            f1_track = f1_inst[: max(0, len(f2_inst) + lag_samples_iq)]
+            f2_track = f2_inst[-lag_samples_iq : -lag_samples_iq + len(f1_track)]
+            t_track = np.arange(len(f1_track)) / fs + t0_scope
     else:
-        f1_track = f1_inst[: max(0, len(f2_inst) + lag_samples_iq)]
-        f2_track = f2_inst[-lag_samples_iq : -lag_samples_iq + len(f1_track)]
-        t_track = np.arange(len(f1_track)) / fs + t0_scope
+        if lag_samples_iq >= 0:
+            f2_track = f2_inst[lag_samples_iq : lag_samples_iq + len(f1_inst)]
+            f1_track = f1_inst[: len(f2_track)]
+            t_track = np.arange(len(f1_track)) / fs + t0_scope
+        else:
+            f2_track = f2_inst[: max(0, len(f1_inst) + lag_samples_iq)]
+            f1_track = f1_inst[-lag_samples_iq : -lag_samples_iq + len(f2_track)]
+            t_track = np.arange(len(f1_track)) / fs + t0_scope
 
     if len(f1_track) < 2:
         min_track_len = min(len(f1_inst), len(f2_inst))
@@ -545,15 +556,26 @@ def run(samples: np.ndarray, info: PluginContext) -> PluginResult:
 
     # --- Step 9: Spectrogram Overlay Annotation ---
     if draw_overlay:
-        t_match_start = t0_scope + max(0.0, lag_s_iq)
-        t_match_end = t_match_start + (n2 / fs)
+        if not swapped_iq:
+            t_match_start = t0_scope + max(0.0, lag_s_iq)
+            t_match_end = t_match_start + (n2 / fs)
+            align_desc = f"Lag: {lag_s_iq * 1e3:+.3f} ms in Signal 1"
+        else:
+            t_match_start = t0_scope
+            t_match_end = t0_scope + (n1 / fs)
+            align_desc = f"Signal 1 matches inside Signal 2 @ +{lag_s_iq * 1e3:.3f} ms"
+
         f_span = max(obw1_hz, fs * 0.1)
         f_mid = fc + cfo1_hz
 
         tag_text = f"Match: IQ={val_pk_iq:.3f} Diff={val_pk_diff:.3f} FM={val_pk_fm:.3f}"
+        if swapped_iq:
+            tag_text += f" (in S2 @ +{lag_s_iq * 1e3:.1f}ms)"
+
         hover_text = (
             f"Signal Comparison Match:\n"
             f"-----------------------------------------\n"
+            f"• Match Alignment:     {align_desc}\n"
             f"• Peak IQ Corr:        {val_pk_iq:.4f} @ {lag_s_iq * 1e3:+.3f} ms\n"
             f"• Peak Diff Corr:      {val_pk_diff:.4f} @ {lag_s_diff * 1e3:+.3f} ms\n"
             f"• Peak FM Demod Corr:  {val_pk_fm:.4f} @ {lag_s_fm * 1e3:+.3f} ms\n"

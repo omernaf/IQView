@@ -6,6 +6,14 @@
 - **In-App Application Log Viewer (L)**: Added an in-app Application Log Viewer dialog accessible via a dedicated **📋 Logs** button directly below the Settings button in the sidebar and a configurable global shortcut (L). Captures terminal stdout, stderr, and debug messages into a thread-safe ring buffer with real-time streaming, stream filtering (All Streams, stdout, stderr, debug), level filtering (All Levels, Info & Above, Warnings & Errors, Errors Only, Debug Only), search filtering (Ctrl+F), syntax highlighting, auto-scroll, clipboard copying, and log export to file.
 - **Vertically Resizable Top Bar**: Added a draggable vertical splitter (`TopBarSplitter`) between the top bar (`MarkerPanel`) and the main spectrogram area (`SpectrogramView`). Users can drag the splitter handle to expand the top bar to inspect more rows in the marker table, overlays, or plugin controls in exchange for spectrogram height. Features theme-adaptive hover and grab styling, proper layout anchoring, and a minimum height constraint.
 
+### Changed
+- **Signal Comparator Running-Energy Normalized Correlation (`normalized_correlation`)**:
+  - Replaced ad-hoc correlation normalization in the Signal Comparator plugin with MATLAB-exact running-energy normalized correlation (`iqview.dsp.domain_transforms.normalized_correlation`).
+  - Automatically ensures $B$ is the shorter vector, computing scalar energy $E_B = \sum |B|^2 \cdot m$ and sliding partial energy $E_A = \text{xcorr}(|A|^2, m)$ so that a complete match in either direction normalizes to exactly 1.0 (with complex phase preserving RF carrier phase difference $\Delta\phi$).
+  - Applied identical running-energy normalization to Differential Correlation ($|\rho_{\text{diff}}|$) over conjugate delay products $d[n] = s[n] \cdot s^*[n-D]$, providing Carrier Frequency Offset (CFO) and Doppler immunity with true $[0, 1.0]$ peak normalization.
+  - Added numerical safeguards for zero-division, floating-point epsilon projection ($1 < |r| < 1 + 10^{-6}$), and suppression of degenerate low-energy noise blowups ($|r| > 1$).
+  - Updated subtraction alignment, FM trajectory tracking, and spectrogram match overlays to handle both directions seamlessly when Signal 2 is longer than Signal 1.
+
 ### Fixed
 - **LoRa Demodulator Auto-Detection (Bandwidth & Spreading Factor)**:
   - Replaced crude overlay-width snapping with a precise 99% Occupied Bandwidth (OBW) algorithm using active-frame Welch PSD, plateau-safe noise subtraction, and sub-bin CDF interpolation, rounding to the nearest valid standard LoRa bandwidth (`7.8 kHz` to `1.625 MHz`).
