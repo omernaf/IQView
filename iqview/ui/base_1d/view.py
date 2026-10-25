@@ -223,6 +223,13 @@ class Base1DPlotView(QWidget):
             if self.parent_window and hasattr(self.parent_window, "sidebar"):
                 self.parent_window.sidebar.open_settings()
             return
+        elif key_name == self._get_kb("keybinds/open_logs", "L"):
+            if self.parent_window:
+                if hasattr(self.parent_window, "open_log_viewer"):
+                    self.parent_window.open_log_viewer()
+                elif hasattr(self.parent_window, "sidebar") and hasattr(self.parent_window.sidebar, "open_logs"):
+                    self.parent_window.sidebar.open_logs()
+            return
         elif key_name == self._get_kb(self.primary_kb_key, self.primary_kb_default):
             self._prev_interaction_mode = self.primary_mode
             self.set_interaction_mode(self.primary_mode)

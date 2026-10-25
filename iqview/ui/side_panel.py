@@ -282,6 +282,11 @@ class SidePanel(QFrame):
         self.settings_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.settings_btn.clicked.connect(self.open_settings)
         self.layout.addWidget(self.settings_btn)
+
+        self.logs_btn = QPushButton("📋 Logs")
+        self.logs_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.logs_btn.clicked.connect(self.open_logs)
+        self.layout.addWidget(self.logs_btn)
         self.update_button_tooltips()
 
     def update_button_tooltips(self):
@@ -290,6 +295,9 @@ class SidePanel(QFrame):
         kb = s.get("keybinds/open_settings", "I") if s else "I"
         if hasattr(self, 'settings_btn'):
             self.settings_btn.setToolTip(format_tooltip_with_keybind("Open Settings", kb))
+        kb_logs = s.get("keybinds/open_logs", "L") if s else "L"
+        if hasattr(self, 'logs_btn'):
+            self.logs_btn.setToolTip(format_tooltip_with_keybind("View Application Logs", kb_logs))
 
     def _add_section_header(self, parent_layout, text):
         """Helper: add a styled section header label to *parent_layout*."""
@@ -461,6 +469,10 @@ class SidePanel(QFrame):
     # ------------------------------------------------------------------
     # Settings dialog
     # ------------------------------------------------------------------
+
+    def open_logs(self):
+        if self.parent_window and hasattr(self.parent_window, "open_log_viewer"):
+            self.parent_window.open_log_viewer()
 
     def open_settings(self):
         if self.parent_window:

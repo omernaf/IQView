@@ -111,6 +111,7 @@ class SettingsManager:
         "keybinds/undo_zoom": "Ctrl+Z",
         "keybinds/clear_markers": "Backspace",
         "keybinds/open_settings": "I",
+        "keybinds/open_logs": "L",
 
         # Keybinds — Marker Modes
         "keybinds/time_markers": "T",

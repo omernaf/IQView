@@ -373,6 +373,13 @@ class UIComponentsMixin:
         if hasattr(self, '_rebuild_plugins_menu'):
             self._rebuild_plugins_menu()
 
+        # --- Help / Logs Menu ---
+        help_menu = mb.addMenu("&Help")
+        logs_action = QAction("Application &Logs...", self)
+        logs_action.setStatusTip("Open the application log viewer [L]")
+        logs_action.triggered.connect(self.open_log_viewer)
+        help_menu.addAction(logs_action)
+
     def _rebuild_recent_menu(self):
         """Populate the Open Recent sub-menu from settings."""
         self.recent_menu.clear()

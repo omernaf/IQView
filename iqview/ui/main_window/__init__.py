@@ -159,6 +159,8 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
             for dv in self.detached_views:
                 if hasattr(dv, 'refresh_theme'):
                     dv.refresh_theme()
+        if hasattr(self, '_log_viewer') and self._log_viewer is not None and self._log_viewer.isVisible():
+            self._log_viewer.apply_theme()
 
     def on_settings_applied(self):
         """Handle settings changes: refresh theme and re-process if filter is active."""
@@ -242,12 +244,24 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
         # Close all detached windows first
         for dv in list(self.detached_views):
             dv.close()
+        if hasattr(self, '_log_viewer') and self._log_viewer is not None:
+            self._log_viewer.close()
             
         if hasattr(self, '_stop_all_workers'):
             self._stop_all_workers()
         elif hasattr(self, 'worker'):
             self.worker.stop()
         event.accept()
+
+    def open_log_viewer(self):
+        """Open or raise the application log viewer dialog."""
+        if not hasattr(self, '_log_viewer') or self._log_viewer is None:
+            from ..log_viewer_dialog import LogViewerDialog
+            self._log_viewer = LogViewerDialog(parent=self)
+        if not self._log_viewer.isVisible():
+            self._log_viewer.show()
+        self._log_viewer.raise_()
+        self._log_viewer.activateWindow()
 
     def _get_kb(self, key, default):
         return str(self.settings_mgr.get(key, default)) if self.settings_mgr else default
@@ -311,6 +325,8 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
         elif key_name == self._get_kb('keybinds/open_settings', 'I'):
             if hasattr(self, 'sidebar'):
                 self.sidebar.open_settings()
+        elif key_name == self._get_kb('keybinds/open_logs', 'L'):
+            self.open_log_viewer()
         elif key_name == self._get_kb('keybinds/time_markers', 'T'):
             self._prev_interaction_mode = 'TIME'
             self.set_interaction_mode('TIME')

@@ -761,6 +761,13 @@ class EyeDiagramView(QWidget):
             if self.parent_window and hasattr(self.parent_window, 'sidebar'):
                 self.parent_window.sidebar.open_settings()
             return
+        elif key_name == self._get_kb("keybinds/open_logs", "L"):
+            if self.parent_window:
+                if hasattr(self.parent_window, "open_log_viewer"):
+                    self.parent_window.open_log_viewer()
+                elif hasattr(self.parent_window, "sidebar") and hasattr(self.parent_window.sidebar, "open_logs"):
+                    self.parent_window.sidebar.open_logs()
+            return
         elif key_name == self._get_kb("keybinds/panel_action", "A"):
             if hasattr(self, '_btn_cycle_mode'):
                 self._btn_cycle_mode.click()

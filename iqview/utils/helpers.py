@@ -17,9 +17,16 @@ def is_debug() -> bool:
 
 
 def debug_print(*args, **kwargs) -> None:
-    """Print to stdout only when debug mode is enabled."""
+    """Print to stdout when debug mode is enabled, and always record to in-app log buffer."""
     if is_debug():
         print(*args, **kwargs)
+    else:
+        try:
+            from iqview.utils.log_manager import LogManager
+            msg = " ".join(str(a) for a in args)
+            LogManager.get_instance().add_log(msg, stream="debug", level="DEBUG")
+        except Exception:
+            pass
 
 
 DTYPE_MAP = {

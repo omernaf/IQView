@@ -466,6 +466,7 @@ class SettingsDialog(QDialog):
                 ("Undo Zoom:", "keybinds/undo_zoom"),
                 ("Clear Active Markers / Overlays:", "keybinds/clear_markers"),
                 ("Open Settings:", "keybinds/open_settings"),
+                ("Open Log Viewer:", "keybinds/open_logs"),
             ]),
             ("Marker Modes", [
                 ("Time Markers:", "keybinds/time_markers"),

@@ -4,6 +4,9 @@ from iqview.plugins.plugin_result import PluginResult
 from iqview.plugins.context import PluginContext, PluginParams
 from iqview.plugins.chain import PluginChain
 from iqview.plugins.format_utils import format_hover_bits
+from iqview.utils.log_manager import LogManager
+
+LogManager.install()
 
 __version__ = "0.7.3"
 __all__ = [
