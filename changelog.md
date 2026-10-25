@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.3] - 2026-10-25
+
+### Added
+- **Vertically Resizable Top Bar**: Added a draggable vertical splitter (`TopBarSplitter`) between the top bar (`MarkerPanel`) and the main spectrogram area (`SpectrogramView`). Users can drag the splitter handle to expand the top bar to inspect more rows in the marker table, overlays, or plugin controls in exchange for spectrogram height. Features theme-adaptive hover and grab styling, proper layout anchoring, and a minimum height constraint.
+
+### Fixed
+- **LoRa Demodulator Auto-Detection (Bandwidth & Spreading Factor)**:
+  - Replaced crude overlay-width snapping with a precise 99% Occupied Bandwidth (OBW) algorithm using active-frame Welch PSD, plateau-safe noise subtraction, and sub-bin CDF interpolation, rounding to the nearest valid standard LoRa bandwidth (`7.8 kHz` to `1.625 MHz`).
+  - Added coarse frequency centering and zero-phase Butterworth anti-alias filtering (`scipy.signal.sosfiltfilt`) prior to chip-rate resampling, preventing carrier offset aliasing inside loose overlays.
+  - Replaced the broken 75th-percentile noise edge trimming with a noise-MAD envelope detector, accurately isolating active bursts even when duty cycle is low (< 25%) or SNR is low.
+  - Replaced biased single-slice FFT PAPR estimation with fundamental preamble symbol period ($T_{\text{sym}}$) measurement using octave-matched normalized autocorrelation, calculating Spreading Factor directly via $SF = \text{round}(\log_2(BW \cdot T_{\text{sym}})) \in [5, 12]$.
+  - Added `obw_hz` and `symbol_time_ms` to overlay metadata and hover tooltips.
+
 ## [0.7.2] - 2026-10-07
 
 ### Added

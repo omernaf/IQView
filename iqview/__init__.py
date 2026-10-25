@@ -5,7 +5,7 @@ from iqview.plugins.context import PluginContext, PluginParams
 from iqview.plugins.chain import PluginChain
 from iqview.plugins.format_utils import format_hover_bits
 
-__version__ = "0.7.2"
+__version__ = "0.7.3"
 __all__ = [
     "view",
     "PluginResult",
