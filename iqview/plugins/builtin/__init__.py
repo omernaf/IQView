@@ -20,9 +20,11 @@ from . import (
     chop,
     crc_checker,
     diff_decoder,
+    ellipse_gabor_analyzer,
     fsk_demodulator,
     gnss_detector,
     lora_demodulator,
+    polygon_tf_filter,
     snap_merge_overlays,
     snap_to_burst,
     signal_comparator,
@@ -48,6 +50,8 @@ BUILTIN_MODULES: List[ModuleType] = [
     occupied_bandwidth,
     snap_merge_overlays,
     signal_comparator,
+    polygon_tf_filter,
+    ellipse_gabor_analyzer,
 ]
 
 # Lookup table by PLUGIN_NAME (and lowercase/stem aliases)
