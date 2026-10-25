@@ -33,18 +33,24 @@ class MarkerPanel(QFrame):
     markerClearRequested = pyqtSignal(str)
     clearOverlaysRequested = pyqtSignal()
 
+    DEFAULT_HEIGHT = 140
+
     def __init__(self, parent_window):
         super().__init__()
         self.parent_window = parent_window
         self.setup_ui()
 
+    def sizeHint(self) -> QSize:
+        sh = super().sizeHint()
+        return QSize(sh.width(), self.DEFAULT_HEIGHT)
+
     def setup_ui(self):
-        self.setFixedHeight(140)
+        self.setMinimumHeight(self.DEFAULT_HEIGHT)
         self.header_font = QFont("Segoe UI", 9, QFont.Weight.Bold)
         self.mono_font = QFont("Consolas", 10)
         
         self.main_layout = QHBoxLayout(self)
-        self.main_layout.setContentsMargins(15, 8, 15, 8)
+        self.main_layout.setContentsMargins(15, 8, 15, 4)
         self.main_layout.setSpacing(15)
 
         # State
@@ -56,10 +62,13 @@ class MarkerPanel(QFrame):
             'FILTER': {'delta': False, 'center': False, 'm1': False, 'm2': False}
         }
 
-        # --- Interaction Mode Buttons (Left Side) ---
-        self.mode_btn_layout = QGridLayout()
+        # --- Interaction Mode Buttons (Left Side, anchored to top when extended) ---
+        self.mode_btn_container = QWidget()
+        self.mode_btn_container.setFixedHeight(124)
+        self.mode_btn_layout = QGridLayout(self.mode_btn_container)
+        self.mode_btn_layout.setContentsMargins(0, 0, 0, 0)
         self.mode_btn_layout.setSpacing(6)
-        self.main_layout.addLayout(self.mode_btn_layout, 0)
+        self.main_layout.addWidget(self.mode_btn_container, 0, Qt.AlignmentFlag.AlignTop)
 
         # 1. Time (Top-Left)
         self.btn_marker_time = DoubleClickButton("")
@@ -178,9 +187,16 @@ class MarkerPanel(QFrame):
         self.stack = QStackedWidget()
         self.main_layout.addWidget(self.stack, 1)
 
-        # Page 0: Fixed 2-marker layout
+        # Page 0: Fixed 2-marker layout (anchored to top when panel is extended)
+        self.fixed_page = QWidget()
+        self.fixed_page_layout = QVBoxLayout(self.fixed_page)
+        self.fixed_page_layout.setContentsMargins(0, 0, 0, 0)
+        self.fixed_page_layout.setSpacing(0)
         self.fixed_widget = QWidget()
-        self.stack.addWidget(self.fixed_widget)
+        self.fixed_widget.setFixedHeight(124)
+        self.fixed_page_layout.addWidget(self.fixed_widget)
+        self.fixed_page_layout.addStretch(1)
+        self.stack.addWidget(self.fixed_page)
         self.grid = QGridLayout(self.fixed_widget)
         self.grid.setContentsMargins(0, 0, 0, 0)
         self.grid.setHorizontalSpacing(10)
@@ -303,7 +319,7 @@ class MarkerPanel(QFrame):
         self.scroll_layout.addStretch()
         
         self.scroll.setWidget(self.scroll_content)
-        self.endless_layout.addWidget(self.scroll)
+        self.endless_layout.addWidget(self.scroll, 1)
 
         # Page 2: Overlay Mode
         self.overlay_widget = QWidget()
@@ -356,7 +372,7 @@ class MarkerPanel(QFrame):
         self.overlay_scroll_layout.addStretch()
         
         self.overlay_scroll.setWidget(self.overlay_scroll_content)
-        self.overlay_layout.addWidget(self.overlay_scroll)
+        self.overlay_layout.addWidget(self.overlay_scroll, 1)
 
         # Page 3: Plugins Mode
         self.plugins_widget = QWidget()
@@ -455,7 +471,7 @@ class MarkerPanel(QFrame):
         self.plugins_scroll_layout.addStretch()
         
         self.plugins_scroll.setWidget(self.plugins_scroll_content)
-        self.plugins_layout.addWidget(self.plugins_scroll)
+        self.plugins_layout.addWidget(self.plugins_scroll, 1)
 
         # Explicit Default Force
         self.btn_marker_time.setChecked(True)
@@ -1164,7 +1180,7 @@ class MarkerPanel(QFrame):
         self.setStyleSheet(f"""
             MarkerPanel {{ 
                 background-color: {p.bg_widget}; 
-                border-bottom: 2px solid {p.bg_main};
+                border: none;
             }}
             QPushButton#mode_btn {{
                 background-color: transparent; 

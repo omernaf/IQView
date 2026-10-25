@@ -137,6 +137,8 @@ class SpectrogramWindow(QMainWindow, UIComponentsMixin, MarkerManagerMixin, Over
             self.sidebar.update_button_tooltips()
         if hasattr(self, 'marker_panel'):
             self.marker_panel.refresh_theme()
+        if hasattr(self, 'spec_v_splitter') and hasattr(self.spec_v_splitter, 'refresh_theme'):
+            self.spec_v_splitter.refresh_theme()
         if hasattr(self, 'spectrogram_view'):
             self.spectrogram_view.refresh_theme()
             self.refresh_spectrogram_markers()

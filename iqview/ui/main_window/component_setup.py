@@ -6,6 +6,7 @@ from PyQt6.QtGui import QAction, QKeySequence, QPainter, QPixmap
 from ..marker_panel import MarkerPanel
 from ..spectrogram_view import SpectrogramView
 from ..side_panel import SidePanel
+from ..widgets import TopBarSplitter
 
 
 class DetachableTabBar(QTabBar):
@@ -268,12 +269,19 @@ class UIComponentsMixin:
         self.sidebar.multirowChanged.connect(self.on_multirow_changed)
         self.spec_h_layout.addWidget(self.sidebar)
 
-        # Right Side Container (MarkerPanel + SpectrogramView)
+        # Right Side Container (Resizable MarkerPanel + SpectrogramView via vertical QSplitter)
         self.spec_v_container = QWidget()
         self.spec_v_layout = QVBoxLayout(self.spec_v_container)
         self.spec_v_layout.setContentsMargins(0, 0, 0, 0)
         self.spec_v_layout.setSpacing(0)
         self.spec_h_layout.addWidget(self.spec_v_container)
+
+        self.spec_v_splitter = TopBarSplitter(
+            parent_window=self,
+            default_top_height=MarkerPanel.DEFAULT_HEIGHT,
+            parent=self.spec_v_container,
+        )
+        self.spec_v_layout.addWidget(self.spec_v_splitter)
 
         self.marker_panel = MarkerPanel(self)
         self.marker_panel.interactionModeChanged.connect(self.set_interaction_mode)
@@ -282,10 +290,11 @@ class UIComponentsMixin:
         self.marker_panel.clearOverlaysRequested.connect(self.clear_overlays)
         if hasattr(self, '_loaded_plugins') and hasattr(self.marker_panel, 'update_plugins_list'):
             self.marker_panel.update_plugins_list(self._loaded_plugins)
-        self.spec_v_layout.addWidget(self.marker_panel)
+        self.spec_v_splitter.addWidget(self.marker_panel)
 
         # Standard spectrogram view
         self.spectrogram_view = SpectrogramView(self)
+        self.spectrogram_view.setMinimumHeight(140)
         if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'update_waterfall_checkbox'):
             self.sidebar.update_waterfall_checkbox()
 
@@ -300,7 +309,11 @@ class UIComponentsMixin:
         self.spectrogram_stack.addWidget(self.multi_row_view)              # index 1
         self.spectrogram_view.layout.addWidget(self.spectrogram_stack, 0, 1)
 
-        self.spec_v_layout.addWidget(self.spectrogram_view)
+        self.spec_v_splitter.addWidget(self.spectrogram_view)
+        self.spec_v_splitter.setStretchFactor(0, 0)
+        self.spec_v_splitter.setStretchFactor(1, 1)
+        self.spec_v_splitter.setSizes([MarkerPanel.DEFAULT_HEIGHT, 10000])
+        self.spec_v_splitter.splitterMoved.connect(self._on_top_bar_splitter_moved)
 
         # Add to tabs
         self.tabs.addTab(self.spec_tab_page, "Spectrogram")
@@ -311,6 +324,12 @@ class UIComponentsMixin:
 
         self.set_interaction_mode('TIME')
         QTimer.singleShot(250, lambda: self.set_interaction_mode('TIME'))
+
+    def _on_top_bar_splitter_moved(self, pos, index):
+        """Refresh waterfall viewport resolution when vertical height changes."""
+        if hasattr(self, 'spectrogram_view') and self.spectrogram_view.is_waterfall:
+            if hasattr(self, 'on_viewport_changed'):
+                self.on_viewport_changed()
 
     def _build_menu_bar(self):
         """Create the File menu with Open File and Open Recent."""

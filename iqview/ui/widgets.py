@@ -10,6 +10,121 @@ class DoubleClickButton(QtWidgets.QPushButton):
         self.doubleClicked.emit()
         super().mouseDoubleClickEvent(a0)
 
+
+class TopBarSplitterHandle(QtWidgets.QSplitterHandle):
+    """Theme-aware vertical splitter handle between the top bar (MarkerPanel) and main view."""
+
+    def __init__(self, orientation: Qt.Orientation, parent: QtWidgets.QSplitter):
+        super().__init__(orientation, parent)
+        self._hovered = False
+        self._pressed = False
+        self.setMouseTracking(True)
+        self.setToolTip("Drag to extend top bar (Double-click to reset height)")
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self.update()
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._pressed = True
+            self.update()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._pressed:
+            self._pressed = False
+            self.update()
+        super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            sp = self.splitter()
+            if isinstance(sp, TopBarSplitter):
+                sp.reset_to_default_height()
+                event.accept()
+                return
+        super().mouseDoubleClickEvent(event)
+
+    def paintEvent(self, event):
+        sp = self.splitter()
+        theme = "Light"
+        if isinstance(sp, TopBarSplitter) and sp.parent_window is not None:
+            sm = getattr(sp.parent_window, "settings_mgr", None)
+            if sm is not None:
+                theme = str(sm.get("ui/theme", "Light"))
+        p = get_palette(theme)
+
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        rect = self.rect()
+        w, h = rect.width(), rect.height()
+
+        active = self._hovered or self._pressed
+
+        # Blend top portion seamlessly with MarkerPanel background
+        painter.fillRect(0, 0, w, max(0, h - 2), QtGui.QColor(p.bg_widget))
+
+        if active:
+            tint = QtGui.QColor(p.accent)
+            tint.setAlpha(35 if not self._pressed else 60)
+            painter.fillRect(0, 0, w, h, tint)
+
+        # Bottom 2px divider line
+        line_color = QtGui.QColor(p.accent if active else p.bg_main)
+        painter.fillRect(0, max(0, h - 2), w, min(2, h), line_color)
+
+        # Centered subtle pill grip indicator
+        pill_w = min(40, max(16, w // 12))
+        pill_h = 3
+        pill_x = (w - pill_w) / 2.0
+        pill_y = max(0.5, (h - 2 - pill_h) / 2.0)
+        grip_color = QtGui.QColor(p.accent if active else p.text_dim)
+        if not active:
+            grip_color.setAlpha(110)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(grip_color)
+        painter.drawRoundedRect(QtCore.QRectF(pill_x, pill_y, pill_w, pill_h), 1.5, 1.5)
+        painter.end()
+
+
+class TopBarSplitter(QtWidgets.QSplitter):
+    """Vertical QSplitter separating MarkerPanel (top) and main spectrogram canvas (bottom)."""
+
+    def __init__(self, parent_window=None, default_top_height: int = 140, parent=None):
+        super().__init__(Qt.Orientation.Vertical, parent)
+        self.setObjectName("spec_v_splitter")
+        self.parent_window = parent_window
+        self.default_top_height = int(default_top_height)
+        self.setChildrenCollapsible(False)
+        self.setOpaqueResize(True)
+        self.setHandleWidth(7)
+
+    def createHandle(self) -> QtWidgets.QSplitterHandle:
+        return TopBarSplitterHandle(self.orientation(), self)
+
+    def reset_to_default_height(self) -> None:
+        if self.count() < 2:
+            return
+        total = sum(self.sizes())
+        top_h = self.default_top_height
+        bot_h = max(140, total - top_h)
+        self.setSizes([top_h, bot_h])
+
+    def refresh_theme(self) -> None:
+        self.update()
+        for i in range(self.count()):
+            h = self.handle(i)
+            if h is not None:
+                h.update()
+
+
 class FormattedLineEdit(QtWidgets.QLineEdit):
     """
     A QLineEdit that displays 3-digit grouped numbers (e.g. 1 000 000)
