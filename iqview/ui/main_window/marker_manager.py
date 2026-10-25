@@ -1107,7 +1107,7 @@ class MarkerManagerMixin:
 
     def restore_1row_filter_ui(self):
         """Ensure 1-row filter_region and filter_line items are attached and visible on 1-row spectrogram_view."""
-        bounds = getattr(self, 'filter_bounds', [])
+        bounds = getattr(self, 'filter_bounds', None) or []
         waterfall = self.spectrogram_view.is_waterfall
         filter_orient = 'vertical' if waterfall else 'horizontal'
 

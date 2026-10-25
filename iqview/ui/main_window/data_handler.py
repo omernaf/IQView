@@ -416,7 +416,7 @@ class DataHandlerMixin:
         self.time_duration = total_duration
         self.total_samples_in_cache = int(round(total_duration * self.rate))
 
-        zoomed_in = not was_first and not self._lazy_enabled and self._is_zoomed_in()
+        zoomed_in = not was_first and self._is_zoomed_in()
 
         if zoomed_in:
             # Zoomed in during a reprocess (filter/FFT/window change):

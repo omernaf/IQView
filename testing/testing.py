@@ -21,12 +21,12 @@ def main():
     # filename = "samples/long_sweep.32fc"
     # filename = "samples/very_long_sweep.32fc"
     # filename = "samples/long_cw.32fc"
-    filename = "samples/chirp_rate_3MHz.32fc";
+    # filename = "samples/chirp_rate_3MHz.32fc";
     # filename = "samples/noise.32fc"
     # filename = "samples/saved/iq1.mat"
     # filename = "samples/file_example_WAV_5MG.wav"
     # filename = "samples/temp.32fc"
-    # filename = "samples/mavic_long_50MHz.32fc"
+    filename = "samples/mavic_long_50MHz.mat"
     # filename = "samples/mavic_long.mat"
     # filename = "samples/burst_cw.32fc";
     # filename = "samples/QPSK_RC_10sps.32fc"
@@ -51,9 +51,9 @@ def main():
         sys.executable, main_py,
         "-f", filename,
         # "-r", str(sample_rate),
-        "--lazy",
+        # "--lazy",
         # "--name", "lazy"
-        # "--full",
+        "--full",
         # "--name", "full"
         # "--start-byte", "4",
         # "--stop-byte", "4e6",

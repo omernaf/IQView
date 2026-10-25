@@ -17,6 +17,7 @@
   - Updated subtraction alignment, FM trajectory tracking, and spectrogram match overlays to handle both directions seamlessly when Signal 2 is longer than Signal 1.
 
 ### Fixed
+- **Zoom Readjustment with Active Filter in In-Memory / `.mat` Files**: Fixed an issue where applying or adjusting a filter while zoomed in on `.mat` files (and other in-memory byte buffers like stdin and audio) caused the resolution to drop to the downsampled full-file cache (~20,000 columns across the entire recording). In `DataHandlerMixin.display_spectrogram()`, an erroneous `not self._lazy_enabled` guard caused zoomed-in reprocessing on in-memory buffers to overwrite the viewport with the low-resolution full-file cache instead of triggering high-resolution zoom re-rendering (`ViewportAwareReader`), because `core/lazy_rendering` is enabled in settings while in-memory buffers use `FileReaderThread`. Removed the improper guard so any reprocessed zoomed-in render immediately re-evaluates the active viewport at maximum resolution.
 - **LoRa Demodulator Auto-Detection (Bandwidth & Spreading Factor)**:
   - Replaced crude overlay-width snapping with a precise 99% Occupied Bandwidth (OBW) algorithm using active-frame Welch PSD, plateau-safe noise subtraction, and sub-bin CDF interpolation, rounding to the nearest valid standard LoRa bandwidth (`7.8 kHz` to `1.625 MHz`).
   - Added coarse frequency centering and zero-phase Butterworth anti-alias filtering (`scipy.signal.sosfiltfilt`) prior to chip-rate resampling, preventing carrier offset aliasing inside loose overlays.
